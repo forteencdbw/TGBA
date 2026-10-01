@@ -19,7 +19,7 @@
 // It imports the real level and the real integration, so it cannot drift from what ships.
 
 import { LEVEL } from '../src/levels.ts';
-import { ascentSpeedAtDepth, levelScreenHeights, nominalAscentSeconds, secondsPerScreen } from '../src/depth.ts';
+import { ascentSpeedAtDepth, levelScreenHeights, nominalAscentSeconds, secondsPerScreenSeries } from '../src/depth.ts';
 
 const DEPTH = LEVEL.totalDepth;
 const { ascentSpeedBase: base, ascentSpeedPeak: peak, ascentCurveExponent: exp } = LEVEL;
@@ -39,6 +39,7 @@ const speedAt = (d) => ascentSpeedAtDepth(d, { base, peak, exponent: exp, totalD
 
 const T = timeOf();
 const screenHeights = levelScreenHeights();
+const perScreen = secondsPerScreenSeries();
 
 console.log(`level "${LEVEL.id}" (${LEVEL.name})`);
 console.log(`  length            ${DEPTH} m`);
@@ -47,7 +48,12 @@ console.log(`  screen-heights    ${screenHeights.toFixed(2)}`);
 console.log(`  ascent            ${base} -> ${peak} m/s, exponent ${exp}`);
 console.log('');
 console.log(`  no-input run      ${T.toFixed(2)}s   (game reports ${nominalAscentSeconds().toFixed(2)}s)`);
-console.log(`  seconds/screenful ${secondsPerScreen().toFixed(1)}s   <- the number that describes how fast it LOOKS`);
+console.log('');
+// Pacing is a SHAPE. An average seconds-per-screen would report 7.7s for a curve that actually runs
+// from 13.5s to 3.6s, which describes no part of the real experience.
+console.log('  seconds per screenful, seabed first  <- THE number that describes how fast it LOOKS');
+console.log('    ' + perScreen.map((v) => v.toFixed(1)).join(' / ') + '   s');
+console.log(`    first ${perScreen[0].toFixed(1)}s   fastest ${Math.min(...perScreen).toFixed(1)}s   acceleration x${(perScreen[0] / Math.min(...perScreen)).toFixed(1)}`);
 console.log('');
 
 const PROBES = [500, 400, 300, 200, 100, 50, 0];
@@ -74,7 +80,10 @@ const checks = {
   runTimeIsPlausibleAsALevel: T > 30 && T < 400,
   // The script's own integration must agree with the game's, or one of them is lying about the pace.
   matchesGameIntegration: Math.abs(T - nominalAscentSeconds()) / T < 0.01,
-  pacingIsStated: screenHeights > 1.5 && screenHeights < 12 && secondsPerScreen() > 0,
+  pacingIsStated: screenHeights > 1.5 && screenHeights < 12 && perScreen.length > 0,
+  // The opening has to be readable, and the finish has to be noticeably faster than the opening.
+  firstScreenfulIsSnappy: perScreen[0] < 25,
+  paceAcceleratesUphill: perScreen.length >= 2 && perScreen[perScreen.length - 1] < perScreen[0],
   ascentIncreasesWithHeight: speedAt(0) > speedAt(DEPTH),
   integrationMatchesClosedForm: closedFormError === null || closedFormError < 1e-4,
 };

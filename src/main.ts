@@ -3,7 +3,7 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, makeLabel, type La
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL } from './levels';
 import { HazardField, hazardTuning, paintHazards, type HazardKind } from './hazards';
-import { ascentSpeedAtDepth, nominalAscentSeconds } from './depth';
+import { ascentSpeedAtDepth, nominalAscentSeconds, secondsPerScreenSeries } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
 import { calibrateLateral, type LateralAuthority } from './lateral';
@@ -683,7 +683,7 @@ class Game {
       totalDepth: number;
       metresPerScreen: number;
       screenHeights: number;
-      secondsPerScreen: number;
+      secondsPerScreen: number[];
     };
     ascentSpeed: number;
     bannerAlpha: number;
@@ -728,7 +728,14 @@ class Game {
         totalDepth: LEVEL.totalDepth,
         metresPerScreen: LEVEL.metresPerScreen,
         screenHeights: +(LEVEL.totalDepth / LEVEL.metresPerScreen).toFixed(3),
-        secondsPerScreen: +(this.nominalSeconds / (LEVEL.totalDepth / LEVEL.metresPerScreen)).toFixed(2),
+        /**
+         * Seconds per screenful, in order from the seabed up.
+         *
+         * Reported as a SERIES, not an average. The mean of a curve running 13.5s -> 3.6s is 7.7s,
+         * which describes no part of the actual experience and was actively misleading when it was
+         * used as the readout for "how fast does this look".
+         */
+        secondsPerScreen: secondsPerScreenSeries().map((v) => +v.toFixed(1)),
       },
       ascentSpeed: ascentSpeedAtDepth(this.player.depth),
       bannerAlpha: this.finishBanner.alpha,

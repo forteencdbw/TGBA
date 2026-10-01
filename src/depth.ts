@@ -65,11 +65,28 @@ export function levelScreenHeights(): number {
 }
 
 /**
- * How many seconds one screenful of climb takes, at cruising speed.
+ * Seconds to traverse each screenful of the climb, in order from the seabed up.
  *
- * The most direct statement of "does this look like it is moving". Under a few seconds a screenful
- * reads as fast; the shipping level is around 45, which is why its seabed needed a steeper curve.
+ * This is the honest readout, and the single number it replaces was actively misleading: an AVERAGE
+ * seconds-per-screen collapses a curve that runs from 13.5s to 3.6s into "7.7s", which describes no
+ * part of the actual experience. Pacing is a shape, not a mean.
  */
-export function secondsPerScreen(): number {
-  return nominalAscentSeconds() / levelScreenHeights();
+export function secondsPerScreenSeries(maxScreens = 12): number[] {
+  const step = 0.25;
+  const perScreen: number[] = [];
+  let t = 0;
+  let mark = LEVEL.metresPerScreen;
+  let screenStart = 0;
+  for (let d = LEVEL.totalDepth; d > 0; d -= step) {
+    t += step / ascentSpeedAtDepth(d);
+    if (LEVEL.totalDepth - d >= mark) {
+      perScreen.push(t - screenStart);
+      screenStart = t;
+      mark += LEVEL.metresPerScreen;
+      if (perScreen.length >= maxScreens) return perScreen;
+    }
+  }
+  // The final, partial screenful still counts: it is time the player spends playing.
+  if (screenStart < t) perScreen.push(t - screenStart);
+  return perScreen;
 }

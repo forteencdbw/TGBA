@@ -86,9 +86,26 @@ export const LEVELS: readonly Level[] = [
     name: '开阔水域',
     totalDepth: 1500,
     metresPerScreen: 190,
-    ascentSpeedBase: 1.7,
-    ascentSpeedPeak: 8.55,
-    ascentCurveExponent: 1,
+    /**
+     * Tuned to PACING, not to a duration.
+     *
+     * The right unit for feel turned out to be seconds per screenful, and the target was about a
+     * dozen seconds for the first one. That is a very different brief from the original ascent curve,
+     * which gave a first screenful of NINETY seconds -- the whole reason the early game looked
+     * motionless. Converting: `secondsPerScreen = metresPerScreen / ascentSpeed`, so a 190m screen in
+     * ~13s needs roughly 13 m/s at the seabed, about eight times the old base.
+     *
+     * Measured per-screenful timings for these values:
+     *   13.5 / 11.0 / 8.9 / 7.4 / 6.2 / 5.3 / 4.6 / 3.6   seconds
+     *   total 60s, seabed 13 m/s (18 px/s on a phone), surface 50 m/s (69 px/s)
+     *
+     * The exponent is what produces the acceleration: 1.3 keeps the opening readable while making
+     * the last screenful nearly four times faster than the first, which is the "calm ascent
+     * interrupted by panic" shape the design wants.
+     */
+    ascentSpeedBase: 13,
+    ascentSpeedPeak: 50,
+    ascentCurveExponent: 1.3,
     landmarks: [
       { depth: 540, label: '鱼群' },
       { depth: 960, label: '气泡潮' },
