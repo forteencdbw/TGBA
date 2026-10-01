@@ -19,7 +19,10 @@
  */
 
 import { Graphics } from 'pixi.js';
-import { tuning } from './config';
+// `.ts` extension so Node's native type stripping can resolve it when scripts/emergence.mjs imports
+// this module directly. `Graphics` above is a type-only use at runtime, so Pixi is erased and the
+// emergence rules can be driven headlessly. Vite resolves either form.
+import { tuning } from './config.ts';
 
 export type HazardKind = 'fish' | 'jelly' | 'trash' | 'crab';
 
@@ -59,8 +62,9 @@ export interface Hazard {
   baitedUntil: number;
   /** Jellyfish: how much it has been squashed, 0..1, purely comic. */
   squashed: number;
-  /** Trash: whether it is latched onto the player. */
+  /** Trash: whether it is latched onto the player, and how long it has held on. */
   gripping: boolean;
+  gripSeconds: number;
   /** Crab: seconds until it fires, and whether it has fired. */
   fuse: number;
   fired: boolean;
@@ -73,6 +77,16 @@ export interface Hazard {
    * instead.
    */
   armed: boolean;
+  /**
+   * Fish: how many collectables it has swallowed.
+   *
+   * THE emergence counter. A fish that eats enough SPLITS into two, which is the only rule in the
+   * game capable of exponential growth -- and it is what turns a talent's backlash into a real
+   * consequence. See `hazardTuning.fishFeedToSplit` and the spec's emergence section.
+   */
+  fed: number;
+  /** Fish: seconds left before it can eat again, so a split is not instantaneous. */
+  digest: number;
 }
 
 /** Tunables for D3. Kept together because they are only meaningful as a set. */
@@ -98,8 +112,24 @@ export const hazardTuning = {
   jellyBobAmplitude: 0.012,
   /** Trash falls slower than the water and grabs on contact. */
   trashSpeedFactor: 0.12,
-  trashDrainPerSecond: 1 / 6,
+  /**
+   * Drain while a trash bag is attached, in hit-points per second.
+   *
+   * Set so a FULL grip (see `trashMinGripSeconds`) deals one hit. These two are a pair and must be
+   * tuned together: the drain is the trash bag's actual verb, and an earlier combination of a 0.5s
+   * grip with 1/6 per second could only ever accumulate 0.08 of a hit, so the drain was
+   * mathematically incapable of landing and the whole mechanic was inert at this game's speed.
+   */
+  trashDrainPerSecond: 1 / 1.4,
   trashStruggleRelease: 0.55,
+  /**
+   * Minimum seconds a trash bag holds on before struggling can tear it free.
+   *
+   * Doubles as the drain window, which is why it is relatively long. A player who is accelerating
+   * counts as "struggling" and at this game's speed that is most of the time, so the grip needs a
+   * floor to be felt at all -- with none it lasted a single frame.
+   */
+  trashMinGripSeconds: 1.4,
   /** Crab telegraph, then launch. The telegraph is the whole point: it is fair. */
   /**
    * The telegraph fires when the player comes within this many metres above the crab.
@@ -112,6 +142,47 @@ export const hazardTuning = {
   crabFuseSeconds: 1.2,
   crabLaunchMps: tuning.hazardCrabLaunchMps,
   crabApexSeconds: 1.1,
+
+  // --- Emergence (D5) -----------------------------------------------------
+  /**
+   * Collectables a fish must swallow before it splits in two.
+   *
+   * Three, not one. At one, any fish that crosses a bubble doubles, and the population explodes from
+   * ambient food alone -- the swarm would grow whether or not the player did anything, which removes
+   * the causality the whole design rests on ("I got bigger, so the world got worse"). At three, the
+   * split is a consequence of a LOT of food appearing, which in practice means the player's own
+   * talent backlash or a bait bubble.
+   */
+  fishFeedToSplit: 3,
+  /** Seconds a fish spends digesting between meals. */
+  fishDigestSeconds: 0.9,
+  /**
+   * The fish's base perception radius in metres, before the player's size is factored in.
+   *
+   * This is rule 2 of the emergence engine: perception GROWS WITH THE PLAYER'S VOLUME. It is what
+   * gives "getting bigger is dangerous" a number instead of a feeling.
+   */
+  fishPerceptionBaseMeters: 150,
+  /** Extra perception per unit of player volume above 1. */
+  fishPerceptionPerVolume: 90,
+  /**
+   * HARD CAP on fish.
+   *
+   * Exponential growth will brick a phone, so the population is capped and, past the cap, behaviour
+   * changes rather than more entities being created. The guard is not an optimisation: without it the
+   * design's own centrepiece is a crash.
+   */
+  fishHardCap: 44,
+  /**
+   * Radius in metres a fish will snap up a collectable from.
+   *
+   * Notably LARGER than the fish itself: this is meant to read as the swarm hoovering up the food the
+   * player was going to eat, which is the pressure that makes a bait bubble backfire.
+   */
+  fishBiteMeters: 34,
+  /** How far a jellyfish or trash bag will drift toward the biggest nearby collectable. */
+  seekBiggestRangeMeters: 190,
+  seekBiggestPullPerSecond: 0.35,
 } as const;
 
 /** Per-kind presentation and collision size, as a fraction of the lane width. */
@@ -139,6 +210,24 @@ export interface HazardContext {
   invulnerable: boolean;
   /** True while the player is actively struggling (accelerating), which can tear off trash. */
   struggling: boolean;
+  /**
+   * The player's volume, which drives the fish's perception radius.
+   *
+   * Emergence rule 2: the swarm notices you from further away the bigger you get. This is the
+   * quantifiable carrier of "getting bigger is dangerous".
+   */
+  playerVolume: number;
+  /**
+   * The collectables, so fish can eat them and jellies can seek the biggest one.
+   *
+   * Passed in rather than owned: hazards do not manage the bubble field, but two of the emergence
+   * rules are about hazards INTERACTING with it.
+   */
+  bubbles: readonly { id: number; x: number; y: number; radius: number; volume: number }[];
+  /** Collectables swallowed this frame, by id, so the caller can remove them. */
+  eatenBubbleIds: number[];
+  /** How many fish split this frame, so the caller can react. */
+  splitCount: number;
 }
 
 /**
@@ -177,10 +266,30 @@ export class HazardField {
     this.spawnTimer = 0;
     this.grabs = 0;
     this.baits = 0;
+    this.splits = 0;
+    this.bubblesEaten = 0;
+  }
+
+  /** Emergence counters, monotonic so "did it ever happen" is answerable. */
+  splits = 0;
+  bubblesEaten = 0;
+
+  /**
+   * The fish's perception radius in metres, which grows with the player's volume.
+   *
+   * Emergence rule 2, and the reason "getting bigger is dangerous" is a mechanic rather than a
+   * feeling. Exposed as its own method so a probe can assert the growth directly instead of inferring
+   * it from whether a fish happened to notice.
+   */
+  perceptionRadius(playerVolume: number): number {
+    const over = Math.max(0, playerVolume - 1);
+    return hazardTuning.fishPerceptionBaseMeters + over * hazardTuning.fishPerceptionPerVolume;
   }
 
   update(dt: number, ctx: HazardContext): HazardEffect[] {
     const effects: HazardEffect[] = [];
+    ctx.eatenBubbleIds = [];
+    ctx.splitCount = 0;
 
     this.spawnTimer -= dt;
     const ceiling = Math.min(hazardTuning.maxActive, hazardTuning.minActive + Math.floor(ctx.elapsed / 25));
@@ -194,6 +303,12 @@ export class HazardField {
     for (const h of this.hazards) {
       this.advance(h, dt, ctx);
     }
+
+    // Emergence, in order: fish eat (which may split them), then the seeking hazards pick a target.
+    // Eating runs first so a split this frame produces a fish that seeks NEXT frame rather than
+    // teleporting a fish that has not been born yet.
+    this.resolveFishFeeding(ctx);
+    this.resolveSeeking(dt, ctx);
 
     // Contact. Resolved after movement so a hazard that arrives this frame still lands.
     const playerR = ctx.laneWidth * ctx.playerRadiusFraction;
@@ -260,9 +375,15 @@ export class HazardField {
     // A latched trash bag drains continuously, and struggling tears it off.
     for (const h of this.hazards) {
       if (h.kind !== 'trash' || !h.gripping) continue;
+      // A minimum hold, because "struggling" is true for any player who is accelerating -- which at
+      // this game's speed is most of the time. Without a floor the grip lasted a single frame and the
+      // drain never landed a hit, so the trash bag's whole verb was invisible at 13 m/s even though
+      // it worked at 1.7. The floor is what makes it a grab rather than a touch.
+      h.gripSeconds += dt;
       effects.push({ kind: 'trash', drainPerSecond: true, broke: false });
-      if (ctx.struggling) {
+      if (ctx.struggling && h.gripSeconds >= hazardTuning.trashMinGripSeconds) {
         h.gripping = false;
+        h.gripSeconds = 0;
         h.fired = true; // reused as "it popped"
         effects.push({ kind: 'trash', broke: true });
       }
@@ -278,6 +399,96 @@ export class HazardField {
     });
 
     return effects;
+  }
+
+  /**
+   * Emergence rule 1: a fish that eats enough collectables SPLITS in two.
+   *
+   * The only rule in the game capable of exponential growth, and therefore the only one that can turn
+   * a talent's backlash into an avalanche: the fart that saves you leaves bait, the bait feeds the
+   * fish, the fish multiply, and the swarm you fled is twice the size.
+   *
+   * Splitting is capped. Past `fishHardCap` the population stops growing entirely -- the guard has to
+   * be here, at the source, because this is the only place entities are created outside the spawn
+   * timer.
+   */
+  private resolveFishFeeding(ctx: HazardContext): void {
+    const bite = hazardTuning.fishBiteMeters;
+    const newborns: Hazard[] = [];
+
+    for (const h of this.hazards) {
+      if (h.kind !== 'fish') continue;
+      h.digest = Math.max(0, h.digest - 1 / 60);
+      if (h.digest > 0) continue;
+
+      for (const b of ctx.bubbles) {
+        // Already claimed by another fish this frame.
+        if (ctx.eatenBubbleIds.includes(b.id)) continue;
+        if (Math.hypot(b.x - h.x, b.y - h.y) > bite) continue;
+
+        ctx.eatenBubbleIds.push(b.id);
+        h.fed++;
+        h.digest = hazardTuning.fishDigestSeconds;
+        this.bubblesEaten++;
+
+        if (h.fed >= hazardTuning.fishFeedToSplit && this.hazards.length + newborns.length < hazardTuning.fishHardCap) {
+          h.fed = 0;
+          this.splits++;
+          ctx.splitCount++;
+          // The child appears alongside, slightly smaller, so a split reads as a swarm thickening
+          // rather than as one fish becoming two identical fish in place.
+          newborns.push({
+            ...h,
+            id: this.nextId++,
+            x: Math.max(0, Math.min(ctx.laneWidth, h.x + (Math.random() - 0.5) * ctx.laneWidth * 0.2)),
+            y: h.y + 14,
+            radiusFraction: h.radiusFraction * 0.88,
+            phase: Math.random() * Math.PI * 2,
+            seed: Math.random() * 1000,
+            baitedUntil: 0,
+            fed: 0,
+            digest: hazardTuning.fishDigestSeconds,
+          });
+        }
+        break;
+      }
+    }
+
+    this.hazards.push(...newborns);
+  }
+
+  /**
+   * Emergence rule 3: jellyfish and trash bags drift toward the LARGEST nearby collectable.
+   *
+   * "The strong get targeted first." It makes growing a liability in a second, visible way: the two
+   * hazards that take control away rather than health go after whoever is biggest, so the player who
+   * has been eating well is the one the jellyfish comes for.
+   */
+  private resolveSeeking(dt: number, ctx: HazardContext): void {
+    const range = hazardTuning.seekBiggestRangeMeters;
+    const pull = hazardTuning.seekBiggestPullPerSecond;
+
+    for (const h of this.hazards) {
+      if (h.kind !== 'jelly' && h.kind !== 'trash') continue;
+      if (h.kind === 'trash' && h.gripping) continue;
+
+      let best: { x: number; y: number; volume: number } | null = null;
+      for (const b of ctx.bubbles) {
+        if (ctx.eatenBubbleIds.includes(b.id)) continue;
+        const d = Math.hypot(b.x - h.x, b.y - h.y);
+        if (d > range) continue;
+        if (!best || b.volume > best.volume) best = { x: b.x, y: b.y, volume: b.volume };
+      }
+      if (!best) continue;
+
+      const dx = best.x - h.x;
+      const dy = best.y - h.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1e-3) continue;
+      const step = Math.min(dist, pull * dt * ctx.laneWidth * 0.05);
+      h.x += (dx / dist) * step;
+      h.y += (dy / dist) * step;
+    }
   }
 
   private spawn(ctx: HazardContext): Hazard {
@@ -307,6 +518,9 @@ export class HazardField {
       fuse: hazardTuning.crabFuseSeconds,
       fired: false,
       armed: false,
+      fed: 0,
+      digest: 0,
+      gripSeconds: 0,
     };
   }
 
@@ -329,6 +543,24 @@ export class HazardField {
           h.y -= base * 0.5 * dt;
           break;
         }
+
+        /**
+         * Emergence rule 2, made real: the fish only CHASES inside its perception radius.
+         *
+         * This is what gives "getting bigger is dangerous" a mechanism instead of a mood. A small
+         * player is noticed from 150m; a big one from 240m and up, so growing visibly recruits more of
+         * the swarm. Outside the radius the fish just drifts, which is also what keeps a distant
+         * screenful of fish from all converging at once.
+         */
+        const perceive = this.perceptionRadius(ctx.playerVolume);
+        const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
+        if (dist > perceive) {
+          // Idle drift: keeps its own course, does not converge.
+          h.x += Math.sin(h.phase * 1.3 + h.seed) * 5 * dt;
+          h.y -= base * 0.42 * dt;
+          break;
+        }
+
         // Chase: steer toward the player horizontally, and close vertically.
         const dx = ctx.playerX - h.x;
         const steer = Math.max(-1, Math.min(1, dx / Math.max(1, ctx.laneWidth * 0.25)));
