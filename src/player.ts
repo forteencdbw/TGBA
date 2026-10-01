@@ -1,4 +1,5 @@
-import { DEPTH_TOTAL, SPAWN_X_RATIO, tuning } from './config';
+import { SPAWN_X_RATIO, tuning } from './config';
+import { DEPTH_TOTAL } from './levels';
 import { ascentSpeedAtDepth } from './depth';
 import type { LateralAuthority } from './lateral';
 import type { Input } from './input';

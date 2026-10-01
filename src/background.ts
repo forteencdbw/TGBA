@@ -1,5 +1,6 @@
 import { Application, Container, FillGradient, Graphics, Text } from 'pixi.js';
-import { DEPTH_TOTAL, LATERAL_DAMPING, PLAYER_SCREEN_Y_RATIO, VIEW } from './config';
+import { LATERAL_DAMPING, PLAYER_SCREEN_Y_RATIO, VIEW } from './config';
+import { DEPTH_TOTAL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Player } from './player';
 import { computeViewport, type Viewport } from './viewport';

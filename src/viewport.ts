@@ -1,4 +1,4 @@
-import { WORLD_HEIGHT, WORLD_WIDTH } from './config';
+import { WORLD_HEIGHT, WORLD_WIDTH } from './levels';
 
 /**
  * Maps the world play area onto the canvas.

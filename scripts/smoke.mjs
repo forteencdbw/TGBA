@@ -124,7 +124,7 @@ try {
       intro: +d.intro.toFixed(3),
       lastDelta: +d.lastDelta.toFixed(4),
       nominalSeconds: +d.nominalSeconds.toFixed(2),
-      targetRunSeconds: d.targetRunSeconds,
+      level: d.level,
       ascentSpeed: +d.ascentSpeed.toFixed(3),
       bannerAlpha: +d.bannerAlpha.toFixed(3),
       bannerSeen: d.bannerSeen,
@@ -247,7 +247,7 @@ try {
     canvas: b.canvas ?? a.canvas,
     webgl2: b.webgl,
     nominalSeconds: b.nominalSeconds,
-    targetRunSeconds: b.targetRunSeconds,
+    level: b.level,
     before: a,
     after: b,
     advanced: a.ready && b.ready ? { frames: b.frames - a.frames, elapsedS: +(b.elapsed - a.elapsed).toFixed(3), yGain: +(b.y - a.y).toFixed(3) } : null,
@@ -305,10 +305,11 @@ try {
     bannerShown,
     resetWorked,
     noExceptions: exceptions.length === 0,
-    // Compared against the design target the game itself reports, not a hardcoded number: the run
-    // length is a deliberate tradeoff that gets retuned, and an absolute value here failed the moment
-    // it was (175s -> 118s when the speed curve stopped being back-loaded).
-    ascentTimeIsTarget: Math.abs(b.nominalSeconds - b.targetRunSeconds) < 3,
+    // The level declares its length and curve; the run time is what those add up to, so there is no
+    // target to compare against any more. Assert instead that the derived time is plausible for a
+    // level and that the level states its pacing in screen-heights.
+    runTimeIsPlausibleAsALevel: b.nominalSeconds > 30 && b.nominalSeconds < 400,
+    levelPacingIsStated: b.level.screenHeights > 1.5 && b.level.secondsPerScreen > 0,
   };
   console.log('CHECKS: ' + JSON.stringify(checks));
 

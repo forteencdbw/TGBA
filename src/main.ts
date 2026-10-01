@@ -1,6 +1,7 @@
 import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, makeLabel, type Landmark } from './background';
-import { DEPTH_TOTAL, tuning } from './config';
+import { tuning } from './config';
+import { DEPTH_TOTAL, LEVEL } from './levels';
 import { ascentSpeedAtDepth, nominalAscentSeconds } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
@@ -13,11 +14,9 @@ import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius, growB
  * Depths where the emergence events fire (design round 4). On D1 they only prove the depth scale
  * reads correctly, but they are the real trigger points.
  */
-const LANDMARKS: readonly Landmark[] = [
-  { depth: 180, label: '鱼群' },
-  { depth: 320, label: '气泡潮' },
-  { depth: 420, label: '爆发' },
-];
+// The HUD's signposts come from the level, so a new level states its own pacing instead of
+// inheriting another level's depths. See `src/levels.ts`.
+const LANDMARKS: readonly Landmark[] = LEVEL.landmarks ?? [];
 
 /** The three ways a bubble can be born (design round 5). Effects land in D4; here it is flavour. */
 const SEEDS = ['鱼屁泡', '汽水泡', '深海淤泥泡'] as const;
@@ -519,7 +518,14 @@ class Game {
     intro: number;
     lastDelta: number;
     nominalSeconds: number;
-    targetRunSeconds: number;
+    level: {
+      id: string;
+      name: string;
+      totalDepth: number;
+      metresPerScreen: number;
+      screenHeights: number;
+      secondsPerScreen: number;
+    };
     ascentSpeed: number;
     bannerAlpha: number;
     bannerSeen: boolean;
@@ -543,8 +549,18 @@ class Game {
       intro: this.phaseTimer,
       lastDelta: this.lastDelta,
       nominalSeconds: this.nominalSeconds,
-      /** What the run SHOULD last for the current ascent numbers, so a probe can compare. */
-      targetRunSeconds: tuning.targetRunSeconds,
+      /**
+       * The level's own declared properties, so a probe can reason about pacing without hardcoding
+       * a depth or a duration. A run length is an OUTPUT of these, not a target.
+       */
+      level: {
+        id: LEVEL.id,
+        name: LEVEL.name,
+        totalDepth: LEVEL.totalDepth,
+        metresPerScreen: LEVEL.metresPerScreen,
+        screenHeights: +(LEVEL.totalDepth / LEVEL.metresPerScreen).toFixed(3),
+        secondsPerScreen: +(this.nominalSeconds / (LEVEL.totalDepth / LEVEL.metresPerScreen)).toFixed(2),
+      },
       ascentSpeed: ascentSpeedAtDepth(this.player.depth),
       bannerAlpha: this.finishBanner.alpha,
       bannerSeen: this.bannerSeen,

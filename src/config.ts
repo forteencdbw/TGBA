@@ -25,20 +25,15 @@ export const VIEW = {
  *   - horizontal handling is expressed as crossing TIMES and the bubble's x as a FRACTION of the
  *     lane, so feel is identical on every device.
  *
+ * `WORLD_HEIGHT`, `WORLD_WIDTH` and `DEPTH_TOTAL` all live in `levels.ts` now: they are properties
+ * of a LEVEL, not global constants, because the level's length and the amount of water on screen
+ * have to change together. See that file for why.
+ *
  * World-space convention: world y is metres above the seabed, so
  *   seabed  -> y = 0
  *   surface -> y = DEPTH_TOTAL
  * and `depth = DEPTH_TOTAL - y`.
  */
-export const DEPTH_TOTAL = 500;
-/**
- * Visible vertical span, in metres. Sets how much depth fits on screen; larger = more zoomed out.
- * The bubble and every world-space visual are sized relative to `WORLD_WIDTH`, so this only
- * controls how much of the climb is on screen at once.
- */
-export const WORLD_HEIGHT = 190;
-/** Play area width in metres. The viewport scales this to fill the canvas width exactly. */
-export const WORLD_WIDTH = WORLD_HEIGHT * 1.9;
 
 /**
  * Where the bubble sits vertically on screen, as a fraction of view height from the top.
@@ -88,61 +83,22 @@ export const SPAWN_X_RATIO = 0.38;
  */
 export const tuning = {
   // --- Vertical (progress) -------------------------------------------------
-  /** Ascent speed (m/s) at the seabed. */
-  ascentSpeedBase: 1.7,
-  /**
-   * Ascent speed (m/s) as the bubble reaches the surface.
-   *
-   * These three numbers decide the run length, and there is no elementary closed form for the
-   * traversal time once the exponent is not 1, so re-solve it numerically rather than by hand:
-   *
-   *     node scripts/solve-ascent.mjs
-   *
-   * Confirm from the running game: the HUD `eta` field and `window.__GB.game.diagnostics.nominalSeconds`.
-   *
-   * THE TRADEOFF, measured, because it is the whole reason these values look the way they do:
-   * what the player sees move is `speed / metresPerPixel`, and near the seabed a phone screen is
-   * about 0.72 m per pixel. At 1.7 m/s that is under 3 px/s of visible motion -- indistinguishable
-   * from frozen water, and no boost multiplier fixes it, because the multiplier scales BOTH the
-   * player and the camera. Only the base speed changes the early feel.
-   *
-   *   exponent 2.4  ->  175s   seabed 1.70 m/s  (~2 px/s of visible motion)
-   *   exponent 1.0  ->  118s   seabed 1.70 m/s  (same, but 300m is reached far sooner)
-   *   exponent 0.0  ->   58s   linear, fastest everywhere
-   *
-   * A shorter run is the price of an early game that looks like it is moving.
-   */
-  ascentSpeedPeak: 8.55,
-  /**
-   * How back-loaded the speed curve is. 1 = linear in depth, 0 = constant speed, >1 = slow start.
-   *
-   * Lowered from 2.4, which was chosen to hit a 175s run and made the first 200m -- 40% of the
-   * climb, and the part the player is actually looking at when they form an impression -- barely
-   * change speed at all.
-   */
-  ascentCurveExponent: 1,
-  /**
-   * The no-input run length these ascent numbers are expected to produce, in seconds.
-   *
-   * This is the SINGLE SOURCE OF TRUTH for the design target. It is not used to compute anything --
-   * `nominalAscentSeconds()` integrates the real curve -- but a probe compares the two, so a change
-   * to base/peak/exponent cannot silently turn a two-minute game into a four-minute one.
-   *
-   * Originally 175, which REQUIRED the slow-start exponent of 2.4. That combination made the first
-   * 200m of the climb barely change speed, and since that is where the player forms their
-   * impression, the whole game read as motionless near the seabed. 118s with a linear curve trades
-   * run length for an early game that visibly moves.
-   */
-  targetRunSeconds: 117.9,
+  //
+  // The ascent CURVE now lives on the LEVEL (`src/levels.ts`), because it is part of what defines a
+  // level: its length plus its curve is the whole pacing. There is deliberately no `targetRunSeconds`
+  // here. Run time is an OUTPUT -- `nominalAscentSeconds()` integrates the real curve -- and having a
+  // duration target as well made the curve a back-solved quantity, which is how the game ended up
+  // with a first 40% of climb that barely changed speed and read as frozen water.
+
   /**
    * Top ascent speed while the accelerate control is held, as a multiple of the cruising speed.
    *
-   * Raised from 1.55, which was too timid to feel like a decision. At 2.4 the climb is visibly
-   * different with the control held, and because the collectable stream is measured relative to the
-   * ascent, the whole world speeds up with it.
+   * A large value is safe: the accelerate control changes how fast the player moves THROUGH the
+   * water, and collectables are solved against the cruising speed so they do not change. See
+   * `tuning.bubbleRise*` and `EntityField.update`.
    *
    * NOTE this changes the run length if held, and `nominalAscentSeconds()` (the HUD `eta`) only
-   * models the NO-INPUT case. See `BOOST_ACCEL_SECONDS`.
+   * models the NO-INPUT case.
    */
   boostMultiplier: 13,
   /** Speed multiplier while braking. */
