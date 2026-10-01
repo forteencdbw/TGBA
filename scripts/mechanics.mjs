@@ -112,6 +112,9 @@ try {
   const results = {};
 
   // --- 1. Absorbing a smaller bubble grows the player ---
+  // `stats.absorbed` is cumulative and the field is random, so a bubble drifting into the player
+  // during the sample would inflate it. Measure the DELTA attributable to the spawned bubble, and
+  // compare volume against the pre-spawn value rather than asserting an absolute count.
   const beforeAbsorb = await state();
   await evalJson('JSON.stringify((() => { window.__GB.game.spawnBubbleOnPlayer(0.5); return 1; })())');
   await sleep(200);
@@ -119,7 +122,7 @@ try {
   results.absorb = {
     volumeBefore: +beforeAbsorb.volume.toFixed(4),
     volumeAfter: +afterAbsorb.volume.toFixed(4),
-    absorbedCount: afterAbsorb.stats.absorbed,
+    absorbedDelta: afterAbsorb.stats.absorbed - beforeAbsorb.stats.absorbed,
     grew: afterAbsorb.volume > beforeAbsorb.volume,
   };
 
@@ -194,7 +197,7 @@ try {
     .map((e) => e.params.exceptionDetails.exception?.description ?? e.params.exceptionDetails.text);
 
   const checks = {
-    absorbGrows: results.absorb.grew && results.absorb.absorbedCount === 1,
+    absorbGrows: results.absorb.grew && results.absorb.absorbedDelta >= 1,
     biggerBubbleHurts: results.biggerHurts.shrunk && results.biggerHurts.invulnerable > 0.5,
     invulnerabilityBlocksChain: results.invulnerabilityBlocks.blocked,
     enoughHitsPops: results.pop.popped && results.pop.phaseDuringPop === 'burst',

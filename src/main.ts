@@ -224,7 +224,15 @@ class Game {
     // empty ocean and only fills in once control returns.
     const viewport = this.camera.viewport;
     const { min, max } = this.camera.visibleWorldRange(20);
-    this.field.update(dt, viewport.laneWidthMeters, min, max, visualRadiusFraction(this.player.volume));
+    this.field.update(
+      dt,
+      viewport.laneWidthMeters,
+      min,
+      max,
+      visualRadiusFraction(this.player.volume),
+      // Drives the parallax layers: near specks sweep past at a multiple of the player's own speed.
+      this.player.vy > 0 ? this.player.vy : ascentSpeedAtDepth(this.player.depth),
+    );
 
     switch (this.phase) {
       case 'intro': {
@@ -267,18 +275,14 @@ class Game {
     const laneWidth = this.camera.viewport.laneWidthMeters;
     const playerX = this.player.x * laneWidth;
     const playerR = laneWidth * visualRadiusFraction(this.player.volume);
-    const eaten: Bubble[] = [];
-
-    // Reused scratch so contacts in one step do not each allocate a circle.
-    const hit = { x: 0, y: 0, r: 0 };
-    void hit;
+    let eaten = 0;
 
     for (let i = this.field.bubbles.length - 1; i >= 0; i--) {
       const b = this.field.bubbles[i];
       if (!b) continue;
       const bubbleR = laneWidth * b.radius;
 
-      // Bubbles are near-elliptical in motion; a circle test on the larger radius is plenty and
+      // Bubbles are near-elliptical in motion; a circle test on the combined radii is plenty and
       // never lets a visibly-overlapping bubble slip through.
       const reach = playerR + bubbleR;
       const dx = b.x - playerX;
@@ -289,7 +293,7 @@ class Game {
         // Big enough: absorb it.
         this.player.volume = growByAbsorbing(this.player.volume, b.volume);
         this.stats.absorbed++;
-        eaten.push(b);
+        eaten++;
         this.field.bubbles.splice(i, 1);
       } else if (this.invulnerable <= 0) {
         // Too big to eat: it hurts.
@@ -299,7 +303,7 @@ class Game {
     }
 
     if (this.player.volume > this.stats.maxVolume) this.stats.maxVolume = this.player.volume;
-    this.lastEaten = eaten.length;
+    this.lastEaten = eaten;
   }
 
   private takeHit(): void {
@@ -383,9 +387,16 @@ class Game {
       g.circle(x - r * 0.3, b.y + r * 0.3, r * 0.68).fill({ color: 0xeafcff, alpha: 0.16 });
       g.circle(x, b.y, r).stroke({ color: tint, alpha: edible ? 0.6 : 0.95, width: r * (edible ? 0.09 : 0.16) });
     }
-    // Specks last, in one fill: they are the bulk of the draw calls otherwise.
-    for (const s of this.field.specks) g.circle(s.x, s.y, s.r);
-    g.fill({ color: 0xdff6ff, alpha: 0.22 });
+    // Specks last, in one fill: they are the bulk of the draw calls otherwise. Near ones are drawn
+    // brighter, which reinforces the depth ordering the parallax already implies.
+    for (const s of this.field.specks) {
+      if (s.drift > 0) g.circle(s.x, s.y, s.r);
+    }
+    g.fill({ color: 0xeafcff, alpha: 0.34 });
+    for (const s of this.field.specks) {
+      if (s.drift <= 0) g.circle(s.x, s.y, s.r);
+    }
+    g.fill({ color: 0xdff6ff, alpha: 0.18 });
   }
 
   /** The player's bubble, in world metres. */
@@ -532,7 +543,8 @@ class Game {
     const laneWidth = this.camera.viewport.laneWidthMeters;
     const playerRadius = laneWidth * visualRadiusFraction(this.player.volume);
     const radius = (playerRadius * sizeRatio) / laneWidth;
-    this.field.bubbles.push({
+    // Stationary (vy: 0) so the collision is immediate and does not depend on fall speed.
+    this.field.addTestBubble({
       x: this.player.x * laneWidth,
       y: this.player.y,
       vy: 0,
@@ -552,6 +564,84 @@ class Game {
   debugForceHit(): void {
     this.invulnerable = 0;
     this.takeHit();
+  }
+
+  /** Test hook: the collectable field, so a probe can inspect individual bubbles. */
+  get fieldRef(): EntityField {
+    return this.field;
+  }
+
+  /** Id of the bubble a probe is following, or null to pick a fresh one. */
+  trackedBubbleId: number | null = null;
+
+  /** Test hook: start following a currently visible bubble so its fall can be measured. */
+  debugTrackBubble(): number | null {
+    const b = this.field.bubbles.find((c) => this.camera.toScreenY(c.y) > 0 && this.camera.toScreenY(c.y) < this.camera.viewport.height);
+    this.trackedBubbleId = b ? b.id : null;
+    return this.trackedBubbleId;
+  }
+
+  /**
+   * Test hook: how the world moves relative to the camera.
+   *
+   * Answers "is the player fixed on screen while everything else scrolls down?" with numbers
+   * instead of by eye. Samples the nearest collectable and a speck so their motion can be tracked
+   * across calls.
+   */
+  debugMotion(): {
+    playerScreenY: number;
+    playerScreenYRatio: number;
+    cameraY: number;
+    depth: number;
+    nearestBubbleScreenY: number | null;
+    nearestBubbleWorldY: number | null;
+    nearestBubbleScreenSpeedPxPerS: number | null;
+    nearestBubbleFallMps: number | null;
+    trackedBubbleId: number | null;
+    trackedBubbleScreenY: number | null;
+    speckScreenY: number | null;
+    speckWorldY: number | null;
+    /** A near-camera speck: the layer that carries the speed cue. */
+    nearSpeckScreenY: number | null;
+    nearSpeckDrift: number | null;
+    farSpeckDrift: number | null;
+    ascentSpeed: number;
+  } {
+    const cam = this.camera;
+    const nearest = this.field.bubbles.reduce<Bubble | null>(
+      (best, b) => (!best || Math.abs(b.y - this.player.y) < Math.abs(best.y - this.player.y) ? b : best),
+      null,
+    );
+    const far = this.field.specks.find((s) => s.drift <= 0) ?? null;
+    const near = this.field.specks.find((s) => s.drift > 0) ?? null;
+    // Track by id: "the nearest bubble" changes identity as bubbles stream past, so measuring it
+    // twice compares two different objects and reports nonsense.
+    const tracked =
+      this.trackedBubbleId !== null ? this.field.bubbles.find((b) => b.id === this.trackedBubbleId) ?? null : null;
+    return {
+      playerScreenY: +cam.toScreenY(this.player.y).toFixed(2),
+      playerScreenYRatio: +(cam.toScreenY(this.player.y) / cam.viewport.height).toFixed(4),
+      cameraY: +cam.y.toFixed(2),
+      depth: +this.player.depth.toFixed(2),
+      nearestBubbleScreenY: nearest ? +cam.toScreenY(nearest.y).toFixed(2) : null,
+      nearestBubbleWorldY: nearest ? +nearest.y.toFixed(2) : null,
+      /**
+       * Screen speed at which the nearest bubble is travelling DOWN, in px/s. This is the number
+       * that decides whether the stream reads as moving; the world scroll rate says nothing about
+       * it because a bubble's motion is dominated by its own fall speed.
+       */
+      nearestBubbleScreenSpeedPxPerS: nearest ? +(nearest.vy * cam.viewport.scale).toFixed(2) : null,
+      nearestBubbleFallMps: nearest ? +nearest.vy.toFixed(3) : null,
+      /** A tracked bubble: the first in the field, identified so successive samples mean one object. */
+      trackedBubbleId: tracked ? tracked.id : null,
+      trackedBubbleScreenY: tracked ? +cam.toScreenY(tracked.y).toFixed(2) : null,
+      speckScreenY: far ? +cam.toScreenY(far.y).toFixed(2) : null,
+      speckWorldY: far ? +far.y.toFixed(2) : null,
+      nearSpeckScreenY: near ? +cam.toScreenY(near.y).toFixed(2) : null,
+      nearSpeckDrift: near ? +near.drift.toFixed(2) : null,
+      farSpeckDrift: far ? +far.drift.toFixed(2) : null,
+      ascentSpeed: +this.player.vy.toFixed(3),
+    };
   }
 }
 

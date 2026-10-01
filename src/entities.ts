@@ -1,18 +1,19 @@
-import { DEPTH_TOTAL } from './config';
-import { ascentSpeedAtDepth } from './depth';
+import { tuning } from './config';
 import { bubbleVolumeFromRadius } from './volume';
 
 /**
  * A collectable bubble.
  *
- * Position is in WORLD METRES (x across the play area, y above the seabed). Bubbles rise too, but
- * slower than the player, so the player passes through a drifting cloud: that relative motion is
- * what makes absorbing feel like sweeping things up rather than chasing them.
+ * Position is in WORLD METRES (x across the play area, y above the seabed). Bubbles travel DOWN at
+ * a fixed lane-relative speed, so the player flies up through a stream of them. The speed is
+ * deliberately independent of the player's ascent rate and of depth -- see `fallSpeed`.
  */
 export interface Bubble {
+  /** Stable identity, so a probe can track one bubble across samples instead of a moving "nearest". */
+  id: number;
   x: number;
   y: number;
-  /** Rise speed in m/s. Always less than the player's, so the player overtakes. */
+  /** Downward travel speed in m/s, in WORLD terms (the y axis grows upward, so this is added). */
   vy: number;
   /** Drawn radius as a fraction of the play area width. */
   radius: number;
@@ -22,12 +23,26 @@ export interface Bubble {
   phase: number;
 }
 
-/** A drifting speck, purely decorative. */
+/**
+ * A drifting speck.
+ *
+ * `drift` is its extra downward screen speed, as a multiple of the player's own ascent. Specks with
+ * a positive drift represent PARTICLES CLOSE TO THE CAMERA: they are not really falling, they just
+ * sweep past much faster than the far background because they are nearer.
+ *
+ * This layer exists because of a hard constraint on perceived motion. At a 175-second run the whole
+ * screen scrolls at only ~3.6 px/s on average (175s / 500m x 190m visible = 2.9 screen-heights of
+ * total travel), so the far background can never read as moving. Depth layers moving at several
+ * times the camera speed are what actually make the ascent feel fast -- the same trick 2D games
+ * have always used for speed.
+ */
 export interface Speck {
   x: number;
   y: number;
   r: number;
   phase: number;
+  /** Extra downward speed as a multiple of the player's ascent. Negative = far background. */
+  drift: number;
 }
 
 /**
@@ -51,25 +66,61 @@ export class EntityField {
   }
 
   /**
+   * Insert a bubble provided by a test, assigning it an id.
+   *
+   * Exists so tests cannot construct a Bubble without an id, which the `Bubble` interface requires
+   * and which probes rely on to track one object across samples.
+   */
+  addTestBubble(b: Omit<Bubble, 'id'>): Bubble {
+    const bubble: Bubble = { ...b, id: this.nextId++ };
+    this.bubbles.push(bubble);
+    return bubble;
+  }
+
+  /**
    * @param laneWidth metres across the play area
    * @param min,max visible world y range
    * @param playerRadiusFraction the player's drawn radius as a fraction of the lane, so bubble
    *   sizes can be expressed relative to it. Ratios are far easier to reason about than absolute
    *   radii: >1 means "too big to eat", and the mix of ratios IS the difficulty curve.
+   * @param ascentSpeed the player's current m/s, used to drive the parallax layers.
    */
-  update(dt: number, laneWidth: number, min: number, max: number, playerRadiusFraction: number): void {
+  update(
+    dt: number,
+    laneWidth: number,
+    min: number,
+    max: number,
+    playerRadiusFraction: number,
+    ascentSpeed: number,
+  ): void {
     this.advance(dt);
+    this.advanceParallax(dt, ascentSpeed);
     this.recycle(min, max);
     this.topUp(laneWidth, min, max, playerRadiusFraction);
   }
 
   private advance(dt: number): void {
     for (const b of this.bubbles) {
-      b.y += b.vy * dt;
+      // `vy` is DOWNWARD travel, and world y grows upward, so it is subtracted.
+      b.y -= b.vy * dt;
       b.phase += dt * 0.9;
     }
-    // Specks do not move: the camera rises past them, which reads as water streaming down.
+    // Specks are static in the world; the camera rising past them is what moves them. Their extra
+    // `drift` is added by the caller, which knows the player's current ascent speed.
     for (const s of this.specks) s.phase += dt * 0.4;
+  }
+
+  /**
+   * Move the near-camera specks by their parallax speed.
+   *
+   * Separate from `advance` because it needs the player's ascent speed, which only the game knows.
+   * Positive drift pushes a speck DOWN the world, which on screen means it sweeps past faster than
+   * the background -- the depth cue that sells the ascent.
+   */
+  advanceParallax(dt: number, ascentSpeed: number): void {
+    for (const s of this.specks) {
+      if (s.drift !== 0) s.y -= s.drift * ascentSpeed * dt;
+    }
   }
 
   /** Drop anything that has scrolled out of view. */
@@ -90,6 +141,24 @@ export class EntityField {
     }
   }
 
+  private nextId = 1;
+
+  /**
+   * Spawn a collectable.
+   *
+   * Two distributions, which matters:
+   *
+   *   - SEEDING (the field is empty, i.e. the start of a run): spread across the visible range so
+   *     the player is inside a populated world immediately. Seeding only above the range left the
+   *     screen empty apart from a clump at the top.
+   *   - STREAMING (topping up a populated field): spawn ABOVE the visible range so bubbles enter
+   *     from the top of the screen and travel down. Spawning them inside the visible range would
+   *     make them pop into existence mid-screen, which reads as spawning rather than as a current
+   *     of water the player is climbing through.
+   *
+   * There is no upper clamp on y: anything above the play area simply streams in later. Clamping to
+   * DEPTH_TOTAL here was what piled the initial fill into one band at the top.
+   */
   private spawnBubble(
     laneWidth: number,
     min: number,
@@ -97,7 +166,8 @@ export class EntityField {
     playerRadiusFraction: number,
     margin: number,
   ): Bubble {
-    const y = Math.min(DEPTH_TOTAL, Math.max(1, min + Math.random() * (max - min + margin)));
+    const span = max - min;
+    const y = this.bubbles.length === 0 ? min + Math.random() * span : max + margin + Math.random() * span;
 
     // Size relative to the PLAYER, so the mix stays meaningful as the player grows.
     //
@@ -108,24 +178,54 @@ export class EntityField {
     const ratio = roll < 0.72 ? 0.3 + Math.random() * 0.45 : 1.05 + Math.random() * 0.6;
 
     const radius = playerRadiusFraction * ratio;
-    const relative = 0.2 + Math.random() * 0.7;
 
     return {
+      id: this.nextId++,
       x: radius + Math.random() * Math.max(0.01, laneWidth - radius * 2),
       y,
-      vy: ascentSpeedAtDepth(DEPTH_TOTAL - y) * relative,
+      vy: this.fallSpeed(laneWidth),
       radius,
       volume: bubbleVolumeFromRadius(radius),
       phase: Math.random() * Math.PI * 2,
     };
   }
 
+  /**
+   * How fast a bubble travels DOWN the screen, in world m/s.
+   *
+   * Defined as a fraction of the play area width per second, then scaled by the lane width. Two
+   * reasons for that shape:
+   *
+   *   - It is device independent. The play area fills the canvas, so a fixed pixel rate would look
+   *     different on every display; a fraction of the lane looks the same everywhere.
+   *   - It does NOT depend on depth or on the player's ascent speed. The previous model scaled the
+   *     bubble's rise rate by `ascentSpeedAtDepth`, which near the seabed gave a relative speed of
+   *     about 0.2 px/s on screen -- indistinguishable from standing still, and the reason the world
+   *     read as frozen. Bubbles are a stream the player flies through, not scenery that drifts.
+   */
+  private fallSpeed(laneWidth: number): number {
+    const perSecond = tuning.bubbleFallMin + Math.random() * (tuning.bubbleFallMax - tuning.bubbleFallMin);
+    return perSecond * laneWidth;
+  }
+
+  /**
+   * Specks come in two depth classes. Far ones barely move and give the water body; near ones sweep
+   * past several times faster and are the actual speed cue. Roughly one in three is near.
+   */
   private spawnSpeck(laneWidth: number, min: number, max: number, margin: number): Speck {
+    const near = Math.random() < 0.36;
     return {
       x: Math.random() * laneWidth,
       y: min + Math.random() * (max - min + margin),
-      r: laneWidth * (0.0004 + Math.random() * 0.0014),
+      r: near
+        ? laneWidth * (0.0022 + Math.random() * 0.0036)
+        : laneWidth * (0.0004 + Math.random() * 0.0011),
       phase: Math.random() * Math.PI * 2,
+      // Near specks run 6-14x the camera speed, which is what makes the ascent readable: at
+      // WORLD_HEIGHT 190m the FAR background only ever scrolls at ~2px/s, because a 175s run
+      // spends 2.9 screen-heights on the whole climb. Depth layers are the only available speed cue
+      // that does not require shortening the run.
+      drift: near ? 6 + Math.random() * 8 : -0.15 - Math.random() * 0.2,
     };
   }
 }

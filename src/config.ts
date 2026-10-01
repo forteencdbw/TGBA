@@ -122,6 +122,20 @@ export const tuning = {
    */
   bubbleLaneRatio: 0.053,
 
+  // --- Collectables -------------------------------------------------------
+  /**
+   * How fast a collectable travels DOWN the screen, in play-area widths per second.
+   *
+   * Deliberately a flat random band, independent of depth and of the player's ascent speed: the
+   * player flies up through a stream of bubbles, and the stream has to look like it is moving. A
+   * depth-scaled rate made bubbles crawl at ~0.2 px/s near the seabed, which read as frozen water.
+   *
+   * In lane-fractions so it looks identical on every display. At 0.055-0.13 the stream crosses the
+   * visible depth in roughly 8-20 seconds, which reads clearly as downward motion.
+   */
+  bubbleFallMin: 0.055,
+  bubbleFallMax: 0.13,
+
   // --- Invulnerability ----------------------------------------------------
   /** Seconds of invulnerability after a hit, so a swarm cannot chain-kill in one touch. */
   invulnerableSeconds: 0.8,
