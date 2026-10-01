@@ -60,13 +60,26 @@ for (const d of PROBES) {
 }
 
 // exp === 1 has a closed form; use it to prove the numerical integration is not quietly wrong.
+let closedFormError = null;
 if (Math.abs(exp - 1) < 1e-9) {
   const closed = (DEPTH / (peak - base)) * Math.log(peak / base);
-  const err = Math.abs(closed - T) / closed;
+  closedFormError = Math.abs(closed - T) / closed;
   console.log('');
-  console.log(`  closed form check ${closed.toFixed(4)}s vs numeric ${T.toFixed(4)}s  (error ${(err * 100).toFixed(4)}%)`);
-  if (err > 1e-4) {
-    console.error('  MISMATCH: the numerical integration disagrees with the closed form');
-    process.exit(1);
-  }
+  console.log(`  closed form check ${closed.toFixed(4)}s vs numeric ${T.toFixed(4)}s  (error ${(closedFormError * 100).toFixed(4)}%)`);
 }
+
+// Reported in the same form as the other suites so the runner can schedule this without
+// special-casing it. See scripts/run-tests.mjs.
+const checks = {
+  runTimeIsPlausibleAsALevel: T > 30 && T < 400,
+  // The script's own integration must agree with the game's, or one of them is lying about the pace.
+  matchesGameIntegration: Math.abs(T - nominalAscentSeconds()) / T < 0.01,
+  pacingIsStated: screenHeights > 1.5 && screenHeights < 12 && secondsPerScreen() > 0,
+  ascentIncreasesWithHeight: speedAt(0) > speedAt(DEPTH),
+  integrationMatchesClosedForm: closedFormError === null || closedFormError < 1e-4,
+};
+console.log('CHECKS: ' + JSON.stringify(checks));
+
+const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+if (failed.length) console.error('\nFAIL: ' + failed.join(', '));
+process.exit(failed.length ? 1 : 0);

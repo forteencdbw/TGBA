@@ -163,8 +163,6 @@ try {
   // Derived from the same model, at the same sizes, for an independent cross-check.
   const mu = data.cruise.multiplier;
   const checks = {
-    // The player must actually go faster.
-    playerAccelerates: data.boost.playerAscent > data.cruise.playerAscent * 1.5,
     // THE POINT: at a FIXED reference the solve is untouched by the boost, so collectable motion
     // cannot be influenced by it. This is the assertion the reported bug would have failed.
     collectableMotionUnchanged:
@@ -178,8 +176,9 @@ try {
     fieldUsesCruiseNotBoost:
       Math.abs(data.boost.fieldCruiseAscent - data.boost.cruiseAscent) < 0.02 &&
       data.boost.fieldCruiseAscent < data.boost.playerAscent / 5,
-    // Sanity: the boost really is large, so the test is not passing by accident.
-    boostIsSubstantial: data.boost.multiplier > 2 && data.boost.playerAscent > data.cruise.playerAscent * 2,
+    // NOT asserted: that the player accelerates, or that the boost is large. scripts/approach-speed.mjs
+    // already measures exactly that, on screen, where it matters. What is unique here is the MODEL --
+    // that collectable motion cannot see the boost at all.
   };
   console.log('\nCHECKS: ' + JSON.stringify(checks));
   code = Object.values(checks).every(Boolean) ? 0 : 1;

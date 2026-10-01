@@ -8,6 +8,7 @@
 // Run: node scripts/solve-lateral.mjs [laneWidthMeters]
 
 import { calibrateLateral } from '../src/lateral.ts';
+import { BOOST_CROSSING_SECONDS, COLUMN_CROSSING_SECONDS, KEYBOARD_CROSSING_SECONDS } from '../src/config.ts';
 
 const laneWidth = Number(process.argv[2] ?? 361); // matches WORLD_WIDTH in src/config.ts
 
@@ -38,9 +39,26 @@ console.log(`  thrust per frame (120Hz) = ${perFrameThrust.toFixed(4)} lane-widt
 console.log(`  boost  per frame         = ${perFrameBoost.toFixed(4)} lane-widths/s`);
 console.log(`  stopSpeed / thrust       = ${(a.stopSpeed / perFrameThrust).toFixed(3)}  (must be < 1)`);
 
-if (a.stopSpeed >= perFrameBoost) {
-  console.error('\nFAIL: stopSpeed is at or above the boost per-frame increment.');
-  console.error('The stop-snap would fire every frame and the bubble would never move.');
-  process.exit(1);
-}
-console.log('\nOK');
+// Reported in the same form as the browser suites so the runner can schedule this alongside them
+// without special-casing it. See scripts/run-tests.mjs.
+const checks = {
+  stopSpeedBelowThrust: a.stopSpeed < perFrameThrust,
+  stopSpeedBelowBoostThrust: a.stopSpeed < perFrameBoost,
+  accelIsPositive: a.accel > 0,
+  // The calibration must reproduce the design targets it was solved FROM. Comparing against the
+  // constants rather than against each other is the point: `1 / cruiseTopSpeed` is seconds per lane
+  // width AT TOP SPEED (0.0064), which is a different quantity from the seconds it takes to cross
+  // from a STANDSTILL (2.5), and treating those as the same thing silently checks nothing.
+  crossingTimeMatchesTarget: Math.abs(a.crossingSeconds - COLUMN_CROSSING_SECONDS) < 1e-6,
+  boostCrossingTimeMatchesTarget: Math.abs(a.boostCrossingSeconds - BOOST_CROSSING_SECONDS) < 1e-6,
+  keyboardCrossingMatchesTarget: Math.abs(1 / a.keyboardSpeed - KEYBOARD_CROSSING_SECONDS) < 1e-6,
+  // Crossing from rest must take longer than crossing at full speed, or the ramp is inverted.
+  crossingAtSpeedIsQuicker: 1 / a.cruiseTopSpeed < a.crossingSeconds,
+  keyboardSpeedIsUsable: a.keyboardSpeed > 0 && 1 / a.keyboardSpeed < 20,
+  boostSteersWorse: a.boostSteerFactor > 0 && a.boostSteerFactor < 1,
+};
+console.log('CHECKS: ' + JSON.stringify(checks));
+
+const failed = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+if (failed.length) console.error('\nFAIL: ' + failed.join(', '));
+process.exit(failed.length ? 1 : 0);

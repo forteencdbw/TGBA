@@ -108,6 +108,11 @@ try {
   // One evaluate call that flips the boost on and samples the multiplier on a fixed schedule inside
   // the page. Doing it in-page removes the round-trip latency that made an earlier measurement look
   // like a slow ramp.
+  //
+  // Sampled against the GAME's clock rather than `performance.now()`. A frame is capped at 50ms of
+  // simulated time, so below 20fps -- which a parallel test run easily reaches -- game time advances
+  // slower than wall clock, and fitting a wall-clock curve to a game-time constant reported the frame
+  // rate instead of the ramp.
   const probe =
     '(async function () {' +
     '  var g = window.__GB.game;' +
@@ -115,11 +120,11 @@ try {
     '  var cfg = { target: window.__GB.tuning.boostMultiplier, tau: window.__GB.tuning.boostAccelSeconds };' +
     '  var before = g.player.speedMultiplier;' +
     '  gb.debugSetBoosting(true);' +
-    '  var t0 = performance.now();' +
+    '  var t0 = g.diagnostics.gameSeconds;' +
     '  var samples = [];' +
-    '  for (var i = 0; i < 40; i++) {' +
+    '  for (var i = 0; i < 60; i++) {' +
     '    await new Promise(function (r) { requestAnimationFrame(function () { r(); }); });' +
-    '    samples.push([Math.round(performance.now() - t0), Math.round(g.player.speedMultiplier * 1000) / 1000]);' +
+    '    samples.push([+(g.diagnostics.gameSeconds - t0).toFixed(4), Math.round(g.player.speedMultiplier * 1000) / 1000]);' +
     '  }' +
     '  gb.debugSetBoosting(false);' +
     '  return JSON.stringify({ cfg: cfg, before: before, samples: samples });' +
@@ -130,20 +135,20 @@ try {
   const data = JSON.parse(r.result.value);
 
   console.log(`configured: target=${data.cfg.target}  tau=${data.cfg.tau}s  (from ${data.before})\n`);
-  console.log('   t(ms)   mult   expected   delta');
+  console.log('  t(game s)   mult   expected   delta');
   for (const [t, m] of data.samples) {
-    const expected = 1 + (data.cfg.target - 1) * (data.cfg.tau <= 0 ? 1 : 1 - Math.exp(-t / 1000 / data.cfg.tau));
-    console.log(`  ${String(t).padStart(6)}  ${String(m).padStart(6)}   ${expected.toFixed(3).padStart(8)}   ${(m - expected).toFixed(3).padStart(6)}`);
+    const expected = 1 + (data.cfg.target - 1) * (data.cfg.tau <= 0 ? 1 : 1 - Math.exp(-t / data.cfg.tau));
+    console.log(`  ${String(t).padStart(9)}  ${String(m).padStart(6)}   ${expected.toFixed(3).padStart(8)}   ${(m - expected).toFixed(3).padStart(6)}`);
   }
 
   // Fit the observed time constant: for an exponential approach, 1 - e^(-t/tau) = progress, so
-  // tau = -t / ln(1 - progress).
+  // tau = -t / ln(1 - progress). `t` is in GAME seconds already.
   const target = data.cfg.target;
   const fits = data.samples
     .filter(([, m]) => m > 1.02 && m < target - 0.02)
     .map(([t, m]) => {
       const progress = (m - 1) / (target - 1);
-      return progress > 0.02 && progress < 0.98 ? -t / 1000 / Math.log(1 - progress) : null;
+      return progress > 0.02 && progress < 0.98 ? -t / Math.log(1 - progress) : null;
     })
     .filter((v) => v !== null && Number.isFinite(v) && v > 0);
 
@@ -161,11 +166,12 @@ try {
 
   const checks = {
     rampRises: finalMult > 1.5,
-    // The observed time constant should match the configured one within a generous margin: the
-    // frame cadence in a headless browser is coarse, so the fit is approximate by nature.
+    // Fitted against the GAME's clock, so this can be tight: the model IS exponential and the sample
+    // interval cancels out. Only the residual from per-frame stepping remains, which measured 0.8%
+    // error on an idle machine (observed 0.496 against a configured 0.5).
     tauMatchesConfig:
-      observedTau !== null && Math.abs(observedTau - data.cfg.tau) < Math.max(0.25, data.cfg.tau * 0.5),
-    reachesNearTarget: finalMult > 1 + (target - 1) * 0.7,
+      observedTau !== null && Math.abs(observedTau - data.cfg.tau) < Math.max(0.08, data.cfg.tau * 0.2),
+    reachesNearTarget: finalMult > 1 + (target - 1) * 0.8,
   };
   console.log('CHECKS: ' + JSON.stringify(checks));
   code = Object.values(checks).every(Boolean) ? 0 : 1;

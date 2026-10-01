@@ -84,7 +84,14 @@ export class EntityField {
    * too little margin and made distribution probes flap around their threshold.
    */
   targetBubbles = 32;
-  targetSpecks = 90;
+  /**
+   * Total background specks.
+   *
+   * Raised from 90: with `NEAR_SPECK_FRACTION` at 0.36 that left only about 6 near-camera specks on
+   * screen, and the near layer is the ONLY speed cue that works over a run this long (the far
+   * background can never scroll faster than about 2 px/s). Six flickering dots is not a depth cue.
+   */
+  targetSpecks = 130;
 
   reset(): void {
     this.bubbles = [];
@@ -311,10 +318,16 @@ export class EntityField {
 
   /**
    * Specks come in two depth classes. Far ones barely move and give the water body; near ones sweep
-   * past several times faster and are the actual speed cue. Roughly one in three is near.
+   * past several times faster and are the actual speed cue.
+   *
+   * The near fraction is a named constant because it decides whether the depth cue reads at all: at
+   * 90 total specks and one in three near, only about six near specks were ever on screen, which is
+   * a few dots rather than a layer.
    */
+  private static readonly NEAR_SPECK_FRACTION = 0.4;
+
   private spawnSpeck(laneWidth: number, min: number, max: number, margin: number): Speck {
-    const near = Math.random() < 0.36;
+    const near = Math.random() < EntityField.NEAR_SPECK_FRACTION;
     return {
       x: Math.random() * laneWidth,
       y: min + Math.random() * (max - min + margin),

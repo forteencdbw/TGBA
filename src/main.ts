@@ -211,6 +211,16 @@ class Game {
   }
 
   private frame(deltaSeconds: number): void {
+    /**
+     * A frame is capped at 50ms of simulated time, so below 20fps the game advances game time SLOWER
+     * than wall clock. That is deliberate -- an uncapped step lets a fast-moving collectable tunnel
+     * through the player, since contact is a position test rather than a swept one.
+     *
+     * The consequence to remember when writing a probe: "sleep 500ms and look" measures fewer
+     * simulation steps under load than it does on an idle machine. A parallel test run gives each
+     * browser a fraction of the CPU, which is enough to fall under 20fps and stretch every
+     * wall-clock-based assertion. Poll for the CONDITION you actually care about instead.
+     */
     const dt = Math.min(deltaSeconds, 0.05);
     this.frameCount++;
     this.lastDelta = deltaSeconds;
@@ -535,6 +545,7 @@ class Game {
     speedMultiplier: number;
     boostMultiplier: number;
     boostAccelSeconds: number;
+    gameSeconds: number;
     phase: string;
     volume: number;
     hitsSurvived: number;
@@ -570,6 +581,15 @@ class Game {
       speedMultiplier: this.player.speedMultiplier,
       boostMultiplier: tuning.boostMultiplier,
       boostAccelSeconds: tuning.boostAccelSeconds,
+      /**
+       * Accumulated GAME time in seconds, which is not wall-clock time below 20fps.
+       *
+       * A frame is capped at 50ms of simulated time, so a browser under load runs the game slower
+       * than real time. Any probe that measures a duration the game itself produces -- an
+       * acceleration ramp, a cooldown, an animation -- must use this clock, not `performance.now()`,
+       * or it will report the frame rate instead of the game.
+       */
+      gameSeconds: this.elapsed,
       phase: this.phase,
       volume: this.player.volume,
       hitsSurvived: hitsSurvived(this.player.volume),

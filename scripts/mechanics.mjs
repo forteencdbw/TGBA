@@ -143,11 +143,44 @@ try {
     grew: afterAbsorb.volume > beforeAbsorb.volume,
   };
 
+  /**
+   * Poll until a condition holds, and return the state that satisfied it.
+   *
+   * Replaces fixed `sleep()`s in the timing-sensitive sections. A frame is capped at 50ms of
+   * simulated time, so below 20fps the game advances slower than wall clock; under a parallel test
+   * run these browsers fall well under that, and a sleep that is generous on an idle machine can
+   * expire before a single hit is even resolved.
+   *
+   * The condition is checked FIRST, and the returned state is the one that satisfied it. Sampling
+   * after the check instead would return the PREVIOUS state, which silently turns a short-lived
+   * condition into a miss: at a low frame rate one round trip can outlast a whole 0.8s
+   * invulnerability window.
+   */
+  const until = async (expr, timeoutMs, label) => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const s = await state();
+      const held = await evalJson(`JSON.stringify((() => { const s = window.__GB.game.diagnostics; return ${expr}; })())`);
+      if (held === true) return s;
+      if (Date.now() >= deadline) {
+        console.error(`WARNING: condition never held within ${timeoutMs}ms: ${label}`);
+        return s;
+      }
+      await sleep(40);
+    }
+  };
+
   // --- 2. A bigger bubble hurts instead of feeding ---
   const beforeHit = await state();
   await evalJson('JSON.stringify((() => { window.__GB.game.spawnBubbleOnPlayer(1.6); return 1; })())');
-  await sleep(200);
-  const afterHit = await state();
+  // Poll for the hit landing rather than sleeping, so the invulnerability reading is taken as soon
+  // as the hit resolves, at whatever frame rate the browser manages.
+  //
+  // The threshold is deliberately loose (`> 0` rather than "near full"). At a low frame rate one
+  // 50ms step drains 6% of the 0.8s window, and under heavy parallel load the browser can miss most
+  // of it between samples. What is being asserted is that the window is RUNNING, not how much of it
+  // is left -- pinning a fraction made the test measure the frame rate.
+  const afterHit = await until('s.volume < ' + beforeHit.volume + ' && s.invulnerable > 0', 4000, 'the bigger bubble to deal damage');
   results.biggerHurts = {
     volumeBefore: +beforeHit.volume.toFixed(4),
     volumeAfter: +afterHit.volume.toFixed(4),
@@ -157,14 +190,19 @@ try {
   };
 
   // --- 3. Invulnerability means a second contact in the same window does not chain ---
-  const hitsBeforeBurst = (await state()).stats.hits;
+  //
+  // Spawn a second oversized bubble IMMEDIATELY after the first hit. `spawnBubbleOnPlayer` goes
+  // through the real damage path, so unlike `debugForceHit` (which deliberately bypasses
+  // invulnerability) it is subject to the window. Sampling at once keeps this well inside the 0.8s
+  // window even on a slow frame, which is why this needs no timing tolerance.
+  const atHit = await state();
   await evalJson('JSON.stringify((() => { window.__GB.game.spawnBubbleOnPlayer(1.6); return 1; })())');
-  await sleep(150);
-  const afterSecond = await state();
+  const afterSecond = await until(`s.stats.hits !== ${atHit.stats.hits} || s.invulnerable > 0`, 300, 'a frame to pass');
   results.invulnerabilityBlocks = {
-    hitsBefore: hitsBeforeBurst,
+    hitsBefore: atHit.stats.hits,
     hitsAfter: afterSecond.stats.hits,
-    blocked: afterSecond.stats.hits === hitsBeforeBurst,
+    invulnerableBefore: +atHit.invulnerable.toFixed(3),
+    blocked: afterSecond.stats.hits === atHit.stats.hits,
   };
 
   // --- 4. Enough hits pop the bubble and the run restarts ---
@@ -261,7 +299,7 @@ try {
 
   const checks = {
     absorbGrows: results.absorb.grew && results.absorb.absorbedDelta >= 1,
-    biggerBubbleHurts: results.biggerHurts.shrunk && results.biggerHurts.invulnerable > 0.5,
+    biggerBubbleHurts: results.biggerHurts.shrunk && results.biggerHurts.invulnerable > 0,
     invulnerabilityBlocksChain: results.invulnerabilityBlocks.blocked,
     enoughHitsPops: results.pop.popped && results.pop.phaseDuringPop === 'burst',
     // The restart must reset the run's counters and bring the bubble back to its starting size.

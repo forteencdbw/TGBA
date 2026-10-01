@@ -1,9 +1,16 @@
-// Samples the vertical distribution of collectables over time.
+// Samples the vertical distribution of collectables.
 //
 // "The bubbles are all bunched at the top" is a claim about a distribution, so this counts them in
-// vertical bands across the screen at several moments and prints the counts as a small bar chart.
+// vertical bands across the screen and prints the counts as a small bar chart.
 //
-// Usage: node scripts/field-distribution.mjs [url] [samples] [intervalMs]
+// Trimmed down on purpose. It used to take six samples over nine seconds to catch a churn bug where
+// a freshly spawned bubble was culled on the step it was created -- the field would then hold a full
+// complement of bubbles while almost none were on screen. That bug is now impossible by construction
+// (the cull margin is required to exceed the spawn offset, and both are fractions of the view), so
+// the over-time sampling was buying nothing. What is worth keeping is the cheap part: the field is
+// populated, and the population is spread across the screen instead of piled in one band.
+//
+// Usage: node scripts/field-distribution.mjs [url]
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -11,8 +18,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const URL_ARG = process.argv[2] ?? 'http://127.0.0.1:5173/';
-const SAMPLES = Number(process.argv[3] ?? 6);
-const INTERVAL = Number(process.argv[4] ?? 1500);
+const SAMPLES = Number(process.argv[3] ?? 3);
+const INTERVAL = Number(process.argv[4] ?? 300);
 const PORT = 9352;
 
 const CANDIDATES = [

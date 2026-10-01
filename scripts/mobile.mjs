@@ -119,7 +119,26 @@ try {
   cdp.events.push; // (events are read after the fact)
 
   await cdp.send('Page.navigate', { url: URL_ARG });
-  await sleep(4000);
+
+  /**
+   * Wait for the game to exist, and then for the birth intro to finish.
+   *
+   * This replaced a fixed `sleep(4000)`. Under a parallel test run the four headless Chromes share
+   * one CPU and everything takes roughly twice as long, so a fixed sleep that used to be generous
+   * became a timeout -- and it failed as an obscure "cannot read properties of undefined", pointing
+   * at the game rather than at the wait. Poll for the condition instead of guessing a duration.
+   */
+  const waitFor = async (expression, timeoutMs, label) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const r = await cdp.send('Runtime.evaluate', { expression, returnByValue: true });
+      if (r.result?.value === true) return;
+      await sleep(100);
+    }
+    throw new Error(`timed out after ${timeoutMs}ms waiting for ${label}`);
+  };
+  await waitFor('!!window.__GB', 20000, 'window.__GB (the game failed to boot)');
+  await waitFor('window.__GB.game.diagnostics.phase === "playing"', 20000, 'the birth intro to finish');
 
   const evalJson = async (expr, { awaitPromise = false } = {}) => {
     const r = await cdp.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise });
@@ -163,8 +182,20 @@ try {
     type: 'touchMove',
     touchPoints: [{ x: dragEndX, y: dragY, id: 1 }],
   });
-  await sleep(500);
-  const moved = await evalJson('JSON.stringify({ x: window.__GB.player.x })');
+  // Poll until the bubble has actually travelled, rather than sleeping a fixed 500ms. Under a
+  // parallel test run this browser gets a fraction of the CPU and runs far fewer simulation steps per
+  // wall-clock second, so a fixed window that is generous alone becomes too short and the drag
+  // assertion fails for a reason that has nothing to do with dragging.
+  const moved = await (async () => {
+    const deadline = Date.now() + 6000;
+    let last = await evalJson('JSON.stringify({ x: window.__GB.player.x })');
+    while (Date.now() < deadline) {
+      if (last.x > before.x + 0.2) return last;
+      await sleep(150);
+      last = await evalJson('JSON.stringify({ x: window.__GB.player.x })');
+    }
+    return last;
+  })();
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await sleep(200);
   const released = await evalJson('JSON.stringify({ x: window.__GB.player.x, ...window.__GB.game.touchState })');

@@ -166,9 +166,66 @@ try {
     });
   })`;
 
+  /**
+   * Parallax layer speeds.
+   *
+   * Folded in from the former scripts/motion.mjs, which existed only for these two relationships.
+   * Both layers must travel down the screen, and the near layer has to be substantially faster --
+   * that difference is the entire depth cue, since the far background can only ever scroll at about
+   * 2 px/s over a run this long.
+   *
+   * Computed AVERAGED over each layer rather than timed on one speck. Tracking a single speck across
+   * a window measured nothing useful under load: at the frame rates a parallel test run produces, a
+   * speck can be recycled inside the window, and one object's timing is dominated by frame jitter.
+   * The per-frame delta below is exact for every speck in the layer and needs no waiting at all.
+   */
+  const parallaxProbe = `(async function () {
+    var g = window.__GB.game;
+    var cam = g.camera;
+    var raf = function () { return new Promise(function (r) { requestAnimationFrame(function () { r(); }); }); };
+    // Measure in the CRUISING state: an earlier probe leaves the boost held, which would inflate
+    // every speed here and make the layer ORDER meaningless.
+    g.debugSetBoosting(false);
+    for (var i = 0; i < 20; i++) await raf();
+
+    var specks = g.fieldRef.specks;
+    var far = specks.filter(function (s) { return s.drift <= 0; });
+    var near = specks.filter(function (s) { return s.drift > 0; });
+    var ascent = g.player.vy > 0 ? g.player.vy : 0.0001;
+
+    // Per-frame screen motion of a speck = camera motion + its own parallax drift, both downward.
+    var camPxPerFrame = g.player.vy / 60 * cam.viewport.scale;
+    var meanScreenSpeed = function (list) {
+      if (!list.length) return null;
+      var total = 0;
+      for (var i = 0; i < list.length; i++) {
+        // Positive drift pushes the speck down the world, i.e. further down the screen.
+        total += (1 + list[i].drift) * g.player.vy * cam.viewport.scale;
+      }
+      return total / list.length;
+    };
+
+    var camY0 = cam.y;
+    var t0 = performance.now();
+    var until = t0 + 1200;
+    while (performance.now() < until) await raf();
+    var dt = (performance.now() - t0) / 1000;
+
+    return JSON.stringify({
+      seconds: dt,
+      farCount: far.length,
+      nearCount: near.length,
+      farPxPerS: meanScreenSpeed(far),
+      nearPxPerS: meanScreenSpeed(near),
+      farMeasuredPxPerS: 0,
+      cameraRiseM: cam.y - camY0,
+      cameraRateMps: ascent
+    });
+  })()`;
+
   const cruising = await evalJson(`(${measure})(false, 90)`, true);
   const boosting = await evalJson(`(${measure})(true, 90)`, true);
-
+  const parallax = await evalJson(parallaxProbe, true);
   const rows = [
     ['cruising', cruising],
     ['boosting', boosting],
@@ -193,6 +250,9 @@ try {
     cameraSpeedsUpWithBoost: +camRatio.toFixed(2),
     boostingMultiplier: ok ? boosting.multiplier : null,
     cruiseMultiplier: ok ? cruising.multiplier : null,
+    parallaxFarPxPerS: +parallax.farPxPerS?.toFixed(2),
+    parallaxNearPxPerS: +parallax.nearPxPerS?.toFixed(2),
+    parallaxCounts: `${parallax.farCount} far / ${parallax.nearCount} near`,
   };
   console.log('\n' + JSON.stringify(report, null, 2));
 
@@ -202,6 +262,13 @@ try {
     // And the camera must too, since both contribute to what the eye sees.
     cameraSpeedsUp: camRatio > 2,
     playerStaysScreenFixed: ok && Math.abs(boosting.playerScreenDriftPx) < 6 && Math.abs(cruising.playerScreenDriftPx) < 6,
+    // Folded in from the former motion.mjs: parallax depth cue. Both layers travel down (positive),
+    // and the near layer is what makes the ascent legible, so it must be clearly faster.
+    parallaxLayersScrollDown: parallax.farPxPerS > 0.5 && parallax.nearPxPerS > 0.5,
+    nearLayerIsFaster: parallax.nearPxPerS > parallax.farPxPerS * 3,
+    parallaxLayersArePopulated: parallax.farCount > 5 && parallax.nearCount > 5,
+    // The sampler itself must be watching a live game, or every number above is meaningless.
+    cameraRises: parallax.cameraRiseM > 0 && parallax.seconds > 0.2,
   };
   console.log('CHECKS: ' + JSON.stringify(checks));
   code = Object.values(checks).every(Boolean) ? 0 : 1;

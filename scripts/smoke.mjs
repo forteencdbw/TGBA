@@ -305,11 +305,10 @@ try {
     bannerShown,
     resetWorked,
     noExceptions: exceptions.length === 0,
-    // The level declares its length and curve; the run time is what those add up to, so there is no
-    // target to compare against any more. Assert instead that the derived time is plausible for a
-    // level and that the level states its pacing in screen-heights.
-    runTimeIsPlausibleAsALevel: b.nominalSeconds > 30 && b.nominalSeconds < 400,
-    levelPacingIsStated: b.level.screenHeights > 1.5 && b.level.secondsPerScreen > 0,
+    // NOT asserted here: that the derived run time is plausible, or that the level states its
+    // pacing. Both are pure arithmetic on the level's own numbers, and scripts/solve-ascent.mjs
+    // checks them in 0.1s without booting a browser. Duplicating them here only made this suite
+    // look like it covered more than it does.
   };
   console.log('CHECKS: ' + JSON.stringify(checks));
 
