@@ -11,6 +11,14 @@ const KEYS = {
   right: ['KeyD', 'ArrowRight'],
   boost: ['Space', 'ShiftLeft', 'ShiftRight'],
   brake: ['KeyS', 'ArrowDown'],
+  /**
+   * The active skill.
+   *
+   * `KeyJ` sits under the right hand, next to the arrow keys and Space, so a reflex press does not
+   * require the left hand to leave WASD. Enter is also accepted because it is what a player tries
+   * first when a game has one obvious button.
+   */
+  skill: ['KeyJ', 'Enter'],
 } as const;
 
 export class Input {
@@ -35,6 +43,14 @@ export class Input {
    * sense when the change was instantaneous; with a ramp it would just be a second accelerator.
    */
   touchBoosting = false;
+  /**
+   * Touch: the on-screen skill button was pressed this frame.
+   *
+   * Edge-triggered rather than held, because a skill is a discrete action. `consumeSkill()` clears it
+   * so one tap cannot fire the skill on several consecutive frames -- which with a 3-use skill would
+   * drain the whole slot from a single press.
+   */
+  private skillPressed = false;
 
   attach(target: HTMLElement | Window): void {
     const onKeyDown = (event: Event) => {
@@ -70,6 +86,31 @@ export class Input {
     // The on-screen button only ever boosts, so it contributes on the positive side. A keyboard
     // press takes precedence because it can also brake.
     this.axisY = keyboardY !== 0 ? keyboardY : this.touchBoosting ? 1 : 0;
+
+    // Keyboard is edge-detected here rather than in the event handler, so the key repeat rate and a
+    // held key cannot fire the skill more than once.
+    const skillDown = held(KEYS.skill);
+    if (skillDown && !this.skillKeyWasDown) this.skillPressed = true;
+    this.skillKeyWasDown = skillDown;
+  }
+
+  private skillKeyWasDown = false;
+
+  /** Signal a skill press from a touch control. */
+  pressSkill(): void {
+    this.skillPressed = true;
+  }
+
+  /**
+   * Take the pending skill press, if any.
+   *
+   * Consuming rather than reading is what makes a single press cost exactly one use. A plain flag
+   * checked every frame would spend the entire slot in three frames.
+   */
+  consumeSkill(): boolean {
+    if (!this.skillPressed) return false;
+    this.skillPressed = false;
+    return true;
   }
 
   detach(): void {

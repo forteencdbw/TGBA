@@ -49,9 +49,19 @@ export function growByAbsorbing(volume: number, bubbleVolume: number): number {
  *
  * Removing a fixed share of BASE volume rather than of current volume is what keeps a hit worth the
  * same at every size. See the header for the two shapes this replaced.
+ *
+ * `resistance` (0..1) scales the SIZE of the loss, and exists for the silt talent's backlash
+ * discount. It is applied HERE rather than by the caller on purpose: the "one hit is worth the same
+ * at every size" invariant is the delicate part of this economy, and it should have exactly one
+ * implementation. A caller computing `volume - hitPointVolume * (1 - r)` itself would quietly fork
+ * that rule, and `solve-volume.mjs` asserts it through this function.
+ *
+ * Note a hit still costs one hit-POINT: resistance changes how much volume leaves, not how many hits
+ * the bubble has left, so `hitsSurvived` is unaffected.
  */
-export function shrinkFromHit(volume: number): number {
-  return Math.max(0, volume - tuning.hitPointVolume);
+export function shrinkFromHit(volume: number, resistance = 0): number {
+  const factor = 1 - Math.min(1, Math.max(0, resistance));
+  return Math.max(0, volume - tuning.hitPointVolume * factor);
 }
 
 /**

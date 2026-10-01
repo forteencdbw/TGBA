@@ -55,6 +55,12 @@ export class Player {
     this.slowRemaining = 0;
     this.slowFactor = 1;
     this.impulseVy = 0;
+    this.ascentBonus = 1;
+    this.steerScale = 1;
+    this.shrinkResistance = 0;
+    this.skillRemaining = 0;
+    this.skillId = null;
+    this.skillAscentBonus = 1;
   }
 
   get depth(): number {
@@ -90,6 +96,24 @@ export class Player {
   get slowMultiplier(): number {
     return this.slowRemaining > 0 ? this.slowFactor : 1;
   }
+
+  /**
+   * Talents and skills, as plain multipliers applied in `update`.
+   *
+   * `ascentBonus` is multiplicative and stacks with the accelerate control, so a soda bubble boosting
+   * really is the fastest thing in the water -- and correspondingly the hardest to steer, since
+   * `steerScale` comes down with it.
+   */
+  ascentBonus = 1;
+  steerScale = 1;
+  /** Fraction of a hit's shrink ignored, 0..1. Set by the silt talent. */
+  shrinkResistance = 0;
+
+  /** Seconds left of an active skill effect, and which one. */
+  skillRemaining = 0;
+  skillId: string | null = null;
+  /** Ascent multiplier granted by the active skill. */
+  skillAscentBonus = 1;
 
   /** Apply a slow, taking the stronger of the two if one is already running. */
   applySlow(seconds: number, factor: number): void {
@@ -132,8 +156,15 @@ export class Player {
       this.impulseVy *= Math.exp(-dt / t.hazardLaunchDecaySeconds);
       if (Math.abs(this.impulseVy) < 0.05) this.impulseVy = 0;
     }
+    if (this.skillRemaining > 0) {
+      this.skillRemaining = Math.max(0, this.skillRemaining - dt);
+      if (this.skillRemaining === 0) {
+        this.skillId = null;
+        this.skillAscentBonus = 1;
+      }
+    }
 
-    this.vy = baseSpeed * this.speedMultiplier * this.slowMultiplier + this.impulseVy;
+    this.vy = baseSpeed * this.speedMultiplier * this.slowMultiplier * this.ascentBonus * this.skillAscentBonus + this.impulseVy;
     // A slow must never reverse the climb; the bubble is buoyant, it does not sink.
     if (this.vy < 0) this.vy = 0;
     this.y = Math.min(this.y + this.vy * dt, DEPTH_TOTAL);
@@ -144,10 +175,14 @@ export class Player {
       // the velocity model, so a dragged bubble and a keyboard-driven one feel like one object.
       // Speed is therefore proportional to how far you drag, which is easier to control on glass
       // than a constant-acceleration axis.
-      const alpha = Math.min(1, lateral.damping * dt);
+      //
+      // `steerScale` slows the ease for the soda talent. It has to apply to the touch path as well as
+      // the keyboard one, or "floatier" would only be true on a desktop -- the opposite of the
+      // intent, since touch is the shipping target.
+      const alpha = Math.min(1, lateral.damping * this.steerScale * dt);
       this.x += (input.dragTargetX - this.x) * alpha;
       this.vx = 0;
-      this.debugSteerMultiplier = 1;
+      this.debugSteerMultiplier = this.steerScale;
     } else {
       // Keyboard steering: a CONSTANT speed while a key is held, then a decay to rest.
       //
@@ -159,7 +194,7 @@ export class Player {
       // Boosting still slows steering, because the speed is scaled by the boost factor rather than
       // the thrust. The drag on release is kept, so letting go coasts briefly instead of stopping
       // dead, which matches how the rest of the movement behaves.
-      const boostScale = input.axisY > 0 ? lateral.boostSteerFactor : 1;
+      const boostScale = (input.axisY > 0 ? lateral.boostSteerFactor : 1) * this.steerScale;
       const target = input.axisX * lateral.keyboardSpeed * boostScale;
 
       if (input.axisX === 0) {

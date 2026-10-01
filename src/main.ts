@@ -3,6 +3,8 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, makeLabel, type La
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL } from './levels';
 import { HazardField, hazardTuning, paintHazards, type HazardKind } from './hazards';
+import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
+import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
 import { ascentSpeedAtDepth, nominalAscentSeconds, secondsPerScreenSeries } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
@@ -23,6 +25,8 @@ const LANDMARKS: readonly Landmark[] = LEVEL.landmarks ?? [];
 const SEEDS = ['鱼屁泡', '汽水泡', '深海淤泥泡'] as const;
 
 const INTRO_SECONDS = 1.6;
+/** Seconds between skill pickups. See `updateSkillPickup` for why it is not shorter. */
+const SKILL_PICKUP_SECONDS = 20;
 
 /** Slow-motion pop after the bubble is destroyed, before the next run starts. */
 const BURST_SECONDS = 1.5;
@@ -213,6 +217,26 @@ class Game {
   /** The hazard field: spawning, motion and contact. See src/hazards.ts. */
   private readonly hazards = new HazardField();
 
+  /** This run's talent and its resolved multipliers. */
+  private talentEffects: TalentEffects = resolveTalent(pickTalent());
+  /**
+   * The single skill slot. `uses` reaching zero empties it.
+   *
+   * One slot on purpose: it forces a decision at the pickup instead of accumulating a toolkit, and it
+   * keeps the HUD to one button.
+   */
+  private skill: { id: SkillId; uses: number } | null = null;
+  /** The bait bubble a decoy left behind, so it can be drawn and then expire. */
+  private decoy: { x: number; y: number; until: number } | null = null;
+  /** How many skills have been used this run, for the results card. */
+  private skillActivations = 0;
+  /** The skill lying in the water, if any, and the countdown to the next one. */
+  private skillPickup: { id: SkillId; x: number; y: number } | null = null;
+  private skillPickupTimer = 6;
+  /** When the fish-fart talent can fire again, and how many times it has. */
+  private fartReadyAt = 0;
+  private farts = 0;
+
   /**
    * Test hook: drop a named hazard on the player, so each verb can be exercised deterministically.
    *
@@ -264,6 +288,14 @@ class Game {
     this.comedyBeats = 0;
     this.lastComedyBeat = null;
     this.hazards.reset();
+    // Skill state too, or a probe that ran a skill leaks its effect into the next one -- which showed
+    // up as a CONTROL run reporting the dash's ascent bonus, making two assertions fail for a reason
+    // that had nothing to do with the skills.
+    this.player.skillRemaining = 0;
+    this.player.skillId = null;
+    this.player.skillAscentBonus = 1;
+    this.skillActivations = 0;
+    this.decoy = null;
   }
 
   /**
@@ -282,6 +314,39 @@ class Game {
   debugSetSteadyCruise(): void {
     this.player.speedMultiplier = 1;
     this.input.touchBoosting = false;
+  }
+
+  /**
+   * Test hook: force a specific talent and skill.
+   *
+   * Talents are rolled, so a probe that needs to assert a particular upside AND its backlash would
+   * otherwise pass or fail on a dice roll.
+   */
+  debugSetTalent(id: string): string {
+    const talent = TALENTS.find((t) => t.id === id);
+    if (!talent) throw new Error(`unknown talent: ${id}`);
+    this.talentEffects = resolveTalent(talent);
+    this.player.ascentBonus = this.talentEffects.ascentMultiplier;
+    this.player.steerScale = this.talentEffects.steerMultiplier;
+    this.player.shrinkResistance = this.talentEffects.shrinkResistance;
+    this.player.volume = this.talentEffects.startVolume;
+    this.hud.setTalentLabel(talent.name);
+    return talent.id;
+  }
+
+  /** Test hook: put a skill in the slot without waiting for a pickup to drift past. */
+  debugGrantSkill(id: string): boolean {
+    const skill = SKILLS.find((s) => s.id === id);
+    if (!skill) throw new Error(`unknown skill: ${id}`);
+    this.grantSkill(skill.id);
+    return true;
+  }
+
+  /** Test hook: fire the fish-fart reflex, bypassing the contact that normally triggers it. */
+  debugReleaseFart(): number {
+    this.fartReadyAt = 0;
+    this.releaseFart();
+    return this.farts;
   }
 
   private rollSeed(): void {
@@ -406,11 +471,60 @@ class Game {
     // actually at this frame rather than the one it started from.
     this.resolveHazards(dt, min, max, viewport.laneWidthMeters);
 
+    this.updateSkillPickup(dt, min, max, viewport.laneWidthMeters);
+
     this.resolveContacts();
+
+    // Skills are edge-triggered and consumed, so a single press costs exactly one use however many
+    // frames it spans.
+    if (this.input.consumeSkill()) this.useSkill();
 
     if (this.player.y >= DEPTH_TOTAL) {
       this.reachSurface();
     }
+  }
+
+  /**
+   * Skills lie in the water as pickups, on their own timer.
+   *
+   * Deliberately NOT one per screen: a skill is a decision, and a decision every few seconds is just
+   * noise. Roughly one every twenty seconds means a player meets three or four in a run, which is
+   * enough that the slot is usually occupied without it being a constant interruption.
+   */
+  private updateSkillPickup(dt: number, min: number, max: number, laneWidth: number): void {
+    // Held in a local so TypeScript can see it cannot become null between the checks: assigning
+    // `this.skillPickup = null` inside the block below widens it back to nullable.
+    const pickup = this.skillPickup;
+    if (pickup) {
+      // Drift down with the water and retire when it leaves.
+      const descent = (this.player.vy > 0 ? this.player.vy : 13) * 0.45;
+      pickup.y -= descent * dt;
+      if (pickup.y < min - 40 || pickup.y > max + 160) {
+        this.skillPickup = null;
+        return;
+      }
+
+      const dx = pickup.x - this.player.x * laneWidth;
+      const dy = pickup.y - this.player.y;
+      const reach = laneWidth * (visualRadiusFraction(this.player.volume) + 0.05);
+      if (dx * dx + dy * dy <= reach * reach) {
+        this.grantSkill(pickup.id);
+        this.skillPickup = null;
+        this.skillPickupTimer = SKILL_PICKUP_SECONDS * (0.7 + Math.random() * 0.6);
+        return;
+      }
+    }
+
+    this.skillPickupTimer -= dt;
+    if (this.skillPickupTimer > 0 || this.skillPickup) return;
+    const skill = SKILLS[Math.floor(Math.random() * SKILLS.length)] ?? SKILLS[0];
+    const margin = laneWidth * 0.12;
+    this.skillPickup = {
+      id: skill.id,
+      x: margin + Math.random() * Math.max(0.01, laneWidth - margin * 2),
+      y: max + 30 + Math.random() * 40,
+    };
+    this.skillPickupTimer = SKILL_PICKUP_SECONDS * (0.7 + Math.random() * 0.6);
   }
 
   /**
@@ -438,6 +552,10 @@ class Game {
     for (const e of effects) {
       if (e.damage) {
         for (let i = 0; i < e.damage; i++) this.takeHit();
+        // The fish-fart talent fires on the contact that would have hurt, which is what makes it a
+        // reflex rather than an action. Its BACKLASH is the point: it shoves the fish off and then
+        // leaves bait behind, so the escape is also what feeds the swarm. See src/talents.ts.
+        if (this.talentEffects.talent.id === 'fish-fart') this.releaseFart();
       }
       if (e.slowSeconds && e.slowFactor) this.player.applySlow(e.slowSeconds, e.slowFactor);
       if (e.impulse) {
@@ -459,6 +577,171 @@ class Game {
         this.lastComedyBeat = { what: e.kind, at: this.elapsed };
       }
     }
+  }
+
+  /**
+   * Grant a skill. Single slot, so this replaces whatever is carried.
+   *
+   * Returns the skill that was displaced, which the caller may want for a "swapped" hint later.
+   */
+  /**
+   * Grant a skill. Single slot, so this replaces whatever is carried.
+   *
+   * Returns the skill that was displaced, which the caller may want for a "swapped" hint later.
+   */
+  private grantSkill(id: SkillId): Skill | null {
+    const displaced = this.skill ? findSkill(this.skill.id) : null;
+    const skill = findSkill(id);
+    this.skill = { id, uses: skill.uses };
+    this.hud.setSkillLabel(skill.name, skill.uses);
+    // The on-screen button appears only while a skill is carried, so the empty state is genuinely
+    // empty rather than a greyed-out control competing for attention.
+    this.touch.setHasSkill(true);
+    return displaced;
+  }
+
+  /**
+   * Use the carried skill, if there is one with uses left.
+   *
+   * The effects are applied HERE rather than inside the skill definition, for the same reason hazard
+   * effects are applied by the game: the skill module stays a description of what a skill IS, and the
+   * game owns how that lands on the world.
+   */
+  private useSkill(): boolean {
+    if (!this.skill || this.skill.uses <= 0) return false;
+    const skill = findSkill(this.skill.id);
+    const activation = activationFor(skill.id);
+    const laneWidth = this.camera.viewport.laneWidthMeters;
+    const playerX = this.player.x * laneWidth;
+
+    // Lasts of zero mean an instant effect; the player-side timer only takes non-zero ones.
+    if (skill.durationSeconds > 0) {
+      this.player.skillRemaining = skill.durationSeconds;
+      this.player.skillId = skill.id;
+    }
+    if (activation.ascentMultiplier) {
+      this.player.skillAscentBonus = activation.ascentMultiplier;
+    }
+    if (activation.invulnerableSeconds) {
+      this.invulnerable = Math.max(this.invulnerable, activation.invulnerableSeconds);
+    }
+    if (activation.clearsSlow) {
+      this.player.slowRemaining = 0;
+      this.player.slowFactor = 1;
+      // A trash bag holding on is a "penalty" too, so the stink cloud breaks the grip.
+      for (const h of this.hazards.hazards) h.gripping = false;
+    }
+
+    // Push hazards out of a radius.
+    if (activation.pushRadius && activation.pushKinds) {
+      const r = activation.pushRadius;
+      for (const h of this.hazards.hazards) {
+        if (!activation.pushKinds.includes(h.kind)) continue;
+        const dx = h.x - playerX;
+        const dy = h.y - this.player.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > r) continue;
+        if (dist < 1e-3) {
+          // Dead centre: push it somewhere deterministic rather than dividing by zero.
+          h.y += r;
+          continue;
+        }
+        const push = (r - dist) / r;
+        h.x += (dx / dist) * push * r * 0.6;
+        h.y += (dy / dist) * push * r * 0.6;
+      }
+    }
+
+    // Draw collectables in, which is the vortex's whole job.
+    if (activation.vortexRadius && activation.vortexSeconds) {
+      const r = activation.vortexRadius;
+      for (const b of this.field.bubbles) {
+        const dx = playerX - b.x;
+        const dy = this.player.y - b.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > r || dist < 1e-3) continue;
+        const pull = Math.min(1, (skillTuning.vortexPullPerSecond * activation.vortexSeconds) / Math.max(1, dist / r));
+        b.x += dx * pull * 0.35;
+        b.y += dy * pull * 0.35;
+      }
+    }
+
+    // Divert fish to a bait bubble. This is the decoy's entire effect: it does not kill anything, it
+    // redirects.
+    if (activation.decoyRadius && activation.decoySeconds) {
+      const r = activation.decoyRadius;
+      const baitY = this.player.y + r * 0.35;
+      for (const h of this.hazards.hazards) {
+        if (h.kind !== 'fish') continue;
+        if (Math.hypot(h.x - playerX, h.y - this.player.y) > r) continue;
+        // Baited for the whole duration, and pointed at the bait rather than at the player. Re-using
+        // the existing bait timer means the fish's own chase logic does the work.
+        h.baitedUntil = this.elapsed + activation.decoySeconds;
+        h.y = Math.min(h.y, baitY);
+      }
+      this.decoy = { x: playerX, y: baitY, until: this.elapsed + activation.decoySeconds };
+    }
+
+    this.skill.uses -= 1;
+    if (this.skill.uses <= 0) {
+      this.skill = null;
+      this.hud.setSkillLabel(null, 0);
+      this.touch.setHasSkill(false);
+    } else {
+      this.hud.setSkillLabel(skill.name, this.skill.uses);
+    }
+    this.skillActivations++;
+    return true;
+  }
+
+  /**
+   * The 鱼屁泡 talent's reflex: shove nearby fish off, then leave bait behind.
+   *
+   * The two halves are inseparable -- that is the design principle ("your survival mechanism is the
+   * enemy's breeding mechanism"). The push makes it worth having; the bait is what it costs. A version
+   * that only pushed would be a free escape, and a version that only left bait would be a punishment
+   * with no upside.
+   */
+  private releaseFart(): void {
+    if (this.elapsed < this.fartReadyAt) return;
+    this.fartReadyAt = this.elapsed + talentTuning.fartCooldownSeconds;
+    this.farts++;
+
+    const laneWidth = this.camera.viewport.laneWidthMeters;
+    const playerX = this.player.x * laneWidth;
+    const r = talentTuning.fartRadiusMeters;
+
+    for (const h of this.hazards.hazards) {
+      if (fartPushFor(h.kind) <= 0) continue;
+      const dx = h.x - playerX;
+      const dy = h.y - this.player.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > r) continue;
+      if (dist < 1e-3) {
+        h.y += r * 0.7;
+        continue;
+      }
+      const push = (r - dist) / r;
+      h.x += (dx / dist) * push * r * 0.8;
+      h.y += (dy / dist) * push * r * 0.8;
+    }
+
+    // THE BACKLASH. Bait bubbles, which the emergence rules turn into fish food.
+    const count = fartBaitCount();
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + this.elapsed;
+      const radiusFraction = 0.03;
+      this.field.addTestBubble({
+        x: playerX + Math.cos(angle) * r * 0.3,
+        y: this.player.y + Math.sin(angle) * r * 0.3,
+        vy: 0,
+        radius: radiusFraction,
+        volume: bubbleVolumeFromRadius(radiusFraction),
+        phase: angle,
+        wobble: tuning.bubbleWobbleMin,
+      });
+    }
+    this.lastComedyBeat = { what: 'fish', at: this.elapsed };
   }
 
   /**
@@ -509,7 +792,11 @@ class Game {
     // Decide from the POST-hit volume: asking whether the current volume can survive one more hit
     // is the right question, and asking it of the pre-hit volume let health reach zero without ever
     // popping the bubble.
-    this.player.volume = shrinkFromHit(this.player.volume);
+    //
+    // `shrinkResistance` is the silt talent's backlash discount, applied through the volume module
+    // rather than here so the "one hit is worth the same at every size" invariant keeps a single
+    // implementation.
+    this.player.volume = shrinkFromHit(this.player.volume, this.player.shrinkResistance);
 
     if (isPopped(this.player.volume) || this.player.volume <= 0) {
       this.startBurst();
@@ -532,12 +819,41 @@ class Game {
     this.trashDrain = 0;
     this.comedyBeats = 0;
     this.lastComedyBeat = null;
+    // Skills and talents are per-run state: carrying a skill across a death would make the restart
+    // strictly easier than the run that just ended.
+    this.skill = null;
+    this.skillPickup = null;
+    this.skillPickupTimer = 6;
+    this.skillActivations = 0;
+    this.decoy = null;
+    this.fartReadyAt = 0;
+    this.farts = 0;
+    this.touch.setHasSkill(false);
+    this.hud.setSkillLabel(null, 0);
     this.elapsed = 0;
     this.phase = 'intro';
     this.phaseTimer = INTRO_SECONDS;
     this.invulnerable = 0;
     this.stats = { absorbed: 0, hits: 0, maxVolume: 1, ended: this.stats.ended };
     this.rollSeed();
+    this.rollTalent();
+  }
+
+  /**
+   * Roll this run's talent and apply it to the player.
+   *
+   * Applied through `resolveTalent` rather than by scattering conditionals: every talent's effect is
+   * a small set of multipliers, so a new one is a row in `talents.ts` rather than a branch here.
+   */
+  private rollTalent(): void {
+    this.talentEffects = resolveTalent(pickTalent());
+    this.player.ascentBonus = this.talentEffects.ascentMultiplier;
+    this.player.steerScale = this.talentEffects.steerMultiplier;
+    this.player.shrinkResistance = this.talentEffects.shrinkResistance;
+    // Volume is set AFTER `player.reset()` above, which zeroes it back to 1.
+    this.player.volume = this.talentEffects.startVolume;
+    this.stats.maxVolume = this.talentEffects.startVolume;
+    this.hud.setTalentLabel(this.talentEffects.talent.name);
   }
 
   private reachSurface(): void {
@@ -603,6 +919,38 @@ class Game {
     // Hazards last in this layer, so they sit on top of the water and the collectables. They are the
     // things the player must READ, so nothing should be drawn over them.
     paintHazards(g, this.hazards, laneWidth, this.elapsed);
+
+    // The decoy bait bubble, while it lasts. Drawn like a bright collectable, because that is what it
+    // is imitating -- the fish are supposed to fall for it.
+    if (this.decoy && this.decoy.until > this.elapsed) {
+      const r = laneWidth * 0.052;
+      g.circle(this.decoy.x, this.decoy.y, r).fill({ color: 0xc9ffe8, alpha: 0.4 });
+      g.circle(this.decoy.x, this.decoy.y, r).stroke({ color: 0x9dffd8, alpha: 0.95, width: r * 0.16 });
+      g.circle(this.decoy.x, this.decoy.y, r * 1.5).stroke({ color: 0x9dffd8, alpha: 0.3, width: r * 0.08 });
+    } else if (this.decoy) {
+      this.decoy = null;
+    }
+
+    // A skill lying in the water: a diamond, distinct from every collectable, with a halo so it
+    // reads as "pick me up" rather than as another bubble.
+    if (this.skillPickup) {
+      const p = this.skillPickup;
+      const r = laneWidth * 0.045;
+      const pulse = 1 + Math.sin(this.elapsed * 3.4) * 0.12;
+      g.circle(p.x, p.y, r * 2.1 * pulse).fill({ color: 0xc79bff, alpha: 0.13 });
+      g.moveTo(p.x, p.y - r * pulse)
+        .lineTo(p.x + r * pulse, p.y)
+        .lineTo(p.x, p.y + r * pulse)
+        .lineTo(p.x - r * pulse, p.y)
+        .closePath()
+        .fill({ color: 0xe8d6ff, alpha: 0.9 });
+      g.moveTo(p.x, p.y - r * pulse)
+        .lineTo(p.x + r * pulse, p.y)
+        .lineTo(p.x, p.y + r * pulse)
+        .lineTo(p.x - r * pulse, p.y)
+        .closePath()
+        .stroke({ color: 0xffffff, alpha: 0.75, width: r * 0.14 });
+    }
   }
 
   /** The player's bubble, in world metres. */
@@ -729,6 +1077,19 @@ class Game {
       baits: number;
     };
     slow: { remaining: number; factor: number; impulseVy: number };
+    talent: {
+      id: string;
+      name: string;
+      ascentMultiplier: number;
+      steerMultiplier: number;
+      startVolume: number;
+      shrinkResistance: number;
+    };
+    skill: { id: string; uses: number } | null;
+    skillActivations: number;
+    farts: number;
+    skillPickup: { id: string; y: number } | null;
+    activeSkill: { id: string; remaining: number } | null;
     phase: string;
     volume: number;
     hitsSurvived: number;
@@ -799,6 +1160,27 @@ class Game {
       },
       /** The player's movement penalty, so a slow can be observed rather than inferred. */
       slow: { remaining: +this.player.slowRemaining.toFixed(3), factor: this.player.slowFactor, impulseVy: +this.player.impulseVy.toFixed(2) },
+      /**
+       * This run's talent and the carried skill.
+       *
+       * Both are part of the run's identity, so a probe needs to see them to check that a talent's
+       * upside AND its backlash are actually applied.
+       */
+      talent: {
+        id: this.talentEffects.talent.id,
+        name: this.talentEffects.talent.name,
+        ascentMultiplier: this.talentEffects.ascentMultiplier,
+        steerMultiplier: this.talentEffects.steerMultiplier,
+        startVolume: this.talentEffects.startVolume,
+        shrinkResistance: this.talentEffects.shrinkResistance,
+      },
+      skill: this.skill ? { id: this.skill.id, uses: this.skill.uses } : null,
+      skillActivations: this.skillActivations,
+      /** Fish-fart reflex count, so the talent's backlash can be observed rather than assumed. */
+      farts: this.farts,
+      skillPickup: this.skillPickup ? { id: this.skillPickup.id, y: +this.skillPickup.y.toFixed(1) } : null,
+      /** Active effect timers, so a skill that lasts can be observed while it runs. */
+      activeSkill: this.player.skillId ? { id: this.player.skillId, remaining: +this.player.skillRemaining.toFixed(2) } : null,
       phase: this.phase,
       volume: this.player.volume,
       hitsSurvived: hitsSurvived(this.player.volume),

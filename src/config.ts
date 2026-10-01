@@ -219,6 +219,16 @@ export const tuning = {
    */
   hazardLaunchDecaySeconds: 0.9,
 
+  // --- Talents (D4) -------------------------------------------------------
+  /**
+   * How many bait bubbles a 鱼屁泡 fart leaves behind.
+   *
+   * These are the BACKLASH, and the count is the whole point: the fart pushes fish off you, then
+   * leaves food that feeds them and (via the emergence rules) splits them. Set it to 0 and the talent
+   * becomes a free escape, which is exactly what the design principle forbids.
+   */
+  fartBaitCount: 3,
+
   // --- Invulnerability ----------------------------------------------------
   /** Seconds of invulnerability after a hit, so a swarm cannot chain-kill in one touch. */
   invulnerableSeconds: 0.8,

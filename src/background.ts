@@ -274,6 +274,9 @@ export class Hud {
   private debugTimer = 0;
   /** Which of the three birth types this run rolled. Set by the game after construction. */
   private seedLabel = '';
+  /** This run's talent, and the carried skill with its uses. Empty strings mean "show nothing". */
+  private talentLabel = '';
+  private skillLabel = '';
 
   constructor(private readonly landmarks: readonly Landmark[]) {
     this.headline = makeLabel('500', 0xeaf9ff, 40);
@@ -333,13 +336,34 @@ export class Hud {
     this.seedLabel = label;
   }
 
+  /** The run's talent, shown next to the seed so the player can see what they got. */
+  setTalentLabel(label: string | null): void {
+    this.talentLabel = label ?? '';
+  }
+
+  /**
+   * The carried skill and its remaining uses.
+   *
+   * `null` empties the slot, which the HUD shows as nothing at all rather than as an empty box: an
+   * empty slot is the normal state for most of a run, and a permanent empty frame would just be
+   * clutter on a screen that is already busy.
+   */
+  setSkillLabel(name: string | null, uses: number): void {
+    this.skillLabel = name ? `${name} ×${uses}` : '';
+  }
+
   update(player: Player, fps: number, nominalSeconds: number, elapsed: number, lateral: LateralAuthority): void {
     // The headline is the distance still to travel, NOT the distance travelled: the bubble is
     // born on the seabed, so it starts at DEPTH_TOTAL metres away.
     this.headline.text = `${Math.max(0, Math.round(player.depth))}`;
-    this.subline.text = this.seedLabel
-      ? `距海面 / TO SURFACE (m)   ·   ${this.seedLabel}`
-      : '距海面 / TO SURFACE (m)';
+    // The talent and the skill share the subline: they are both "what am I this run", and the screen
+    // has no room for a third line. The skill comes first because it is the one that changes.
+    const tags = [this.skillLabel, this.talentLabel].filter(Boolean).join('   ·   ');
+    this.subline.text = tags
+      ? `距海面 / TO SURFACE (m)   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
+      : this.seedLabel
+        ? `距海面 / TO SURFACE (m)   ·   ${this.seedLabel}`
+        : '距海面 / TO SURFACE (m)';
 
     const { barX, barTop, barBottom, barW } = this.barGeometry;
     // Reads as a vessel filling up: the water level rises with the bubble, and the surface line

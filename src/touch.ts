@@ -53,8 +53,12 @@ export class TouchControls {
 
   /** Screen geometry, recomputed by `layout`. */
   private button = { x: 0, y: 0, radius: 0 };
+  /** The skill button, up and to the left of the accelerate button. */
+  private skillButton = { x: 0, y: 0, radius: 0 };
   private canvasWidth = 0;
   private canvasHeight = 0;
+  /** Whether a skill is carried, so the button can hide when the slot is empty. */
+  private hasSkill = false;
 
   constructor(private readonly input: Input) {
     this.root.eventMode = 'none';
@@ -76,6 +80,14 @@ export class TouchControls {
       // Last finger on the button wins, so a second tap does not leave the first one stuck on.
       this.boostId = pointerId;
       this.boosting = true;
+      return;
+    }
+
+    // The skill button fires on PRESS, not on release: it is a discrete action, and requiring a
+    // release would make it feel unresponsive under a thumb that lingers.
+    if (this.hasSkill && this.isInSkillButton(x, y)) {
+      this.input.pressSkill();
+      this.skillFlash = 1;
       return;
     }
 
@@ -123,12 +135,27 @@ export class TouchControls {
     this.update();
   }
 
+  /** Whether a skill is carried, so the skill button can appear and disappear with the slot. */
+  setHasSkill(hasSkill: boolean): void {
+    if (this.hasSkill === hasSkill) return;
+    this.hasSkill = hasSkill;
+    this.update();
+  }
+
   /** Generous circular target: it is hit with a thumb, and it overlaps the bottom-right corner. */
   private isInButton(x: number, y: number): boolean {
     const dx = x - this.button.x;
     const dy = y - this.button.y;
     // 1.35x the drawn radius, so near-misses still register.
     const reach = this.button.radius * 1.35;
+    return dx * dx + dy * dy <= reach * reach;
+  }
+
+  /** Same generosity for the skill button, and it only exists while a skill is carried. */
+  private isInSkillButton(x: number, y: number): boolean {
+    const dx = x - this.skillButton.x;
+    const dy = y - this.skillButton.y;
+    const reach = this.skillButton.radius * 1.35;
     return dx * dx + dy * dy <= reach * reach;
   }
 
@@ -155,6 +182,13 @@ export class TouchControls {
       x: canvasWidth - 74 * scale,
       y: canvasHeight - 86 * scale,
       radius: 40 * scale,
+    };
+    // The skill button sits up and to the LEFT of accelerate, so the two thumbs occupy separate
+    // corners and a player holding one can reach the other without moving the first.
+    this.skillButton = {
+      x: canvasWidth - 160 * scale,
+      y: canvasHeight - 150 * scale,
+      radius: 32 * scale,
     };
 
     this.buttonGfx.clear();
@@ -197,7 +231,38 @@ export class TouchControls {
       .lineTo(x, y - r * 0.34)
       .lineTo(x + r * 0.4, y + r * 0.24)
       .stroke({ color: this.boosting ? 0xfff3d6 : 0xffd479, alpha: 0.95, width: 3 });
+
+    // The skill button is drawn only while a skill is carried, so the empty-slot state is "no
+    // button" rather than a greyed-out control competing for attention.
+    if (this.hasSkill) {
+      const sb = this.skillButton;
+      this.skillFlash = Math.max(0, this.skillFlash - 0.05);
+      if (this.skillFlash > 0) {
+        this.buttonGfx.circle(sb.x, sb.y, sb.radius * (1.2 + this.skillFlash * 0.3)).fill({ color: 0xc79bff, alpha: 0.3 * this.skillFlash });
+      }
+      this.buttonGfx.circle(sb.x, sb.y, sb.radius).fill({ color: 0x1d2a44, alpha: 0.7 });
+      this.buttonGfx
+        .circle(sb.x, sb.y, sb.radius)
+        .stroke({ color: 0xc79bff, alpha: 0.85, width: 2 });
+      // A four-point star, distinct in silhouette from the accelerate chevron so the two buttons are
+      // never confused at a glance.
+      const sr = sb.radius;
+      this.buttonGfx
+        .moveTo(sb.x, sb.y - sr * 0.5)
+        .lineTo(sb.x + sr * 0.16, sb.y - sr * 0.16)
+        .lineTo(sb.x + sr * 0.5, sb.y)
+        .lineTo(sb.x + sr * 0.16, sb.y + sr * 0.16)
+        .lineTo(sb.x, sb.y + sr * 0.5)
+        .lineTo(sb.x - sr * 0.16, sb.y + sr * 0.16)
+        .lineTo(sb.x - sr * 0.5, sb.y)
+        .lineTo(sb.x - sr * 0.16, sb.y - sr * 0.16)
+        .closePath()
+        .fill({ color: 0xe8d6ff, alpha: 0.95 });
+    }
   }
+
+  /** Drives the press pulse on the skill button. Set on press, decays in `update`. */
+  private skillFlash = 0;
 
   /**
    * Exposed for probes.
@@ -213,6 +278,7 @@ export class TouchControls {
     zone: string | null;
     steeringPointers: number;
     boostPointers: number;
+    hasSkill: boolean;
   } {
     const zone = this.boosting && this.steering ? 'both' : this.boosting ? 'boost' : this.steering ? 'water' : null;
     return {
@@ -222,7 +288,13 @@ export class TouchControls {
       zone,
       steeringPointers: this.waterIds.length,
       boostPointers: this.boostId === null ? 0 : 1,
+      hasSkill: this.hasSkill,
     };
+  }
+
+  /** Skill button geometry, so a probe can press the real control instead of guessing. */
+  get skillGeometry(): { x: number; y: number; radius: number } {
+    return { ...this.skillButton };
   }
 
   /** Button geometry in canvas coordinates, so tests touch the real thing instead of guessing. */
