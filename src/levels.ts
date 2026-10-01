@@ -84,18 +84,15 @@ export const LEVELS: readonly Level[] = [
   {
     id: 'open-water',
     name: '开阔水域',
-    totalDepth: 500,
+    totalDepth: 1500,
     metresPerScreen: 190,
-    // Chosen by feel at this length: 1.7 m/s gives ~2.4 px/s of visible motion at the seabed on a
-    // 390px-wide phone, and the linear curve means the pace keeps rising all the way up instead of
-    // being flat for the first 200m.
     ascentSpeedBase: 1.7,
     ascentSpeedPeak: 8.55,
     ascentCurveExponent: 1,
     landmarks: [
-      { depth: 180, label: '鱼群' },
-      { depth: 320, label: '气泡潮' },
-      { depth: 420, label: '爆发' },
+      { depth: 540, label: '鱼群' },
+      { depth: 960, label: '气泡潮' },
+      { depth: 1260, label: '爆发' },
     ],
   },
 ];

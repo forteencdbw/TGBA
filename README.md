@@ -18,13 +18,34 @@ pnpm dev            # http://localhost:5173，同时暴露在局域网，手机�
 | `pnpm dev` | 开发服务器（HMR，局域网可访问） |
 | `pnpm typecheck` | TypeScript 类型检查 |
 | `pnpm build` | 类型检查 + 生产构建到 `dist/` |
-| `pnpm smoke` | headless Chrome 冒烟测试（需先跑 `pnpm dev`） |
-| `node scripts/solve-ascent.mjs` | 重解上升速度曲线参数（改动 `DEPTH_TOTAL` 或目标时长后必跑） |
+| `node scripts/run-tests.mjs` | **并行跑全部验证套件**，输出一张表。`--fast` 只跑快档，`motion` 之类按名字过滤 |
+| `node scripts/solve-ascent.mjs` | **报告**当前关卡的时长与节奏（不反解参数），`DEPTH_TOTAL` 改动后必跑 |
 | `node scripts/solve-lateral.mjs` | 核对横向标定（含"停止阈值必须小于单帧推力"的硬断言） |
+| `node scripts/hazard-verbs.mjs` | 核对 4 种危险物的"动词"确实互不相同 |
 | `node scripts/measure-pixels.mjs` | 解 CDP 截图读真实像素（验证布局用，见下） |
-| `node scripts/mobile.mjs [url] [w] [h]` | **手机专项**：触摸模拟 + 真实触摸事件，验证尺寸/铺满/拖动/滑杆 |
+| `node scripts/mobile.mjs [url] [w] [h]` | **手机专项**：触摸模拟 + 真实触摸事件，验证尺寸/铺满/拖动/加速按钮 |
 | `pwsh -File scripts/dev-server.ps1 status\|start\|stop` | 脱离会话的 dev server 管理 |
 | `pwsh -File scripts/install-pwsh-path.ps1` | 重建 `pwsh` 的稳定 PATH 入口（PowerShell 升级后重跑） |
+
+### 什么时候跑测试（约定）
+
+> **只在用户明确要求跑回归时才跑。** 日常改代码只做 `typecheck`（顺手）和必要的针对性验证，
+> 不要自作主张跑整套。
+
+原因是时间成本：整套约 50 秒（并行 3 路），而绝大多数改动只需要其中一两个套件。
+需要时用 `--fast`（约 7 秒）或按名字过滤，别习惯性跑全套。
+
+### 测试套件的一些约定
+
+**每个套件都要输出一行 `CHECKS: {...}` JSON。** `run-tests.mjs` 靠它判定通过与否；
+**退出 0 但不输出 `CHECKS` 会被判为失败**——否则一个悄悄失效的断言会看起来像通过。
+
+**不要用固定 `sleep` 去等游戏推进。** 单帧的模拟时间被钳在 50ms（`main.ts: frame()`），
+所以**低于 20fps 时游戏时间比墙钟慢**；并行跑测试时浏览器只分到一部分 CPU，
+很容易掉到 20fps 以下，让所有"睡 N 毫秒再看"的断言失效。要**轮询你真正关心的条件**。
+
+**测游戏自己的时长（加速斜坡、无敌窗口、动画）要用 `diagnostics.gameSeconds`**，不是 `performance.now()`。
+挂钟会测出帧率而不是游戏行为。
 
 ## 测量工具的坑（重要）
 
