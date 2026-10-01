@@ -146,6 +146,29 @@ export const tuning = {
   bubbleFallMin: 10,
   bubbleFallMax: 40,
 
+  /**
+   * Keyboard steering strength, as a fraction of the calibrated acceleration.
+   *
+   * Keyboard and touch need different treatment, and one number cannot serve both:
+   *
+   *   - TOUCH eases the bubble toward the finger (`x += (target - x) * damping * dt`), which is
+   *     fast but self-limiting, and the player aims by WHERE they put the finger.
+   *   - KEYBOARD drives a binary axis through the acceleration model. It saturates almost
+   *     immediately and overshoots easily, so it reads as twitchy even at a similar top speed.
+   *
+   * This scales the KEYBOARD acceleration only, so the bubble still reaches the same top speed but
+   * takes noticeably longer to get there and is easier to place. Touch steering never reads it.
+   *
+   * Measured reference (390px phone, full-lane target):
+   *   touch    reaches 299px of 390px in 0.25s -- fast, but the finger sets the destination
+   *   keyboard at 1.0  ~128 px/s of horizontal speed after 0.25s
+   *   keyboard at 0.7  ~101 px/s after 0.25s, ~157 px/s once settled
+   *
+   * Going lower is tempting but wrong: touch is quicker than the keyboard even at 1.0, so scaling
+   * the keyboard down a lot makes it the sluggish input instead of the twitchy one.
+   */
+  keyboardSteerScale: 0.7,
+
   // --- Invulnerability ----------------------------------------------------
   /** Seconds of invulnerability after a hit, so a swarm cannot chain-kill in one touch. */
   invulnerableSeconds: 0.8,

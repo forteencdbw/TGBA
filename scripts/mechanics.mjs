@@ -205,6 +205,14 @@ try {
     registered: afterFast.volume !== beforeFast.volume || afterFast.stats.absorbed !== beforeFast.stats.absorbed,
   };
 
+  // --- 7. Keyboard and touch pacing must stay in the same league ---
+  // Touch eases toward the finger and is quick; keyboard drives a binary axis and is scaled down
+  // because it saturates. Neither should be wildly slower than the other: a keyboard far below the
+  // touch speed makes it the sluggish input instead of the twitchy one.
+  results.pacing = await evalJson(
+    'JSON.stringify({ keyboardSteerScale: window.__GB.tuning.keyboardSteerScale, damping: window.__GB.game.diagnostics.lateral.damping })',
+  );
+
   console.log(JSON.stringify(results, null, 2));
 
   const exceptions = cdp.events
@@ -220,6 +228,8 @@ try {
     fieldRepopulates: results.fieldRepopulates.bubbles > 5,
     // Contact must not be skipped just because the bubble is falling fast.
     fastContactRegisters: results.fastContact.registered,
+    // The keyboard must be scaled down but NOT into a different league from the touch control.
+    keyboardIsTemperedNotCrippled: results.pacing.keyboardSteerScale >= 0.5 && results.pacing.keyboardSteerScale < 1,
     noExceptions: exceptions.length === 0,
   };
   console.log('CHECKS: ' + JSON.stringify(checks));

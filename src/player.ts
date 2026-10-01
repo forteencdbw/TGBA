@@ -85,7 +85,10 @@ export class Player {
       // Keyboard steering: thrust and drag, with reduced authority while boosting. Only the THRUST
       // is scaled, not the drag, so holding accelerate really is sluggish to steer while releasing
       // it still coasts on the speed already built up.
-      const steerMultiplier = input.axisY > 0 ? lateral.boostSteerFactor : 1;
+      //
+      // `keyboardSteerScale` exists because a binary axis through an acceleration model feels much
+      // twitchier than a drag does, at the same top speed. Touch steering never reaches this branch.
+      const steerMultiplier = (input.axisY > 0 ? lateral.boostSteerFactor : 1) * tuning.keyboardSteerScale;
       this.debugSteerMultiplier = steerMultiplier;
       this.vx += input.axisX * lateral.accel * steerMultiplier * dt;
 

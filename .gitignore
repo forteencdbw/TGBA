@@ -25,3 +25,7 @@ dist/
 
 # Temporary commit-message file
 commit-msg.tmp
+
+# Temporary commit-message files
+commit-msg.tmp
+msg.txt
