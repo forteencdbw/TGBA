@@ -190,6 +190,35 @@ export const tuning = {
   // expressed as a crossing time rather than as an acceleration scale. Scaling the acceleration was
   // the wrong lever -- see the note on that constant.
 
+  // --- Hazards (D3) -------------------------------------------------------
+  /**
+   * Jellyfish slow: how much of the ascent speed is removed, and for how long.
+   *
+   * The one hazard that takes CONTROL away rather than health, so it is tuned to be annoying rather
+   * than lethal: at 0.55 the player still moves, which means they can still steer out of trouble.
+   * A slow that stopped the bubble entirely would be a stun, and a stun in a game about smooth
+   * upward flow is just a pause.
+   */
+  hazardSlowFactor: 0.55,
+  hazardSlowSeconds: 1.5,
+  /**
+   * How hard a crab launches the player upward, in m/s.
+   *
+   * An upward launch is the only hazard that HELPS as well as hurts -- it skips water, at the cost of
+   * losing control of where you land. That ambiguity is the point, and it is why the launch is
+   * telegraphed with a visible arc for a full second: it has to read as an opportunity you can choose
+   * to take, not a punishment.
+   */
+  hazardCrabLaunchMps: 30,
+  /**
+   * How quickly a launch impulse decays, as a time constant in seconds.
+   *
+   * Short enough to read as a kick rather than a lift, long enough that the player gains real height
+   * from it. Roughly, the height gained is `speed * this`, so 30 m/s over 0.9s is about 27m -- a
+   * meaningful shortcut, not a teleport.
+   */
+  hazardLaunchDecaySeconds: 0.9,
+
   // --- Invulnerability ----------------------------------------------------
   /** Seconds of invulnerability after a hit, so a swarm cannot chain-kill in one touch. */
   invulnerableSeconds: 0.8,

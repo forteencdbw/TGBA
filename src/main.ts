@@ -2,6 +2,7 @@ import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, makeLabel, type Landmark } from './background';
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL } from './levels';
+import { HazardField, hazardTuning, paintHazards, type HazardKind } from './hazards';
 import { ascentSpeedAtDepth, nominalAscentSeconds } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
@@ -179,6 +180,85 @@ class Game {
     this.touch.syncInput();
   }
 
+  /** Fractional damage accumulated from a trash bag's drain, so it costs whole hits over time. */
+  private trashDrain = 0;
+  /** Count of comedy beats this run, and the most recent one, for the HUD and probes. */
+  private comedyBeats = 0;
+  private lastComedyBeat: { what: HazardKind; at: number } | null = null;
+  /** The hazard field: spawning, motion and contact. See src/hazards.ts. */
+  private readonly hazards = new HazardField();
+
+  /**
+   * Test hook: drop a named hazard on the player, so each verb can be exercised deterministically.
+   *
+   * The four hazards have completely different effects, and waiting for the right one to spawn and
+   * find the player would make each check a race. This also lets a probe assert the DIFFERENCE
+   * between them, which is the actual design claim.
+   */
+  debugSpawnHazardOnPlayer(kind: HazardKind): void {
+    const laneWidth = this.camera.viewport.laneWidthMeters;
+    this.hazards.hazards.push({
+      id: -1,
+      kind,
+      x: this.player.x * laneWidth,
+      y: this.player.y,
+      radiusFraction: { fish: 0.035, jelly: 0.062, trash: 0.05, crab: 0.045 }[kind],
+      phase: 0,
+      seed: 0,
+      baitedUntil: 0,
+      squashed: 0,
+      gripping: false,
+      // Already armed with its telegraph spent, so a test exercises the LAUNCH rather than the
+      // arming. The arming itself is asserted by watching a naturally spawned crab.
+      fuse: 0,
+      fired: false,
+      armed: true,
+    });
+  }
+
+  /** Test hook: the hazard list, so a probe can inspect positions and states. */
+  get hazardsRef(): HazardField {
+    return this.hazards;
+  }
+
+  /**
+   * Test hook: zero the run's counters and top the player back up.
+   *
+   * Lets a probe measure each hazard in isolation without restarting the run. It deliberately does
+   * NOT reset volume to a fixed value -- it raises it to full, because a probe measuring "did this
+   * cost health" needs headroom rather than a precise starting number.
+   */
+  debugResetStats(): void {
+    this.stats = { absorbed: 0, hits: 0, maxVolume: this.stats.maxVolume, ended: this.stats.ended };
+    this.player.volume = tuning.volumeMax;
+    this.player.slowRemaining = 0;
+    this.player.slowFactor = 1;
+    this.player.impulseVy = 0;
+    this.invulnerable = 0;
+    this.trashDrain = 0;
+    this.comedyBeats = 0;
+    this.lastComedyBeat = null;
+    this.hazards.reset();
+  }
+
+  /**
+   * Test hook: suspend the fish's bait reaction.
+   *
+   * The bait beat is explicitly a chance, so a test that needs to observe the CHASE would otherwise
+   * fail 25% of the time and look like a broken mechanic. Both behaviours are worth asserting, but
+   * not in the same run.
+   */
+  debugSetBaitEnabled(enabled: boolean): boolean {
+    this.hazards.baitEnabled = enabled;
+    return this.hazards.baitEnabled;
+  }
+
+  /** Test hook: force cruising speed, so a trash bag's grip is not torn off instantly. */
+  debugSetSteadyCruise(): void {
+    this.player.speedMultiplier = 1;
+    this.input.touchBoosting = false;
+  }
+
   private rollSeed(): void {
     this.seedLabel = SEEDS[Math.floor(Math.random() * SEEDS.length)] ?? SEEDS[0];
     this.hud.setSeedLabel(this.seedLabel);
@@ -297,10 +377,62 @@ class Game {
     this.player.update(this.input, dt, this.lateral);
     this.camera.follow(this.player);
 
+    // Hazards move AFTER the player, so a hazard's contact test uses the position the player is
+    // actually at this frame rather than the one it started from.
+    this.resolveHazards(dt, min, max, viewport.laneWidthMeters);
+
     this.resolveContacts();
 
     if (this.player.y >= DEPTH_TOTAL) {
       this.reachSurface();
+    }
+  }
+
+  /**
+   * Spawn, move and resolve the hazards, applying whatever they did to the player.
+   *
+   * The effects are applied here rather than inside `HazardField` so that the field stays a pure
+   * simulation: it decides what happened, the game decides what that means. That split is what lets
+   * a probe drive hazards without a player.
+   */
+  private resolveHazards(dt: number, min: number, max: number, laneWidth: number): void {
+    const effects = this.hazards.update(dt, {
+      min,
+      max,
+      laneWidth,
+      playerX: this.player.x * laneWidth,
+      playerY: this.player.y,
+      playerRadiusFraction: visualRadiusFraction(this.player.volume),
+      ascentSpeed: this.player.vy > 0 ? this.player.vy : ascentSpeedAtDepth(this.player.depth),
+      elapsed: this.elapsed,
+      invulnerable: this.invulnerable > 0,
+      // Struggling is "asking to go faster", which is the intuitive way to tear free of a trash bag.
+      struggling: this.player.speedMultiplier > 1.35,
+    });
+
+    for (const e of effects) {
+      if (e.damage) {
+        for (let i = 0; i < e.damage; i++) this.takeHit();
+      }
+      if (e.slowSeconds && e.slowFactor) this.player.applySlow(e.slowSeconds, e.slowFactor);
+      if (e.impulse) {
+        // Added to whatever the ascent is doing, so a launch while accelerating carries further.
+        this.player.impulseVy = Math.max(this.player.impulseVy, e.impulse);
+        this.lastComedyBeat = { what: 'crab', at: this.elapsed };
+      }
+      if (e.drainPerSecond) {
+        // Continuous, so it is applied as a fraction of a hit point per second rather than as whole
+        // hits -- otherwise being grabbed would be instant death at any frame rate.
+        this.trashDrain += hazardTuning.trashDrainPerSecond * dt;
+        while (this.trashDrain >= 1) {
+          this.trashDrain -= 1;
+          this.takeHit();
+        }
+      }
+      if (e.broke) {
+        this.comedyBeats++;
+        this.lastComedyBeat = { what: e.kind, at: this.elapsed };
+      }
     }
   }
 
@@ -371,6 +503,10 @@ class Game {
   private startRun(): void {
     this.player.reset();
     this.field.reset();
+    this.hazards.reset();
+    this.trashDrain = 0;
+    this.comedyBeats = 0;
+    this.lastComedyBeat = null;
     this.elapsed = 0;
     this.phase = 'intro';
     this.phaseTimer = INTRO_SECONDS;
@@ -438,6 +574,10 @@ class Game {
       if (s.drift <= 0) g.circle(s.x, s.y, s.r);
     }
     g.fill({ color: 0xdff6ff, alpha: 0.18 });
+
+    // Hazards last in this layer, so they sit on top of the water and the collectables. They are the
+    // things the player must READ, so nothing should be drawn over them.
+    paintHazards(g, this.hazards, laneWidth, this.elapsed);
   }
 
   /** The player's bubble, in world metres. */
@@ -484,6 +624,15 @@ class Game {
     // Outer soft halo.
     g.circle(worldX, worldY, radius * 1.55).fill({ color: 0x7fe6ff, alpha: 0.1 * alpha });
     g.circle(worldX, worldY, radius * 1.18).fill({ color: 0xaef2ff, alpha: 0.16 * alpha });
+
+    // Slowed by a jellyfish: a purple rind around the bubble. Shown ON the player rather than in a
+    // status bar, because the penalty is about where the bubble IS -- the player needs to see it
+    // without moving their eyes off the thing they are steering.
+    if (this.player.slowRemaining > 0) {
+      const fade = Math.min(1, this.player.slowRemaining / 0.4);
+      g.circle(worldX, worldY, radius * 1.75).stroke({ color: 0xc79bff, alpha: 0.75 * alpha * fade, width: radius * 0.16 });
+      g.circle(worldX, worldY, radius * 1.75).fill({ color: 0xc79bff, alpha: 0.07 * alpha * fade });
+    }
 
     // Body: an ellipse stretched along the direction of travel.
     g.ellipse(worldX, worldY, radius / squash, radius * squash).fill({ color: 0xcdf6ff, alpha: 0.22 * alpha });
@@ -546,6 +695,15 @@ class Game {
     boostMultiplier: number;
     boostAccelSeconds: number;
     gameSeconds: number;
+    hazards: {
+      active: number;
+      byKind: Record<string, number>;
+      comedyBeats: number;
+      lastBeat: { what: HazardKind; at: number } | null;
+      grabs: number;
+      baits: number;
+    };
+    slow: { remaining: number; factor: number; impulseVy: number };
     phase: string;
     volume: number;
     hitsSurvived: number;
@@ -590,6 +748,25 @@ class Game {
        * or it will report the frame rate instead of the game.
        */
       gameSeconds: this.elapsed,
+      /**
+       * Hazard readout. The comedy beats are counted rather than merely triggered because the design
+       * treats them as content: a hazard that never produces its reaction is a hazard that has not
+       * been finished, and a probe can check they actually happen in a run.
+       */
+      hazards: {
+        active: this.hazards.hazards.length,
+        byKind: this.hazards.hazards.reduce<Record<string, number>>((acc, h) => {
+          acc[h.kind] = (acc[h.kind] ?? 0) + 1;
+          return acc;
+        }, {}),
+        comedyBeats: this.comedyBeats,
+        lastBeat: this.lastComedyBeat,
+        /** Monotonic counters, for transient things a boolean sample would miss. */
+        grabs: this.hazards.grabs,
+        baits: this.hazards.baits,
+      },
+      /** The player's movement penalty, so a slow can be observed rather than inferred. */
+      slow: { remaining: +this.player.slowRemaining.toFixed(3), factor: this.player.slowFactor, impulseVy: +this.player.impulseVy.toFixed(2) },
       phase: this.phase,
       volume: this.player.volume,
       hitsSurvived: hitsSurvived(this.player.volume),

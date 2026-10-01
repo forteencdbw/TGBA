@@ -52,6 +52,9 @@ export class Player {
     this.vy = 0;
     this.volume = 1;
     this.speedMultiplier = 1;
+    this.slowRemaining = 0;
+    this.slowFactor = 1;
+    this.impulseVy = 0;
   }
 
   get depth(): number {
@@ -65,6 +68,36 @@ export class Player {
 
   /** Transient state for the HUD and probes. */
   debugSteerMultiplier = 1;
+
+  /**
+   * Hazard state: a temporary movement penalty, and an upward launch.
+   *
+   * `slowRemaining > 0` multiplies the ascent by `slowFactor`, which is how the jellyfish works --
+   * it takes CONTROL, not health, so the player is still able to steer out of trouble rather than
+   * being stunned.
+   */
+  slowRemaining = 0;
+  slowFactor = 1;
+  /**
+   * Upward launch speed from a crab, in m/s, decaying on its own.
+   *
+   * Added to the ascent rather than replacing it, so a launch while accelerating goes further -- the
+   * crab is the one hazard that can help you, and it should feel like it.
+   */
+  impulseVy = 0;
+
+  /** Movement penalty from hazards, already combined. 1 while unaffected. */
+  get slowMultiplier(): number {
+    return this.slowRemaining > 0 ? this.slowFactor : 1;
+  }
+
+  /** Apply a slow, taking the stronger of the two if one is already running. */
+  applySlow(seconds: number, factor: number): void {
+    if (seconds <= 0) return;
+    this.slowRemaining = Math.max(this.slowRemaining, seconds);
+    // A weaker slow must not overwrite a stronger one that is still ticking.
+    this.slowFactor = this.slowRemaining > 0 ? Math.min(this.slowFactor === 1 ? factor : this.slowFactor, factor) : factor;
+  }
 
   /** @param lateral calibrated control authority for the current play-area width. */
   update(input: Input, dt: number, lateral: LateralAuthority): void {
@@ -89,7 +122,20 @@ export class Player {
       this.speedMultiplier += (targetMultiplier - this.speedMultiplier) * alpha;
     }
 
-    this.vy = baseSpeed * this.speedMultiplier;
+    // Hazard timers. The slow runs down on its own; the launch decays exponentially so the crab
+    // produces an arc rather than a constant lift.
+    if (this.slowRemaining > 0) {
+      this.slowRemaining = Math.max(0, this.slowRemaining - dt);
+      if (this.slowRemaining === 0) this.slowFactor = 1;
+    }
+    if (this.impulseVy !== 0) {
+      this.impulseVy *= Math.exp(-dt / t.hazardLaunchDecaySeconds);
+      if (Math.abs(this.impulseVy) < 0.05) this.impulseVy = 0;
+    }
+
+    this.vy = baseSpeed * this.speedMultiplier * this.slowMultiplier + this.impulseVy;
+    // A slow must never reverse the climb; the bubble is buoyant, it does not sink.
+    if (this.vy < 0) this.vy = 0;
     this.y = Math.min(this.y + this.vy * dt, DEPTH_TOTAL);
 
     // --- Horizontal -------------------------------------------------------
