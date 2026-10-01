@@ -1156,8 +1156,12 @@ class Game {
       g.circle(x - r * 0.3, b.y + r * 0.3, r * 0.68).fill({ color: 0xeafcff, alpha: 0.16 });
       g.circle(x, b.y, r).stroke({ color: tint, alpha: edible ? 0.6 : 0.95, width: r * (edible ? 0.09 : 0.16) });
     }
-    // Specks last, in one fill: they are the bulk of the draw calls otherwise. Near ones are drawn
-    // brighter, which reinforces the depth ordering the parallax already implies.
+    // Specks, one shape each, in two fills.
+    //
+    // NOT batched into a single `poly()`. That was tried and it is wrong: `poly()` builds ONE path, so
+    // listing every speck's vertices joined the specks together and drew slabs across the whole
+    // screen. Pixi 8 has no multi-circle call, and the geometry here is not the bottleneck anyway --
+    // the frame cost is rasterisation, so trading correctness for fewer path segments bought nothing.
     for (const s of this.field.specks) {
       if (s.drift > 0) g.circle(s.x, s.y, s.r);
     }
@@ -1359,6 +1363,7 @@ class Game {
     bubbles: number;
     lastEaten: number;
     stats: { absorbed: number; hits: number; maxVolume: number; ended: number; newRecord: boolean };
+    report: { fps: number; lastDeltaMs: number; frames: number; bubbles: number; specks: number; hazards: number };
   } {
     return {
       frames: this.frameCount,
@@ -1477,6 +1482,20 @@ class Game {
       bubbles: this.field.bubbles.length,
       lastEaten: this.lastEaten,
       stats: { ...this.stats },
+      /**
+       * Entity counts and the frame time, for the D7 performance pass.
+       *
+       * Reported from the game rather than recomputed by a probe, so a measurement always describes
+       * the scene that actually exists.
+       */
+      report: {
+        fps: +this.fps.toFixed(1),
+        lastDeltaMs: +(this.lastDelta * 1000).toFixed(2),
+        frames: this.frameCount,
+        bubbles: this.field.bubbles.length,
+        specks: this.field.specks.length,
+        hazards: this.hazards.hazards.length,
+      },
     };
   }
 
