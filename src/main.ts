@@ -5,6 +5,7 @@ import { DEPTH_TOTAL, LEVEL } from './levels';
 import { HazardField, hazardTuning, paintHazards, type HazardKind } from './hazards';
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
+import { audio } from './audio';
 import { ascentSpeedAtDepth, nominalAscentSeconds, secondsPerScreenSeries } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
@@ -25,6 +26,13 @@ const LANDMARKS: readonly Landmark[] = LEVEL.landmarks ?? [];
 const SEEDS = ['鱼屁泡', '汽水泡', '深海淤泥泡'] as const;
 
 const INTRO_SECONDS = 1.6;
+/**
+ * The surface finish: slow-motion splash, a held beat, then the pop.
+ *
+ * Longer than the death burst (1.5s). Death is a mistake and should get out of the way; reaching the
+ * surface is the thing the whole run was for, so it gets a moment to land.
+ */
+const SURFACE_SECONDS = 2.6;
 /** Seconds between skill pickups. See `updateSkillPickup` for why it is not shorter. */
 const SKILL_PICKUP_SECONDS = 20;
 
@@ -44,6 +52,14 @@ class Game {
   private readonly pickups = new Graphics();
   private readonly bubble = new Graphics();
   private readonly particles = new Graphics();
+
+  /**
+   * Full-screen white, used only for the surface breach.
+   *
+   * A plain block rather than a shader: the flash is on screen for a fraction of a second and only
+   * has to be white.
+   */
+  private readonly flash = new Graphics();
 
   /** Collectables and decoration, maintained by density within the visible range. */
   private readonly field = new EntityField();
@@ -72,7 +88,14 @@ class Game {
   /** Seconds of invulnerability remaining after a hit. */
   private invulnerable = 0;
   /** Sticky counters for probes and for the result card. */
-  private stats = { absorbed: 0, hits: 0, maxVolume: 1, ended: 0 };
+  /**
+   * Run counters.
+   *
+   * `newRecord` is set by `recordBest` at the moment a run ends and is read by the results card. It
+   * lives here rather than being recomputed at draw time because "did this run beat the previous
+   * best" is only answerable BEFORE the best is updated.
+   */
+  private stats = { absorbed: 0, hits: 0, maxVolume: 1, ended: 0, newRecord: false };
   /** How many bubbles were absorbed in the last step, for probes. */
   private lastEaten = 0;
   private runBanner = makeLabel('', 0xd8fbff, 20);
@@ -81,7 +104,10 @@ class Game {
     this.nominalSeconds = nominalAscentSeconds();
 
     this.scene.world.addChild(this.pickups, this.bubble, this.particles);
-    this.app.stage.addChild(this.scene.root, this.hud.root, this.touch.root);
+    // The flash sits directly over the water but UNDER the HUD, so the depth readout stays legible
+    // through it -- the player should still be able to see where they got to during the white-out.
+    this.flash.visible = false;
+    this.app.stage.addChild(this.scene.root, this.flash, this.hud.root, this.touch.root);
 
     this.finishBanner.anchor.set(0.5);
     this.finishBanner.alpha = 0;
@@ -158,6 +184,9 @@ class Game {
   }
 
   handlePointerDown(pointerId: number, x: number, y: number): void {
+    // The first real gesture is the only moment a browser lets audio start. Doing it here rather than
+    // at boot is why the game is not silently muted on a phone.
+    audio.unlock();
     this.logPointer('down', pointerId, x, y);
     this.touch.onPointerDown(pointerId, x, y);
   }
@@ -240,6 +269,15 @@ class Game {
   private eventsFired = new Set<number>();
   private eventsSeen = 0;
   private lastEvent: { label: string; at: number } | null = null;
+  /** Mirrors the audio module's mute state, so the HUD can show it. */
+  private audioMuted = false;
+  /** Best run so far, kept across restarts. */
+  private bestClimbed = 0;
+  private bestVolume = 0;
+  /** White-out flash driven by the surface breach, 1 -> 0. */
+  private splash = 0;
+  /** Whether the current burst is a SURFACE finish rather than a death. */
+  private surfaced = false;
 
   /**
    * Test hook: drop a named hazard on the player, so each verb can be exercised deterministically.
@@ -272,6 +310,11 @@ class Game {
     });
   }
 
+  /** Test hook: the audio module, so a probe can check that the ambience tracks depth. */
+  get audioRef(): typeof audio {
+    return audio;
+  }
+
   /** Test hook: the hazard list, so a probe can inspect positions and states. */
   get hazardsRef(): HazardField {
     return this.hazards;
@@ -285,7 +328,7 @@ class Game {
    * cost health" needs headroom rather than a precise starting number.
    */
   debugResetStats(): void {
-    this.stats = { absorbed: 0, hits: 0, maxVolume: this.stats.maxVolume, ended: this.stats.ended };
+    this.stats = { absorbed: 0, hits: 0, maxVolume: this.stats.maxVolume, ended: this.stats.ended, newRecord: false };
     this.player.volume = tuning.volumeMax;
     this.player.slowRemaining = 0;
     this.player.slowFactor = 1;
@@ -385,6 +428,10 @@ class Game {
     this.finishBanner.scale.set(viewport.scale);
     this.finishBanner.x = screenW / 2;
     this.finishBanner.y = screenH * 0.3;
+
+    // The flash covers the canvas in SCREEN space, so it must be rebuilt whenever the canvas changes.
+    this.flash.clear();
+    this.flash.rect(0, 0, screenW, screenH).fill({ color: 0xffffff, alpha: 1 });
   }
 
   private frame(deltaSeconds: number): void {
@@ -471,6 +518,11 @@ class Game {
     }
 
     this.elapsed += dt;
+    // The ambience follows the depth every frame: it IS the progress readout. See src/audio.ts.
+    audio.tick(dt);
+    audio.setDepth(this.player.depth, DEPTH_TOTAL);
+    if (this.input.consumeMute()) this.audioMuted = audio.toggleMute();
+
     this.player.update(this.input, dt, this.lateral);
     this.camera.follow(this.player);
 
@@ -582,11 +634,16 @@ class Game {
         // leaves bait behind, so the escape is also what feeds the swarm. See src/talents.ts.
         if (this.talentEffects.talent.id === 'fish-fart') this.releaseFart();
       }
-      if (e.slowSeconds && e.slowFactor) this.player.applySlow(e.slowSeconds, e.slowFactor);
+      if (e.slowSeconds && e.slowFactor) {
+        this.player.applySlow(e.slowSeconds, e.slowFactor);
+        audio.play('slow');
+      }
       if (e.impulse) {
         // Added to whatever the ascent is doing, so a launch while accelerating carries further.
         this.player.impulseVy = Math.max(this.player.impulseVy, e.impulse);
         this.lastComedyBeat = { what: 'crab', at: this.elapsed };
+        // The crab is the one hazard that can HELP, so it gets an upward cue rather than a thud.
+        audio.play('crab');
       }
       if (e.drainPerSecond) {
         // Continuous, so it is applied as a fraction of a hit point per second rather than as whole
@@ -716,6 +773,7 @@ class Game {
       this.hud.setSkillLabel(skill.name, this.skill.uses);
     }
     this.skillActivations++;
+    audio.play('skill');
     return true;
   }
 
@@ -767,6 +825,8 @@ class Game {
       });
     }
     this.lastComedyBeat = { what: 'fish', at: this.elapsed };
+    // Deliberately silly, because the talent is a joke and should sound like one.
+    audio.play('fart');
   }
 
   /**
@@ -896,10 +956,12 @@ class Game {
       if (dx * dx + dy * dy > reach * reach) continue;
 
       if (playerR >= bubbleR * 0.92) {
-        // Big enough: absorb it.
+        // Big enough: absorb it. The cue's pitch rises with the bubble's size, so a big one announces
+        // itself without any UI.
         this.player.volume = growByAbsorbing(this.player.volume, b.volume);
         this.stats.absorbed++;
         eaten++;
+        audio.play('absorb', Math.min(1, bubbleR / Math.max(1e-6, playerR)));
         this.field.bubbles.splice(i, 1);
       } else if (this.invulnerable <= 0) {
         // Too big to eat: it hurts.
@@ -914,6 +976,7 @@ class Game {
 
   private takeHit(): void {
     this.stats.hits++;
+    audio.play('hit');
     this.invulnerable = tuning.invulnerableSeconds;
     // Decide from the POST-hit volume: asking whether the current volume can survive one more hit
     // is the right question, and asking it of the pre-hit volume let health reach zero without ever
@@ -934,6 +997,8 @@ class Game {
     this.phase = 'burst';
     this.phaseTimer = BURST_SECONDS;
     this.stats.ended++;
+    this.recordBest();
+    audio.play('pop');
     this.runBanner.text = `破裂  ·  深度 ${Math.round(this.player.depth)}m  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×`;
     this.runBanner.alpha = 1;
   }
@@ -957,13 +1022,15 @@ class Game {
     this.eventsFired = new Set();
     this.eventsSeen = 0;
     this.lastEvent = null;
+    this.splash = 0;
+    this.surfaced = false;
     this.touch.setHasSkill(false);
     this.hud.setSkillLabel(null, 0);
     this.elapsed = 0;
     this.phase = 'intro';
     this.phaseTimer = INTRO_SECONDS;
     this.invulnerable = 0;
-    this.stats = { absorbed: 0, hits: 0, maxVolume: 1, ended: this.stats.ended };
+    this.stats = { absorbed: 0, hits: 0, maxVolume: this.talentEffects.startVolume, ended: this.stats.ended, newRecord: false };
     this.rollSeed();
     this.rollTalent();
   }
@@ -987,11 +1054,37 @@ class Game {
 
   private reachSurface(): void {
     this.phase = 'burst';
-    this.phaseTimer = BURST_SECONDS;
-    this.runBanner.text = `浮出海面  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×`;
+    // Longer than a death: the surface is a reward, not a failure, and the design asks for a beat of
+    // held breath before the pop. See the spec's 终点 section.
+    this.phaseTimer = SURFACE_SECONDS;
+    this.surfaced = true;
+    this.stats.ended++;
+    this.recordBest();
+    audio.play('surface');
+    this.splash = 1;
+    this.runBanner.text = `你变成了海面上的一朵浪花  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s`;
     this.runBanner.alpha = 1;
     this.finishBanner.alpha = 1;
     this.bannerSeen = true;
+  }
+
+  /**
+   * Keep the best run, so the results card has something to beat.
+   *
+   * Best by DEPTH REACHED, not by survival time: the game is about climbing, and a run that got
+   * further is strictly better regardless of how long it took. The design's headline score is max
+   * volume, so both are kept and shown -- depth is the one that is comparable across talents.
+   */
+  private recordBest(): void {
+    const depthReached = DEPTH_TOTAL - this.player.depth; // metres climbed
+    if (depthReached > this.bestClimbed) {
+      this.bestClimbed = depthReached;
+      this.bestVolume = Math.max(this.bestVolume, this.stats.maxVolume);
+      this.stats.newRecord = true;
+    } else {
+      this.stats.newRecord = false;
+    }
+    this.bestVolume = Math.max(this.bestVolume, this.stats.maxVolume);
   }
 
   private render(dt: number): void {
@@ -1010,6 +1103,35 @@ class Game {
       : this.finishBanner.alpha;
     this.runBanner.alpha = Math.max(0, this.runBanner.alpha - dt * 0.28);
     if (this.finishBanner.alpha <= 0.01 && this.phase !== 'burst') this.finishBanner.alpha = 0;
+
+    /**
+     * The results card, rebuilt continuously while the run is ending.
+     *
+     * Rewritten every frame rather than set once, because the RECORD comparison is against a best that
+     * `recordBest` has already updated -- so the card has to say "new record" from a flag captured at
+     * the moment the run ended, not by re-comparing against a best that now includes this run.
+     */
+    if (this.phase === 'burst') {
+      this.finishBanner.text = this.surfaced
+        ? `冲破海面  ·  爬升 ${Math.round(DEPTH_TOTAL - this.player.depth)}m\n吸收 ${this.stats.absorbed}  ·  最大 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}`
+        : `破裂  ·  深度 ${Math.round(this.player.depth)}m\n吸收 ${this.stats.absorbed}  ·  爬升 ${Math.round(DEPTH_TOTAL - this.player.depth)}m\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}`;
+    }
+
+    /**
+     * The surface white-out: a short, hard flash that fades.
+     *
+     * Deliberately fast and short. The design asks for a "short white screen" as a beat between
+     * breaking through and reading the results -- long enough to feel like a transition, short enough
+     * that it never reads as a loading screen. A death gets no flash at all, which is what makes the
+     * two endings feel different in the hands.
+     */
+    if (this.splash > 0) {
+      this.splash = Math.max(0, this.splash - dt * 1.5);
+      this.flash.alpha = Math.min(1, this.splash * 1.6);
+      this.flash.visible = this.flash.alpha > 0.01;
+    } else if (this.flash.visible) {
+      this.flash.visible = false;
+    }
   }
 
   /** Collectables and decoration, drawn in world metres. */
@@ -1226,6 +1348,8 @@ class Game {
       perceptionRadiusMeters: number;
     };
     events: { seen: number; fired: number[]; last: { label: string; at: number } | null };
+    audio: { muted: boolean; running: boolean };
+    ending: { surfaced: boolean; splash: number; bestClimbed: number; bestVolume: number };
     skillPickup: { id: string; y: number } | null;
     activeSkill: { id: string; remaining: number } | null;
     phase: string;
@@ -1234,7 +1358,7 @@ class Game {
     invulnerable: number;
     bubbles: number;
     lastEaten: number;
-    stats: { absorbed: number; hits: number; maxVolume: number; ended: number };
+    stats: { absorbed: number; hits: number; maxVolume: number; ended: number; newRecord: boolean };
   } {
     return {
       frames: this.frameCount,
@@ -1335,6 +1459,14 @@ class Game {
       },
       /** Scripted depth events, and which have fired. */
       events: { seen: this.eventsSeen, fired: [...this.eventsFired], last: this.lastEvent },
+      /**
+       * Audio and ending state.
+       *
+       * `audioRunning` is reported rather than assumed: browsers block audio until a real gesture, and
+       * a game that claims to have sound while silently muted is worse than one that admits it.
+       */
+      audio: { muted: this.audioMuted, running: audio.isRunning },
+      ending: { surfaced: this.surfaced, splash: +this.splash.toFixed(3), bestClimbed: Math.round(this.bestClimbed), bestVolume: +this.bestVolume.toFixed(2) },
       skillPickup: this.skillPickup ? { id: this.skillPickup.id, y: +this.skillPickup.y.toFixed(1) } : null,
       /** Active effect timers, so a skill that lasts can be observed while it runs. */
       activeSkill: this.player.skillId ? { id: this.player.skillId, remaining: +this.player.skillRemaining.toFixed(2) } : null,

@@ -218,13 +218,22 @@ try {
   await sleep(400);
 
   // Exercise the finish -> banner -> burst -> restart path without waiting out a full run.
-  // The surface trigger starts a 1.5s burst, so the probe waits past it rather than assuming the
-  // reset is immediate.
+  //
+  // Polls for the restart rather than sleeping a fixed window. The surface burst is deliberately
+  // LONGER than a death burst (the surface is the reward, not a mistake), and a hardcoded wait that
+  // matched the old duration silently became too short when that changed -- the assertion failed with
+  // "the reset did not happen" while the reset was simply still in progress.
   await cdp.send('Runtime.evaluate', { expression: 'window.__GB.game.teleportToSurface()' });
   await sleep(200);
   const atSurface = await cdp.send('Runtime.evaluate', { expression: probe, returnByValue: true });
-  await sleep(2600);
-  const afterReset = await cdp.send('Runtime.evaluate', { expression: probe, returnByValue: true });
+  let afterReset = atSurface;
+  for (let i = 0; i < 60; i++) {
+    await sleep(150);
+    afterReset = await cdp.send('Runtime.evaluate', { expression: probe, returnByValue: true });
+    const s = JSON.parse(afterReset.result.value);
+    // A fresh run: back at the seabed, with the counters cleared.
+    if (s.depth > 495 && s.intro > 0 && s.stats.absorbed === 0) break;
+  }
 
   const a = JSON.parse(first.result.value);
   const b = JSON.parse(second.result.value);

@@ -19,6 +19,8 @@ const KEYS = {
    * first when a game has one obvious button.
    */
   skill: ['KeyJ', 'Enter'],
+  /** Mute toggle. `KeyM` is the near-universal convention and costs nothing to honour. */
+  mute: ['KeyM'],
 } as const;
 
 export class Input {
@@ -92,9 +94,23 @@ export class Input {
     const skillDown = held(KEYS.skill);
     if (skillDown && !this.skillKeyWasDown) this.skillPressed = true;
     this.skillKeyWasDown = skillDown;
+
+    const muteDown = held(KEYS.mute);
+    if (muteDown && !this.muteKeyWasDown) this.mutePressed = true;
+    this.muteKeyWasDown = muteDown;
   }
 
   private skillKeyWasDown = false;
+  private muteKeyWasDown = false;
+  /** Mute toggle pressed since the last consume. */
+  private mutePressed = false;
+
+  /** Take the pending mute toggle, if any. Edge-triggered like the skill. */
+  consumeMute(): boolean {
+    if (!this.mutePressed) return false;
+    this.mutePressed = false;
+    return true;
+  }
 
   /** Signal a skill press from a touch control. */
   pressSkill(): void {
