@@ -7,7 +7,7 @@ import { Input } from './input';
 import { calibrateLateral, type LateralAuthority } from './lateral';
 import { Player } from './player';
 import { TouchControls } from './touch';
-import { bubbleVolumeFromRadius, growByAbsorbing, hitsSurvived, isPopped, shrinkFromHit, visualRadiusFraction } from './volume';
+import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius, growByAbsorbing, hitsSurvived, isPopped, shrinkFromHit, visualRadiusFraction } from './volume';
 
 /**
  * Depths where the emergence events fire (design round 4). On D1 they only prove the depth scale
@@ -230,7 +230,9 @@ class Game {
       min,
       max,
       visualRadiusFraction(this.player.volume),
-      // Drives the parallax layers: near specks sweep past at a multiple of the player's own speed.
+      this.player.volume,
+      // Drives every relative speed the player sees: a bubble's screen speed is
+      // `ascentSpeed - its own rise speed`.
       this.player.vy > 0 ? this.player.vy : ascentSpeedAtDepth(this.player.depth),
     );
 
@@ -374,8 +376,9 @@ class Game {
 
     for (const b of this.field.bubbles) {
       const r = laneWidth * b.radius;
-      // Drift sideways a touch so a field of bubbles does not look like a grid.
-      const drift = Math.sin(b.phase) * r * 0.25;
+      // Lateral wobble: small bubbles shimmy, large ones hold their shape. Cosmetic, and small
+      // enough that it never changes when a bubble passes the player.
+      const drift = Math.sin(b.phase) * r * b.wobble;
       const x = b.x + drift;
       // Bigger bubbles are brighter; anything bigger than the player reads as a threat.
       const playerR = laneWidth * visualRadiusFraction(this.player.volume);
@@ -543,7 +546,7 @@ class Game {
     const laneWidth = this.camera.viewport.laneWidthMeters;
     const playerRadius = laneWidth * visualRadiusFraction(this.player.volume);
     const radius = (playerRadius * sizeRatio) / laneWidth;
-    // Stationary (vy: 0) so the collision is immediate and does not depend on fall speed.
+    // vy 0 holds it on the player regardless of its size, so the collision is immediate.
     this.field.addTestBubble({
       x: this.player.x * laneWidth,
       y: this.player.y,
@@ -551,31 +554,35 @@ class Game {
       radius,
       volume: bubbleVolumeFromRadius(radius),
       phase: 0,
+      wobble: tuning.bubbleWobbleMin,
     });
   }
 
   /**
-   * Test hook: launch a bubble at the player from above, travelling at the real stream speed.
+   * Test hook: spawn a bubble already overlapping the player, while it is genuinely moving.
    *
-   * The `vy: 0` version above proves the collision rule; this proves the collision still FIRES at
-   * the shipped fall speed. Those are different risks: a bubble at 40x the ascent speed moves a long
-   * way per step, and it would be entirely possible for the size rule to be right while contact is
-   * simply missed at speed.
+   * The `vy: 0` version above proves the collision RULE; this proves contact is not skipped while
+   * the bubble is in motion. Spawned at zero distance on purpose: a bubble's relative speed is
+   * `ascent - its own rise`, which for a small bubble is a fraction of a metre per second (they are
+   * nearly matching the player), so waiting for one to close a real gap would take minutes. An
+   * earlier version spawned it half a reach away and timed out for exactly that reason.
    */
   spawnFallingBubbleOnPlayer(sizeRatio: number): void {
     const laneWidth = this.camera.viewport.laneWidthMeters;
     const playerRadius = laneWidth * visualRadiusFraction(this.player.volume);
     const radius = (playerRadius * sizeRatio) / laneWidth;
-    const speed = this.player.vy > 0 ? this.player.vy : 1.7;
-    // Start one reach above the player so the first contact happens within a few steps.
-    const gap = playerRadius + laneWidth * radius;
+    const volume = bubbleVolumeFromRadius(radius);
+    const ascent = this.player.vy > 0 ? this.player.vy : 1.7;
+    // Its real relative speed, solved the same way the field does. A small bubble drifts down.
+    const relative = bubbleRelativeFallRatio(volume, this.player.volume) * ascent;
     this.field.addTestBubble({
       x: this.player.x * laneWidth,
-      y: this.player.y + gap * 1.2,
-      vy: speed * tuning.bubbleFallMax,
+      y: this.player.y,
+      vy: relative,
       radius,
-      volume: bubbleVolumeFromRadius(radius),
+      volume,
       phase: 0,
+      wobble: tuning.bubbleWobbleMin,
     });
   }
 
@@ -622,6 +629,15 @@ class Game {
     nearestBubbleWorldY: number | null;
     nearestBubbleScreenSpeedPxPerS: number | null;
     nearestBubbleFallMps: number | null;
+    trackedBubbleSizeRatio: number | null;
+    trackedBubbleRiseRatio: number | null;
+    trackedBubbleRelativeFallMps: number | null;
+    collectables: {
+      sizeRatio: number;
+      wobble: number;
+      relativeFallMps: number;
+      screenSpeedPxPerS: number;
+    }[];
     trackedBubbleId: number | null;
     trackedBubbleScreenY: number | null;
     speckScreenY: number | null;
@@ -657,6 +673,27 @@ class Game {
        */
       nearestBubbleScreenSpeedPxPerS: nearest ? +(nearest.vy * cam.viewport.scale).toFixed(2) : null,
       nearestBubbleFallMps: nearest ? +nearest.vy.toFixed(3) : null,
+      /** Tracked bubble diagnostics: size, its own rise rate, and the resulting screen motion. */
+      trackedBubbleSizeRatio: tracked
+        ? +(tracked.radius / Math.max(1e-6, visualRadiusFraction(this.player.volume))).toFixed(3)
+        : null,
+      trackedBubbleRiseRatio: tracked ? +bubbleRiseRatio(tracked.volume, this.player.volume).toFixed(3) : null,
+      trackedBubbleRelativeFallMps: tracked ? +tracked.vy.toFixed(3) : null,
+      /**
+       * Every visible collectable with its size and relative motion, sorted smallest first.
+       *
+       * Provided by the game rather than recomputed in the probe: an earlier probe version mixed
+       * metre-scaled lane width with lane-relative radii and produced a column of zeros, which read
+       * like a game bug instead of a probe bug.
+       */
+      collectables: this.field.bubbles
+        .map((b) => ({
+          sizeRatio: +(b.radius / Math.max(1e-6, visualRadiusFraction(this.player.volume))).toFixed(3),
+          wobble: +b.wobble.toFixed(3),
+          relativeFallMps: +b.vy.toFixed(3),
+          screenSpeedPxPerS: +(b.vy * cam.viewport.scale).toFixed(1),
+        }))
+        .sort((a, b) => a.sizeRatio - b.sizeRatio),
       /** A tracked bubble: the first in the field, identified so successive samples mean one object. */
       trackedBubbleId: tracked ? tracked.id : null,
       trackedBubbleScreenY: tracked ? +cam.toScreenY(tracked.y).toFixed(2) : null,

@@ -228,9 +228,10 @@ try {
     fieldRepopulates: results.fieldRepopulates.bubbles > 5,
     // Contact must not be skipped just because the bubble is falling fast.
     fastContactRegisters: results.fastContact.registered,
-    // Keyboard speed must be a sane lane-crossing rate, not the 8 lane-widths/s an acceleration
-    // ramp produced. A crossing time between 3 and 15 seconds is the usable band.
-    keyboardPaceIsSane: 1 / results.pacing.keyboardSpeed >= 3 && 1 / results.pacing.keyboardSpeed <= 15,
+    // Keyboard speed must be a usable lane-crossing rate, not the 0.13s an acceleration ramp once
+    // produced. The band is wide on purpose: the crossing time is a knob the player is expected to
+    // tune, so this guards against nonsense rather than against a particular taste.
+    keyboardPaceIsSane: 1 / results.pacing.keyboardSpeed >= 1 && 1 / results.pacing.keyboardSpeed <= 20,
     noExceptions: exceptions.length === 0,
   };
   console.log('CHECKS: ' + JSON.stringify(checks));

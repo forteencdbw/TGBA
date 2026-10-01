@@ -144,9 +144,12 @@ try {
     nearSpeckScreenYVelocityPxPerS: rate(first.nearSpeckScreenY, last.nearSpeckScreenY),
     nearSpeckDrift: last.nearSpeckDrift,
     farSpeckDrift: last.farSpeckDrift,
-    // The tracked bubble: same object across samples, so this is its true fall rate on screen.
+    // The tracked bubble: same object across samples, so this is its true screen motion.
     bubbleScreenSpeedPxPerS: rate(first.trackedBubbleScreenY, last.trackedBubbleScreenY),
     bubbleFallMps: last.nearestBubbleFallMps,
+    trackedBubbleSizeRatio: last.trackedBubbleSizeRatio,
+    trackedBubbleRiseRatio: last.trackedBubbleRiseRatio,
+    trackedBubbleRelativeFallMps: last.trackedBubbleRelativeFallMps,
     trackedBubbleId: last.trackedBubbleId,
     samples: samples.map((s) => ({
       playerY: s.playerScreenY,
@@ -160,21 +163,32 @@ try {
 
   console.log(JSON.stringify(motion, null, 2));
 
+  const dirOk =
+    motion.trackedBubbleRelativeFallMps === null || motion.bubbleScreenSpeedPxPerS === null
+      ? false
+      : Math.sign(motion.bubbleScreenSpeedPxPerS) === Math.sign(motion.trackedBubbleRelativeFallMps) ||
+        Math.abs(motion.trackedBubbleRelativeFallMps) < 0.05;
+
   const checks = {
     // On screen the player must not move: the camera tracks it exactly.
     playerIsScreenFixed: Math.abs(motion.playerScreenYDriftPx) < 2,
-    // Everything else must travel DOWN the screen (increasing screen y).
     farSpecksScrollDown: motion.farSpeckScreenYVelocityPxPerS !== null && motion.farSpeckScreenYVelocityPxPerS > 1,
     // The near layer is a speed cue, so it must be substantially faster than the far one.
     nearLayerIsFaster:
       motion.nearSpeckScreenYVelocityPxPerS !== null &&
       motion.farSpeckScreenYVelocityPxPerS !== null &&
       motion.nearSpeckScreenYVelocityPxPerS > motion.farSpeckScreenYVelocityPxPerS * 3,
-    // THE headline requirement: collectables must visibly stream DOWN past the player.
-    bubblesStreamDown: motion.bubbleScreenSpeedPxPerS !== null && motion.bubbleScreenSpeedPxPerS > 25,
+    // NOT "collectables move down". Their direction is a function of SIZE: a bubble smaller than the
+    // player drifts down, a larger one rises faster than the player and travels up. The contract is
+    // that the observed direction agrees with the sign the model predicts for that bubble.
+    // (The size/speed relationship itself is asserted in scripts/rise-speed.mjs.)
+    trackedBubbleMatchesPredictedDirection: dirOk,
     cameraRises: motion.cameraRiseMps !== null && motion.cameraRiseMps > 0,
     depthDecreases: motion.depthGainM > 0,
   };
+  console.log(
+    `direction check: screenSpeed=${motion.bubbleScreenSpeedPxPerS} predictedFall=${motion.trackedBubbleRelativeFallMps} size=${motion.trackedBubbleSizeRatio} => ${dirOk}`,
+  );
   console.log('CHECKS: ' + JSON.stringify(checks));
 
   code = Object.values(checks).every(Boolean) ? 0 : 1;

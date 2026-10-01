@@ -130,7 +130,16 @@ try {
     '    if (band < 0) band = 0;' +
     '    bands[band]++;' +
     '  }' +
-    '  return JSON.stringify({ phase: g.diagnostics.phase, total: bs.length, onScreen: onScreen, bands: bands });' +
+    '  return JSON.stringify({' +
+    '    phase: g.diagnostics.phase,' +
+    '    total: bs.length,' +
+    '    onScreen: onScreen,' +
+    '    bands: bands,' +
+    '    camY: Math.round(cam.y),' +
+    '    viewMin: Math.round(cam.y - h / 2 / cam.viewport.scale),' +
+    '    viewMax: Math.round(cam.y + h / 2 / cam.viewport.scale),' +
+    '    relY: bs.map(function (x) { return Math.round(cam.toScreenY(x.y)); }).sort(function (a, b) { return a - b; })' +
+    '  });' +
     '})()';
 
   const sample = async () => {
@@ -152,6 +161,12 @@ try {
     const bar = r.bands.map((c) => String(c).padStart(3)).join('|');
     console.log(`t=${(i * INTERVAL) / 1000}s  phase=${r.phase.padEnd(7)} onScreen=${String(r.onScreen).padStart(3)} total=${r.total}  ${bar}`);
   }
+
+  // Screen-space y of every collectable, so "they exist but are not visible" is unambiguous.
+  const lastRow = rows[rows.length - 1];
+  console.log(`\ncamera y=${lastRow.camY}  view=${lastRow.viewMin}..${lastRow.viewMax}`);
+  console.log('screen y of every collectable (- = above the top, >height = below the bottom):');
+  console.log('  ' + lastRow.relY.join(', '));
 
   const last = rows[rows.length - 1];
   const onScreen = last.bands.reduce((a, b) => a + b, 0);

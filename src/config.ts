@@ -72,7 +72,7 @@ export const BOOST_CROSSING_SECONDS = 6.5;
  *
  * Bigger = slower. Touch steering is unaffected: it eases toward the finger and never reads this.
  */
-export const KEYBOARD_CROSSING_SECONDS = 7;
+export const KEYBOARD_CROSSING_SECONDS = 2;
 /** Passive drag toward zero velocity, per second. Higher = stops sooner = less floaty. */
 export const LATERAL_DAMPING = 5.5;
 /** Fixed simulation step (120Hz). Shared by the game loop and the lateral calibration. */
@@ -136,27 +136,44 @@ export const tuning = {
 
   // --- Collectables -------------------------------------------------------
   /**
-   * How fast a collectable travels DOWN, as a multiple of the PLAYER'S CURRENT ascent speed.
+   * How fast a collectable rises ON ITS OWN, as a multiple of the player's ascent speed.
    *
-   * Proportional to the player's speed on purpose. Screen speed of anything in the water is
-   * `cameraSpeed + its own speed`, and the camera speed IS the player's ascent speed, so tying the
-   * stream to it makes the whole water column accelerate as the ascent accelerates -- which is what
-   * "I am rising through water" looks like.
+   * This is the real-world relationship: bigger bubbles rise faster, because buoyancy grows with
+   * volume while drag grows with cross-section, so terminal velocity increases with radius.
    *
-   * It also gives the accelerate control an immediate visual: boosting multiplies the ascent speed,
-   * so the entire stream speeds up on the same frame.
+   * What the player sees is the DIFFERENCE:
    *
-   * Two rejected alternatives, both measured:
-   *   - depth-scaled (`ascentSpeedAtDepth * random`): near the seabed this gave a relative screen
-   *     speed of ~0.2 px/s, which read as frozen water.
-   *   - a flat lane-relative band: it moved, but at a constant rate that ignored the ascent
-   *     entirely, so climbing faster changed nothing.
+   *     screen speed = playerAscent - the bubble's own rise speed
    *
-   * A wide band (rather than a single multiplier) is what gives the stream its spread: some bubbles
-   * are near the camera and rush past, others are far and drift.
+   * so with these bounds:
+   *   - a bubble at 0.15x the player's radius rises at 0.15 of the player's pace, so it falls away
+   *     down the screen at 0.85x the ascent;
+   *   - one the player's own size rises at about 1.0, so it hangs almost still alongside;
+   *   - one at 1.6x or more rises FASTER than the player and climbs up the screen.
+   *
+   * That makes size legible with no UI at all: what drifts downward is what you can eat, and what
+   * climbs away is what you cannot.
+   *
+   * Note the whole field is measured RELATIVE to the ascent, so the spread is modest near the
+   * seabed (about 1-2 px/s on a phone) and obvious near the surface (about 3-5 px/s across a
+   * 13-second crossing). That follows from being physically consistent, and is not a defect.
+   *
+   * Replaces an earlier model that scaled a fixed downward speed by the player's ascent. That got
+   * the magnitude right -- the stream moved -- but had no relationship to bubble size whatsoever.
    */
-  bubbleFallMin: 10,
-  bubbleFallMax: 40,
+  bubbleRiseMin: 0.15,
+  bubbleRiseMax: 1.6,
+  /** How the rise multiple scales with size. 1 = linear in radius, which is the readable choice. */
+  riseSpeedExponent: 1,
+  /**
+   * Lateral wobble amplitude as a fraction of a collectable's own radius.
+   *
+   * Small bubbles visibly shimmy as they rise, while large ones hold their shape, so the amplitude
+   * scales DOWN with size. Purely cosmetic and deliberately small: it must never move a bubble
+   * enough to change when it passes the player, or reading the screen becomes guesswork.
+   */
+  bubbleWobbleMin: 0.05,
+  bubbleWobbleMax: 0.3,
 
   // --- Keyboard steering --------------------------------------------------
   // NOT a tuning value: keyboard speed is derived from KEYBOARD_CROSSING_SECONDS above, so it is

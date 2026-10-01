@@ -70,3 +70,43 @@ export function bubbleVolumeFromRadius(radiusFraction: number): number {
   const base = tuning.bubbleLaneRatio;
   return (radiusFraction / base) ** 2;
 }
+
+/** Drawn radius fraction of a collectable, from its volume (inverse of `bubbleVolumeFromRadius`). */
+export function radiusFractionFromBubbleVolume(volume: number): number {
+  return Math.sqrt(Math.max(0, volume)) * tuning.bubbleLaneRatio;
+}
+
+/**
+ * How fast a collectable RISES on its own, as a multiple of the player's ascent speed.
+ *
+ * Real bubbles rise faster the bigger they are: buoyancy grows with volume while drag grows with
+ * cross-section, so terminal velocity ends up increasing with radius. Within the size range that
+ * matters here the relationship is close to linear in radius, which is also the easiest version to
+ * read on screen, so `riseSpeedExponent` defaults to 1.
+ *
+ * The consequence for the player is the interesting part:
+ *
+ *     screen speed of a bubble = playerAscent - itsOwnRiseSpeed
+ *
+ * so a large bubble rises faster than the player and therefore moves UP the screen, a medium one
+ * hangs alongside, and a small one falls away down the screen. That is exactly the real-world
+ * relationship the game should be showing, and it makes size selection legible: the thing that
+ * drifts downward is the thing you can eat.
+ */
+export function bubbleRiseRatio(bubbleVolume: number, playerVolume: number): number {
+  const r = radiusFractionFromBubbleVolume(bubbleVolume);
+  const rRef = visualRadiusFraction(playerVolume);
+  const sizeRatio = Math.max(1e-4, r / Math.max(1e-4, rRef));
+  const shaped = Math.pow(sizeRatio, tuning.riseSpeedExponent);
+  return Math.min(tuning.bubbleRiseMax, Math.max(tuning.bubbleRiseMin, shaped));
+}
+
+/**
+ * Signed screen speed of a collectable, as a multiple of the player's ascent speed.
+ *
+ * POSITIVE means it travels DOWN the screen relative to the player (the player overtakes it);
+ * NEGATIVE means it travels UP (it rises faster than the player and pulls away).
+ */
+export function bubbleRelativeFallRatio(bubbleVolume: number, playerVolume: number): number {
+  return 1 - bubbleRiseRatio(bubbleVolume, playerVolume);
+}

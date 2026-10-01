@@ -116,6 +116,9 @@ try {
   const tuning = await evalJson(
     'JSON.stringify({ keyboardSpeed: window.__GB.game.diagnostics.lateral.keyboardSpeed, laneWidthMeters: window.__GB.game.diagnostics.laneWidthMeters, scale: window.__GB.camera.viewport.scale })',
   );
+  // Derived from the game, not hardcoded: the crossing time is a tuning knob the player is expected
+  // to change, so an assertion pinned to a specific number fails every time it is adjusted.
+  const expectedCrossing = 1 / tuning.keyboardSpeed;
 
   const probe = () => evalJson('JSON.stringify({ x: window.__GB.player.x, vx: window.__GB.player.vx, axisX: window.__GB.input.axisX, drag: window.__GB.input.dragTargetX })');
 
@@ -153,10 +156,11 @@ try {
     keyProducesVelocity: held.vx > 0,
     // The point of the model: speed must NOT ramp with how long the key is held.
     speedIsConstant: Math.abs(speedAt1000 - speedAt400) < 1,
-    // And it must match the configured crossing time exactly, since there is no ramp to account for.
-    matchesConfiguredCrossing: Math.abs(report.laneCrossingSecondsAtTopSpeed - 7) < 0.2,
+    // And the measured crossing must match whatever the speed implies, with no ramp to account for.
+    matchesConfiguredCrossing: Math.abs(report.laneCrossingSecondsAtTopSpeed - expectedCrossing) < 0.1,
     stopsOnRelease: released.vx === 0,
   };
+  console.log(`expected crossing = ${expectedCrossing.toFixed(2)}s (derived from keyboardSpeed)`);
   console.log('CHECKS: ' + JSON.stringify(checks));
   code = Object.values(checks).every(Boolean) ? 0 : 1;
   cdp.close();
