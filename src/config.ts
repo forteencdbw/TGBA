@@ -93,15 +93,47 @@ export const tuning = {
   /**
    * Ascent speed (m/s) as the bubble reaches the surface.
    *
-   * There is no elementary closed form for the traversal time when the exponent is not 1, so
-   * re-solve it numerically (`node scripts/solve-ascent.mjs`) rather than deriving it by hand:
-   *   1.7 / 2.4 / 8.55  =>  a no-input run lasts 175.0s  (design target: ~3 minutes)
-   *   500m 1.70  400m 1.84  300m 2.46  180m 4.05  100m 5.71  50m 7.02  0m 8.55
+   * These three numbers decide the run length, and there is no elementary closed form for the
+   * traversal time once the exponent is not 1, so re-solve it numerically rather than by hand:
+   *
+   *     node scripts/solve-ascent.mjs
+   *
    * Confirm from the running game: the HUD `eta` field and `window.__GB.game.diagnostics.nominalSeconds`.
+   *
+   * THE TRADEOFF, measured, because it is the whole reason these values look the way they do:
+   * what the player sees move is `speed / metresPerPixel`, and near the seabed a phone screen is
+   * about 0.72 m per pixel. At 1.7 m/s that is under 3 px/s of visible motion -- indistinguishable
+   * from frozen water, and no boost multiplier fixes it, because the multiplier scales BOTH the
+   * player and the camera. Only the base speed changes the early feel.
+   *
+   *   exponent 2.4  ->  175s   seabed 1.70 m/s  (~2 px/s of visible motion)
+   *   exponent 1.0  ->  118s   seabed 1.70 m/s  (same, but 300m is reached far sooner)
+   *   exponent 0.0  ->   58s   linear, fastest everywhere
+   *
+   * A shorter run is the price of an early game that looks like it is moving.
    */
   ascentSpeedPeak: 8.55,
-  /** >1 keeps the early game slow and back-loads the speed. 1 = perfectly linear. */
-  ascentCurveExponent: 2.4,
+  /**
+   * How back-loaded the speed curve is. 1 = linear in depth, 0 = constant speed, >1 = slow start.
+   *
+   * Lowered from 2.4, which was chosen to hit a 175s run and made the first 200m -- 40% of the
+   * climb, and the part the player is actually looking at when they form an impression -- barely
+   * change speed at all.
+   */
+  ascentCurveExponent: 1,
+  /**
+   * The no-input run length these ascent numbers are expected to produce, in seconds.
+   *
+   * This is the SINGLE SOURCE OF TRUTH for the design target. It is not used to compute anything --
+   * `nominalAscentSeconds()` integrates the real curve -- but a probe compares the two, so a change
+   * to base/peak/exponent cannot silently turn a two-minute game into a four-minute one.
+   *
+   * Originally 175, which REQUIRED the slow-start exponent of 2.4. That combination made the first
+   * 200m of the climb barely change speed, and since that is where the player forms their
+   * impression, the whole game read as motionless near the seabed. 118s with a linear curve trades
+   * run length for an early game that visibly moves.
+   */
+  targetRunSeconds: 117.9,
   /**
    * Top ascent speed while the accelerate control is held, as a multiple of the cruising speed.
    *

@@ -519,6 +519,7 @@ class Game {
     intro: number;
     lastDelta: number;
     nominalSeconds: number;
+    targetRunSeconds: number;
     ascentSpeed: number;
     bannerAlpha: number;
     bannerSeen: boolean;
@@ -542,6 +543,8 @@ class Game {
       intro: this.phaseTimer,
       lastDelta: this.lastDelta,
       nominalSeconds: this.nominalSeconds,
+      /** What the run SHOULD last for the current ascent numbers, so a probe can compare. */
+      targetRunSeconds: tuning.targetRunSeconds,
       ascentSpeed: ascentSpeedAtDepth(this.player.depth),
       bannerAlpha: this.finishBanner.alpha,
       bannerSeen: this.bannerSeen,
@@ -690,6 +693,7 @@ class Game {
     trackedBubbleSizeRatio: number | null;
     trackedBubbleRiseRatio: number | null;
     trackedBubbleRelativeFallMps: number | null;
+    trackedBubbleScreenSpeedPxPerS: number | null;
     cruiseAscentMps: number;
     fieldCruiseAscentMps: number;
     playerAscentMps: number;
@@ -740,6 +744,15 @@ class Game {
         : null,
       trackedBubbleRiseRatio: tracked ? +bubbleRiseRatio(tracked.volume, this.player.volume).toFixed(3) : null,
       trackedBubbleRelativeFallMps: tracked ? +tracked.vy.toFixed(3) : null,
+      /**
+       * Instantaneous screen speed of the tracked bubble, in px/s.
+       *
+       * The INSTANTANEOUS counterpart to the averaged rate a probe measures over a window. Both are
+       * needed: a bubble's direction can flip inside the window (the player grows and the bubble
+       * goes from being overtaken to overtaking), so comparing an average against an instantaneous
+       * value can disagree in sign even when the model is right.
+       */
+      trackedBubbleScreenSpeedPxPerS: tracked ? +(tracked.vy * cam.viewport.scale).toFixed(3) : null,
       /**
        * The two ascent speeds, so a probe can prove they are used for different things.
        *

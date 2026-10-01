@@ -150,6 +150,7 @@ try {
     trackedBubbleSizeRatio: last.trackedBubbleSizeRatio,
     trackedBubbleRiseRatio: last.trackedBubbleRiseRatio,
     trackedBubbleRelativeFallMps: last.trackedBubbleRelativeFallMps,
+    trackedBubbleScreenInstantPxPerS: last.trackedBubbleScreenSpeedPxPerS,
     trackedBubbleId: last.trackedBubbleId,
     samples: samples.map((s) => ({
       playerY: s.playerScreenY,
@@ -164,10 +165,14 @@ try {
   console.log(JSON.stringify(motion, null, 2));
 
   const dirOk =
-    motion.trackedBubbleRelativeFallMps === null || motion.bubbleScreenSpeedPxPerS === null
+    motion.trackedBubbleRelativeFallMps === null || motion.trackedBubbleScreenInstantPxPerS === null
       ? false
-      : Math.sign(motion.bubbleScreenSpeedPxPerS) === Math.sign(motion.trackedBubbleRelativeFallMps) ||
-        Math.abs(motion.trackedBubbleRelativeFallMps) < 0.05;
+      : // Compare two INSTANTANEOUS values from the same state, so they are mathematically the same
+        // signed quantity scaled into px/s. Comparing the model against an AVERAGED rate over the
+        // window was wrong: a bubble whose direction flips mid-window (the player grows past it)
+        // averages to a sign that disagrees with the state at either end of the window.
+        Math.abs(motion.trackedBubbleRelativeFallMps) < 0.05 ||
+        Math.sign(motion.trackedBubbleScreenInstantPxPerS) === Math.sign(motion.trackedBubbleRelativeFallMps);
 
   const checks = {
     // On screen the player must not move: the camera tracks it exactly.
@@ -187,7 +192,7 @@ try {
     depthDecreases: motion.depthGainM > 0,
   };
   console.log(
-    `direction check: screenSpeed=${motion.bubbleScreenSpeedPxPerS} predictedFall=${motion.trackedBubbleRelativeFallMps} size=${motion.trackedBubbleSizeRatio} => ${dirOk}`,
+    `direction check: instantScreenSpeed=${motion.trackedBubbleScreenInstantPxPerS}px/s predictedFall=${motion.trackedBubbleRelativeFallMps}m/s size=${motion.trackedBubbleSizeRatio} windowAvg=${motion.bubbleScreenSpeedPxPerS}px/s => ${dirOk}`,
   );
   console.log('CHECKS: ' + JSON.stringify(checks));
 

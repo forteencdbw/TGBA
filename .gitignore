@@ -46,3 +46,6 @@ MSG.tmp
 CM.tmp
 COMMIT_MSG.tmp
 MSG.tmp
+
+# Temporary commit-message files
+CM2.tmp
