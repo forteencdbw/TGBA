@@ -112,7 +112,7 @@ export const tuning = {
    * NOTE this changes the run length if held, and `nominalAscentSeconds()` (the HUD `eta`) only
    * models the NO-INPUT case. See `BOOST_ACCEL_SECONDS`.
    */
-  boostMultiplier: 2.4,
+  boostMultiplier: 13,
   /** Speed multiplier while braking. */
   brakeMultiplier: 0.4,
   /**
@@ -126,7 +126,7 @@ export const tuning = {
    * settled by about 3x it. Setting it to 0 makes the change instant, which is what the game did
    * before this was configurable.
    */
-  boostAccelSeconds: 0.8,
+  boostAccelSeconds: 0.5,
 
   // --- Horizontal (the actual controls) -----------------------------------
   //

@@ -114,8 +114,10 @@ export class EntityField {
    *   sizes can be expressed relative to it. Ratios are far easier to reason about than absolute
    *   radii: >1 means "too big to eat", and the mix of ratios IS the difficulty curve.
    * @param playerVolume the player's current volume, used to solve each bubble's rise speed.
-   * @param ascentSpeed the player's current m/s. Everything the player sees move is measured
-   *   relative to this: a bubble's screen speed is `ascentSpeed - itsOwnRiseSpeed`.
+   * @param cruiseAscent the player's CRUISING ascent speed (the depth curve, WITHOUT the boost
+   *   multiplier). Collectables are sized against this so that accelerating moves only the player.
+   * @param playerAscent the player's ACTUAL ascent speed, boost included. Used for the parallax
+   *   layers only -- world scenery should sweep past faster when the player climbs faster.
    */
   update(
     dt: number,
@@ -124,12 +126,14 @@ export class EntityField {
     max: number,
     playerRadiusFraction: number,
     playerVolume: number,
-    ascentSpeed: number,
+    cruiseAscent: number,
+    playerAscent: number,
   ): void {
-    this.ascentSpeed = Math.max(0.001, ascentSpeed);
+    this.cruiseAscent = Math.max(0.001, cruiseAscent);
+    this.playerAscent = Math.max(0.001, playerAscent);
     this.playerVolume = playerVolume;
     this.advance(dt);
-    this.advanceParallax(dt, this.ascentSpeed);
+    this.advanceParallax(dt, this.playerAscent);
     this.recycle(min, max);
     this.topUp(laneWidth, min, max, playerRadiusFraction);
   }
@@ -137,15 +141,43 @@ export class EntityField {
   /** Player volume the bubble speeds are currently solved against. */
   private playerVolume = 1;
 
-  /** The ascent speed the stream is currently scaled to. */
-  private ascentSpeed = 1.7;
+  /**
+   * Cruising ascent speed: what collectable motion is measured against.
+   *
+   * Deliberately NOT the boosted speed. Collectables have their own rise rate, and holding the
+   * accelerate control makes the PLAYER climb faster -- it must not also make every bubble stream
+   * down faster, or accelerating would scale the whole world instead of just the player.
+   */
+  private cruiseAscent = 1.7;
+
+  /** Actual ascent speed, boost included. Drives the parallax layers only. */
+  private playerAscent = 1.7;
+
+  /**
+   * A collectable's signed relative speed in m/s: positive travels down-screen, negative up.
+   *
+   * Pulled out as its own function so a test can compare it across boost states WITHOUT also moving
+   * the player: it is a pure function of the bubble's size, the player's size, and the player's
+   * CRUISING ascent speed. Testing it indirectly, by tracking a live bubble, cannot separate the
+   * boost from the player growing mid-sample.
+   */
+  solveBubbleVelocity(bubbleVolume: number, playerVolume: number): number {
+    return bubbleRelativeFallRatio(bubbleVolume, playerVolume) * this.cruiseAscent;
+  }
+
+  /** The cruising ascent speed collectables are currently solved against. */
+  get cruiseAscentSpeed(): number {
+    return this.cruiseAscent;
+  }
 
   private advance(dt: number): void {
     for (const b of this.bubbles) {
       if (b.held) continue;
       // Re-solve every frame rather than at spawn: the relationship depends on the player's CURRENT
       // size, so a bubble the player has grown past must start drifting down without being respawned.
-      b.vy = bubbleRelativeFallRatio(b.volume, this.playerVolume) * this.ascentSpeed;
+      // Measured against the CRUISING ascent, not the boosted one: accelerating must move the player
+      // and leave the collectables alone. (World scenery is the exception -- see `advanceParallax`.)
+      b.vy = this.solveBubbleVelocity(b.volume, this.playerVolume);
       // `vy` is signed: positive is down-screen (the player overtakes), negative is up-screen (the
       // bubble outruns the player). World y grows upward, so it is subtracted either way.
       b.y -= b.vy * dt;
@@ -265,7 +297,7 @@ export class EntityField {
       x: radius + Math.random() * Math.max(0.01, laneWidth - radius * 2),
       y,
       // Signed and re-solved every frame; see `advance`.
-      vy: bubbleRelativeFallRatio(volume, this.playerVolume) * this.ascentSpeed,
+      vy: bubbleRelativeFallRatio(volume, this.playerVolume) * this.cruiseAscent,
       radius,
       volume,
       phase: Math.random() * Math.PI * 2,

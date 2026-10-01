@@ -240,6 +240,20 @@ class Game {
     // empty ocean and only fills in once control returns.
     const viewport = this.camera.viewport;
     const { min, max } = this.camera.visibleWorldRange(20);
+    // Two ascent speeds, because they drive two different things:
+    //
+    //   cruiseAscent  the depth curve WITHOUT the boost. Collectables are measured against this, so
+    //                 accelerating moves the player and leaves the ocean alone.
+    //   playerAscent  what the player is actually doing, boost included. Drives the parallax layers,
+    //                 because scenery SHOULD sweep past faster when the player climbs faster.
+    //
+    // The cruising speed is computed from the input target rather than by dividing `player.vy` by
+    // the multiplier: dividing reconstructs it only approximately while the ramp is in flight, which
+    // leaked a fraction of the boost into collectable motion.
+    const base = ascentSpeedAtDepth(this.player.depth);
+    const cruiseAscent = base;
+    const playerAscent = this.player.vy > 0 ? this.player.vy : base;
+
     this.field.update(
       dt,
       viewport.laneWidthMeters,
@@ -247,9 +261,8 @@ class Game {
       max,
       visualRadiusFraction(this.player.volume),
       this.player.volume,
-      // Drives every relative speed the player sees: a bubble's screen speed is
-      // `ascentSpeed - its own rise speed`.
-      this.player.vy > 0 ? this.player.vy : ascentSpeedAtDepth(this.player.depth),
+      cruiseAscent,
+      playerAscent,
     );
 
     switch (this.phase) {
@@ -629,6 +642,28 @@ class Game {
   /** Id of the bubble a probe is following, or null to pick a fresh one. */
   trackedBubbleId: number | null = null;
 
+  /**
+   * Test hook: solve collectable motion directly, bypassing the live field.
+   *
+   * Lets a probe ask "does a bubble of this size move differently while boosting?" without the
+   * player's own size changing under it during the sample, which tracking a live bubble cannot rule
+   * out (the player eats things while climbing).
+   */
+  debugSolveCollectableVelocity(bubbleVolume: number, playerVolume: number): number {
+    return this.field.solveBubbleVelocity(bubbleVolume, playerVolume);
+  }
+
+  /**
+   * Test hook: solve collectable motion against an EXPLICIT cruising reference.
+   *
+   * The live reference cannot be pinned, because the game rewrites it from the depth curve every
+   * frame. Solving at chosen references lets a probe check that the motion is exactly linear in the
+   * reference, which is the property that guarantees the boost cannot influence it.
+   */
+  debugSolveCollectableVelocityAtRef(bubbleVolume: number, playerVolume: number, cruiseAscent: number): number {
+    return bubbleRelativeFallRatio(bubbleVolume, playerVolume) * cruiseAscent;
+  }
+
   /** Test hook: start following a currently visible bubble so its fall can be measured. */
   debugTrackBubble(): number | null {
     const b = this.field.bubbles.find((c) => this.camera.toScreenY(c.y) > 0 && this.camera.toScreenY(c.y) < this.camera.viewport.height);
@@ -655,6 +690,9 @@ class Game {
     trackedBubbleSizeRatio: number | null;
     trackedBubbleRiseRatio: number | null;
     trackedBubbleRelativeFallMps: number | null;
+    cruiseAscentMps: number;
+    fieldCruiseAscentMps: number;
+    playerAscentMps: number;
     collectables: {
       sizeRatio: number;
       wobble: number;
@@ -702,6 +740,18 @@ class Game {
         : null,
       trackedBubbleRiseRatio: tracked ? +bubbleRiseRatio(tracked.volume, this.player.volume).toFixed(3) : null,
       trackedBubbleRelativeFallMps: tracked ? +tracked.vy.toFixed(3) : null,
+      /**
+       * The two ascent speeds, so a probe can prove they are used for different things.
+       *
+       * `cruiseAscentMps` is what collectable motion is measured against; `ascentSpeedMps` is what
+       * the player is actually doing. Holding accelerate must widen the gap between them while
+       * leaving collectable motion unchanged.
+       */
+      cruiseAscentMps: +ascentSpeedAtDepth(this.player.depth).toFixed(3),
+      /** What the live field is actually solving collectables against. Must match cruiseAscentMps. */
+      fieldCruiseAscentMps: +this.field.cruiseAscentSpeed.toFixed(3),
+      /** What the field is using for parallax. Must follow the player, boost included. */
+      playerAscentMps: +(this.player.vy > 0 ? this.player.vy : ascentSpeedAtDepth(this.player.depth)).toFixed(3),
       /**
        * Every visible collectable with its size and relative motion, sorted smallest first.
        *
