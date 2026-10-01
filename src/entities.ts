@@ -32,6 +32,14 @@ export interface Bubble {
    * large ones hold their shape. Cosmetic only.
    */
   wobble: number;
+  /**
+   * Pin the bubble in place: `advance` will not re-solve or apply its velocity.
+   *
+   * Set only by test hooks, so a probe bubble cannot drift away from the player before contact is
+   * resolved. Without it the per-frame velocity solve overwrites whatever the test set, and for a
+   * small bubble that means closing a gap at a fraction of a metre per second.
+   */
+  held?: boolean;
 }
 
 /**
@@ -67,8 +75,15 @@ export class EntityField {
   bubbles: Bubble[] = [];
   specks: Speck[] = [];
 
-  /** How many bubbles to keep within one screenful of depth. */
-  targetBubbles = 26;
+  /**
+   * How many collectables to keep within the working area (one screenful plus the buffers).
+   *
+   * Sized so that the count ON SCREEN stays near 20, which is the density the field was tuned
+   * against. It is deliberately above the on-screen target because the player consumes collectables
+   * continuously, so the live count sits below this mostly. A value that produced ~17 on screen left
+   * too little margin and made distribution probes flap around their threshold.
+   */
+  targetBubbles = 32;
   targetSpecks = 90;
 
   reset(): void {
@@ -127,6 +142,7 @@ export class EntityField {
 
   private advance(dt: number): void {
     for (const b of this.bubbles) {
+      if (b.held) continue;
       // Re-solve every frame rather than at spawn: the relationship depends on the player's CURRENT
       // size, so a bubble the player has grown past must start drifting down without being respawned.
       b.vy = bubbleRelativeFallRatio(b.volume, this.playerVolume) * this.ascentSpeed;

@@ -27,8 +27,14 @@ export class Input {
    * `null` means nobody is dragging, so the keyboard owns the axis.
    */
   dragTargetX: number | null = null;
-  /** Touch: sticky throttle from the on-screen slider, -1..+1. */
-  touchThrottle = 0;
+  /**
+   * Touch: whether the on-screen accelerate button is held.
+   *
+   * A BUTTON, not a slider value. The ascent now accelerates toward its target, so holding is the
+   * natural expression and there is nothing to leave "set" between touches. A sticky slider made
+   * sense when the change was instantaneous; with a ramp it would just be a second accelerator.
+   */
+  touchBoosting = false;
 
   attach(target: HTMLElement | Window): void {
     const onKeyDown = (event: Event) => {
@@ -60,10 +66,10 @@ export class Input {
 
     this.axisX = (held(KEYS.right) ? 1 : 0) - (held(KEYS.left) ? 1 : 0);
 
-    // Touch throttle is sticky, so it applies even with no finger down. A keyboard press overrides
-    // it for as long as it is held.
     const keyboardY = (held(KEYS.boost) ? 1 : 0) - (held(KEYS.brake) ? 1 : 0);
-    this.axisY = keyboardY !== 0 ? keyboardY : this.touchThrottle;
+    // The on-screen button only ever boosts, so it contributes on the positive side. A keyboard
+    // press takes precedence because it can also brake.
+    this.axisY = keyboardY !== 0 ? keyboardY : this.touchBoosting ? 1 : 0;
   }
 
   detach(): void {

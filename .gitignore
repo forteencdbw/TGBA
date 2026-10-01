@@ -37,3 +37,7 @@ commit-msg.tmp
 
 # Temporary commit-message files
 MSG.tmp
+
+# Temporary commit-message files
+COMMIT_MSG.tmp
+MSG.tmp

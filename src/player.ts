@@ -29,6 +29,13 @@ export class Player {
   volume = 1;
 
   /**
+   * Current ascent speed multiplier, eased toward the input target.
+   *
+   * Carried across frames so acceleration has a state; starts at 1 (cruising).
+   */
+  speedMultiplier = 1;
+
+  /**
    * Instrumentation, read by `scripts/smoke.mjs`. Needed because a frozen bubble is
    * indistinguishable by eye from broken input: these prove `update` ran, and with what dt.
    */
@@ -43,6 +50,7 @@ export class Player {
     this.vx = 0;
     this.vy = 0;
     this.volume = 1;
+    this.speedMultiplier = 1;
   }
 
   get depth(): number {
@@ -64,11 +72,23 @@ export class Player {
     this.debugLastDt = dt;
 
     // --- Vertical ---------------------------------------------------------
+    // Ease toward the target multiplier instead of snapping to it. A hard jump made the accelerate
+    // control a binary teleport; easing it makes the ascent something the bubble ACCELERATES INTO,
+    // which is also what lets the world's apparent speed ramp rather than jump.
     const baseSpeed = ascentSpeedAtDepth(this.depth);
-    let speedMultiplier = 1;
-    if (input.axisY > 0) speedMultiplier = t.boostMultiplier;
-    else if (input.axisY < 0) speedMultiplier = t.brakeMultiplier;
-    this.vy = baseSpeed * speedMultiplier;
+    const targetMultiplier = input.axisY > 0 ? t.boostMultiplier : input.axisY < 0 ? t.brakeMultiplier : 1;
+
+    // Exponential approach with a TIME constant, not a constant acceleration: the ascent speed
+    // varies with depth, so a fixed m/s^2 would take a different time to reach the ceiling at every
+    // depth. `boostAccelSeconds` is the time to cover ~63% of the change.
+    if (t.boostAccelSeconds <= 0) {
+      this.speedMultiplier = targetMultiplier;
+    } else {
+      const alpha = Math.min(1, dt / t.boostAccelSeconds);
+      this.speedMultiplier += (targetMultiplier - this.speedMultiplier) * alpha;
+    }
+
+    this.vy = baseSpeed * this.speedMultiplier;
     this.y = Math.min(this.y + this.vy * dt, DEPTH_TOTAL);
 
     // --- Horizontal -------------------------------------------------------

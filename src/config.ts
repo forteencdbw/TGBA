@@ -102,9 +102,31 @@ export const tuning = {
   ascentSpeedPeak: 8.55,
   /** >1 keeps the early game slow and back-loads the speed. 1 = perfectly linear. */
   ascentCurveExponent: 2.4,
-  /** Player input multiplier while accelerating / braking. */
-  boostMultiplier: 1.55,
+  /**
+   * Top ascent speed while the accelerate control is held, as a multiple of the cruising speed.
+   *
+   * Raised from 1.55, which was too timid to feel like a decision. At 2.4 the climb is visibly
+   * different with the control held, and because the collectable stream is measured relative to the
+   * ascent, the whole world speeds up with it.
+   *
+   * NOTE this changes the run length if held, and `nominalAscentSeconds()` (the HUD `eta`) only
+   * models the NO-INPUT case. See `BOOST_ACCEL_SECONDS`.
+   */
+  boostMultiplier: 2.4,
+  /** Speed multiplier while braking. */
   brakeMultiplier: 0.4,
+  /**
+   * Seconds to accelerate from cruising speed to the boost ceiling, and to settle back afterwards.
+   *
+   * Expressed as a TIME rather than as an acceleration in m/s^2, because the ascent speed itself
+   * changes with depth and a constant acceleration would therefore reach the ceiling at a different
+   * rate at every depth. A time constant keeps the feel identical for the whole climb.
+   *
+   * The approach is exponential, so ~63% of the change happens in this time and it is visibly
+   * settled by about 3x it. Setting it to 0 makes the change instant, which is what the game did
+   * before this was configurable.
+   */
+  boostAccelSeconds: 0.8,
 
   // --- Horizontal (the actual controls) -----------------------------------
   //

@@ -2,105 +2,93 @@ import { Container, Graphics } from 'pixi.js';
 import type { Input } from './input';
 
 /**
- * On-screen touch controls (design round 5, Q22):
+ * On-screen touch controls (design round 5, Q22).
  *
- *   - The bottom-right corner is a vertical throttle slider: up = accelerate, down = brake.
- *     It is STICKY: it holds the value you left it at, so accelerating does not mean holding a
- *     finger down for the whole climb.
- *   - Everywhere else, dragging steers the bubble toward your finger horizontally. Vertical drag
- *     is ignored: the bubble always rises.
+ *   - Dragging ANYWHERE outside the accelerate button steers the bubble toward your finger
+ *     horizontally. Vertical drag is ignored: the bubble always rises.
+ *   - A round ACCELERATE button in the bottom-right corner. Hold to accelerate, release to fall
+ *     back to cruising speed. It is a button rather than a value because the ascent now eases
+ *     toward its target: there is nothing to leave "set", and holding is the natural expression.
  *
- * Architecture note: there is ONE interactive graphic covering the whole screen, and the code
+ * Architecture note: there is ONE interactive graphic covering the whole screen and the code
  * decides which control a touch belongs to. An earlier version used a separate interactive graphic
  * per control and relied on Pixi's display-list ordering and `eventMode` inheritance to route
- * between them; the throttle slider received no events at all, and every diagnostic
- * (`containsPoint` returned true, bounds correct, prune flags correct) said it should have.
- * Routing by hand removes that entire class of problem.
+ * between them; the corner control received no events at all, while `containsPoint` returned true,
+ * the bounds were correct and every prune flag was normal. Routing by hand removes that whole class
+ * of problem.
  */
 export class TouchControls {
   readonly root = new Container();
 
   /** One hit layer for the whole screen; the code decides what a touch means. */
   private readonly surface = new Graphics();
-  private readonly throttleGfx = new Graphics();
-  private readonly knobGfx = new Graphics();
+  private readonly buttonGfx = new Graphics();
 
-  /** Throttle value, -1 (brake) .. +1 (accelerate). Sticky between touches. */
-  private throttleValue = 0;
+  /** Whether the accelerate button is currently held. */
+  private boosting = false;
 
   /** Horizontal drag state. */
   private steering = false;
   private targetX: number | null = null;
 
   /** Which control the active touch started on. */
-  private activeZone: 'throttle' | 'water' | null = null;
+  private activeZone: 'boost' | 'water' | null = null;
   private activePointerId: number | null = null;
 
   /** Screen geometry, recomputed by `layout`. */
-  private track = { x: 0, top: 0, bottom: 0 };
-  private zoneLeft = 0;
-  private knobRadius = 18;
+  private button = { x: 0, y: 0, radius: 0 };
   private canvasWidth = 0;
   private canvasHeight = 0;
 
-  /**
-   * Architecture note: this class owns NO event listeners. The host page routes pointer events
-   * here from listeners on the Pixi stage, so the controls never depend on hit testing the display
-   * list. Two earlier designs relied on Pixi routing (per-control interactive graphics, then a
-   * single full-screen interactive graphic) and in both cases the throttle corner received
-   * nothing, even though `containsPoint` returned true and every prune flag was correct.
-   * Hit-test-free routing removes that entire class of problem.
-   */
   constructor(private readonly input: Input) {
     this.root.eventMode = 'none';
-    this.root.addChild(this.surface, this.throttleGfx, this.knobGfx);
+    this.root.addChild(this.surface, this.buttonGfx);
     this.surface.eventMode = 'none';
-    this.throttleGfx.eventMode = 'none';
-    this.knobGfx.eventMode = 'none';
+    this.buttonGfx.eventMode = 'none';
   }
 
+  /**
+   * Pointer entry points. Called by the host from stage-level listeners, so nothing here depends on
+   * Pixi's hit testing. See the class comment.
+   */
   onPointerDown(pointerId: number, x: number, y: number): void {
-    this.lastDown = { id: pointerId, x, y, zoneLeft: this.zoneLeft, top: this.track.top, bottom: this.track.bottom };
-    if (this.activePointerId !== null) {
-      this.lastDown.zone = `rejected:active=${this.activePointerId}`;
-      return;
-    }
+    if (this.activePointerId !== null) return;
     this.activePointerId = pointerId;
 
-    if (this.isInThrottleZone(x, y)) {
-      this.activeZone = 'throttle';
-      this.lastDown.zone = 'throttle';
-      this.setThrottleFromY(y);
+    if (this.isInButton(x, y)) {
+      this.activeZone = 'boost';
+      this.boosting = true;
       return;
     }
 
     this.activeZone = 'water';
-    this.lastDown.zone = 'water';
     this.steering = true;
     this.steerTo(x);
   }
 
-  onPointerMove(pointerId: number, x: number, y: number): void {
+  onPointerMove(pointerId: number, x: number, _y: number): void {
     if (pointerId !== this.activePointerId) return;
-    if (this.activeZone === 'throttle') this.setThrottleFromY(y);
-    else if (this.activeZone === 'water') this.steerTo(x);
+    // Dragging off the button keeps boosting: a thumb that slides slightly should not drop the
+    // input mid-climb. Deliberate, and the opposite of a small tap target's usual behaviour.
+    if (this.activeZone === 'water') this.steerTo(x);
   }
 
   onPointerUp(pointerId: number): void {
     if (pointerId !== this.activePointerId) return;
     this.activePointerId = null;
     this.activeZone = null;
+    this.boosting = false;
     this.steering = false;
     this.targetX = null;
   }
 
-  /** Test hook: the last pointerdown, its coordinates and the zone decision made from them. */
-  lastDown: { id: number; x: number; y: number; zoneLeft: number; top: number; bottom: number; zone?: string } | null = null;
-
-  /** The throttle owns the bottom-right corner; everything else steers. */
-  private isInThrottleZone(x: number, y: number): boolean {
-    const { top, bottom } = this.track;
-    return x >= this.zoneLeft && y >= top - 60 && y <= bottom + 60;
+  /** Generous circular target: it is hit with a thumb, and it overlaps the bottom-right corner. */
+  private isInButton(x: number, y: number): boolean {
+    const dx = x - this.button.x;
+    const dy = y - this.button.y;
+    // 1.35x the drawn radius, so near-misses still register.
+    const reach = this.button.radius * 1.35;
+    return dx * dx + dy * dy <= reach * reach;
   }
 
   private steerTo(canvasX: number): void {
@@ -108,125 +96,87 @@ export class TouchControls {
     this.targetX = Math.min(1, Math.max(0, canvasX / this.canvasWidth));
   }
 
-  private setThrottleFromY(canvasY: number): void {
-    const { top, bottom } = this.track;
-    if (bottom <= top) return;
-    // Up is accelerate, so invert: the top of the track means +1.
-    const t = (bottom - canvasY) / (bottom - top);
-    this.throttleValue = Math.min(1, Math.max(-1, t * 2 - 1));
-  }
-
   /** Push touch state into the shared input each frame, before physics. */
   syncInput(): void {
     this.input.dragTargetX = this.steering ? this.targetX : null;
-    this.input.touchThrottle = this.throttleValue;
+    this.input.touchBoosting = this.boosting;
   }
 
   layout(canvasWidth: number, canvasHeight: number, scale: number): void {
     this.canvasWidth = canvasWidth;
     this.canvasHeight = canvasHeight;
 
-    // The single full-screen hit layer for the whole screen.
     this.surface.clear();
     this.surface.rect(0, 0, canvasWidth, canvasHeight).fill({ color: 0xffffff, alpha: 0.001 });
 
-    const trackHeight = 200 * scale;
-    const trackWidth = 10 * scale;
-    // Placed inboard of the right edge so it does not sit on top of the depth gauge, which lives
-    // hard against the edge. An earlier position put the slider right over the event landmarks.
-    const cx = canvasWidth - 96 * scale;
-    const bottom = canvasHeight - 34 * scale;
-    const top = bottom - trackHeight;
-    this.track = { x: cx, top, bottom };
-    // Wide enough to be easy to grab, narrow enough that steering still has most of the screen.
-    this.zoneLeft = canvasWidth - 150 * scale;
-    this.knobRadius = 20 * scale;
+    // Bottom-right, clear of the depth gauge which sits hard against the right edge.
+    this.button = {
+      x: canvasWidth - 74 * scale,
+      y: canvasHeight - 86 * scale,
+      radius: 40 * scale,
+    };
 
-    this.throttleGfx.clear();
-    this.throttleGfx
-      .roundRect(cx - trackWidth / 2, top, trackWidth, trackHeight, trackWidth / 2)
-      .fill({ color: 0x0a1c2e, alpha: 0.55 });
-    this.throttleGfx
-      .roundRect(cx - trackWidth / 2, top, trackWidth, trackHeight, trackWidth / 2)
-      .stroke({ color: 0x7fc4e8, alpha: 0.5, width: Math.max(1, 1.2 * scale) });
+    this.buttonGfx.clear();
+    this.buttonGfx
+      .circle(this.button.x, this.button.y, this.button.radius)
+      .fill({ color: 0x0a1c2e, alpha: 0.5 });
+    this.buttonGfx
+      .circle(this.button.x, this.button.y, this.button.radius)
+      .stroke({ color: 0x7fc4e8, alpha: 0.55, width: Math.max(1, 1.6 * scale) });
 
-    // Neutral tick, so the centre is findable by feel.
-    const mid = (top + bottom) / 2;
-    this.throttleGfx
-      .rect(cx - trackWidth * 1.4, mid - 0.75 * scale, trackWidth * 2.8, 1.5 * scale)
-      .fill({ color: 0x7fc4e8, alpha: 0.45 });
-
-    // Label the two ends so the control explains itself without text.
-    this.throttleGfx
-      .moveTo(cx - 9 * scale, top + 12 * scale)
-      .lineTo(cx, top + 3 * scale)
-      .lineTo(cx + 9 * scale, top + 12 * scale)
-      .stroke({ color: 0xffd479, alpha: 0.75, width: Math.max(1, 1.6 * scale) });
-    this.throttleGfx
-      .moveTo(cx - 9 * scale, bottom - 12 * scale)
-      .lineTo(cx, bottom - 3 * scale)
-      .lineTo(cx + 9 * scale, bottom - 12 * scale)
-      .stroke({ color: 0x8fe3ff, alpha: 0.75, width: Math.max(1, 1.6 * scale) });
+    // Upward chevron, so the control reads as "push up" without any text.
+    const r = this.button.radius;
+    const cx = this.button.x;
+    const cy = this.button.y;
+    this.buttonGfx
+      .moveTo(cx - r * 0.4, cy + r * 0.24)
+      .lineTo(cx, cy - r * 0.34)
+      .lineTo(cx + r * 0.4, cy + r * 0.24)
+      .stroke({ color: 0xffd479, alpha: 0.9, width: Math.max(2, 3.4 * scale) });
 
     this.update();
   }
 
-  /** Move the knob to match the throttle value. Cheap enough to call every frame. */
+  /** Redraw so the button reflects whether it is held. Cheap: two circles and a chevron. */
   update(): void {
-    const { x, top, bottom } = this.track;
-    const t = (this.throttleValue + 1) / 2;
-    const y = bottom - t * (bottom - top);
-    const accent = this.throttleValue > 0.01 ? 0xffd479 : this.throttleValue < -0.01 ? 0x8fe3ff : 0xcfe9f5;
+    const { x, y, radius } = this.button;
+    this.buttonGfx.clear();
 
-    this.knobGfx.clear();
-    this.knobGfx.circle(x, y, this.knobRadius).fill({ color: accent, alpha: 0.92 });
-    this.knobGfx.circle(x, y, this.knobRadius * 0.52).fill({ color: 0x030a17, alpha: 0.6 });
+    if (this.boosting) {
+      this.buttonGfx.circle(x, y, radius * 1.16).fill({ color: 0xffd479, alpha: 0.22 });
+    }
+    this.buttonGfx.circle(x, y, radius).fill({ color: this.boosting ? 0x2a4a63 : 0x0a1c2e, alpha: 0.62 });
+    this.buttonGfx
+      .circle(x, y, radius)
+      .stroke({ color: this.boosting ? 0xffd479 : 0x7fc4e8, alpha: this.boosting ? 0.95 : 0.55, width: 2 });
+
+    const r = radius;
+    this.buttonGfx
+      .moveTo(x - r * 0.4, y + r * 0.24)
+      .lineTo(x, y - r * 0.34)
+      .lineTo(x + r * 0.4, y + r * 0.24)
+      .stroke({ color: this.boosting ? 0xfff3d6 : 0xffd479, alpha: 0.95, width: 3 });
   }
 
   /** Exposed for probes. */
-  get debugState(): {
-    throttle: number;
-    steering: boolean;
-    targetX: number | null;
-    zone: string | null;
-    lastDown: TouchControls['lastDown'];
-  } {
-    return {
-      throttle: this.throttleValue,
-      steering: this.steering,
-      targetX: this.targetX,
-      zone: this.activeZone,
-      lastDown: this.lastDown,
-    };
+  get debugState(): { boosting: boolean; steering: boolean; targetX: number | null; zone: string | null } {
+    return { boosting: this.boosting, steering: this.steering, targetX: this.targetX, zone: this.activeZone };
   }
 
-  /** Screen geometry of the throttle, so tests can touch the real thing instead of guessing. */
-  get geometry(): {
-    x: number;
-    top: number;
-    bottom: number;
-    zoneLeft: number;
-    knobRadius: number;
-    canvasWidth: number;
-    canvasHeight: number;
-  } {
-    return {
-      ...this.track,
-      zoneLeft: this.zoneLeft,
-      knobRadius: this.knobRadius,
-      canvasWidth: this.canvasWidth,
-      canvasHeight: this.canvasHeight,
-    };
+  /** Button geometry in canvas coordinates, so tests touch the real thing instead of guessing. */
+  get geometry(): { x: number; y: number; radius: number; canvasWidth: number; canvasHeight: number } {
+    return { ...this.button, canvasWidth: this.canvasWidth, canvasHeight: this.canvasHeight };
   }
 
   /** Named layers, exposed so a test can inspect them. */
-  get layers(): { surface: Graphics; throttle: Graphics; knob: Graphics } {
-    return { surface: this.surface, throttle: this.throttleGfx, knob: this.knobGfx };
+  get layers(): { surface: Graphics; button: Graphics } {
+    return { surface: this.surface, button: this.buttonGfx };
   }
 
-  /** Test hook: drive the throttle directly at a canvas y, bypassing the event system. */
-  debugSetThrottleAtY(y: number): number {
-    this.setThrottleFromY(y);
-    return this.throttleValue;
+  /** Test hook: force the boost state, bypassing the event system. */
+  debugSetBoosting(value: boolean): boolean {
+    this.boosting = value;
+    this.update();
+    return this.boosting;
   }
 }

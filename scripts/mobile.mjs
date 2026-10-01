@@ -121,8 +121,11 @@ try {
   await cdp.send('Page.navigate', { url: URL_ARG });
   await sleep(4000);
 
-  const evalJson = async (expr) => {
-    const r = await cdp.send('Runtime.evaluate', { expression: expr, returnByValue: true });
+  const evalJson = async (expr, { awaitPromise = false } = {}) => {
+    const r = await cdp.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise });
+    if (r.exceptionDetails) {
+      throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+    }
     return JSON.parse(r.result.value);
   };
 
@@ -148,7 +151,7 @@ try {
   const dragEndX = Math.round(W * 0.7);
   const dragY = Math.round(H * 0.5);
 
-  const before = await evalJson('JSON.stringify({ x: window.__GB.player.x, throttle: window.__GB.input.touchThrottle })');
+  const before = await evalJson('JSON.stringify({ x: window.__GB.player.x, boosting: window.__GB.input.touchBoosting })');
 
   await cdp.send('Input.dispatchTouchEvent', {
     type: 'touchStart',
@@ -166,43 +169,46 @@ try {
   await sleep(200);
   const released = await evalJson('JSON.stringify({ x: window.__GB.player.x, ...window.__GB.game.touchState })');
 
-  // Throttle slider: use the geometry the game actually laid out, rather than re-deriving it.
+  // Accelerate BUTTON: use the geometry the game actually laid out, not a re-derived guess.
   const geo = await evalJson('JSON.stringify(window.__GB.game.touchGeometry)');
-  const sliderX = Math.round(geo.x);
-  const sliderMidY = Math.round((geo.top + geo.bottom) / 2);
+  const buttonX = Math.round(geo.x);
+  const buttonY = Math.round(geo.y);
 
-  // Isolation probe: bypass the event system entirely and drive the value function directly.
-  // This separates "the event never arrived" from "the value logic is wrong".
-  const directDrive = await evalJson(
-    `JSON.stringify((() => {
-      const gb = window.__GB.game;
-      const g = gb.touchGeometry;
-      const atTop = gb.debugSetThrottleAtY(g.top + 2);
-      const atMid = gb.debugSetThrottleAtY((g.top + g.bottom) / 2);
-      const atBottom = gb.debugSetThrottleAtY(g.bottom - 2);
-      gb.debugSetThrottleAtY((g.top + g.bottom) / 2);
-      return { atTop, atMid, atBottom };
-    })())`,
+  // Baseline: cruising, no input. Read the configured ramp so the timing check can be derived
+  // rather than pinned to a number the player is expected to tune.
+  const settings = await evalJson(
+    'JSON.stringify({ boostMultiplier: window.__GB.tuning.boostMultiplier, boostAccelSeconds: window.__GB.tuning.boostAccelSeconds })',
+  );
+  const beforeBoost = await evalJson(
+    'JSON.stringify({ vy: window.__GB.player.vy, mult: window.__GB.player.speedMultiplier, boosting: window.__GB.input.touchBoosting })',
   );
 
-  await cdp.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [{ x: sliderX, y: sliderMidY, id: 2 }],
-  });
-  await sleep(120);
-  const throttleNeutral = await evalJson('JSON.stringify({ ...window.__GB.game.touchState, inputThrottle: window.__GB.input.touchThrottle })');
-  await cdp.send('Input.dispatchTouchEvent', {
-    type: 'touchMove',
-    touchPoints: [{ x: sliderX, y: Math.round(geo.top + 4), id: 2 }],
-  });
-  await sleep(250);
-  const throttleUp = await evalJson(
-    'JSON.stringify({ throttle: window.__GB.input.touchThrottle, axisY: window.__GB.input.axisY, vy: window.__GB.player.vy, zone: window.__GB.game.touchState.zone })',
-  );
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await sleep(300);
-  // Sticky: value must persist after the finger lifts.
-  const throttleSticky = await evalJson('JSON.stringify({ throttle: window.__GB.input.touchThrottle, axisY: window.__GB.input.axisY })');
+  // Hold the button and sample IN PAGE. Doing the timing across CDP round-trips inflated the
+  // apparent ramp duration, which made a correct acceleration curve look slow. Samples are taken on
+  // requestAnimationFrame against performance.now() instead.
+  const rampProbe =
+    '(async function () {' +
+    '  var g = window.__GB.game;' +
+    '  var cfg = { target: window.__GB.tuning.boostMultiplier, tau: window.__GB.tuning.boostAccelSeconds };' +
+    '  var before = g.player.speedMultiplier;' +
+    '  var out = { cfg: cfg, before: before, zone: null, boosting: null, samples: [] };' +
+    '  g.onPointerDownForTest(' + buttonX + ', ' + buttonY + ');' +
+    '  out.zone = g.touchState.zone;' +
+    '  out.boosting = g.touchState.boosting;' +
+    '  var t0 = performance.now();' +
+    '  for (var i = 0; i < 30; i++) {' +
+    '    await new Promise(function (r) { requestAnimationFrame(function () { r(); }); });' +
+    '    out.samples.push([Math.round(performance.now() - t0), Math.round(g.player.speedMultiplier * 1000) / 1000]);' +
+    '  }' +
+    '  g.onPointerUpForTest();' +
+    '  return JSON.stringify(out);' +
+    '})()';
+
+  const ramp = await evalJson(rampProbe, { awaitPromise: true });
+  const early = ramp.samples.find(([t]) => t >= 140) ?? ramp.samples[0];
+  const settled = ramp.samples[ramp.samples.length - 1];
+  await sleep(900);
+  const recovered = await evalJson('JSON.stringify({ mult: window.__GB.player.speedMultiplier })');
 
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
   const shotPath = join(process.cwd(), 'mobile.png');
@@ -220,9 +226,18 @@ try {
       released,
       displacementLaneWidths: +(moved.x - before.x).toFixed(3),
     },
-    throttle: { neutral: throttleNeutral, up: throttleUp, stickyAfterRelease: throttleSticky },
-    sliderGeometry: geo,
-    directDriveProbe: directDrive,
+    accelerate: {
+      cfg: ramp.cfg,
+      cruisingMultiplier: ramp.before,
+      zone: ramp.zone,
+      boosting: ramp.boosting,
+      early: { tMs: early[0], mult: early[1] },
+      settled: { tMs: settled[0], mult: settled[1] },
+      recoveredMultiplier: recovered.mult,
+      samples: ramp.samples,
+    },
+    buttonGeometry: geo,
+    accelerateSettings: settings,
     screenshot: shotPath,
   };
   console.log(JSON.stringify(report, null, 2));
@@ -240,17 +255,33 @@ try {
     frameInfo.canvasBuffer === `${W * frameInfo.resolution}x${H * frameInfo.resolution}`;
   const fillsWidth = viewportInfo.coveragePct !== undefined && viewportInfo.coveragePct >= 99.5;
   const dragWorks = moved.x > before.x + 0.15;
-  const throttleWorks = throttleUp.throttle > 0.8 && throttleUp.axisY > 0.8 && throttleUp.vy > 0;
-  const throttleIsSticky = Math.abs(throttleSticky.throttle - throttleUp.throttle) < 0.01;
+
+  // Expected progress of an exponential approach after `elapsed` seconds. Derived from the
+  // configured multiplier and time constant, so this stays valid when the ramp is retuned.
+  const rampProgress = (elapsedSeconds) =>
+    ramp.cfg.tau <= 0 ? 1 : 1 - Math.exp(-elapsedSeconds / ramp.cfg.tau);
+  const expectedAt = (ms) => 1 + (ramp.cfg.target - 1) * rampProgress(ms / 1000);
+  const earlyExpected = expectedAt(early[0]);
+  const settledExpected = expectedAt(settled[0]);
 
   const checks = {
     canvasMatchesViewport: canvasMatches,
     playAreaFillsWidth: fillsWidth,
     touchDragSteers: dragWorks,
-    throttleSliderWorks: throttleWorks,
-    throttleIsSticky,
+    // A press inside the button must be routed to the boost zone and raise the ascent multiplier.
+    buttonBoosts: ramp.zone === 'boost' && ramp.boosting === true && early[1] > 1.02,
+    // It must ACCELERATE rather than jump, and follow the configured curve.
+    boostAccelerates:
+      early[1] < settled[1] - 0.1 &&
+      Math.abs(early[1] - earlyExpected) < 0.2 &&
+      Math.abs(settled[1] - settledExpected) < 0.25,
+    // Releasing must not leave it pinned at the ceiling.
+    boostRecovers: recovered.mult < settled[1] - 0.2,
     noExceptions: exceptions2.length === 0,
   };
+  console.log(
+    `ramp: early t=${early[0]}ms expected=${earlyExpected.toFixed(3)} actual=${early[1]} | settled t=${settled[0]}ms expected=${settledExpected.toFixed(3)} actual=${settled[1]}`,
+  );
   console.log('CHECKS: ' + JSON.stringify(checks));
   if (exceptions2.length) console.log('EXCEPTIONS: ' + JSON.stringify(exceptions2, null, 2));
 

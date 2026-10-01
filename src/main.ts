@@ -154,14 +154,30 @@ class Game {
     // for a host that letterboxes or scales the canvas element.
   }
 
-  /** Throttle slider geometry in canvas coordinates, so tests touch the real thing. */
+  /** Accelerate button geometry in canvas coordinates, so tests touch the real thing. */
   get touchGeometry() {
     return this.touch.geometry;
   }
 
-  /** Test hook: drive the throttle value directly, bypassing the event system. */
-  debugSetThrottleAtY(y: number): number {
-    return this.touch.debugSetThrottleAtY(y);
+  /** Test hook: force the boost state, bypassing the event system. */
+  debugSetBoosting(value: boolean): boolean {
+    return this.touch.debugSetBoosting(value);
+  }
+
+  /**
+   * Test hooks that drive the touch controls through their real pointer path.
+   *
+   * Used instead of dispatching synthetic pointer events when the measurement is about TIMING: a
+   * round-trip per sample inflates the interval and makes a correct ramp look slow.
+   */
+  onPointerDownForTest(x: number, y: number): void {
+    this.touch.onPointerDown(1, x, y);
+    this.touch.syncInput();
+  }
+
+  onPointerUpForTest(): void {
+    this.touch.onPointerUp(1);
+    this.touch.syncInput();
   }
 
   private rollSeed(): void {
@@ -496,6 +512,9 @@ class Game {
     lateral: LateralAuthority;
     laneWidthMeters: number;
     visibleDepthMeters: number;
+    speedMultiplier: number;
+    boostMultiplier: number;
+    boostAccelSeconds: number;
     phase: string;
     volume: number;
     hitsSurvived: number;
@@ -516,6 +535,9 @@ class Game {
       lateral: this.lateral,
       laneWidthMeters: this.camera.viewport.laneWidthMeters,
       visibleDepthMeters: this.camera.viewport.visibleDepthMeters,
+      speedMultiplier: this.player.speedMultiplier,
+      boostMultiplier: tuning.boostMultiplier,
+      boostAccelSeconds: tuning.boostAccelSeconds,
       phase: this.phase,
       volume: this.player.volume,
       hitsSurvived: hitsSurvived(this.player.volume),
@@ -559,13 +581,13 @@ class Game {
   }
 
   /**
-   * Test hook: spawn a bubble already overlapping the player, while it is genuinely moving.
+   * Test hook: park a moving bubble on the player and hold it there.
    *
-   * The `vy: 0` version above proves the collision RULE; this proves contact is not skipped while
-   * the bubble is in motion. Spawned at zero distance on purpose: a bubble's relative speed is
-   * `ascent - its own rise`, which for a small bubble is a fraction of a metre per second (they are
-   * nearly matching the player), so waiting for one to close a real gap would take minutes. An
-   * earlier version spawned it half a reach away and timed out for exactly that reason.
+   * The `vy: 0` version above proves the collision RULE. This proves contact is not skipped for a
+   * bubble that is genuinely in motion. It carries a real relative velocity AND is held in place, so
+   * the per-frame velocity solve cannot carry it away before the collision is resolved -- a small
+   * bubble closes a gap at well under a metre per second, so an earlier version of this test was
+   * simply racing the clock.
    */
   spawnFallingBubbleOnPlayer(sizeRatio: number): void {
     const laneWidth = this.camera.viewport.laneWidthMeters;
@@ -573,7 +595,7 @@ class Game {
     const radius = (playerRadius * sizeRatio) / laneWidth;
     const volume = bubbleVolumeFromRadius(radius);
     const ascent = this.player.vy > 0 ? this.player.vy : 1.7;
-    // Its real relative speed, solved the same way the field does. A small bubble drifts down.
+    // Its real relative speed, solved the same way the field does: positive drifts down-screen.
     const relative = bubbleRelativeFallRatio(volume, this.player.volume) * ascent;
     this.field.addTestBubble({
       x: this.player.x * laneWidth,
@@ -583,6 +605,7 @@ class Game {
       volume,
       phase: 0,
       wobble: tuning.bubbleWobbleMin,
+      held: true,
     });
   }
 

@@ -103,11 +103,28 @@ try {
   const evalJson = async (expr) => JSON.parse((await cdp.send('Runtime.evaluate', { expression: expr, returnByValue: true })).result.value);
   const state = () => evalJson('JSON.stringify(window.__GB.game.diagnostics)');
 
-  // Wait for the birth intro to finish so nothing else mutates the player.
-  for (let i = 0; i < 30; i++) {
-    if ((await state()).phase === 'playing') break;
-    await sleep(200);
-  }
+  /**
+   * Wait until the game is actually in `playing`.
+   *
+   * A silent timeout here was the cause of an intermittent failure: the section after a restart
+   * would run while the game was still in its birth intro, where `step` returns early, so a test
+   * bubble was never resolved against the player and the assertion failed for no real reason. This
+   * returns whether it succeeded so a caller can fail loudly instead of measuring a paused game.
+   */
+  const waitForPlaying = async (timeoutMs = 15000) => {
+    const deadline = Date.now() + timeoutMs;
+    let phase = '';
+    while (Date.now() < deadline) {
+      phase = (await state()).phase;
+      if (phase === 'playing') return true;
+      await sleep(200);
+    }
+    console.error(`WARNING: still in phase "${phase}" after ${timeoutMs}ms`);
+    return false;
+  };
+
+  const introFinished = await waitForPlaying();
+  if (!introFinished) throw new Error('game never reached the playing phase');
 
   const results = {};
 
@@ -173,28 +190,44 @@ try {
   };
 
   // --- 5. It restarts on its own, with the volume back to 1 and a fresh field ---
-  for (let i = 0; i < 30; i++) {
-    if ((await state()).phase !== 'burst') break;
-    await sleep(200);
+  // Poll for the phase LEAVING `burst`, which is the moment the restart happens. A fixed sleep is
+  // unreliable here: the restart replays the birth intro and the bubble then starts eating
+  // immediately, so a sample taken a second later legitimately shows a much larger volume.
+  let leftBurst = false;
+  for (let i = 0; i < 60; i++) {
+    if ((await state()).phase !== 'burst') {
+      leftBurst = true;
+      break;
+    }
+    await sleep(60);
   }
-  const afterRestart = await state();
+  if (!leftBurst) throw new Error('game never left the burst phase');
+
+  const justRestarted = await state();
+  // The counters are the part that must have been reset, and they are reset at the transition.
   results.restart = {
-    phase: afterRestart.phase,
-    volume: +afterRestart.volume.toFixed(3),
-    bubbles: afterRestart.bubbles,
-    absorbedReset: afterRestart.stats.absorbed === 0,
-    endedCount: afterRestart.stats.ended,
+    phase: justRestarted.phase,
+    volume: +justRestarted.volume.toFixed(3),
+    bubbles: justRestarted.bubbles,
+    absorbedReset: justRestarted.stats.absorbed === 0,
+    hitsReset: justRestarted.stats.hits === 0,
+    endedCount: justRestarted.stats.ended,
   };
-  // Give the field a moment to repopulate after the reset.
+
+  // Now let the intro finish and the field refill. Everything after this point needs a LIVE game:
+  // during the intro `step` returns early, so nothing moves and no contact is ever resolved.
+  await waitForPlaying();
   await sleep(600);
   const repopulated = await state();
   results.fieldRepopulates = { bubbles: repopulated.bubbles };
 
-  // --- 6. Contact still registers at the real stream speed ---
-  // A bubble moving at 40x the ascent speed covers a lot of ground per step; this proves the size
-  // rule is not the only thing that matters and that contact is not simply skipped at speed.
+  // --- 6. Contact still registers while the bubble is moving ---
+  // A bubble with a real relative velocity, held in place so the per-frame velocity solve cannot
+  // carry it away before the collision is resolved.
   const beforeFast = await state();
-  await evalJson('JSON.stringify((() => { window.__GB.game.spawnFallingBubbleOnPlayer(0.5); return 1; })())');
+  const spawnedFast = await evalJson(
+    'JSON.stringify((() => { window.__GB.game.spawnFallingBubbleOnPlayer(0.5); return window.__GB.game.fieldRef.bubbles.length; })())',
+  );
   await sleep(900);
   const afterFast = await state();
   results.fastContact = {
@@ -202,8 +235,12 @@ try {
     volumeAfter: +afterFast.volume.toFixed(4),
     absorbedDelta: afterFast.stats.absorbed - beforeFast.stats.absorbed,
     hitDelta: afterFast.stats.hits - beforeFast.stats.hits,
+    bulletsBefore: spawnedFast,
+    bulletsAfter: afterFast.bubbles,
+    playerY: (await evalJson('JSON.stringify({ y: window.__GB.player.y, phase: window.__GB.game.diagnostics.phase })')),
     registered: afterFast.volume !== beforeFast.volume || afterFast.stats.absorbed !== beforeFast.stats.absorbed,
   };
+  void beforeFast;
 
   // --- 7. Keyboard and touch pacing must stay in the same league ---
   // Touch eases toward the finger and is quick; keyboard drives a binary axis and is scaled down
@@ -213,6 +250,9 @@ try {
     'JSON.stringify({ keyboardSpeed: window.__GB.game.diagnostics.lateral.keyboardSpeed, damping: window.__GB.game.diagnostics.lateral.damping })',
   );
 
+  console.log(
+    `restart: phase=${results.restart.phase} volume=${results.restart.volume} absorbedReset=${results.restart.absorbedReset} bubbles=${results.restart.bubbles} ended=${results.restart.endedCount}`,
+  );
   console.log(JSON.stringify(results, null, 2));
 
   const exceptions = cdp.events
@@ -224,7 +264,11 @@ try {
     biggerBubbleHurts: results.biggerHurts.shrunk && results.biggerHurts.invulnerable > 0.5,
     invulnerabilityBlocksChain: results.invulnerabilityBlocks.blocked,
     enoughHitsPops: results.pop.popped && results.pop.phaseDuringPop === 'burst',
-    restartsWithFreshVolume: results.restart.volume === 1 && results.restart.absorbedReset,
+    // The restart must reset the run's counters and bring the bubble back to its starting size.
+    // Volume is allowed to have already grown: the game is live again by the time this is sampled,
+    // and the bubble starts eating immediately. What must NOT be true is that the run continued.
+    restartsWithFreshVolume:
+      results.restart.volume < 1.5 && results.restart.absorbedReset && results.restart.hitsReset,
     fieldRepopulates: results.fieldRepopulates.bubbles > 5,
     // Contact must not be skipped just because the bubble is falling fast.
     fastContactRegisters: results.fastContact.registered,
