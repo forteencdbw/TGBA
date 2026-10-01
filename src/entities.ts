@@ -83,7 +83,8 @@ export class EntityField {
    * @param playerRadiusFraction the player's drawn radius as a fraction of the lane, so bubble
    *   sizes can be expressed relative to it. Ratios are far easier to reason about than absolute
    *   radii: >1 means "too big to eat", and the mix of ratios IS the difficulty curve.
-   * @param ascentSpeed the player's current m/s, used to drive the parallax layers.
+   * @param ascentSpeed the player's current m/s. Collectable fall speed and the parallax layers are
+   *   both proportional to it, so the whole water column accelerates with the ascent.
    */
   update(
     dt: number,
@@ -93,11 +94,15 @@ export class EntityField {
     playerRadiusFraction: number,
     ascentSpeed: number,
   ): void {
+    this.ascentSpeed = Math.max(0.001, ascentSpeed);
     this.advance(dt);
-    this.advanceParallax(dt, ascentSpeed);
+    this.advanceParallax(dt, this.ascentSpeed);
     this.recycle(min, max);
     this.topUp(laneWidth, min, max, playerRadiusFraction);
   }
+
+  /** The ascent speed the stream is currently scaled to. */
+  private ascentSpeed = 1.7;
 
   private advance(dt: number): void {
     for (const b of this.bubbles) {
@@ -183,7 +188,7 @@ export class EntityField {
       id: this.nextId++,
       x: radius + Math.random() * Math.max(0.01, laneWidth - radius * 2),
       y,
-      vy: this.fallSpeed(laneWidth),
+      vy: this.fallSpeed(),
       radius,
       volume: bubbleVolumeFromRadius(radius),
       phase: Math.random() * Math.PI * 2,
@@ -191,21 +196,13 @@ export class EntityField {
   }
 
   /**
-   * How fast a bubble travels DOWN the screen, in world m/s.
+   * How fast a bubble travels DOWN, in world m/s.
    *
-   * Defined as a fraction of the play area width per second, then scaled by the lane width. Two
-   * reasons for that shape:
-   *
-   *   - It is device independent. The play area fills the canvas, so a fixed pixel rate would look
-   *     different on every display; a fraction of the lane looks the same everywhere.
-   *   - It does NOT depend on depth or on the player's ascent speed. The previous model scaled the
-   *     bubble's rise rate by `ascentSpeedAtDepth`, which near the seabed gave a relative speed of
-   *     about 0.2 px/s on screen -- indistinguishable from standing still, and the reason the world
-   *     read as frozen. Bubbles are a stream the player flies through, not scenery that drifts.
+   * Proportional to the player's current ascent speed. See `tuning.bubbleFallMin/Max` for why, and
+   * for the two alternatives that were measured and rejected.
    */
-  private fallSpeed(laneWidth: number): number {
-    const perSecond = tuning.bubbleFallMin + Math.random() * (tuning.bubbleFallMax - tuning.bubbleFallMin);
-    return perSecond * laneWidth;
+  private fallSpeed(): number {
+    return this.ascentSpeed * (tuning.bubbleFallMin + Math.random() * (tuning.bubbleFallMax - tuning.bubbleFallMin));
   }
 
   /**
@@ -221,11 +218,10 @@ export class EntityField {
         ? laneWidth * (0.0022 + Math.random() * 0.0036)
         : laneWidth * (0.0004 + Math.random() * 0.0011),
       phase: Math.random() * Math.PI * 2,
-      // Near specks run 6-14x the camera speed, which is what makes the ascent readable: at
-      // WORLD_HEIGHT 190m the FAR background only ever scrolls at ~2px/s, because a 175s run
-      // spends 2.9 screen-heights on the whole climb. Depth layers are the only available speed cue
-      // that does not require shortening the run.
-      drift: near ? 6 + Math.random() * 8 : -0.15 - Math.random() * 0.2,
+      // Near specks run 3-9x the camera speed. Deliberately slower than the collectable stream
+      // (10-40x), so the bubbles read as the fast thing the player is interacting with while the
+      // specks stay background texture.
+      drift: near ? 3 + Math.random() * 6 : -0.15 - Math.random() * 0.2,
     };
   }
 }

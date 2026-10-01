@@ -5,6 +5,10 @@
 // while the player's screen position stays put.
 //
 // Usage: node scripts/motion.mjs [url] [samples] [intervalMs]
+//
+// The interval matters: a bubble's fall speed is a multiple of the player's ascent, so near the
+// seabed it crosses the screen in well under a second. At a 500ms interval the tracked bubble has
+// already been recycled between samples and the measurement comes back null.
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -12,8 +16,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const URL_ARG = process.argv[2] ?? 'http://127.0.0.1:5173/';
-const SAMPLES = Number(process.argv[3] ?? 8);
-const INTERVAL = Number(process.argv[4] ?? 500);
+const SAMPLES = Number(process.argv[3] ?? 10);
+const INTERVAL = Number(process.argv[4] ?? 150);
 const W = 500;
 const H = 780;
 const PORT = 9341;

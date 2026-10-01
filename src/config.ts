@@ -124,17 +124,27 @@ export const tuning = {
 
   // --- Collectables -------------------------------------------------------
   /**
-   * How fast a collectable travels DOWN the screen, in play-area widths per second.
+   * How fast a collectable travels DOWN, as a multiple of the PLAYER'S CURRENT ascent speed.
    *
-   * Deliberately a flat random band, independent of depth and of the player's ascent speed: the
-   * player flies up through a stream of bubbles, and the stream has to look like it is moving. A
-   * depth-scaled rate made bubbles crawl at ~0.2 px/s near the seabed, which read as frozen water.
+   * Proportional to the player's speed on purpose. Screen speed of anything in the water is
+   * `cameraSpeed + its own speed`, and the camera speed IS the player's ascent speed, so tying the
+   * stream to it makes the whole water column accelerate as the ascent accelerates -- which is what
+   * "I am rising through water" looks like.
    *
-   * In lane-fractions so it looks identical on every display. At 0.055-0.13 the stream crosses the
-   * visible depth in roughly 8-20 seconds, which reads clearly as downward motion.
+   * It also gives the accelerate control an immediate visual: boosting multiplies the ascent speed,
+   * so the entire stream speeds up on the same frame.
+   *
+   * Two rejected alternatives, both measured:
+   *   - depth-scaled (`ascentSpeedAtDepth * random`): near the seabed this gave a relative screen
+   *     speed of ~0.2 px/s, which read as frozen water.
+   *   - a flat lane-relative band: it moved, but at a constant rate that ignored the ascent
+   *     entirely, so climbing faster changed nothing.
+   *
+   * A wide band (rather than a single multiplier) is what gives the stream its spread: some bubbles
+   * are near the camera and rush past, others are far and drift.
    */
-  bubbleFallMin: 0.055,
-  bubbleFallMax: 0.13,
+  bubbleFallMin: 10,
+  bubbleFallMax: 40,
 
   // --- Invulnerability ----------------------------------------------------
   /** Seconds of invulnerability after a hit, so a swarm cannot chain-kill in one touch. */

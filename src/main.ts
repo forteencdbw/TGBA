@@ -555,6 +555,31 @@ class Game {
   }
 
   /**
+   * Test hook: launch a bubble at the player from above, travelling at the real stream speed.
+   *
+   * The `vy: 0` version above proves the collision rule; this proves the collision still FIRES at
+   * the shipped fall speed. Those are different risks: a bubble at 40x the ascent speed moves a long
+   * way per step, and it would be entirely possible for the size rule to be right while contact is
+   * simply missed at speed.
+   */
+  spawnFallingBubbleOnPlayer(sizeRatio: number): void {
+    const laneWidth = this.camera.viewport.laneWidthMeters;
+    const playerRadius = laneWidth * visualRadiusFraction(this.player.volume);
+    const radius = (playerRadius * sizeRatio) / laneWidth;
+    const speed = this.player.vy > 0 ? this.player.vy : 1.7;
+    // Start one reach above the player so the first contact happens within a few steps.
+    const gap = playerRadius + laneWidth * radius;
+    this.field.addTestBubble({
+      x: this.player.x * laneWidth,
+      y: this.player.y + gap * 1.2,
+      vy: speed * tuning.bubbleFallMax,
+      radius,
+      volume: bubbleVolumeFromRadius(radius),
+      phase: 0,
+    });
+  }
+
+  /**
    * Test hook: force a hit, to exercise the burst path without a collision.
    *
    * Bypasses invulnerability and applies the hit directly: a forced hit that could be silently

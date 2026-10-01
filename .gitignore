@@ -22,3 +22,6 @@ dist/
 
 # Tooling scratch directories (editor / agent temp workspaces)
 .dsh-*/
+
+# Temporary commit-message file
+commit-msg.tmp

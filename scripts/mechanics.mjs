@@ -190,6 +190,21 @@ try {
   const repopulated = await state();
   results.fieldRepopulates = { bubbles: repopulated.bubbles };
 
+  // --- 6. Contact still registers at the real stream speed ---
+  // A bubble moving at 40x the ascent speed covers a lot of ground per step; this proves the size
+  // rule is not the only thing that matters and that contact is not simply skipped at speed.
+  const beforeFast = await state();
+  await evalJson('JSON.stringify((() => { window.__GB.game.spawnFallingBubbleOnPlayer(0.5); return 1; })())');
+  await sleep(900);
+  const afterFast = await state();
+  results.fastContact = {
+    volumeBefore: +beforeFast.volume.toFixed(4),
+    volumeAfter: +afterFast.volume.toFixed(4),
+    absorbedDelta: afterFast.stats.absorbed - beforeFast.stats.absorbed,
+    hitDelta: afterFast.stats.hits - beforeFast.stats.hits,
+    registered: afterFast.volume !== beforeFast.volume || afterFast.stats.absorbed !== beforeFast.stats.absorbed,
+  };
+
   console.log(JSON.stringify(results, null, 2));
 
   const exceptions = cdp.events
@@ -203,6 +218,8 @@ try {
     enoughHitsPops: results.pop.popped && results.pop.phaseDuringPop === 'burst',
     restartsWithFreshVolume: results.restart.volume === 1 && results.restart.absorbedReset,
     fieldRepopulates: results.fieldRepopulates.bubbles > 5,
+    // Contact must not be skipped just because the bubble is falling fast.
+    fastContactRegisters: results.fastContact.registered,
     noExceptions: exceptions.length === 0,
   };
   console.log('CHECKS: ' + JSON.stringify(checks));
