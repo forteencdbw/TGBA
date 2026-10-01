@@ -1,6 +1,12 @@
 // `.ts` extension so Node's native type stripping can resolve it when scripts/solve-lateral.mjs
 // imports this module directly. Vite resolves either form.
-import { COLUMN_CROSSING_SECONDS, BOOST_CROSSING_SECONDS, LATERAL_DAMPING, SIM_DT } from './config.ts';
+import {
+  COLUMN_CROSSING_SECONDS,
+  BOOST_CROSSING_SECONDS,
+  KEYBOARD_CROSSING_SECONDS,
+  LATERAL_DAMPING,
+  SIM_DT,
+} from './config.ts';
 
 /**
  * Lateral (horizontal) control authority, calibrated to the actual play-area width.
@@ -36,6 +42,14 @@ export interface LateralAuthority {
   boostCrossingSeconds: number;
   /** Speed actually reached while cruising, from the simulation. */
   cruiseTopSpeed: number;
+  /**
+   * Keyboard steering speed, in lane-widths per second, applied as a CONSTANT velocity.
+   *
+   * The keyboard does not use `accel` at all. A binary key axis through an acceleration ramp
+   * saturates almost instantly and overshoots, which reads as twitchy however the ramp is scaled.
+   * A constant speed is directly predictable: hold the key, move at exactly this rate.
+   */
+  keyboardSpeed: number;
 }
 
 /** Simulate the real update loop; returns seconds to travel `laneWidth` from a standstill. */
@@ -113,6 +127,8 @@ export function calibrateLateral(laneWidth: number): LateralAuthority {
     crossingSeconds: COLUMN_CROSSING_SECONDS,
     boostCrossingSeconds: BOOST_CROSSING_SECONDS,
     cruiseTopSpeed: topSpeed(accel, 1, 6),
+    // A crossing time IS a speed when there is no ramp: one lane width in KEYBOARD_CROSSING_SECONDS.
+    keyboardSpeed: 1 / KEYBOARD_CROSSING_SECONDS,
   };
 
   cache.set(laneWidth, result);

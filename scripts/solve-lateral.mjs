@@ -12,7 +12,6 @@ import { calibrateLateral } from '../src/lateral.ts';
 const laneWidth = Number(process.argv[2] ?? 361); // matches WORLD_WIDTH in src/config.ts
 
 const a = calibrateLateral(laneWidth);
-
 console.log(`lateral authority for a lane ${laneWidth} m wide\n`);
 console.log('resolved constants');
 console.log(`  accel             = ${a.accel.toFixed(1)}   (lane-widths/s^2)`);
@@ -22,10 +21,12 @@ console.log(`  boostSteerFactor  = ${a.boostSteerFactor}`);
 console.log(`  stopSpeed         = ${a.stopSpeed.toFixed(4)}   (lane-widths/s)\n`);
 
 console.log('feel targets (these hold on every device, because they are expressed as times)');
-console.log(`  cruise crossing   = ${a.crossingSeconds}s`);
+console.log(`  cruise crossing   = ${a.crossingSeconds}s   (touch / drag model)`);
 console.log(`  boost crossing    = ${a.boostCrossingSeconds}s`);
 console.log(`  cruise top speed  = ${a.cruiseTopSpeed.toFixed(3)} lane-widths/s`);
-console.log(`  time constant     = ${(1 / a.damping).toFixed(2)}s\n`);
+console.log(`  time constant     = ${(1 / a.damping).toFixed(2)}s`);
+console.log(`  keyboard speed    = ${a.keyboardSpeed.toFixed(4)} lane-widths/s  (fixed, no ramp)`);
+console.log(`    => keyboard crosses the lane in ${(1 / a.keyboardSpeed).toFixed(1)}s\n`);
 
 // --- Ordering guard -------------------------------------------------------
 // The single bug that made the bubble completely undrivable: a stop threshold larger than one

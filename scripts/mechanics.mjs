@@ -210,7 +210,7 @@ try {
   // because it saturates. Neither should be wildly slower than the other: a keyboard far below the
   // touch speed makes it the sluggish input instead of the twitchy one.
   results.pacing = await evalJson(
-    'JSON.stringify({ keyboardSteerScale: window.__GB.tuning.keyboardSteerScale, damping: window.__GB.game.diagnostics.lateral.damping })',
+    'JSON.stringify({ keyboardSpeed: window.__GB.game.diagnostics.lateral.keyboardSpeed, damping: window.__GB.game.diagnostics.lateral.damping })',
   );
 
   console.log(JSON.stringify(results, null, 2));
@@ -228,8 +228,9 @@ try {
     fieldRepopulates: results.fieldRepopulates.bubbles > 5,
     // Contact must not be skipped just because the bubble is falling fast.
     fastContactRegisters: results.fastContact.registered,
-    // The keyboard must be scaled down but NOT into a different league from the touch control.
-    keyboardIsTemperedNotCrippled: results.pacing.keyboardSteerScale >= 0.5 && results.pacing.keyboardSteerScale < 1,
+    // Keyboard speed must be a sane lane-crossing rate, not the 8 lane-widths/s an acceleration
+    // ramp produced. A crossing time between 3 and 15 seconds is the usable band.
+    keyboardPaceIsSane: 1 / results.pacing.keyboardSpeed >= 3 && 1 / results.pacing.keyboardSpeed <= 15,
     noExceptions: exceptions.length === 0,
   };
   console.log('CHECKS: ' + JSON.stringify(checks));

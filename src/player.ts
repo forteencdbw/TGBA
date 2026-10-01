@@ -82,27 +82,32 @@ export class Player {
       this.vx = 0;
       this.debugSteerMultiplier = 1;
     } else {
-      // Keyboard steering: thrust and drag, with reduced authority while boosting. Only the THRUST
-      // is scaled, not the drag, so holding accelerate really is sluggish to steer while releasing
-      // it still coasts on the speed already built up.
+      // Keyboard steering: a CONSTANT speed while a key is held, then a decay to rest.
       //
-      // `keyboardSteerScale` exists because a binary axis through an acceleration model feels much
-      // twitchier than a drag does, at the same top speed. Touch steering never reaches this branch.
-      const steerMultiplier = (input.axisY > 0 ? lateral.boostSteerFactor : 1) * tuning.keyboardSteerScale;
-      this.debugSteerMultiplier = steerMultiplier;
-      this.vx += input.axisX * lateral.accel * steerMultiplier * dt;
+      // No acceleration ramp. A binary axis through an acceleration model saturates almost
+      // immediately and overshoots, which reads as twitchy no matter how the ramp is scaled -- and
+      // scaling the ramp is what an earlier attempt got wrong, ending up at 8 lane-widths per
+      // second even at 5% of the calibrated acceleration.
+      //
+      // Boosting still slows steering, because the speed is scaled by the boost factor rather than
+      // the thrust. The drag on release is kept, so letting go coasts briefly instead of stopping
+      // dead, which matches how the rest of the movement behaves.
+      const boostScale = input.axisY > 0 ? lateral.boostSteerFactor : 1;
+      const target = input.axisX * lateral.keyboardSpeed * boostScale;
 
-      this.vx -= this.vx * Math.min(lateral.damping * dt, 1);
+      if (input.axisX === 0) {
+        this.vx -= this.vx * Math.min(lateral.damping * dt, 1);
+        if (Math.abs(this.vx) < lateral.stopSpeed) this.vx = 0;
+      } else {
+        this.vx = target;
+      }
 
-      // Speed cap: a safety net. The asymptotic top speed is what is normally reached.
+      // Keep the velocity sane even if the tuning is changed at runtime from the console.
       const cap = lateral.speedCap;
       if (this.vx > cap) this.vx = cap;
       else if (this.vx < -cap) this.vx = -cap;
 
-      // Come fully to rest instead of asymptotically creeping -- but only when the player has let
-      // go, and only well below the per-frame thrust increment. See lateral.ts.
-      if (input.axisX === 0 && Math.abs(this.vx) < lateral.stopSpeed) this.vx = 0;
-
+      this.debugSteerMultiplier = boostScale;
       this.x += this.vx * dt;
     }
 
