@@ -1,0 +1,24 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+.vite/
+*.tmpdir/
+.*.tmp
+
+# Dev-server runtime artifacts: pid files and logs are per-machine and are recreated on start.
+.devserver.pid
+.devserver.log
+.devserver.err.log
+*.log
+
+# Screenshots produced by the verification scripts in scripts/.
+/screenshot*.png
+/shot-*.png
+/mobile.png
+/zone.png
+/measure.png
+/d2*.png
+
+# Tooling scratch directories (editor / agent temp workspaces)
+.dsh-*/

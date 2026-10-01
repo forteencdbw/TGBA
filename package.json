@@ -1,0 +1,21 @@
+{
+  "name": "the-great-bubble-adventure",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "The Great Bubble Adventure - a vertical ascent game about emergence. Game jam prototype.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "pixi.js": "8.21.0"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.3.1"
+  }
+}
