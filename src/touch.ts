@@ -31,9 +31,25 @@ export class TouchControls {
   private steering = false;
   private targetX: number | null = null;
 
-  /** Which control the active touch started on. */
-  private activeZone: 'boost' | 'water' | null = null;
-  private activePointerId: number | null = null;
+  /**
+   * Which pointers are steering, most recent FIRST.
+   *
+   * A list rather than a single id. This is the whole fix for a real bug: "dragging to steer blocks
+   * the accelerate button, and tapping accelerate blocks steering". Two fingers are down, and the
+   * old code tracked exactly one pointer and returned early when a second arrived, so whichever
+   * touch came second was silently dropped.
+   *
+   * Ordering matters when fingers are lifted out of order: the most recently placed finger is the
+   * one the player means, so it steers and the others are ignored until it goes away.
+   */
+  private waterIds: number[] = [];
+  /**
+   * The pointer holding the accelerate button, if any.
+   *
+   * Deliberately separate from the steering list so the two controls are independent: releasing one
+   * must never cancel the other.
+   */
+  private boostId: number | null = null;
 
   /** Screen geometry, recomputed by `layout`. */
   private button = { x: 0, y: 0, radius: 0 };
@@ -50,36 +66,61 @@ export class TouchControls {
   /**
    * Pointer entry points. Called by the host from stage-level listeners, so nothing here depends on
    * Pixi's hit testing. See the class comment.
+   *
+   * MULTI-TOUCH: each pointer is routed independently, so steering and accelerating can be held at
+   * the same time. Every handler is a no-op for an id it does not already know, so an unrelated
+   * pointer (a second finger that landed somewhere harmless) cannot disturb an active control.
    */
   onPointerDown(pointerId: number, x: number, y: number): void {
-    if (this.activePointerId !== null) return;
-    this.activePointerId = pointerId;
-
     if (this.isInButton(x, y)) {
-      this.activeZone = 'boost';
+      // Last finger on the button wins, so a second tap does not leave the first one stuck on.
+      this.boostId = pointerId;
       this.boosting = true;
       return;
     }
 
-    this.activeZone = 'water';
+    // Newest first: see `waterIds`.
+    this.waterIds = [pointerId, ...this.waterIds.filter((id) => id !== pointerId)];
     this.steering = true;
     this.steerTo(x);
   }
 
   onPointerMove(pointerId: number, x: number, _y: number): void {
-    if (pointerId !== this.activePointerId) return;
     // Dragging off the button keeps boosting: a thumb that slides slightly should not drop the
     // input mid-climb. Deliberate, and the opposite of a small tap target's usual behaviour.
-    if (this.activeZone === 'water') this.steerTo(x);
+    if (pointerId === this.boostId) return;
+
+    // Only the PRIMARY steering finger moves the bubble; a secondary finger's movement is ignored
+    // rather than fighting it for control.
+    if (this.waterIds[0] !== pointerId) return;
+    if (this.waterIds.includes(pointerId)) this.steerTo(x);
   }
 
   onPointerUp(pointerId: number): void {
-    if (pointerId !== this.activePointerId) return;
-    this.activePointerId = null;
-    this.activeZone = null;
-    this.boosting = false;
+    if (pointerId === this.boostId) {
+      this.boostId = null;
+      this.boosting = false;
+    }
+
+    const wasPrimary = this.waterIds[0] === pointerId;
+    this.waterIds = this.waterIds.filter((id) => id !== pointerId);
+    if (wasPrimary) {
+      // Hand steering to the next finger still down, keeping the bubble where the last PRIMARY
+      // finger left it. Re-using the stale `targetX` would make the bubble lurch toward wherever the
+      // lifted finger had been aiming.
+      this.targetX = null;
+      this.steering = this.waterIds.length > 0;
+    }
+  }
+
+  /** Test hook: forget every pointer, e.g. after a layout change. */
+  releaseAll(): void {
+    this.waterIds = [];
+    this.boostId = null;
     this.steering = false;
+    this.boosting = false;
     this.targetX = null;
+    this.update();
   }
 
   /** Generous circular target: it is hit with a thumb, and it overlaps the bottom-right corner. */
@@ -158,9 +199,30 @@ export class TouchControls {
       .stroke({ color: this.boosting ? 0xfff3d6 : 0xffd479, alpha: 0.95, width: 3 });
   }
 
-  /** Exposed for probes. */
-  get debugState(): { boosting: boolean; steering: boolean; targetX: number | null; zone: string | null } {
-    return { boosting: this.boosting, steering: this.steering, targetX: this.targetX, zone: this.activeZone };
+  /**
+   * Exposed for probes.
+   *
+   * `zone` is derived rather than stored now that both controls can be active at once: reporting a
+   * single zone was only meaningful when one pointer could be down. `steeringPointers` and
+   * `boostPointers` say what is actually held, which is what a multi-touch test needs to see.
+   */
+  get debugState(): {
+    boosting: boolean;
+    steering: boolean;
+    targetX: number | null;
+    zone: string | null;
+    steeringPointers: number;
+    boostPointers: number;
+  } {
+    const zone = this.boosting && this.steering ? 'both' : this.boosting ? 'boost' : this.steering ? 'water' : null;
+    return {
+      boosting: this.boosting,
+      steering: this.steering,
+      targetX: this.targetX,
+      zone,
+      steeringPointers: this.waterIds.length,
+      boostPointers: this.boostId === null ? 0 : 1,
+    };
   }
 
   /** Button geometry in canvas coordinates, so tests touch the real thing instead of guessing. */

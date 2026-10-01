@@ -95,11 +95,14 @@ class Game {
     const stage = this.app.stage;
     stage.eventMode = 'static';
     stage.hitArea = { contains: () => true };
-    stage.on('pointerdown', (e) => this.touch.onPointerDown(e.pointerId, e.global.x, e.global.y));
-    stage.on('globalpointermove', (e) => this.touch.onPointerMove(e.pointerId, e.global.x, e.global.y));
-    stage.on('pointerup', (e) => this.touch.onPointerUp(e.pointerId));
-    stage.on('pointerupoutside', (e) => this.touch.onPointerUp(e.pointerId));
-    stage.on('pointercancel', (e) => this.touch.onPointerUp(e.pointerId));
+    // Routed through the handle* methods rather than straight into the touch layer, so there is ONE
+    // path every pointer event takes. Two paths meant the diagnostic log could not see what the real
+    // handlers received, which is exactly what is needed to debug multi-touch routing.
+    stage.on('pointerdown', (e) => this.handlePointerDown(e.pointerId, e.global.x, e.global.y));
+    stage.on('globalpointermove', (e) => this.handlePointerMove(e.pointerId, e.global.x, e.global.y));
+    stage.on('pointerup', (e) => this.handlePointerUp(e.pointerId));
+    stage.on('pointerupoutside', (e) => this.handlePointerUp(e.pointerId));
+    stage.on('pointercancel', (e) => this.handlePointerUp(e.pointerId));
 
     this.rollSeed();
     this.player.reset();
@@ -135,17 +138,39 @@ class Game {
     return this.touch.debugState;
   }
 
-  /** Route a pointer event into the touch layer. Called from stage-level listeners. */
+  /**
+   * Route a pointer event into the touch layer. Called from stage-level listeners.
+   *
+   * Every event is recorded, because multi-touch bugs are invisible from the outside: the layer only
+   * knows the ids it is handed, and if the host passes a different id for the same finger's down and
+   * up, the layer will see a phantom second finger and release the wrong control. That is not
+   * something a screenshot or a state dump can distinguish from a logic error.
+   */
+  private readonly pointerLog: { t: number; kind: string; id: number; x: number; y: number }[] = [];
+
+  private logPointer(kind: string, pointerId: number, x: number, y: number): void {
+    this.pointerLog.push({ t: +(this.elapsed).toFixed(2), kind, id: pointerId, x: Math.round(x), y: Math.round(y) });
+    if (this.pointerLog.length > 60) this.pointerLog.shift();
+  }
+
   handlePointerDown(pointerId: number, x: number, y: number): void {
+    this.logPointer('down', pointerId, x, y);
     this.touch.onPointerDown(pointerId, x, y);
   }
 
   handlePointerMove(pointerId: number, x: number, y: number): void {
+    this.logPointer('move', pointerId, x, y);
     this.touch.onPointerMove(pointerId, x, y);
   }
 
   handlePointerUp(pointerId: number): void {
+    this.logPointer('up', pointerId, -1, -1);
     this.touch.onPointerUp(pointerId);
+  }
+
+  /** Test hook: the raw pointer stream, for diagnosing multi-touch routing. */
+  get pointerTrace(): readonly { t: number; kind: string; id: number; x: number; y: number }[] {
+    return this.pointerLog;
   }
 
   /** Canvas box on screen. Retained for hosts that offset the canvas element. */
