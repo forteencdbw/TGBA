@@ -193,8 +193,14 @@ export const hazardTuning = {
   seekBiggestPullPerSecond: 0.35,
 };
 
-/** Per-kind presentation and collision size, as a fraction of the lane width. */
-const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; spin: number }> = {
+/**
+ * Per-kind presentation and collision size, as a fraction of the lane width.
+ *
+ * EXPORTED because a spat projectile is drawn in the shape and colour of the hazard it was, and copying the four
+ * colours into the projectile code would let the two drift -- a fish that changes colour when thrown is a bug
+ * nobody would think to look for. One source for "what a fish looks like".
+ */
+export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; spin: number }> = {
   fish: { radius: 0.035, colour: 0x9ad7ff, spin: 0 },
   jelly: { radius: 0.062, colour: 0xc79bff, spin: 0 },
   trash: { radius: 0.05, colour: 0xb08a5a, spin: 0.6 },
@@ -247,6 +253,14 @@ export interface HazardContext {
    * punishes the player for trusting what they were shown.
    */
   canEat: (kind: HazardKind) => boolean;
+  /**
+   * Whether there is ROOM to swallow this hazard.
+   *
+   * Asked separately from `canEat` because the two can disagree: a big enough bubble can eat a crab it has no
+   * room left for. When that happens the hazard must fall through to its normal damage path rather than vanish --
+   * a creature that disappears with no effect reads as the game having lost it.
+   */
+  canSwallow: () => boolean;
   /**
    * The suction field, or null when it is not up.
    *
@@ -397,14 +411,17 @@ export class HazardField {
       /**
        * THE REVERSAL, checked BEFORE any per-kind behaviour.
        *
-       * This ordering is the mechanic. Every case below is "the hazard hurts you"; if the player is big enough,
-       * none of them happen and the same overlap yields mass instead. Putting the check first means there is no
-       * way to add a new hazard whose damage path accidentally bypasses its edibility, and it means the marker
-       * and the collision ask the identical question.
+       * This ordering is the mechanic. Every case below is "the hazard hurts you"; if the player is big enough and
+       * has room, none of them happen and the same overlap yields mass instead. Putting the check first means
+       * there is no way to add a new hazard whose damage path accidentally bypasses its edibility, and it means
+       * the marker and the collision ask the identical question.
+       *
+       * `canSwallow` is the capacity half. A full stomach falls through to the damage path, because a creature
+       * that silently disappears is worse than one that still bites.
        *
        * The hazard is removed rather than merely flagged: it is inside the bubble now.
        */
-      if (ctx.canEat(h.kind)) {
+      if (ctx.canEat(h.kind) && ctx.canSwallow()) {
         this.eaten++;
         effects.push({ kind: h.kind, broke: true, eaten: { id: h.id } });
         continue;

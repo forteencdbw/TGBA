@@ -190,4 +190,50 @@ test.describe('screen captures @screenshots', () => {
     });
     await page.screenshot({ path: testInfo.outputPath('suction.png') });
   });
+
+  /**
+   * A projectile in flight, with a full stomach behind it.
+   *
+   * Two things worth looking at rather than measuring: whether the spit button on the left reads as the opposite
+   * of the suction button on the right, and whether a thrown crab is legible as *something the player threw*
+   * rather than as a crab that happens to be moving fast.
+   */
+  test('a projectile in flight @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugSpawnHazardOnPlayer: (kind: string) => void;
+            touchRef: { spitGeometry: { x: number; y: number } };
+            handlePointerDown: (id: number, x: number, y: number) => void;
+            handlePointerUp: (id: number) => void;
+            debugSetSteadyCruise: () => void;
+          };
+          player: { x: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      g.player.volume = 20;
+      g.game.debugSetSteadyCruise();
+      g.player.x = 0.5;
+      g.player.screenY = 0.4;
+      // Two kinds, so the picture shows that the ammunition keeps its identity.
+      for (const kind of ['crab', 'jelly'] as const) {
+        g.game.debugSpawnHazardOnPlayer(kind);
+        await raf();
+        await raf();
+      }
+
+      const b = g.game.touchRef.spitGeometry;
+      g.game.handlePointerDown(93, b.x, b.y);
+      g.game.handlePointerUp(93);
+      // Part-way up the screen, so the shot and its trail are both visible.
+      for (let i = 0; i < 4; i++) await raf();
+    });
+    await page.screenshot({ path: testInfo.outputPath('spit.png') });
+  });
 });

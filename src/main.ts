@@ -2,14 +2,15 @@ import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest, type Landmark } from './background';
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, TIMELINE, type Level, type LevelEntry } from './levels';
-import { HazardField, hazardTuning, paintHazards, type HazardKind } from './hazards';
+import { HazardField, KIND_TUNING, hazardTuning, paintHazards, type HazardKind } from './hazards';
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
 import { audio } from './audio';
-import { canEatHazard, massFromEating } from './consumption';
+import { canEatHazard, hazardMass, massFromEating } from './consumption';
 import { MainMenu } from './menu';
 import { mech } from './mechanisms';
 import { suctionMoveFactor, suctionRadiusFraction } from './suction';
+import { Stomach, spitDirection, spitImpact, spitRadiusFraction, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { demote, initialStageState, recordAbsorb, stageAppearance, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
@@ -386,6 +387,120 @@ class Game {
    */
   canEatHazardForTest(kind: HazardKind): boolean {
     return canEatHazard(kind, this.player.volume);
+  }
+
+  /**
+   * The stomach, and the projectiles currently in flight.
+   *
+   * Per-run state: reset with everything else in `startRun`, because a new run must not begin holding the previous
+   * run's ammunition.
+   */
+  private readonly stomach = new Stomach();
+  private readonly projectiles: SpitProjectile[] = [];
+  /** Seconds until the next spit is allowed. */
+  private spitCooldown = 0;
+  /** 1 -> 0 pulse on the spit button, for the refusal when the stomach is empty. */
+  private spitFlash = 0;
+  /** Projectiles that have hit something this run, so a hit is observable rather than inferred from motion. */
+  private spitHits = 0;
+
+  /**
+   * Fire the oldest thing in the stomach, if the player has pressed spit.
+   *
+   * The direction comes from the steering input, NORMALISED to full speed: the wheel aims a shot, it does not
+   * throttle it. With no steering it goes straight up, which is "forward" in a vertical ascent -- where the water
+   * the player is about to enter, and therefore the targets, is.
+   */
+  private updateSpit(dt: number, laneWidth: number): void {
+    this.spitCooldown = Math.max(0, this.spitCooldown - dt);
+    this.spitFlash = Math.max(0, this.spitFlash - dt * 3);
+    if (!this.input.consumeSpit()) return;
+    if (this.spitCooldown > 0) return;
+
+    const item = this.stomach.takeOldest();
+    if (!item) {
+      /**
+       * Nothing to fire: a short cooldown rather than silence.
+       *
+       * A button that does nothing at all when empty reads as broken. The cooldown turns an empty spit into a
+       * discrete refusal, and the pulse on the button makes the refusal visible.
+       */
+      this.spitCooldown = mech.spit.emptyCooldownSeconds;
+      this.spitFlash = 1;
+      return;
+    }
+
+    const dir = spitDirection(this.input.wheelX, this.input.wheelY);
+    const speed = laneWidth * mech.spit.speedPerSecond;
+    this.projectiles.push({
+      kind: item.kind,
+      x: this.player.x * laneWidth,
+      y: this.player.y,
+      vx: dir.x * speed,
+      // World y grows upward and the direction's y is already in world terms (the wheel writes +1 for up).
+      vy: dir.y * speed,
+      screenY: this.player.screenY,
+      radiusFraction: spitRadiusFraction(item.kind),
+      age: 0,
+    });
+    this.spitFlash = 1;
+    audio.play('pop');
+  }
+
+  /**
+   * Advance the projectiles and resolve what they hit.
+   *
+   * Runs after the hazards have moved, so a projectile hits where things actually are this frame rather than where
+   * they were. The hit test reads the hazard list directly, which is the only part of the game with the authority
+   * on where a hazard is.
+   */
+  private updateProjectiles(dt: number, laneWidth: number, min: number, max: number): void {
+    if (!this.projectiles.length) return;
+    const hitRadius = laneWidth * mech.spit.hitRadiusRatio;
+
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i]!;
+      p.age += dt;
+      // Exponential decay, expressed as a time constant so the range does not change with the frame rate.
+      const decay = Math.exp(-dt / Math.max(0.02, mech.spit.decaySeconds));
+      p.vx *= decay;
+      p.vy *= decay;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+
+      let spent = false;
+      for (const h of this.hazards.hazards) {
+        const hr = laneWidth * h.radiusFraction;
+        const dx = h.x - p.x;
+        const dy = h.y - p.y;
+        const reach = hitRadius + hr;
+        if (dx * dx + dy * dy > reach * reach) continue;
+
+        /**
+         * A hit knocks the target back along the projectile's path, scaled by the target's mass.
+         *
+         * Heavy things shrug it off and light things are thrown, which keeps "the item keeps its own properties"
+         * true on the receiving end as well as the sending end. DAMAGE would be the obvious alternative, but these
+         * hazards have no health to take -- nothing else in this game kills them with numbers, and inventing hit
+         * points for them inside one mechanic would be a new system hiding in this one.
+         */
+        const mass = Math.max(0.05, hazardMass(h.kind));
+        const shove = (mech.spit.knockbackMeters * spitImpact(p.kind)) / mass;
+        const length = Math.hypot(dx, dy) || 1;
+        h.x += (dx / length) * shove;
+        h.y += (dy / length) * shove;
+        this.spitHits++;
+        audio.play('hit');
+        spent = true;
+        break;
+      }
+
+      // Recycle: it hit something, it slowed to a stop, or it left the level's band.
+      const outside = p.y < min - 60 || p.y > max + 60;
+      if (spent || outside || Math.hypot(p.vx, p.vy) < laneWidth * 0.05) {
+        this.projectiles.splice(i, 1);
+      }
+    }
   }
 
   /**
@@ -828,6 +943,17 @@ class Game {
         break;
     }
 
+    /**
+     * Spit, then projectiles, then the hazards' effects.
+     *
+     * The order matters: the spit button is consumed before the projectiles move, so a shot fired this frame
+     * travels this frame and does not appear to hang at the bubble's position for one frame first. And the
+     * projectiles resolve BEFORE `resolveHazards` below, so a knockback this frame is visible in the same frame's
+     * collision test rather than a frame late.
+     */
+    this.updateSpit(dt, viewport.laneWidthMeters);
+    this.updateProjectiles(dt, viewport.laneWidthMeters, min, max);
+
     this.elapsed += dt;
     // The ambience follows the depth every frame: it IS the progress readout. See src/audio.ts.
     //
@@ -1028,6 +1154,11 @@ class Game {
        * pulled identically. Two independently-derived centres would drift and the field would look off-centre.
        */
       suction: suctionAt,
+      /**
+       * Whether the stomach has room. Separate from `canEat`, because a big enough bubble can eat a crab it has
+       * no room for -- and when that happens the hazard must fall through to its damage path rather than vanish.
+       */
+      canSwallow: () => !this.stomach.full,
       bubbles: this.field.bubbles,
       eatenBubbleIds: [] as number[],
       splitCount: 0,
@@ -1058,6 +1189,13 @@ class Game {
         this.player.volume = growByAbsorbing(this.player.volume, massFromEating(e.kind));
         this.stats.absorbed++;
         this.invulnerable = Math.max(this.invulnerable, mech.consumption.eatInvulnerableSeconds);
+        /**
+         * What was swallowed goes into the stomach, to be fired back out later.
+         *
+         * The hazard module already checked `canSwallow`, so this cannot fail -- but a `false` is handled rather
+         * than ignored, because the two checks living in different files is exactly the kind of thing that drifts.
+         */
+        this.stomach.swallow(e.kind);
         audio.play('pop');
         continue;
       }
@@ -1436,6 +1574,11 @@ class Game {
      */
     this.stage = initialStageState();
     this.player.stageSpeedMultiplier = this.stage.speedMultiplier;
+    // A new run must not begin holding the previous run's ammunition, nor its projectiles in flight.
+    this.stomach.reset();
+    this.projectiles.length = 0;
+    this.spitCooldown = 0;
+    this.spitHits = 0;
     this.field.reset();
     this.hazards.reset();
     /**
@@ -1739,6 +1882,36 @@ class Game {
       }
     }
 
+    /**
+     * Projectiles, drawn IN FLIGHT from the stomach.
+     *
+     * Each keeps the silhouette of the hazard it was, tinted with a hot rim so a flying crab is legible as
+     * *something the player threw* rather than as a crab that happens to be moving fast. That distinction matters:
+     * one is a threat and the other is the player's own ammunition, and they can be on screen together.
+     */
+    for (const p of this.projectiles) {
+      const r = laneWidth * p.radiusFraction;
+      const fade = Math.max(0, 1 - p.age / (mech.spit.decaySeconds * 4));
+      g.circle(p.x, p.y, r * mech.spit.glowRadiusRatio).fill({ color: 0xffd479, alpha: mech.spit.glowAlpha * 0.25 * fade });
+      // A short trail behind it, back along its own velocity, so the direction of travel is unmistakable.
+      const trail = r * mech.spit.trailWidthRatio * 3;
+      const speed = Math.hypot(p.vx, p.vy) || 1;
+      g.moveTo(p.x, p.y)
+        .lineTo(p.x - (p.vx / speed) * trail, p.y - (p.vy / speed) * trail)
+        .stroke({ color: 0xffd479, alpha: mech.spit.trailAlpha * fade, width: r * mech.spit.trailWidthRatio });
+      // The body, in the kind's own shape so it still reads as what it was.
+      if (p.kind === 'jelly') {
+        g.ellipse(p.x, p.y, r, r * 0.8).fill({ color: KIND_TUNING.jelly.colour, alpha: 0.75 });
+      } else if (p.kind === 'trash') {
+        g.rect(p.x - r, p.y - r, r * 2, r * 2).fill({ color: 0x6d5232, alpha: 0.8 });
+      } else if (p.kind === 'crab') {
+        g.ellipse(p.x, p.y, r * 1.2, r * 0.8).fill({ color: KIND_TUNING.crab.colour, alpha: 0.85 });
+      } else {
+        g.ellipse(p.x, p.y, r * 1.5, r * 0.75).fill({ color: KIND_TUNING.fish.colour, alpha: 0.85 });
+      }
+      g.circle(p.x, p.y, r * 1.15).stroke({ color: 0xffd479, alpha: 0.9 * fade, width: r * 0.22 });
+    }
+
     // The decoy bait bubble, while it lasts. Drawn like a bright collectable, because that is what it
     // is imitating -- the fish are supposed to fall for it.
     if (this.decoy && this.decoy.until > this.elapsed) {
@@ -1939,6 +2112,13 @@ class Game {
     slow: { remaining: number; factor: number; impulseVy: number };
     /** The suction field: whether it is held, how far it reaches, and what it costs in speed. */
     suction: { held: boolean; radiusFraction: number; moveFactor: number };
+    /**
+     * The stomach and what is in flight.
+     *
+     * `contents` is the ORDER, not just the count: spitting takes the oldest, so a test asserting "it fires what it
+     * swallowed first" needs the sequence rather than the size.
+     */
+    spit: { contents: readonly HazardKind[]; capacity: number; full: boolean; inFlight: number; hits: number };
     trashDrain: number;
     maxGripSeconds: number;
     talent: {
@@ -2063,6 +2243,14 @@ class Game {
         held: this.input.sucking,
         radiusFraction: suctionRadiusFraction(this.player.volume),
         moveFactor: this.player.suctionMoveFactor,
+      },
+      /** What is in the stomach and what is in flight, so a probe reads the fact rather than inferring it. */
+      spit: {
+        contents: this.stomach.contents,
+        capacity: mech.spit.capacity,
+        full: this.stomach.full,
+        inFlight: this.projectiles.length,
+        hits: this.spitHits,
       },
       /** Fractional damage accumulated from a trash bag, so the drain can be observed directly. */
       trashDrain: +this.trashDrain.toFixed(3),
@@ -2244,6 +2432,21 @@ class Game {
   /** Test hook: the collectable field, so a probe can inspect individual bubbles. */
   get fieldRef(): EntityField {
     return this.field;
+  }
+
+  /**
+   * Test hook: the projectiles in flight.
+   *
+   * Read-only so a probe can watch one travel without being able to move it -- a test that repositioned a
+   * projectile would be testing its own arithmetic rather than the game's.
+   */
+  get projectilesRef(): readonly SpitProjectile[] {
+    return this.projectiles;
+  }
+
+  /** Test hook: the stomach, so a probe can read the queue and its capacity. */
+  get stomachRef(): Stomach {
+    return this.stomach;
   }
 
   /** Id of the bubble a probe is following, or null to pick a fresh one. */

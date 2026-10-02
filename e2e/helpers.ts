@@ -90,6 +90,12 @@ export interface Diagnostics {
   audio: { muted: boolean; running: boolean };
   /** The suction field: whether it is held, how far it reaches, and what it costs in speed. */
   suction: { held: boolean; radiusFraction: number; moveFactor: number };
+  /**
+   * The stomach and what is in flight.
+   *
+   * `contents` is the ORDER, not just the count: spitting takes the oldest.
+   */
+  spit: { contents: string[]; capacity: number; full: boolean; inFlight: number; hits: number };
   /** Which skill is in the slot and how many uses are left, or null. */
   skill: { id: string; uses: number } | null;
   /** How many skills have been used this run. */

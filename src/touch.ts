@@ -77,10 +77,19 @@ export class TouchControls {
   private skillButton = { x: 0, y: 0, radius: 0 };
   /** The HUD scale from the last layout, so a redraw needs no viewport. */
   private scale = 1;
-  /** Whether a skill is carried, so the button can hide when the slot is empty. */
+  /** Whether a skill is carried, so the star can appear inside the suction button. */
   private hasSkill = false;
-  /** Drives the press pulse on the skill button. Set on press, decays in `update`. */
+  /** Drives the press pulse on the suction button. Set on press, decays in `update`. */
   private skillFlash = 0;
+  /** Drives the press pulse on the spit button. */
+  private spitFlash = 0;
+  /**
+   * The spit button's geometry, in the bottom-LEFT corner.
+   *
+   * The wheel takes the centre and suction the right, so this is the remaining thumb-reachable spot. Near enough
+   * to the wheel for a right-handed player to reach across, and far enough that a wheel drag never starts on it.
+   */
+  private spitButton = { x: 0, y: 0, radius: 0 };
 
   constructor(private readonly input: Input) {
     this.root.eventMode = 'none';
@@ -117,6 +126,17 @@ export class TouchControls {
         this.suctionPointer = pointerId;
         this.input.suctionHeld = true;
       }
+      this.update();
+      return;
+    }
+
+    /**
+     * The spit button fires on PRESS, like the skill: it is a discrete action, and requiring a release would make
+     * a rapid one-two (spit, spit) feel sluggish under a thumb that lingers.
+     */
+    if (this.isInSpitButton(x, y)) {
+      this.input.pressSpit();
+      this.spitFlash = 1;
       this.update();
       return;
     }
@@ -200,6 +220,13 @@ export class TouchControls {
     const dx = x - this.skillButton.x;
     const dy = y - this.skillButton.y;
     const reach = this.skillButton.radius * 1.35;
+    return dx * dx + dy * dy <= reach * reach;
+  }
+
+  private isInSpitButton(x: number, y: number): boolean {
+    const dx = x - this.spitButton.x;
+    const dy = y - this.spitButton.y;
+    const reach = this.spitButton.radius * 1.35;
     return dx * dx + dy * dy <= reach * reach;
   }
 
@@ -291,13 +318,57 @@ export class TouchControls {
       y: canvasHeight - buttonRadius - 22 * scale,
       radius: buttonRadius,
     };
+    // The spit button mirrors it on the LEFT, at the same height, so the two are one gesture apart.
+    this.spitButton = {
+      x: laneLeft + buttonRadius + 12 * scale,
+      y: canvasHeight - buttonRadius - 22 * scale,
+      radius: buttonRadius,
+    };
     this.update();
   }
 
-  /** Redraw the wheel and the skill button. Cheap: a few circles per frame. */
+  /** Redraw the wheel and the buttons. Cheap: a few circles and paths per frame. */
   update(): void {
     this.drawWheel();
     this.drawSkillButton();
+    this.drawSpitButton();
+  }
+
+  /**
+   * The spit button.
+   *
+   * Drawn with an OUTWARD-pointing motif, deliberately the opposite of the suction button's inward ticks. The two
+   * sit at the same height on opposite sides and do opposite things, so their shapes have to differ at a glance
+   * rather than requiring the player to remember which side is which.
+   *
+   * The count of items inside is not shown here: that belongs on the bubble, where the capacity it represents
+   * actually is. This button only has to say "I am the way things leave".
+   */
+  private drawSpitButton(): void {
+    const g = this.buttonGfx;
+    const sb = this.spitButton;
+    if (sb.radius <= 0) return;
+
+    this.spitFlash = Math.max(0, this.spitFlash - 0.06);
+    if (this.spitFlash > 0) {
+      g.circle(sb.x, sb.y, sb.radius * (1.25 + this.spitFlash * 0.35)).fill({ color: 0xffd479, alpha: 0.32 * this.spitFlash });
+    }
+
+    g.circle(sb.x, sb.y, sb.radius).fill({ color: 0x2a2418, alpha: 0.72 });
+    g.circle(sb.x, sb.y, sb.radius).stroke({ color: 0xffd479, alpha: 0.85, width: 2 });
+
+    // Three outward ticks, so the button reads as a launch rather than a direction.
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+      const inner = sb.radius * 0.34;
+      const outer = sb.radius * 0.74;
+      g.moveTo(sb.x + Math.cos(a) * inner, sb.y + Math.sin(a) * inner);
+      g.lineTo(sb.x + Math.cos(a) * outer, sb.y + Math.sin(a) * outer);
+    }
+    g.stroke({ color: 0xffd479, alpha: 0.9, width: Math.max(1, 2 * this.scale) });
+
+    // A filled core, so the shape reads as "something comes out of here" rather than as a spinner.
+    g.circle(sb.x, sb.y, sb.radius * 0.2).fill({ color: 0xfff0d0, alpha: 0.9 });
   }
 
   private drawWheel(): void {
@@ -469,6 +540,11 @@ export class TouchControls {
   /** Skill button geometry, so a probe can press the real control instead of guessing. */
   get skillGeometry(): { x: number; y: number; radius: number } {
     return { ...this.skillButton };
+  }
+
+  /** Spit button geometry, so a probe can press the real control instead of guessing. */
+  get spitGeometry(): { x: number; y: number; radius: number } {
+    return { ...this.spitButton };
   }
 
   /** Named layers, exposed so a test can inspect them. */

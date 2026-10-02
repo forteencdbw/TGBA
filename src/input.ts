@@ -56,6 +56,14 @@ export class Input {
   suctionHeld = false;
 
   /**
+   * The spit button was pressed this frame.
+   *
+   * Edge-triggered and CONSUMED, like the skill: one press is one projectile, and a plain flag read every frame
+   * would empty the whole stomach in three frames.
+   */
+  private spitPressed = false;
+
+  /**
    * Whether any deliberate movement input is present: a key held, or the wheel pushed past its dead zone.
    *
    * Exposed because several systems ask "is the player actively steering" rather than "where are they going" --
@@ -154,6 +162,22 @@ export class Input {
   /** Signal a skill press from a touch control. */
   pressSkill(): void {
     this.skillPressed = true;
+  }
+
+  /** Signal a spit press from a touch control. */
+  pressSpit(): void {
+    this.spitPressed = true;
+  }
+
+  /**
+   * Take the pending spit press, if any.
+   *
+   * Consuming rather than reading is what makes one press cost exactly one projectile.
+   */
+  consumeSpit(): boolean {
+    if (!this.spitPressed) return false;
+    this.spitPressed = false;
+    return true;
   }
 
   /**
