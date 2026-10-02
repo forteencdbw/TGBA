@@ -565,13 +565,29 @@ class Game {
   }
 
   /**
+   * Whether this bubble can eat this kind of hazard, which is TWO questions and only one of them is about size.
+   *
+   * The type's own answer comes first: a bubble with no stomach cannot eat a creature however big it is, so the
+   * answer for the volatile bubble is `false` for every kind. This is the single place that decides it, and the
+   * three callers -- the collision, the outline marker and the test hook -- all come through here, so the marker
+   * cannot promise food that the collision then refuses to deliver.
+   *
+   * The failure this replaces: the volatile bubble swallowed enemies, and since it has neither spit nor digest, a
+   * full stomach could only end one way. The fuse burned and the run ended from the inside, with nothing the player
+   * could do about it.
+   */
+  private canSwallow(kind: HazardKind): boolean {
+    return this.bubbleType.swallowsHazards && canEatHazard(kind, this.player.volume, this.tierBonus);
+  }
+
+  /**
    * Test hook: whether the player could currently EAT this kind of hazard.
    *
    * Exposes the same function the collision and the outline marker use, so a test asserts the real rule rather
    * than reimplementing the tier ladder and disagreeing with it at the edges.
    */
   canEatHazardForTest(kind: HazardKind): boolean {
-    return canEatHazard(kind, this.player.volume, this.tierBonus);
+    return this.canSwallow(kind);
   }
 
   /**
@@ -1760,7 +1776,7 @@ class Game {
        * so the outline marker (which asks the same question while drawing) can never disagree with what happens
        * on contact.
        */
-      canEat: (kind: HazardKind) => canEatHazard(kind, this.player.volume, this.tierBonus),
+      canEat: (kind: HazardKind) => this.canSwallow(kind),
       /**
        * The suction field, or null when it is not held.
        *
@@ -2806,7 +2822,7 @@ class Game {
     // `canEat` is the same function the collision uses, asked again here to draw the edibility marker. One
     // source of truth on purpose: a marker that promised food while the collision delivered a hit would be the
     // worst bug this feature could have, because it would punish the player for trusting what they saw.
-    paintHazards(g, this.hazards, laneWidth, this.elapsed, (kind) => canEatHazard(kind, this.player.volume, this.tierBonus));
+    paintHazards(g, this.hazards, laneWidth, this.elapsed, (kind) => this.canSwallow(kind));
 
     /**
      * Obstacles, UNDER the hazards.
@@ -3522,6 +3538,8 @@ class Game {
       hasSpit: boolean;
       hasCompress: boolean;
       hasCharge: boolean;
+      /** Whether it can swallow a creature at all. False means contact is damage, never a meal. */
+      swallowsHazards: boolean;
     };
     /** The volatile bubble's resource. Always present; always zero for the devour bubble. */
     rage: {
@@ -3788,6 +3806,8 @@ class Game {
         hasSpit: hasControl(this.bubbleType, 'spit'),
         hasCompress: hasControl(this.bubbleType, 'compress'),
         hasCharge: hasControl(this.bubbleType, 'charge'),
+        /** Whether it can swallow a creature at all. False means contact is damage, never a meal. */
+        swallowsHazards: this.bubbleType.swallowsHazards,
       },
       rage: {
         value: +this.rage.rage.toFixed(2),

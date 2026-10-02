@@ -65,8 +65,20 @@ const canEatAt = (page: Page, kind: string, volume: number) =>
 /**
  * Spawn a hazard on the player and report the outcome, measured INSIDE one page evaluation.
  *
- * The volume is re-pinned on every attempt, because the bubble keeps eating collectables on its own and would
- * otherwise drift across the tier boundary between attempts.
+ * ---------------------------------------------------------------------------------------------
+ * TWO COIN FLIPS THIS HAS TO TAKE OUT OF THE MEASUREMENT
+ * ---------------------------------------------------------------------------------------------
+ * 1. **The bait beat.** `baitEnabled` is on by default and `fishBaitChance` is 0.25, so one fish contact in four is
+ *    "the fish got distracted and wandered off" and deals NO damage -- independent of the run's talent, which only
+ *    decides who can leave the bait. The result was a spec that failed about a quarter of the time on both projects,
+ *    for a reason that has nothing to do with the eating rules it is about. `debugSetBaitEnabled` exists for this and
+ *    the run's talent is pinned too (fish-fart fires on the hit that would have landed and leaves bait behind, which
+ *    stacks a second distraction on top of the first).
+ *
+ * 2. **The 0.8-second blink after any hit.** A fish that arrives while the bubble is invulnerable deals nothing, so
+ *    whether some stray creature happened to hit the bubble just before the probe decides the result. The field is
+ *    cleared and the blink waited out first, with the volume re-pinned every frame -- the bubble keeps eating
+ *    collectables on its own, and would otherwise drift across the tier boundary while we wait.
  */
 const tryEat = (page: Page, kind: 'fish' | 'jelly' | 'trash' | 'crab', volume: number) =>
   page.evaluate(
@@ -75,18 +87,38 @@ const tryEat = (page: Page, kind: 'fish' | 'jelly' | 'trash' | 'crab', volume: n
         __GB: {
           game: {
             debugSpawnHazardOnPlayer: (k: string) => void;
-            diagnostics: { stats: { hits: number } };
-            hazardsRef: { eaten: number };
+            debugSetTalent: (id: string) => string;
+            debugSetBaitEnabled: (on: boolean) => boolean;
+            diagnostics: { stats: { hits: number }; invulnerable: number };
+            hazardsRef: { hazards: unknown[]; eaten: number };
           };
           player: { volume: number };
         };
       }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+      g.game.debugSetTalent('soda');
+      g.game.debugSetBaitEnabled(false);
+      g.game.hazardsRef.hazards.length = 0;
+      let waited = 0;
+      while (g.game.diagnostics.invulnerable > 0 && waited < 120) {
+        g.player.volume = args.volume;
+        await raf();
+        waited++;
+      }
       g.player.volume = args.volume;
       const hitsBefore = g.game.diagnostics.stats.hits;
+      const invBefore = g.game.diagnostics.invulnerable;
       g.game.debugSpawnHazardOnPlayer(args.kind);
       // A frame for the contact to resolve.
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
-      return { hitsBefore, hitsAfter: g.game.diagnostics.stats.hits, eaten: g.game.hazardsRef.eaten };
+      await raf();
+      return {
+        hitsBefore,
+        hitsAfter: g.game.diagnostics.stats.hits,
+        eaten: g.game.hazardsRef.eaten,
+        /** Reported so a failure says WHY: nothing landed, or it landed while blinking. */
+        invBefore,
+        waited,
+      };
     },
     { kind, volume },
   );
@@ -107,7 +139,7 @@ test.describe('eating hazards', () => {
     const result = await tryEat(page, 'fish', justBelow);
 
     expect(result.eaten, 'a bubble below the tier must NOT eat a fish').toBe(0);
-    expect(result.hitsAfter, 'and the fish must still hurt').toBeGreaterThan(result.hitsBefore);
+    expect(result.hitsAfter, `and the fish must still hurt -- got ${JSON.stringify(result)}`).toBeGreaterThan(result.hitsBefore);
     await expectNoErrors(errors);
   });
 

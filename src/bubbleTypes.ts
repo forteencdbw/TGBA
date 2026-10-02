@@ -78,6 +78,24 @@ export interface BubbleType {
   /** Where the bubble's colours come from. */
   look: LookSource;
   /**
+   * Whether this type can SWALLOW a hazard at all: the stomach, and with it the over-eating fuse.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THIS IS A TYPE PROPERTY RATHER THAN A DETAIL OF THE EATING RULES
+   * ---------------------------------------------------------------------------------------------
+   * The devour bubble's whole design is the reversal: eat the thing that was hunting you, then deal with what it does
+   * once it is inside. The volatile bubble has no such mechanic -- it has no spit and no digest, so a creature in its
+   * stomach has no way out and the fuse burns down to a guaranteed death. It was swallowing enemies and exploding
+   * from the inside, which reads as "this character is broken" rather than as a design.
+   *
+   * So swallowing hazards is opt-in per type, and `e2e/bubble-types.spec.ts` enforces the rule that makes it safe: a
+   * type that swallows must have the verbs to get things back OUT. Nothing swallows without an exit.
+   *
+   * What it does NOT gate: eating collectable bubbles. Growth is every bubble's business, and the volatile one
+   * gathers by touch -- clumsily, which is its design ("poor at precise collecting").
+   */
+  swallowsHazards: boolean;
+  /**
    * Whether this type has a resource the HUD reports, and what to call it.
    *
    * Null for the devour bubble: it has no second meter, and inventing one would be inventing a mechanic. The
@@ -100,6 +118,8 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
     hint: 'WASD / 方向键移动   ·   吸附：按住右下   ·   喷吐：K   ·   消化：按住 L',
     controls: ['wheel', 'skill', 'suction', 'spit', 'compress'],
     look: 'growthStage',
+    // The original design: the reversal IS the mechanic, and both exits are one button away.
+    swallowsHazards: true,
     resource: null,
   },
   {
@@ -108,14 +128,22 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
     tagline: '挨打积怒，把怒气撞出去 —— 怒气不看体积，一次爆干净',
     hint: 'WASD / 方向键移动   ·   蓄力：按住右下，松手冲撞   ·   爆破：K / 左下   ·   技能：轻点右下',
     /**
-     * No spit, no compress, and no suction field.
+     * No stomach, no suction field, and neither of the stomach's verbs.
      *
-     * Not an omission: eating in this game is a CONTACT rule, and suction is only a magnet on top of it. So the
-     * volatile bubble still eats by touching food -- badly, which is what the design asks for ("poor at precise
-     * collecting") -- and its one deliberate verb is the charge.
+     * It still eats COLLECTABLE bubbles -- growth is every bubble's business, and it gathers by touch rather than by
+     * pulling, which is the design's "poor at precise collecting". What it does not do is swallow CREATURES: see
+     * `swallowsHazards`.
      */
     controls: ['wheel', 'skill', 'charge', 'burst'],
     look: 'rage',
+    /**
+     * No stomach, and therefore no over-eating fuse: an enemy it touches is an enemy that HITS it.
+     *
+     * That is not a punishment -- it is where its rage comes from. The design's own closing line is "let them hit
+     * you, then ram it all back", and a bubble that could eat them would have no reason to be hit. It also has
+     * nowhere to put them: no spit, no digest, so a swallowed creature would be a guaranteed death by fuse.
+     */
+    swallowsHazards: false,
     resource: { label: '怒气' },
   },
 ];

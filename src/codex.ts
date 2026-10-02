@@ -354,6 +354,19 @@ interface BubbleProse {
 function typeFacts(type: BubbleType): readonly CodexFact[] {
   const facts: CodexFact[] = [
     { label: '按钮', value: type.controls.map((c) => CONTROL_LABELS[c]).join(' · ') },
+    /**
+     * The stomach, which is the first difference a player notices between the two types.
+     *
+     * Derived rather than authored, so a third type cannot ship with a card describing the wrong one -- and the
+     * wording says what the answer MEANS rather than only yes or no, because "no stomach" is interesting once you
+     * know that touching a creature is therefore a wound instead of a meal.
+     */
+    {
+      label: '胃袋',
+      value: type.swallowsHazards
+        ? `有：能吞下危险物，再用${[type.controls.includes('spit') ? '喷吐' : '', type.controls.includes('compress') ? '消化' : ''].filter(Boolean).join(' / ')}处理它`
+        : '没有：碰到敌人不会被吞掉，而是挨打',
+    },
     {
       label: '颜色',
       value: type.look === 'rage' ? `随怒气：${mech.angry.appearance.map((a) => a.name).join(' → ')}` : `随成长阶段：${mech.stages.appearance.map((a) => a.name).join(' → ')}`,
@@ -493,9 +506,10 @@ const BUBBLE_PROSE: Record<BubbleTypeId, BubbleProse> = {
       tagline: '挨打积怒，把怒气撞出去',
       glyph: 'angry',
       notes: [
-        '它没有吸附、没有喷吐、没有消化：靠接触吃东西（吸附只是磁铁，不是吃的前提），所以它能长大，只是收集得笨。',
+        '它没有吸附、没有喷吐、没有消化，也没有胃袋：碰到敌人不会被吞掉，而是挨打——那正是它的怒气来源。',
+        '它只吃气泡（食物），而且靠接触、不靠吸力，所以收集得笨——这是设计给它的弱点，不是没做完。',
         '它只有两个动作：蓄力冲撞和怒气爆破，两个都花怒气。怒气从哪来只有一条路——挨打，而且得活下来。',
-        '平静时它看起来就是个普通气泡（颜色也接近），差别要等它开始挨打才出现。这是设计有意让"受伤"成为角色本身。',
+        '平静时它看起来就是个普通气泡（颜色也接近），差别要等它开始挨打才出现。设计有意让"受伤"成为角色本身。',
       ],
     },
     features: [

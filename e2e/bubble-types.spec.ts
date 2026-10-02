@@ -760,6 +760,182 @@ test.describe('bubble types', () => {
     expect(result.afterCrate.overloaded, 'breaking a crate must NOT be a release').toBe(true);
   });
 
+  test('no bubble may swallow without a way to get it back out', async ({ page }) => {
+    await boot(page);
+
+    /**
+     * The invariant that would have caught the bug this fix replaces.
+     *
+     * The volatile bubble was swallowing enemies. It has neither spit nor digest, so a full stomach had exactly one
+     * outcome: the over-eating fuse burned down and the run ended from the inside, with nothing the player could do
+     * about it. Swallowing is per type now (`swallowsHazards`), and this is the rule that keeps it honest -- a type
+     * that swallows must have an exit, whatever a future config or a future type says.
+     */
+    const types = await page.evaluate(() =>
+      (window as unknown as { __GB: { game: { debugBubbleTypeIds: () => string[] } } }).__GB.game.debugBubbleTypeIds(),
+    );
+    expect(types.length, 'there must be types to check').toBeGreaterThan(0);
+
+    for (const id of types) {
+      const shape = await page.evaluate(async (typeId) => {
+        const g = (window as unknown as {
+          __GB: {
+            game: {
+              debugStartRunWithType: (id: string) => void;
+              diagnostics: { bubbleType: { id: string; controls: string[]; swallowsHazards: boolean } };
+            };
+          };
+        }).__GB.game;
+        g.debugStartRunWithType(typeId);
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        return g.diagnostics.bubbleType;
+      }, id);
+      const exits = ['spit', 'compress'].filter((verb) => shape.controls.includes(verb));
+      if (shape.swallowsHazards) {
+        expect(exits.length, `the ${id} bubble swallows creatures but has no way to get them out`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  test('the volatile bubble has no stomach: an enemy it touches hurts it instead of feeding it', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await waitForPhase(page, 'playing');
+
+    const result = await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugSpawnHazardOnPlayer: (kind: string) => void;
+            debugSetSteadyCruise: () => void;
+            /** Pinned below: the run's talent is rolled, and fish-fart's bait makes fish contacts harmless. */
+            debugSetTalent: (id: string) => string;
+            /** And the bait beat is on by default, which makes one contact in four deal nothing at all. */
+            debugSetBaitEnabled: (on: boolean) => boolean;
+            diagnostics: {
+              phase: string;
+              stats: { hits: number; ended: number };
+              stomach: { contents: unknown[] };
+              hazards: { eaten: number };
+              bubbleType: { swallowsHazards: boolean };
+              gameSeconds: number;
+            };
+            hazardsRef: { hazards: { x: number; y: number }[] };
+            levelRef: { scrollSpeed: number };
+            camera: { viewport: { laneWidthMeters: number } };
+          };
+          player: { x: number; y: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      // Frozen water, so the creatures stay on the bubble instead of being carried away.
+      const scroll = g.game.levelRef.scrollSpeed;
+      g.game.levelRef.scrollSpeed = 0;
+      g.game.debugSetSteadyCruise();
+      /**
+       * A neutral talent, because the run's own is ROLLED and fish-fart changes what a contact does: it fires on the
+       * hit that would have landed and leaves bait, and a fish crossing bait is distracted into dealing no damage.
+       * Measured with it in play, this test's "contact must hurt" came out 2 hits in 10 contacts.
+       */
+      g.game.debugSetTalent('soda');
+      /**
+       * And the bait beat itself, which is NOT the talent: `baitEnabled` is true by default and gives every fish
+       * contact a 1-in-4 chance of being "the fish wandered off" instead of a hit. A test that counts hits has to
+       * turn that off or it fails a quarter of the time on both projects.
+       */
+      g.game.debugSetBaitEnabled(false);
+      const lane = g.game.camera.viewport.laneWidthMeters;
+      g.player.x = 0.5;
+      g.player.screenY = 0.5;
+      // Comfortably big enough that the DEVOUR bubble would eat a fish (tier 1 needs volume 2.2).
+      g.player.volume = 6;
+      g.game.hazardsRef.hazards.length = 0;
+      await raf();
+
+      const before = { hits: g.game.diagnostics.stats.hits, eaten: g.game.diagnostics.hazards.eaten, ended: g.game.diagnostics.stats.ended };
+
+      /**
+       * Five creatures, which is more than the stomach's capacity of three.
+       *
+       * Five rather than one because the bug was never "it ate a fish" -- it was that a stomach this bubble cannot
+       * empty always ends in the fuse. Filling past capacity is what used to guarantee the explosion.
+       */
+      for (const kind of ['fish', 'jelly', 'trash', 'crab', 'urchin']) g.game.debugSpawnHazardOnPlayer(kind);
+      g.game.hazardsRef.hazards.forEach((h, i) => {
+        const angle = (i / 5) * Math.PI * 2;
+        h.x = g.player.x * lane + Math.cos(angle) * lane * 0.04;
+        h.y = g.player.y + Math.sin(angle) * lane * 0.04;
+      });
+
+      const t0 = g.game.diagnostics.gameSeconds;
+      // Long enough for the five-second fuse to burn out twice over, had anything been swallowed.
+      while (g.game.diagnostics.gameSeconds - t0 < 11) await raf();
+
+      const out = {
+        swallowsHazards: g.game.diagnostics.bubbleType.swallowsHazards,
+        stomachSize: g.game.diagnostics.stomach.contents.length,
+        eatenByField: g.game.diagnostics.hazards.eaten - before.eaten,
+        hits: g.game.diagnostics.stats.hits - before.hits,
+        ended: g.game.diagnostics.stats.ended - before.ended,
+        phase: g.game.diagnostics.phase,
+      };
+      g.game.levelRef.scrollSpeed = scroll;
+      return out;
+    });
+
+    console.log(`volatile bubble vs creatures: ${JSON.stringify(result)}`);
+    expect(result.swallowsHazards, 'the volatile bubble must declare that it has no stomach').toBe(false);
+    expect(result.stomachSize, 'so nothing may end up in there').toBe(0);
+    expect(result.eatenByField, 'and the field must never report a creature as eaten').toBe(0);
+    expect(result.hits, 'contact with an enemy must HURT it -- that is where its rage comes from').toBeGreaterThan(0);
+    /**
+     * And the run must survive creatures it cannot eat.
+     *
+     * This is the bug in one assertion: five creatures and eleven seconds of contact used to end the run from the
+     * inside, because the stomach filled and had no exit.
+     */
+    expect(result.ended, 'and it must not have died of over-eating').toBe(0);
+    expect(result.phase, 'the run must still be running').toBe('playing');
+  });
+
+  test('the devour bubble in the same situation DOES swallow, which is the difference', async ({ page }) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+
+    /**
+     * The contrast, because "the volatile bubble cannot eat creatures" is only a design decision if the other bubble
+     * still can. One creature, a few frames, and the devour bubble's stomach has something in it.
+     */
+    const swallowed = await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugSpawnHazardOnPlayer: (kind: string) => void;
+            debugSetSteadyCruise: () => void;
+            diagnostics: { stomach: { contents: unknown[] }; bubbleType: { swallowsHazards: boolean } };
+            hazardsRef: { hazards: unknown[] };
+          };
+          player: { x: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+      g.game.debugSetSteadyCruise();
+      g.player.x = 0.5;
+      g.player.screenY = 0.5;
+      g.player.volume = 6;
+      g.game.hazardsRef.hazards.length = 0;
+      await raf();
+      g.game.debugSpawnHazardOnPlayer('fish');
+      for (let i = 0; i < 4; i++) await raf();
+      return { size: g.game.diagnostics.stomach.contents.length, swallowsHazards: g.game.diagnostics.bubbleType.swallowsHazards };
+    });
+
+    expect(swallowed.swallowsHazards, 'the devour bubble has a stomach').toBe(true);
+    expect(swallowed.size, 'and a fish on top of it goes in').toBeGreaterThan(0);
+  });
+
   test('the aim locks while winding up, so a released stick still slams where it was pointed', async ({ page }) => {
     await boot(page);
     await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
