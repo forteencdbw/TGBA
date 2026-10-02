@@ -246,6 +246,11 @@ class Game {
     return this.touch;
   }
 
+  /** Test hook: the HUD, so a probe can read the number the player actually sees. */
+  get hudRef(): Hud {
+    return this.hud;
+  }
+
   /** Test hook: the level, so a probe can read properties like the lead limit. */
   get levelRef(): Level {
     return LEVEL;
@@ -1104,6 +1109,19 @@ class Game {
     this.player.reset();
     this.field.reset();
     this.hazards.reset();
+    /**
+     * Reset the SCROLL, which is the level's own progress and is not owned by anything else.
+     *
+     * Found by a bug report: "start the game and it suddenly becomes 130m, then ends." Both symptoms
+     * came from this one omission. `scrolled` kept the finished run's value of 1500, so on the next
+     * run the camera ceiling was already at 1630; that pinned the player there, which made the headline
+     * (`length - y`) read -130, and the win condition (`scrolled >= length`) was true on the first frame
+     * of play. It only appeared after a restart, because a fresh page has `scrolled` at 0 -- which is
+     * exactly why the boot path looked fine.
+     */
+    this.scrolled = 0;
+    this.timelineEmitted = 0;
+    this.endTrace.length = 0;
     this.trashDrain = 0;
     this.comedyBeats = 0;
     this.lastComedyBeat = null;

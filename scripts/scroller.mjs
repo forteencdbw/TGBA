@@ -278,15 +278,51 @@ try {
      })()`,
     true,
   );
-  console.log(`\nlevel end: phase=${ending.phase} surfaced=${ending.surfaced}`);
-  console.log(`  hazards before=${ending.before} right after the skip=${ending.rightAfter} one frame later=${ending.afterOneFrame}`);
+  console.log(`\nlevel end: phase=${ending.phase} surfaced=${ending.surfaced}`);  console.log(`  hazards before=${ending.before} right after the skip=${ending.rightAfter} one frame later=${ending.afterOneFrame}`);
   console.log(`  scrolled right after the skip: ${ending.scrolledRightAfter}`);
   console.log('  per frame {hazards, entriesEmitted}: ' + JSON.stringify(ending.perFrame));
   console.log('  field right after the skip: ' + JSON.stringify(ending.fieldRightAfter));
   console.log('  end-condition trace: ' + JSON.stringify(ending.endTrace));
 
+  // ------------------------------------------------------------ restart
+  /**
+   * THE REGRESSION. Reported as "start the game and it suddenly becomes 130m, then ends".
+   *
+   * `startRun` did not reset the scroll, so a second run began with the finished run's value. Verified
+   * explicitly and AFTER a completed level, because a fresh page starts at 0 and therefore hides it --
+   * which is exactly why the first version of this suite passed while the game was broken.
+   */
+  const restart = await evalJson(
+    `(async function () {
+       const g = window.__GB.game;
+       const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+       const t0 = performance.now();
+       while (g.diagnostics.phase !== 'playing' && performance.now() - t0 < 15000) await raf();
+       // Let a moment of the new run actually happen.
+       const t1 = performance.now();
+       while (performance.now() - t1 < 600) await raf();
+       const d = g.diagnostics;
+       return JSON.stringify({
+         phase: d.phase,
+         scroll: d.level.scrolled,
+         headline: g.hudRef.headlineText,
+         depth: +g.player.depth.toFixed(0),
+         playerY: +g.player.y.toFixed(1),
+         elapsed: +d.elapsed.toFixed(2)
+       });
+     })()`,
+    true,
+  );
+  console.log(
+    `\nafter the restart: phase=${restart.phase} scroll=${restart.scroll}m y=${restart.playerY} headline="${restart.headline}" elapsed=${restart.elapsed}s`,
+  );
+
   const checks = {
-    // The whole redesign rests on this: progress is the level's, not the player's.
+    // The reported bug, as three separate facts so a failure says which part broke.
+    restartResetsTheScroll: restart.scroll < 60,
+    restartPutsThePlayerAtTheSeabed: restart.playerY < 60,
+    restartDoesNotReadAsNegative: Number(restart.headline) > 1200,
+    restartIsActuallyPlaying: restart.phase === 'playing' && restart.elapsed < 6,    // The whole redesign rests on this: progress is the level's, not the player's.
     cameraScrollsWithoutInput: scroll.scrolledAfter > scroll.scrolledBefore + 10,
     timelineEmitsEntries: scroll.emittedAfter > 0,
     // Holding nothing means hovering, not drifting.

@@ -59,9 +59,15 @@ export class Player {
     this.skillAscentBonus = 1;
   }
 
-  /** Metres still to climb. */
+  /**
+   * Metres still to climb, i.e. distance left to the surface.
+   *
+   * Was `this.y`, which was correct when the bubble was born at y = 0 and y WAS the distance travelled.
+   * Kept honest now that y is a free position in the level, so the name cannot quietly come to mean
+   * something else.
+   */
   get remaining(): number {
-    return this.y;
+    return Math.max(0, DEPTH_TOTAL - this.y);
   }
 
   /** Metres below the surface, which is what the HUD shows. */

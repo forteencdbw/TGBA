@@ -362,6 +362,16 @@ export class Hud {
     this.skillLabel = name ? `${name} ×${uses}` : '';
   }
 
+  /**
+   * The headline number, exactly as the player reads it.
+   *
+   * Exposed because a bug report in terms of "it says 130" can only be checked against the string the
+   * HUD actually shows, not against a re-derivation that might disagree with it.
+   */
+  get headlineText(): string {
+    return this.headline.text;
+  }
+
   update(player: Player, fps: number, nominalSeconds: number, elapsed: number, lateral: LateralAuthority): void {
     // The headline is the distance still to travel, NOT the distance travelled: the bubble is
     // born on the seabed, so it starts at DEPTH_TOTAL metres away.
