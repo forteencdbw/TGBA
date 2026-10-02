@@ -101,6 +101,23 @@ export interface Hazard {
   fed: number;
   /** Fish: seconds left before it can eat again, so a split is not instantaneous. */
   digest: number;
+  /**
+   * Set while it is still ARRIVING from a screen edge, and null once it is in the water.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHAT THIS IS FOR, AND WHY IT IS NOT JUST A SPAWN POSITION
+   * ---------------------------------------------------------------------------------------------
+   * A level can say `from: 'left' | 'right' | 'bottom'` for a block, which is how content arrives from the sides and
+   * from behind instead of only from above. Arriving is a STATE rather than a position because the arrival has to
+   * replace the kind's own motion while it lasts: a fish spawned off the left edge must swim IN before it starts
+   * chasing, or its chase logic would have it turn round and swim off the edge it came from.
+   *
+   * It ends the moment the creature is inside the play area, and then `advance` hands it to the switch below and it
+   * behaves like everything else. What that means in practice, and it is worth knowing when authoring: only the kinds
+   * that hunt will press an attack from behind. A bottom-entered fish chases; a bottom-entered jellyfish drifts back
+   * down out of the level, because drifting away is what jellyfish do.
+   */
+  entry: { from: 'left' | 'right' | 'bottom'; speed: number } | null;
 }
 
 /** Tunables for D3. Kept together because they are only meaningful as a set. */
@@ -127,6 +144,9 @@ export const hazardTuning = {
    * usually ends with the fish wandering off, the swarm stops being a threat and the joke has eaten the
    * mechanic.
    */
+  /** How deep inside the lane a side-entering creature must get before its own AI takes over. */
+  insideMarginRatio: mech.spawning.insideMarginRatio,
+
   fishBaitChance: 0.25,
   fishBaitSeconds: 1.6,
   /** Jellyfish drift and bob; they barely move horizontally. */
@@ -483,6 +503,7 @@ export class HazardField {
       armed: false,
       fed: 0,
       digest: 0,
+      entry: null,
     };
     this.hazards.push(hazard);
     return hazard;
@@ -859,6 +880,7 @@ export class HazardField {
       armed: false,
       fed: 0,
       digest: 0,
+      entry: null,
       gripSeconds: 0,
     };
   }
@@ -872,6 +894,51 @@ export class HazardField {
   private advance(h: Hazard, dt: number, ctx: HazardContext): void {
     h.phase += dt;
     const base = ctx.descentSpeed;
+
+    /**
+     * ---------------------------------------------------------------------------------------------
+     * ARRIVING, which replaces the kind's own motion rather than adding to it
+     * ---------------------------------------------------------------------------------------------
+     * A creature entering from a side or from below moves straight in at its entry speed and does nothing else until
+     * it is inside the play area. Adding its own motion on top would be the wrong shape twice over: a fish would
+     * chase the player while still off-screen (so it would turn round and leave), and a `bottom` entry would be
+     * fighting the kind's own descent -- the two together would leave it hanging below the screen for ever.
+     *
+     * The `bottom` case is the one that needs explaining. `base` is the current: everything in the water descends at
+     * that rate relative to the player, so to rise into view from behind, a creature has to swim UP faster than the
+     * scroll. That is why the entry speed is a speed rather than a distance, and why the config's default (45
+     * against a scroll of 25) has to have real headroom.
+     */
+    if (h.entry) {
+      const margin = ctx.laneWidth * hazardTuning.insideMarginRatio;
+      let inside = false;
+      switch (h.entry.from) {
+        case 'left':
+          h.x += h.entry.speed * dt;
+          inside = h.x >= margin;
+          break;
+        case 'right':
+          h.x -= h.entry.speed * dt;
+          inside = h.x <= ctx.laneWidth - margin;
+          break;
+        case 'bottom':
+          h.y += (base + h.entry.speed) * dt;
+          /**
+           * It rises until it is level with the PLAYER, not merely until it is on screen.
+           *
+           * The first version ended the arrival at the bottom edge of the view, and the result was a creature that
+           * appeared for a moment and then sank away: everything in this game descends relative to the player (the
+           * current carries the whole level down), so the instant a bottom-entered creature stops rising it starts
+           * losing ground. Ending the arrival at the player's own depth is what makes "it came up from behind" true
+           * rather than a flicker -- and after that it behaves like the kind it is, which for most kinds means it
+           * falls behind again, and for a crab means it launches.
+           */
+          inside = h.y >= ctx.playerY;
+          break;
+      }
+      if (!inside) return;
+      h.entry = null;
+    }
 
     switch (h.kind) {
       case 'fish': {

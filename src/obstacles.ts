@@ -31,6 +31,15 @@ export interface Obstacle {
   healthFraction: number;
   /** Seconds since it appeared, for the coral's slow shimmer. */
   age: number;
+  /**
+   * Set while it is drifting in from a side, and null once it has settled where the level put it.
+   *
+   * Scenery is static in the water, so an obstacle that arrives from a side arrives ONCE and then stays: it drifts
+   * to its authored x and stops, and from then on it behaves exactly like a crate the current carried down. There is
+   * no `bottom` case -- scenery cannot swim up, and the loader refuses it rather than placing something that would
+   * sink straight back out of the level.
+   */
+  entry: { speed: number; targetX: number } | null;
 }
 
 /**
@@ -208,8 +217,8 @@ export class ObstacleField {
     this.broken = 0;
   }
 
-  /** Place one from the level timeline. */
-  spawn(kind: ObstacleKind, x: number, y: number): Obstacle {
+  /** Place one from the level timeline, optionally still drifting in from a side. */
+  spawn(kind: ObstacleKind, x: number, y: number, entry?: { speed: number; targetX: number }): Obstacle {
     const health = obstacleHealth(kind);
     const obstacle: Obstacle = {
       id: this.nextId++,
@@ -220,6 +229,7 @@ export class ObstacleField {
       health,
       healthFraction: 1,
       age: 0,
+      entry: entry ?? null,
     };
     this.obstacles.push(obstacle);
     return obstacle;
@@ -249,7 +259,26 @@ export class ObstacleField {
    * camera at the same distance everything else does.
    */
   update(dt: number, min: number, max: number): void {
-    for (const o of this.obstacles) o.age += dt;
+    for (const o of this.obstacles) {
+      o.age += dt;
+      /**
+       * A drifting arrival, which ENDS at the authored x.
+       *
+       * Clamped rather than free: a crate that kept its velocity after arriving would sail across the lane and out
+       * the other side, which is not a piece of scenery, it is a moving obstacle -- a different mechanic, and one
+       * nobody asked for. So it settles exactly where the level said, and from then on it is static.
+       */
+      if (o.entry) {
+        const step = o.entry.speed * dt;
+        const remaining = o.entry.targetX - o.x;
+        if (Math.abs(remaining) <= step) {
+          o.x = o.entry.targetX;
+          o.entry = null;
+        } else {
+          o.x += Math.sign(remaining) * step;
+        }
+      }
+    }
     this.obstacles = this.obstacles.filter((o) => o.y > min - 120 && o.y < max + 160);
   }
 

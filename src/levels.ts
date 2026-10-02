@@ -1,5 +1,7 @@
-import { mech } from './mechanisms';
-import { rowGapIsPassable } from './obstacles';
+import JSON5 from 'json5';
+import rawLevels from '../config/levels.json5?raw';
+import { OBSTACLE_KINDS, mech } from './mechanisms';
+import { rowGapIsPassable, type ObstacleKind } from './obstacles';
 
 /**
  * Levels, in the arcade vertical-scroller form.
@@ -15,6 +17,25 @@ import { rowGapIsPassable } from './obstacles';
  * The level ends when the whole timeline has been emitted and has cleared the screen. Nothing is
  * generated procedurally and nothing is randomised, so a level is fully authored rather than tuned
  * statistically -- which is what makes it a level rather than a difficulty curve.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHERE A LEVEL LIVES, AND WHY IT MOVED OUT OF THIS FILE
+ * ---------------------------------------------------------------------------------------------
+ * Levels used to be TypeScript in this file, written as calls to the `place` helpers below. That made
+ * every level a code change, and it meant the AUTHOR of a level had to compose a function call graph
+ * to say "four fish, left of centre" -- so the level could only be tuned by whoever was willing to
+ * open the editor.
+ *
+ * They are now data: `config/levels.json5`, one block per batch of content, validated on load by
+ * `readSpawns` below. The helpers in this file are unchanged and still do the geometry -- they are the
+ * mechanism, and the file is the content. A block names an arrangement and gives it numbers.
+ *
+ * The three spaces this leaves, and they are the three things a level actually needs:
+ *   - WHAT and HOW MANY: `kind`, `count`
+ *   - WHICH ARRANGEMENT: `arrange` and its parameters (a line, a column, a woven stream, a row of
+ *     obstacles with a gap)
+ *   - FROM WHERE: `from`, which is what lets content arrive from the sides and from behind rather
+ *     than only from above. See `EntrySide`.
  *
  * ---------------------------------------------------------------------------------------------
  * WHY AT-DISTANCE AND NOT AT-TIME
@@ -33,6 +54,15 @@ import { rowGapIsPassable } from './obstacles';
  */
 
 /**
+ * Which edge of the screen something arrives from.
+ *
+ * `top` is the classic case and the only one that needs no motion of its own: content is placed above
+ * the view and the current carries it down. The other three are the ones this type exists for --
+ * something swimming in from the side, or catching the player up from behind.
+ */
+export type EntrySide = 'top' | 'left' | 'right' | 'bottom';
+
+/**
  * One thing to place, and how far into the level it appears.
  */
 export interface LevelEntry {
@@ -43,13 +73,16 @@ export interface LevelEntry {
    *
    * A fraction rather than metres so a lane stays a lane on every display: the play area's width
    * follows the canvas, so an absolute x would drift off-screen on a narrow phone.
+   *
+   * For a side entry this is where the thing is HEADED rather than where it starts: it spawns outside
+   * the lane and swims in to here.
    */
   x: number;
   /**
    * Which kind of thing to place.
    *
-   * Collectables are `bubble`, hazards name their kind, `skill` is a pickup, and `crate` / `coral` are the
-   * destructible and the solid obstacles.
+   * Collectables are `bubble`, hazards name their kind, `skill` is a pickup, and `crate` / `coral` / `wall` /
+   * `net` are the obstacles.
    *
    * `urchin`, `bombfish`, `eel`, `rot` and `oil` are the negative food: ordinary hazards from the outside, and
    * something that keeps acting once it is in the player's stomach. They are placed SPARINGLY, and that is a design
@@ -57,30 +90,7 @@ export interface LevelEntry {
    * full of bomb fish would not be a choice between eating and avoiding, it would be a corridor of unavoidable
    * damage.
    */
-  kind:
-    | 'bubble'
-    | 'fish'
-    | 'jelly'
-    | 'trash'
-    | 'crab'
-    | 'urchin'
-    | 'bombfish'
-    | 'eel'
-    | 'rot'
-    | 'oil'
-    | 'skill'
-    /**
-     * The four obstacle kinds.
-     *
-     * Spelled out rather than `ObstacleKind`, because this union is what the LEVEL files are allowed to place, and a
-     * hazard kind and an obstacle kind are different things that happen to share a spelling (`crab` is a creature;
-     * `crate` is scenery). Keeping the list explicit means `place.barrier(340, 'fish', ...)` is a type error, which
-     * it should be -- fish cannot be arranged into rows.
-     */
-    | 'crate'
-    | 'coral'
-    | 'wall'
-    | 'net';
+  kind: SpawnKind;
   /**
    * Size for a collectable, as a multiple of the player's radius at full size. Ignored otherwise.
    *
@@ -88,6 +98,65 @@ export interface LevelEntry {
    * meal, and the volume economy keys off this number.
    */
   size?: number;
+  /** Which edge it arrives from. Absent means `top`. */
+  from?: EntrySide;
+  /**
+   * Metres per second it moves INTO the play area while arriving, relative to the screen.
+   *
+   * Only meaningful with a `from` other than `top`, where the current does the work. For a `bottom` entry this has
+   * to beat the scroll speed to be visible at all, which is why it is a speed rather than a distance.
+   */
+  enterSpeed?: number;
+  /**
+   * For a `left` / `right` entry: how far up the screen it cuts in, 0 at the bottom edge and 1 at the top.
+   *
+   * Needed because "from the left" does not say WHERE on the left, and that is a real authoring decision -- a fish
+   * entering at eye level is a surprise, one entering at the top of the screen is a warning.
+   */
+  depth?: number;
+}
+
+/** Every kind a level block may place. Spelled out so a typo in the config file is a type error here too. */
+export type SpawnKind =
+  | 'bubble'
+  | 'fish'
+  | 'jelly'
+  | 'trash'
+  | 'crab'
+  | 'urchin'
+  | 'bombfish'
+  | 'eel'
+  | 'rot'
+  | 'oil'
+  | 'skill'
+  | ObstacleKind;
+
+/** The arrangement vocabulary: how a block's `count` things are laid out. */
+export type Arrange = 'single' | 'line' | 'column' | 'spread' | 'barrier';
+
+/**
+ * One block from `config/levels.json5`, after validation: exactly what the file allows, with the defaults filled in.
+ *
+ * Typed separately from `LevelEntry` because the two are different things: a block is what a human writes, an entry
+ * is one object in the water. One block becomes many entries, and that expansion is the whole point of the file.
+ */
+export interface SpawnBlock {
+  at: number;
+  kind: SpawnKind;
+  count: number;
+  arrange: Arrange;
+  x: number;
+  xFrom: number;
+  xTo: number;
+  span: number;
+  amplitude: number;
+  wavelength: number;
+  gapAt: number;
+  gapWidth: number;
+  sizes: readonly number[] | null;
+  from: EntrySide;
+  enterSpeed: number;
+  depth: number;
 }
 
 export interface Level {
@@ -104,11 +173,15 @@ export interface Level {
    * Camera travel in metres per second. THE pacing dial.
    *
    * Sets how fast the world appears to move and how long the level lasts, without touching a single
-   * timeline entry -- so it can be retuned late without re-authoring the level.
+   * timeline entry -- so it can be retuned late without re-authoring the level. It is a LEVEL property
+   * rather than a global one for the same reason: two levels of the same length should be allowed to
+   * have different pacings.
    */
   scrollSpeed: number;
   /** The scripted content, in any order: it is sorted by `at` when the level loads. */
   entries: readonly LevelEntry[];
+  /** The blocks the entries were expanded from, kept so a test can prove the file and the timeline agree. */
+  blocks: readonly SpawnBlock[];
   /** Signposts, at depths from the surface, for the HUD. */
   landmarks?: readonly { depth: number; label: string }[];
   /**
@@ -119,6 +192,7 @@ export interface Level {
    */
   playerLeadLimit?: number;
 }
+
 
 /**
  * Helpers for building a level's entry list from a compact shorthand.
@@ -223,230 +297,319 @@ const weave = (amplitude: number, centre = 0.5, wavelength = 6) => (i: number) =
   centre + Math.sin((i / wavelength) * Math.PI * 2) * amplitude;
 
 /** A repeating size pattern, so a stream alternates snacks and meals rather than being uniform. */
-const sizes = (pattern: number[]) => (i: number) => pattern[i % pattern.length] as number;
+const sizes = (pattern: readonly number[]) => (i: number) => pattern[i % pattern.length] as number;
 
-/**
- * The shipping level.
- *
- * 1500m at 25 m/s is a 60-second scroll, which matches the pace the game had before, and the timeline
- * is built from the patterns above so it reads as a shape and can be adjusted as one.
- */
-export const LEVELS: readonly Level[] = [
-  {
-    id: 'open-water',
-    name: '开阔水域',
-    scrollLength: 1500,
-    /**
-     * From `config/mechanics.json5` (`level.scrollSpeed`). THE pacing dial: it sets how fast the world looks
-     * and how long the level lasts (`scrollLength / scrollSpeed` seconds), and it is fully decoupled from the
-     * controls, so retuning the pace never changes how the bubble handles.
-     */
-    scrollSpeed: mech.level.scrollSpeed,
-    playerLeadLimit: 130,
-    landmarks: [
-      { depth: 960, label: '鱼群' },
-      { depth: 540, label: '气泡潮' },
-      { depth: 240, label: '爆发' },
-    ],
-    entries: [
-      // --- 0-250m: teach the shape. Food to chase, one jelly to learn to avoid. ---
-      ...place.spread(30, 200, 10, 'bubble', weave(0.22), sizes([0.4, 0.5, 0.35])),
-      place.one(140, 'jelly', 0.5),
-      place.one(200, 'skill', 0.3),
+// =====================================================================================================
+// Reading `config/levels.json5`
+// =====================================================================================================
 
-      /**
-       * --- 340m: the first crates, as a lesson. ---
-       *
-       * Early, few, and with a WIDE gap, because they are teaching something: a crate can be got past two ways,
-       * and the player needs one cheap encounter to notice that ramming works before it matters. Passing them is
-       * never in doubt here -- only HOW is, which is the question the mechanic exists to raise.
-       */
-      ...place.barrier(340, 'crate', 3, 0.5, 0.34),
+/** Every kind a block may name. */
+const SPAWN_KINDS: readonly string[] = [
+  'bubble',
+  'fish',
+  'jelly',
+  'trash',
+  'crab',
+  'urchin',
+  'bombfish',
+  'eel',
+  'rot',
+  'oil',
+  'skill',
+  'crate',
+  'coral',
+  'wall',
+  'net',
+];
+const ARRANGEMENTS: readonly string[] = ['single', 'line', 'column', 'spread', 'barrier'];
+/** Whether a kind is scenery. Asked of the config's own list, so a new obstacle kind is covered by construction. */
+const isScenery = (kind: string): boolean => (OBSTACLE_KINDS as readonly string[]).includes(kind);
+const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom'];
 
-      // --- 250-550m: the first real swarm, plus a crab as an opportunity. ---
-      ...place.spread(260, 200, 12, 'bubble', weave(0.3), sizes([0.35, 0.55, 0.4, 0.7])),
-      ...place.line(380, 'fish', 4),
-      place.one(430, 'crab', 0.62),
-      ...place.line(500, 'jelly', 2),
-      place.one(540, 'skill', 0.7),
-
-      /**
-       * --- 620m: the first NEGATIVE FOOD, and the first real "should I?" of the run. ---
-       *
-       * A single bomb fish, alone and off to one side, because a risk decision is only a decision while it is
-       * optional: it is worth more mass than a fish, it hurts to touch below its tier, and once it is inside it is
-       * a grenade with a lit fuse. Four seconds to spit it back out -- as a weapon, which is the reward -- or to
-       * compress it down; if neither happens it goes off in the player's stomach.
-       *
-       * At 620m rather than earlier because its tier is the fish's (volume 2.2). Before that the player simply
-       * cannot eat one, so the encounter would be pure hazard and would teach the wrong lesson about it.
-       */
-      place.one(620, 'bombfish', 0.68),
-
-      // --- 550-900m: tighter, with trash to punish greed. ---
-      ...place.spread(560, 240, 14, 'bubble', weave(0.34), sizes([0.3, 0.6, 0.45])),
-      ...place.line(640, 'fish', 5),
-      place.one(700, 'trash', 0.4),
-
-      /**
-       * --- 750m: the first NET, and the first obstacle that cannot hurt you. ---
-       *
-       * Two blocks and a wide gap, because a net teaches something no other obstacle does: it stops you, it costs
-       * you nothing, and it gives way if you keep leaning on it. A player who has learned "crates are smashed, coral
-       * is avoided" has no reason to guess that, so the first one is a place to find out rather than a place to be
-       * tested -- and 80m before the coral at 830, so there is room to be wrong.
-       */
-      ...place.barrier(750, 'net', 2, 0.5, 0.34),
-      place.one(760, 'crab', 0.35),
-      ...place.column(800, 60, 3, 'jelly', 0.72),
-      /**
-       * --- 860m: the first URCHIN, which is the other KIND of risk entirely. ---
-       *
-       * The bomb fish is a decision with a DEADLINE; the urchin is a decision with a BILL. It does not explode, it
-       * bleeds you for as long as you hold it, so the answer is not to hurry but to decide whether the mass is
-       * worth the hits -- and the interaction with compression is deliberately nasty, because compressing doubles
-       * the damage taken, which makes "just digest it away" the worst of the available options.
-       */
-      place.one(860, 'urchin', 0.28),
-      ...place.line(880, 'fish', 6, 0.1, 0.9),
-      place.one(920, 'skill', 0.25),
-
-      /**
-       * --- 720m: the first EEL, which costs the player their hands rather than their health. ---
-       *
-       * Placed right after the first trash bag and before the first urchin, so the three "this one keeps acting
-       * after you swallow it" creatures arrive in an order of escalating strangeness: a grenade with a fuse, then
-       * controls that stop obeying, then something that just keeps bleeding you.
-       *
-       * It is also the cheapest of the three to discover by accident -- its whole cost is a moment of confusion --
-       * so it is safe to meet early, when a player has the least health to spare.
-       */
-      place.one(720, 'eel', 0.52),
-
-      /**
-       * --- 950m: the first ROT. ---
-       *
-       * The only negative food whose cost is paid LATER and somewhere else: it does not hurt you, it makes the
-       * answer you were going to use slower. That needs the player to already know that digesting is an answer, so
-       * it comes after the first coral squeeze and after the bubble tide has taught them what a full stomach is.
-       */
-      place.one(950, 'rot', 0.78),
-
-      /**
-       * --- 1080m: the first OIL. ---
-       *
-       * Deliberately placed where the player has just been taught that spitting is the way out of trouble (the
-       * coral at 1030 is a squeeze, and by now the over-eating fuse has probably been seen at least once). Oil is
-       * the creature that makes that answer fail, so it only means anything once the answer is familiar.
-       */
-      place.one(1080, 'oil', 0.15),
-
-      /**
-       * --- 830m and 1030m: the first CORAL, which is the opposite lesson. ---
-       *
-       * A crate rewards being big; coral rewards being SMALL. These entrances are tight enough to matter and wide
-       * enough to survive being fat -- so the first coral teaches "this one I go around" rather than killing
-       * anyone who had been enjoying the growth curve.
-       */
-      ...place.barrier(830, 'coral', 4, 0.3, 0.22),
-      /**
-       * --- 920m and 960m: the NET and the WALL, side by side, so the contrast is legible. ---
-       *
-       * The same trick as the coral-then-crate pair at 1030/1070, and for the same reason: two obstacles 40m apart
-       * is enough to notice that they are answered differently, and not enough to forget the first one.
-       *
-       * The net costs TIME and nothing else; the wall cannot be answered by size at all, only by ammunition or by
-       * being narrow enough for the gap. Putting them together is what makes "what am I carrying, and how wide am
-       * I" a single question rather than two separate ones.
-       *
-       * The wall's health is over two fish shots and its gap is the minimum, so neither answer is free.
-       */
-      ...place.barrier(920, 'net', 2, 0.28, 0.3),
-      ...place.barrier(960, 'wall', 5, 0.5, 0.19),
-      ...place.barrier(1030, 'coral', 4, 0.72, 0.22),
-      // A crate row right after the coral, so the two answers sit next to each other and the contrast is legible.
-      ...place.barrier(1070, 'crate', 4, 0.5, 0.26),
-
-      // --- 900-1260m: the bubble tide. Looks like a reward, and it is -- which is the trap, since a
-      // bigger player is noticed from further away and the endgame scales with size. ---
-      ...place.spread(940, 260, 30, 'bubble', weave(0.4), sizes([0.3, 0.4, 0.35])),
-      ...place.line(1000, 'jelly', 3),
-      ...place.line(1100, 'fish', 5),
-      place.one(1150, 'trash', 0.55),
-      // A bomb fish in the middle of the tide: the one stretch where the player is most likely to swallow it
-      // carelessly, while vacuuming up the food the tide is made of.
-      place.one(1180, 'bombfish', 0.3),
-      place.one(1200, 'crab', 0.5),
-      // A short column of urchins, as a spiky wall to go around -- or to run through and regret.
-      ...place.column(1250, 45, 3, 'urchin', 0.62),
-      /**
-       * A pair of eels in the burst, where losing the controls costs the most.
-       *
-       * This is the one placement of a negative food that is meant to be genuinely dangerous rather than inviting:
-       * the endgame swarm is where the player needs their hands, so an eel here is a real "do not" -- and the sine
-       * weave it swims in means it can be read and avoided rather than stumbled into.
-       */
-      place.one(1290, 'eel', 0.35),
-      place.one(1330, 'eel', 0.66),
-      // A slick right before the final squeeze, and one rot: the two ways of making the squeeze harder that are not
-      // about being big. Oil is especially pointed here -- the answer to a tight gap is to spit, and oil is the
-      // thing that refuses to be spat.
-      place.one(1370, 'oil', 0.5),
-      place.one(1345, 'rot', 0.2),
-
-      // --- 1260-1500m: the burst, then the corridor to the surface. ---
-      ...place.line(1280, 'fish', 7, 0.08, 0.92),
-      ...place.spread(1300, 80, 8, 'bubble', weave(0.45), sizes([0.6, 0.8, 0.5])),
-      ...place.line(1360, 'jelly', 4),
-      ...place.line(1400, 'trash', 2, 0.25, 0.75),
-      place.one(1470, 'crab', 0.5),
-      // One last urchin, just before the squeeze: the level's final "do I need this?" and the last chance to be
-      // carrying something that is bleeding you when the gap arrives.
-      place.one(1395, 'urchin', 0.72),
-      /**
-       * --- 1386-1446m: the CORRIDOR, and the design's "极限瘦身" as a stretch rather than a moment. ---
-       *
-       * Three tight rows 30m apart -- 1.2s of scrolling -- with the level's last urchin and last pair of trash bags
-       * BETWEEN them. That is the whole point of the change: a single squeeze is a thing you survive, and three of
-       * them with hazards inside is a state you have to HOLD. Being thin stops being a decision made once and
-       * becomes a decision not to relent, and everything the player swallowed is in the way for four seconds
-       * rather than one.
-       *
-       * The gaps are the minimum the rule allows (`place.barrier` widens a request to the passability rule's own
-       * requirement, so these are as tight as a legal gap can be), and the rows are coral rather than crates
-       * because a corridor that could be smashed by growing would be a different, easier level.
-       *
-       * The oil at 1370 stays immediately before it: the answer to a tight gap is to spit, and oil is the thing
-       * that refuses to be spat. Placed AFTER the last swarm so a player who arrives fat has room to deal with it
-       * rather than being punished mid-fight.
-       */
-      ...place.barrier(1386, 'coral', 5, 0.5, 0.19),
-      ...place.barrier(1416, 'coral', 5, 0.5, 0.19),
-      ...place.barrier(1446, 'coral', 5, 0.5, 0.19),
-      /**
-       * The last stretch is deliberately sparse: the surface should feel earned, and a level that ends
-       * mid-onslaught gives the player no moment to notice they have won.
-       *
-       * The endgame fish swarm that used to sit at 1440 is GONE, and not to make room -- it had stopped being
-       * pressure. Fish chase the largest bubble, and the corridor's job is to make sure the player arrives at the
-       * surface small; a school of fish in front of a small player is a meal, not a threat. Leaving it there would
-       * have been a reward dressed as a hazard.
-       */
-      ...place.spread(1470, 30, 4, 'bubble', weave(0.2), sizes([0.4])),
-    ],
-  },
+/** The keys a block may use. Anything else is an error rather than a silent no-op -- see `readBlock`. */
+const BLOCK_KEYS: readonly string[] = [
+  'at',
+  'kind',
+  'count',
+  'arrange',
+  'x',
+  'xFrom',
+  'xTo',
+  'span',
+  'amplitude',
+  'wavelength',
+  'gapAt',
+  'gapWidth',
+  'sizes',
+  'from',
+  'enterSpeed',
+  'depth',
 ];
 
+const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'spawns'];
+
+/** Throw with the offending place named, so a typo in the file is a message rather than a mystery. */
+function fail(where: string, message: string): never {
+  throw new Error(
+    `config/levels.json5 is invalid: ${where} ${message}\n` +
+      'The file is JSON5, so it allows // comments, trailing commas, unquoted keys and hex literals.',
+  );
+}
+
+/** Read an optional number, range-checked. */
+function optNum(node: Record<string, unknown>, key: string, where: string, fallback: number, min: number, max: number): number {
+  const value = node[key];
+  if (value === undefined) return fallback;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    fail(where, `"${key}" is ${JSON.stringify(value)}, but it should be a number between ${min} and ${max}.`);
+  }
+  return value;
+}
+
+/** Read a required number. */
+function reqNum(node: Record<string, unknown>, key: string, where: string, min: number, max: number): number {
+  if (node[key] === undefined) fail(where, `"${key}" is required.`);
+  return optNum(node, key, where, NaN, min, max);
+}
+
+/** Read a string from a fixed vocabulary. `fallback` null means required. */
+function pick(node: Record<string, unknown>, key: string, where: string, fallback: string | null, allowed: readonly string[]): string {
+  const value = node[key];
+  if (value === undefined) {
+    if (fallback === null) fail(where, `"${key}" is required; it should be one of ${allowed.join(' / ')}.`);
+    return fallback;
+  }
+  if (typeof value !== 'string' || !allowed.includes(value)) {
+    fail(where, `"${key}" is ${JSON.stringify(value)}, but it should be one of ${allowed.join(' / ')}.`);
+  }
+  return value;
+}
+
 /**
- * Aspect of the play area, as width / height. Sets the shipping lane width.
+ * One block, validated.
  *
- * Not part of a level: it is a projection choice, and every level is played through the same lens.
- *
- * 1.9 is WIDER than it is tall, which is deliberate: the world is authored so a screenful shows plenty
- * of water across, and the lane-relative sizes of collectables then line up with the metre-scaled depth
- * through `PLAY_AREA_ASPECT`. Changing this changes how big everything looks, not just the layout.
+ * ---------------------------------------------------------------------------------------------
+ * WHY AN UNKNOWN KEY IS AN ERROR
+ * ---------------------------------------------------------------------------------------------
+ * This is the check that earns its keep in a hand-edited file. A misspelled `amplitude` would otherwise be ignored,
+ * and a block that quietly produced a straight line instead of a weave does not look like a typo -- it looks like the
+ * game is broken. Naming the key is the difference between the two.
  */
+function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
+  const where = `levels["${levelId}"].spawns[${index}]`;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) fail(where, 'must be an object.');
+  const node = raw as Record<string, unknown>;
+  const extra = Object.keys(node).filter((k) => !BLOCK_KEYS.includes(k));
+  if (extra.length) fail(where, `has keys that do nothing here: ${extra.join(', ')}. Known keys: ${BLOCK_KEYS.join(', ')}.`);
+
+  const at = reqNum(node, 'at', where, 0, Number.MAX_SAFE_INTEGER);
+  const kind = pick(node, 'kind', where, null, SPAWN_KINDS) as SpawnKind;
+  const count = Math.round(optNum(node, 'count', where, 1, 1, 200));
+  const arrange = pick(node, 'arrange', where, count <= 1 ? 'single' : 'line', ARRANGEMENTS) as Arrange;
+  const from = pick(node, 'from', where, 'top', SIDES) as EntrySide;
+
+  const sizesRaw = node['sizes'];
+  let sizeTable: number[] | null = null;
+  if (sizesRaw !== undefined) {
+    if (!Array.isArray(sizesRaw) || !sizesRaw.length || !sizesRaw.every((n) => typeof n === 'number' && n > 0)) {
+      fail(where, `"sizes" is ${JSON.stringify(sizesRaw)}, but it should be a non-empty list of positive numbers.`);
+    }
+    sizeTable = sizesRaw as number[];
+  }
+
+  /**
+   * The two rules that keep the file from describing something the game cannot do.
+   *
+   * Both are checked HERE rather than being ignored at runtime, because in both cases the config would look fine and
+   * the game would look broken: scenery that never arrives, or a collectable that ignores its own direction.
+   */
+  if (from !== 'top' && (kind === 'bubble' || kind === 'skill')) {
+    fail(
+      where,
+      `is a "${kind}" arriving from the ${from}, but collectables and skills come down with the current. Only creatures and obstacles can enter from a side.`,
+    );
+  }
+  if (from === 'bottom' && isScenery(kind)) {
+    fail(where, `is a "${kind}" arriving from the bottom, but scenery cannot swim up -- the current only carries things down.`);
+  }
+  if (arrange === 'barrier' && !isScenery(kind)) {
+    fail(where, `arranges a "${kind}" as a barrier, but only obstacles can be arranged into a row with a gap.`);
+  }
+
+  return {
+    at,
+    kind,
+    count,
+    arrange,
+    x: optNum(node, 'x', where, 0.5, 0, 1),
+    xFrom: optNum(node, 'xFrom', where, 0.12, 0, 1),
+    xTo: optNum(node, 'xTo', where, 0.88, 0, 1),
+    span: optNum(node, 'span', where, 0, 0, 100000),
+    amplitude: optNum(node, 'amplitude', where, 0, 0, 0.5),
+    wavelength: optNum(node, 'wavelength', where, 6, 0.5, 100),
+    gapAt: optNum(node, 'gapAt', where, 0.5, 0, 1),
+    gapWidth: optNum(node, 'gapWidth', where, 0.24, 0, 1),
+    sizes: sizeTable,
+    from,
+    /**
+     * The entry speed defaults come from `config/mechanics.json5` rather than being literals here, so "how fast does
+     * something swim in" is one tunable number shared by the whole file instead of a number per block.
+     */
+    enterSpeed: optNum(node, 'enterSpeed', where, mech.spawning.enterSpeedMps, 1, 500),
+    depth: optNum(node, 'depth', where, mech.spawning.entryDepth, 0, 1),
+  };
+}
+
+/**
+ * Expand one block into the entries it places.
+ *
+ * The helpers below are unchanged from when levels were written in code -- they were always the mechanism, and this
+ * function is the only thing that changed: it reads a block instead of being handed arguments by a source file.
+ */
+function expandBlock(block: SpawnBlock): LevelEntry[] {
+  const side: Pick<LevelEntry, 'from' | 'enterSpeed' | 'depth'> =
+    block.from === 'top' ? {} : { from: block.from, enterSpeed: block.enterSpeed, depth: block.depth };
+  const tag = (entries: LevelEntry[]): LevelEntry[] => entries.map((e) => ({ ...e, ...side }));
+
+  switch (block.arrange) {
+    case 'single':
+      return tag([place.one(block.at, block.kind, block.x, block.sizes?.[0])]);
+    case 'line':
+      return tag(place.line(block.at, block.kind, block.count, block.xFrom, block.xTo));
+    case 'column':
+      return tag(place.column(block.at, block.span, block.count, block.kind, block.x));
+    case 'spread':
+      return tag(
+        place.spread(
+          block.at,
+          block.span,
+          block.count,
+          block.kind,
+          weave(block.amplitude, block.x, block.wavelength),
+          block.sizes ? sizes(block.sizes) : undefined,
+        ),
+      );
+    case 'barrier':
+      return tag(place.barrier(block.at, block.kind, block.count, block.gapAt, block.gapWidth));
+  }
+}
+
+/** The file, parsed and validated. Throws with the offending place named. */
+function readLevels(text: string): { start: string; levels: Level[] } {
+  let parsed: unknown;
+  try {
+    parsed = JSON5.parse(text);
+  } catch (e) {
+    fail('the file', `is not valid JSON5 (${(e as Error).message}).`);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) fail('the top level', 'must be an object.');
+  const root = parsed as Record<string, unknown>;
+  const rawLevels = root['levels'];
+  if (!Array.isArray(rawLevels) || !rawLevels.length) fail('"levels"', 'must be a non-empty list.');
+
+  const levels: Level[] = [];
+  for (const [index, rawLevel] of rawLevels.entries()) {
+    if (rawLevel === null || typeof rawLevel !== 'object' || Array.isArray(rawLevel)) {
+      fail(`levels[${index}]`, 'must be an object.');
+    }
+    const node = rawLevel as Record<string, unknown>;
+    const id = pick(node, 'id', `levels[${index}]`, null, [String(node['id'])]);
+    const name = typeof node['name'] === 'string' ? (node['name'] as string) : id;
+    const extra = Object.keys(node).filter((k) => !LEVEL_KEYS.includes(k));
+    if (extra.length) fail(`levels["${id}"]`, `has keys that do nothing here: ${extra.join(', ')}. Known keys: ${LEVEL_KEYS.join(', ')}.`);
+
+    const rawSpawns = node['spawns'];
+    if (!Array.isArray(rawSpawns) || !rawSpawns.length) fail(`levels["${id}"]`, '"spawns" must be a non-empty list.');
+
+    const blocks = rawSpawns.map((raw, i) => readBlock(raw, id, i));
+    const entries = blocks.flatMap(expandBlock).sort((a, b) => a.at - b.at);
+    const landmarks = Array.isArray(node['landmarks'])
+      ? (node['landmarks'] as { depth: number; label: string }[])
+      : undefined;
+
+    levels.push({
+      id,
+      name,
+      scrollLength: reqNum(node, 'scrollLength', `levels["${id}"]`, 1, 1000000),
+      scrollSpeed: reqNum(node, 'scrollSpeed', `levels["${id}"]`, 0.001, 10000),
+      ...(node['playerLeadLimit'] === undefined
+        ? {}
+        : { playerLeadLimit: optNum(node, 'playerLeadLimit', `levels["${id}"]`, 0, 0, 10000) }),
+      ...(landmarks ? { landmarks } : {}),
+      entries,
+      blocks,
+    });
+  }
+
+  const start = typeof root['start'] === 'string' ? (root['start'] as string) : (levels[0] as Level).id;
+  if (!levels.some((l) => l.id === start)) {
+    fail('"start"', `names "${start}", but there is no level with that id. Levels: ${levels.map((l) => l.id).join(', ')}.`);
+  }
+  return { start, levels };
+}
+
+const FILE = readLevels(rawLevels);
+
+/** Every level in the file, in file order. */
+export const LEVELS: readonly Level[] = FILE.levels;
+
+/** The level currently being played, named by the file's `start` key. */
+export const LEVEL: Level = LEVELS.find((l) => l.id === FILE.start) ?? (LEVELS[0] as Level);
+
+/**
+ * The timeline, sorted by distance so consumers can walk it forwards with a cursor.
+ *
+ * A `let` rather than a `const` because of the test hook below: an ES module export is a LIVE binding, so a spec can
+ * install a hand-written level and every reader -- including the diagnostics that report the entry count -- sees it.
+ */
+export let TIMELINE: readonly LevelEntry[] = LEVEL.entries;
+
+/** The blocks a spec installed, or null while the file's own timeline is in use. */
+let installedBlocks: readonly SpawnBlock[] | null = null;
+
+/**
+ * The blocks the CURRENT timeline came from: the file's, or a spec's if one was installed.
+ *
+ * Kept in step with `TIMELINE` rather than reported separately, because the two describe one thing. Reporting the
+ * file's block count beside an installed timeline would give two numbers that cannot be compared, and a test that
+ * compared them would be asserting something meaningless.
+ */
+export function currentSpawnBlocks(): readonly SpawnBlock[] {
+  return installedBlocks ?? LEVEL.blocks;
+}
+
+/**
+ * Test hook: install a hand-written spawn table, read and expanded exactly as the file's is.
+ *
+ * The point is to make "the config drives the level" provable without editing the config file: the blocks go through
+ * the same reader and the same expansion, so what a spec measures is the real path rather than a parallel one. It
+ * also proves the loader's refusals, because a bad block here throws the same way it would in the file.
+ *
+ * @return how many entries the blocks expanded to, which is the number a test wants to assert against `count`.
+ */
+export function installSpawnBlocks(blocks: readonly unknown[]): number {
+  const parsed = blocks.map((raw, i) => readBlock(raw, LEVEL.id, i));
+  const entries = parsed.flatMap(expandBlock).sort((a, b) => a.at - b.at);
+  assertLevelSane({ ...LEVEL, entries, blocks: parsed });
+  TIMELINE = entries;
+  installedBlocks = parsed;
+  return entries.length;
+}
+
 export const PLAY_AREA_ASPECT = 1.9;
+
+/** Metres of water one screenful shows. The play area's height in metres. */
+export const WORLD_HEIGHT = 190;
+/** Metres across the play area. Derived so the lane keeps a consistent shape on every display. */
+export const WORLD_WIDTH = WORLD_HEIGHT * PLAY_AREA_ASPECT;
+
+/**
+ * The level's length.
+ *
+ * Kept under this name because the whole codebase used to think of the vertical axis as "depth from
+ * the surface", and the two are the same number.
+ */
+export const DEPTH_TOTAL = LEVEL.scrollLength;
 
 /**
  * Fail loudly at startup rather than shipping a level that cannot be played.
@@ -494,23 +657,12 @@ export function assertLevelSane(level: Level): void {
   if (problems.length) throw new Error(`Level "${level.id}" is unusable: ${problems.join('; ')}`);
 }
 
-/** The level currently being played. */
-export const LEVEL: Level = LEVELS[0] as Level;
-
-assertLevelSane(LEVEL);
-
-/** Metres of water one screenful shows. The play area's height in metres. */
-export const WORLD_HEIGHT = 190;
-/** Metres across the play area. Derived so the lane keeps a consistent shape on every display. */
-export const WORLD_WIDTH = WORLD_HEIGHT * PLAY_AREA_ASPECT;
-
 /**
- * The level's length.
+ * Check EVERY level in the file, not just the one being played.
  *
- * Kept under this name because the whole codebase used to think of the vertical axis as "depth from
- * the surface", and the two are the same number.
+ * A level nobody is playing today is a level nobody will notice is broken until it is selected, and by then the
+ * failure is a runtime one rather than a message at boot. The check is cheap and the file is the only way to add a
+ * level, so this is the moment to fail.
  */
-export const DEPTH_TOTAL = LEVEL.scrollLength;
+for (const level of LEVELS) assertLevelSane(level);
 
-/** The timeline, sorted by distance so consumers can walk it forwards with a cursor. */
-export const TIMELINE: readonly LevelEntry[] = [...LEVEL.entries].sort((a, b) => a.at - b.at);

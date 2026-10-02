@@ -527,6 +527,8 @@ export class CodexUi {
           armed: false,
           fed: 0,
           digest: 0,
+          // Not arriving from anywhere: the card draws it at rest.
+          entry: null,
         },
       ];
       // Not edible and drawn at rest: the card shows the CREATURE, not the state of the water it happens to be in.
@@ -549,6 +551,8 @@ export class CodexUi {
           // Undamaged, so the card shows what the thing IS rather than what it looks like halfway through breaking.
           healthFraction: 1,
           age: ICON_PHASE,
+          // Not drifting in: the card draws it settled.
+          entry: null,
         },
       ];
       paintObstacles(g, field, lane);

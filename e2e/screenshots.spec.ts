@@ -653,7 +653,52 @@ test.describe('screen captures @screenshots', () => {
    * third of a second, so the capture has to be aimed at it rather than waited for -- hence the single `raf` after
    * the press.
    */
+  /**
+   * A school arriving from the LEFT, caught mid-entry.
+   *
+   * The spawn table can send content in from the sides now, and a capture is the only way to judge whether that reads
+   * as swimming in or as appearing. Aimed at the moment the leaders are inside the lane but the rest are still
+   * outside it, which is the frame that shows the arrival as a movement rather than a placement.
+   */
+  test('the level sends a school in from the left @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugInstallSpawnBlocks: (blocks: readonly unknown[]) => number;
+            hazardsRef: { hazards: { x: number }[] };
+            camera: { viewport: { laneWidthMeters: number } };
+          };
+          player: { x: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      g.game.debugInstallSpawnBlocks([
+        // Slow enough to be caught on the way in, and enough of them to read as a school rather than as one fish.
+        { at: 20, kind: 'fish', count: 7, arrange: 'spread', span: 60, from: 'left', depth: 0.55, enterSpeed: 22 },
+        { at: 24, kind: 'fish', count: 4, arrange: 'spread', span: 40, from: 'right', depth: 0.35, enterSpeed: 22 },
+        // Food behind them, so the frame shows a level rather than a shoal in an empty lane.
+        { at: 30, span: 120, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.3, sizes: [0.4, 0.6, 0.35] },
+      ]);
+      g.player.x = 0.5;
+      g.player.screenY = 0.4;
+      g.player.volume = 6;
+
+      // Wait until the leaders are inside the lane, so the capture shows an arrival in progress.
+      const lane = g.game.camera.viewport.laneWidthMeters;
+      for (let i = 0; i < 200; i++) {
+        await raf();
+        if (g.game.hazardsRef.hazards.some((h) => h.x > 0 && h.x < lane * 0.35)) break;
+      }
+      await raf();
+    });
+    await page.screenshot({ path: testInfo.outputPath('side-entry.png') });
+  });
+
   test('the rage burst mid-wave @screenshots', async ({ page }, testInfo) => {
+
     await boot(page);
     await page.evaluate(async () => {
       const g = (window as unknown as {

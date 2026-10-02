@@ -1,8 +1,8 @@
 import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest, type Landmark } from './background';
 import { tuning } from './config';
-import { DEPTH_TOTAL, LEVEL, TIMELINE, type Level, type LevelEntry } from './levels';
-import { blastRadiusFraction, HazardField, KIND_TUNING, hazardTuning, paintHazards, stomachEffect, type HazardKind } from './hazards';
+import { DEPTH_TOTAL, LEVEL, TIMELINE, currentSpawnBlocks, installSpawnBlocks, type EntrySide, type Level, type LevelEntry } from './levels';
+import { blastRadiusFraction, HazardField, KIND_TUNING, hazardTuning, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
@@ -143,7 +143,24 @@ class Game {
    * Exists because "enemies spawn in the middle of the screen" cannot be checked from a screenshot and
    * is a single comparison between two numbers.
    */
-  private readonly spawnLog: { kind: string; worldY: number; visibleTop: number; visibleBottom: number }[] = [];
+  private readonly spawnLog: {
+    kind: string;
+    /** Which edge it arrived from, so a probe can prove a block's rom reached the game. */
+    from: string;
+    /** Where it actually spawned, which for a side or bottom entry is deliberately OFF the screen. */
+    x: number;
+    worldY: number;
+    visibleTop: number;
+    visibleBottom: number;
+  }[] = [];
+
+  /**
+   * How many entries have arrived from each edge this run.
+   *
+   * Counted rather than sampled, for the same reason the bait and grip counters are: an arrival is over in a frame or
+   * two, so "was anything ever placed outside the lane" is unanswerable from a boolean read afterwards.
+   */
+  private spawnedBySide: Record<EntrySide, number> = { top: 0, left: 0, right: 0, bottom: 0 };
 
   private seedLabel: string = SEEDS[0];
   private elapsed = 0;
@@ -1081,6 +1098,21 @@ class Game {
   }
 
   /**
+   * Test hook: install a hand-written spawn table and restart, so "the config drives the level" is measurable.
+   *
+   * The blocks go through the same reader and the same expansion the level file's do -- including its refusals, so a
+   * bad block here throws exactly as it would in the file. Without this a spec would have to edit
+   * `config/levels.json5` on disk, which would make the test about the file system rather than about the game.
+   *
+   * @return how many entries the blocks expanded to.
+   */
+  debugInstallSpawnBlocks(blocks: readonly unknown[]): number {
+    const count = installSpawnBlocks(blocks);
+    this.startRun();
+    return count;
+  }
+
+  /**
    * Test hook: grant rage, so a probe can reach a stage without arranging four hits.
    *
    * `gainRage` rather than assigning, so the safe-time clock is reset exactly as a real hit would reset it.
@@ -1123,7 +1155,7 @@ class Game {
   }
 
   /** Test hook: where recent timeline entries appeared relative to the view. */
-  get spawnLogRef(): readonly { kind: string; worldY: number; visibleTop: number; visibleBottom: number }[] {
+  get spawnLogRef(): readonly { kind: string; from: string; x: number; worldY: number; visibleTop: number; visibleBottom: number }[] {
     return this.spawnLog;
   }
 
@@ -1651,24 +1683,52 @@ class Game {
    * them over rather than building them.
    */
   private emitTimelineEntry(entry: LevelEntry, worldY: number, laneWidth: number): void {
-    // Recorded so a probe can prove content ENTERS from above the view rather than appearing on screen.
-    // A "spawns in the middle" bug is invisible in a screenshot and obvious in these two numbers.
+    /**
+     * ---------------------------------------------------------------------------------------------
+     * WHERE IT ARRIVES FROM, which decides the spawn position before anything else
+     * ---------------------------------------------------------------------------------------------
+     * `top` -- the classic case -- is placed at the top of the view and the current carries it down, so `worldY` is
+     * the whole story.
+     *
+     * The other three need a position that is deliberately OFF the screen, because a creature that appears inside the
+     * view has spawned rather than swum in. So: sides are placed outside the lane at a chosen screen height, and
+     * `bottom` is placed below the view (and moves up -- see `advance` in src/hazards.ts). The visible range is read
+     * HERE rather than being computed by the field, because this is the only place that knows the entry moment.
+     */
+    const side = entry.from ?? 'top';
+    const view = this.camera.visibleWorldRange(0);
+    let spawnX = entry.x * laneWidth;
+    let spawnY = worldY;
+    if (side === 'left' || side === 'right') {
+      const off = laneWidth * mech.spawning.offscreenMarginRatio;
+      spawnX = side === 'left' ? -off : laneWidth + off;
+      spawnY = view.min + (entry.depth ?? mech.spawning.entryDepth) * (view.max - view.min);
+    } else if (side === 'bottom') {
+      spawnY = view.min - laneWidth * mech.spawning.bottomMarginRatio;
+    }
+    const entering = side === 'top' ? null : { from: side, speed: entry.enterSpeed ?? mech.spawning.enterSpeedMps };
+
+    // Recorded so a probe can prove content ENTERS from off-screen rather than appearing on screen.
+    // A "spawns in the middle" bug is invisible in a screenshot and obvious in these numbers.
     this.spawnLog.push({
       kind: entry.kind,
-      worldY: +worldY.toFixed(1),
-      visibleTop: +this.camera.visibleWorldRange(0).max.toFixed(1),
-      visibleBottom: +this.camera.visibleWorldRange(0).min.toFixed(1),
+      from: side,
+      x: +spawnX.toFixed(1),
+      worldY: +spawnY.toFixed(1),
+      visibleTop: +view.max.toFixed(1),
+      visibleBottom: +view.min.toFixed(1),
     });
     if (this.spawnLog.length > 12) this.spawnLog.shift();
+    this.spawnedBySide[side]++;
     if (entry.kind === 'bubble') {
-      this.field.bubbles.push(this.field.bubbleFromEntry({ ...entry, at: worldY }, laneWidth, stageRadiusFraction(this.stage.stage, this.player.volume)));
+      this.field.bubbles.push(this.field.bubbleFromEntry({ ...entry, at: spawnY }, laneWidth, stageRadiusFraction(this.stage.stage, this.player.volume)));
       return;
     }
     if (entry.kind === 'skill') {
       // A skill sits where the level put it and drifts down with the water, waiting to be taken.
       this.skillPickup = {
-        x: entry.x * laneWidth,
-        y: worldY,
+        x: spawnX,
+        y: spawnY,
         // The skill is rolled when it is COLLECTED, not when it is created: granting it here would
         // decide the player's next twenty seconds before they had even seen the pickup.
         id: null,
@@ -1684,10 +1744,17 @@ class Game {
      * fall-through cannot happen, because there is nothing left for it to fall through to.
      */
     if (isObstacleKind(entry.kind)) {
-      this.obstacles.spawn(entry.kind, entry.x * laneWidth, worldY);
+      // Scenery only ever drifts in from a side; the loader refuses a `bottom` obstacle, so `entering` here is
+      // either null or a horizontal drift whose target is the entry's authored x.
+      this.obstacles.spawn(
+        entry.kind,
+        spawnX,
+        spawnY,
+        side === 'left' || side === 'right' ? { speed: entry.enterSpeed ?? mech.spawning.enterSpeedMps, targetX: entry.x * laneWidth } : undefined,
+      );
       return;
     }
-    const hazard = this.makeHazard(entry.kind, entry.x * laneWidth, worldY);
+    const hazard = this.makeHazard(entry.kind, spawnX, spawnY, entering);
     this.hazards.hazards.push(hazard);
   }
 
@@ -2089,12 +2156,18 @@ class Game {
    * The scripted events need this: `HazardField.spawn` picks a random kind and position for ambient
    * pressure, which is the opposite of what a scripted beat wants.
    */
-  private makeHazard(kind: HazardKind, x: number, y: number) {
+  private makeHazard(kind: HazardKind, x: number, y: number, entry: Hazard['entry'] = null) {
     const radiusFraction = KIND_TUNING[kind].radius;
     return {
       id: -Math.floor(Math.random() * 1e9),
       kind,
-      x: Math.max(0, Math.min(this.camera.viewport.laneWidthMeters, x)),
+      /**
+       * Clamped into the lane ONLY when it is not arriving.
+       *
+       * A side entry is placed outside the lane on purpose, so clamping it here would put it exactly on the edge --
+       * which is the one place the player would see it appear. The entry motion is what brings it inside.
+       */
+      x: entry ? x : Math.max(0, Math.min(this.camera.viewport.laneWidthMeters, x)),
       y,
       radiusFraction,
       phase: Math.random() * Math.PI * 2,
@@ -2108,6 +2181,7 @@ class Game {
       armed: false,
       fed: 0,
       digest: 0,
+      entry,
     };
   }
 
@@ -2497,6 +2571,7 @@ class Game {
     this.timelineEmitted = 0;
     this.endTrace.length = 0;
     this.spawnLog.length = 0;
+    this.spawnedBySide = { top: 0, left: 0, right: 0, bottom: 0 };
     this.trashDrain = 0;
     this.stomachDrain = 0;
     this.comedyBeats = 0;
@@ -3389,6 +3464,12 @@ class Game {
       scrolled: number;
       entriesEmitted: number;
       entriesTotal: number;
+      /** Blocks in the level file, against the entries they expanded to. */
+      blocks: number;
+      /** Arrivals this run, counted by the edge they came from. */
+      arrivals: { top: number; left: number; right: number; bottom: number };
+      /** Whether the timeline in use came from a spec rather than from the level file. */
+      installed: boolean;
       secondsPerScreen: number[];
     };
     playerVx: number;
@@ -3613,6 +3694,18 @@ class Game {
         /** Entries emitted so far, and the total, so progress through the TIMELINE is observable. */
         entriesEmitted: this.timelineEmitted,
         entriesTotal: TIMELINE.length,
+        /**
+         * How many BLOCKS the level file holds, next to how many entries they expanded to.
+         *
+         * Both numbers, because they answer different questions and a test needs both: `entriesTotal` is what the
+         * level contains, `blocks` is what the file says. The pair is what makes "the file drives the level"
+         * checkable from outside -- change a block's `count` and one number moves while the other does not.
+         */
+        blocks: currentSpawnBlocks().length,
+        /** Arrivals this run, counted by the edge they came from. */
+        arrivals: { ...this.spawnedBySide },
+        /** Whether the timeline in use is the level FILE's or one a spec installed. */
+        installed: TIMELINE !== LEVEL.entries,
         /**
          * Seconds per screenful, in order from the seabed up.
          *

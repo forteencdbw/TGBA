@@ -190,7 +190,14 @@ test.describe('the mechanics config', () => {
     expect(loaded.stages.speedMultiplier).toEqual(file.stages.speedMultiplier);
     expect(loaded.stages.absorbToStage2).toBe(file.stages.absorbToStage2);
     expect(loaded.stages.absorbToStage3).toBe(file.stages.absorbToStage3);
-    expect(loaded.level.scrollSpeed).toBe(file.level.scrollSpeed);
     expect(loaded.volume.max).toBe(file.volume.max);
+    /**
+     * The pacing number is NOT here any more, and its absence is deliberate.
+     *
+     * `level.scrollSpeed` used to be a mechanics key; it moved into `config/levels.json5` when levels became data,
+     * because pacing is a property of a LEVEL rather than of the game (two levels of the same length should be allowed
+     * to run at different speeds). Its file-versus-runtime check moved with it -- see the first case in
+     * `e2e/spawns.spec.ts`, which compares the running level's block count against the file's.
+     */
   });
 });

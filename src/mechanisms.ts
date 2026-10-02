@@ -528,8 +528,13 @@ export interface Mechanisms {
     fishHardCap: number;
     seekBiggestRangeMeters: number;
   };
-  level: {
-    scrollSpeed: number;
+  /** Defaults for how content arrives from the sides and from below. Per-level content lives in levels.json5. */
+  spawning: {
+    enterSpeedMps: number;
+    offscreenMarginRatio: number;
+    bottomMarginRatio: number;
+    insideMarginRatio: number;
+    entryDepth: number;
   };
 }
 
@@ -878,7 +883,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'emergence.fishFeedToSplit', check: (v) => typeof v === 'number' && v >= 2, describe: '2 or more, or nothing would ever split' },
   { path: 'emergence.fishHardCap', check: (v) => typeof v === 'number' && v >= 1, describe: '1 or more' },
   { path: 'emergence.seekBiggestRangeMeters', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
-  { path: 'level.scrollSpeed', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'spawning.enterSpeedMps', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'spawning.offscreenMarginRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction above 0 and at most 1' },
+  { path: 'spawning.bottomMarginRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction above 0 and at most 1' },
+  { path: 'spawning.insideMarginRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.5, describe: 'a fraction between 0 and 0.5' },
+  { path: 'spawning.entryDepth', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
   // --- the volatile bubble. Colours and the appearance rows have their own checks below. ---
   { path: 'angry.rage.max', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'angry.rage.perHit', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0, or no hit would ever matter' },
