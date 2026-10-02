@@ -37,6 +37,22 @@ see `src/version.ts` and the `define` block in `vite.config.ts`.
 - Do not hand-edit a git hash anywhere: it is read from git at build time, and a hand-maintained hash is a hash
   that lies. In dev it reflects the commit at server start, so it goes stale until Vite restarts — which is the
   honest reading of "the page in this browser was loaded from older code".
+- Bump it for **every** commit, documentation included. A docs-only change moving the number is a slightly
+  misleading version, and that is the price of a rule with no judgement calls in it: the number always names a
+  tree, so "which build is this" is answerable from the number alone.
+
+### Push every commit
+
+The owner has asked for this explicitly: **every commit goes straight to `origin main`.** Do not leave commits
+sitting locally, and do not ask whether to push.
+
+- `git push origin main` immediately after committing.
+- A push therefore **is a deploy** — it triggers the GitHub Pages workflow. That is intended, not a side effect
+  to be careful about.
+- If a push is rejected as non-fast-forward, **stop and report**. Someone else commits to this repository (the
+  owner has pushed the Pages workflow and its documentation from outside this session), so a rejection means
+  there is work here that has not been fetched yet. Never `--force`: it would throw that work away, and the
+  local commit is far cheaper to redo than the remote one is to recover.
 
 ### Build only the MINIMUM styling; the owner tunes the specifics
 
