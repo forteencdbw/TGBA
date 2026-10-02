@@ -1,5 +1,5 @@
 import { Application, Graphics } from 'pixi.js';
-import { Camera, Hud, WorldLayer, computeViewport, createApp, makeLabel, waterColourForTest, type Landmark } from './background';
+import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest, type Landmark } from './background';
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, TIMELINE, type Level, type LevelEntry } from './levels';
 import { HazardField, hazardTuning, paintHazards, type HazardKind } from './hazards';
@@ -176,6 +176,12 @@ class Game {
       scene: this.scene,
       hud: this.hud,
       game: this,
+      /**
+       * The layout functions, so a probe can check how the game is framed at any canvas size without
+       * resizing anything. A compatibility bug across screen sizes is exactly the kind that only shows
+       * up on the one display nobody tested.
+       */
+      layout: { computeViewport, designScale },
     };
 
     this.app.ticker.add((ticker) => this.frame(ticker.deltaMS / 1000));
@@ -524,7 +530,7 @@ class Game {
     this.scene.layout(viewport);
     this.hud.layout(viewport);
     this.hud.setWorldMetrics(viewport.laneWidthMeters, viewport.visibleDepthMeters);
-    this.touch.layout(screenW, screenH, viewport.scale);
+    this.touch.layout(viewport.left, viewport.laneWidthPx, screenW, screenH, viewport.scale);
 
     this.finishBanner.scale.set(viewport.scale);
     this.finishBanner.x = screenW / 2;

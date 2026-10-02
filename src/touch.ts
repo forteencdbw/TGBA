@@ -48,20 +48,21 @@ export class TouchControls {
 
   /** Screen geometry, recomputed by `layout`. */
   private skillButton = { x: 0, y: 0, radius: 0 };
-  private canvasWidth = 0;
+  /**
+   * The canvas height, so a finger position can be turned into a SCREEN fraction.
+   *
+   * The touch layer needs to know nothing about the world: the player moves within the window, so a
+   * finger maps straight to a place on the glass. The screen-to-world mapper this replaced existed only
+   * because the player used to live in world space.
+   */
+  private canvasHeight = 0;
+  /** The play area in canvas pixels. Controls are positioned inside this, not inside the canvas. */
+  private laneLeft = 0;
+  private laneWidth = 0;
   /** Whether a skill is carried, so the button can hide when the slot is empty. */
   private hasSkill = false;
   /** Drives the press pulse on the skill button. Set on press, decays in `update`. */
   private skillFlash = 0;
-
-  /**
-   * The canvas height, so a finger position can be turned into a SCREEN fraction.
-   *
-   * The touch layer no longer needs to know anything about the world: the player moves within the
-   * window, so a finger maps straight to a place on the glass. The screen-to-world mapper this replaced
-   * existed only because the player used to live in world space.
-   */
-  private canvasHeight = 0;
 
   constructor(private readonly input: Input) {
     this.root.eventMode = 'none';
@@ -138,8 +139,11 @@ export class TouchControls {
   }
 
   private steerTo(canvasX: number, canvasY: number): void {
-    if (this.canvasWidth <= 0 || this.canvasHeight <= 0) return;
-    this.targetX = Math.min(1, Math.max(0, canvasX / this.canvasWidth));
+    if (this.laneWidth <= 0 || this.canvasHeight <= 0) return;
+    // Measured against the LANE, not the canvas: a finger out in the water either side of the lane is
+    // asking for the nearest edge, not for a position the bubble cannot reach.
+    const withinLane = (canvasX - this.laneLeft) / this.laneWidth;
+    this.targetX = Math.min(1, Math.max(0, withinLane));
     // Screen y grows DOWNWARDS and the player's screen fraction grows UPWARDS, so it is flipped. The
     // target is a place on the glass, which is exactly what the finger reports -- no camera involved.
     this.targetY = Math.min(1, Math.max(0, 1 - canvasY / this.canvasHeight));
@@ -151,24 +155,36 @@ export class TouchControls {
     this.input.dragTargetY = this.steering ? this.targetY : null;
   }
 
-  layout(canvasWidth: number, canvasHeight: number, scale: number): void {
-    this.canvasWidth = canvasWidth;
+  /**
+   * @param laneLeft,laneWidth the play area in canvas pixels.
+   *
+   *   The controls are laid out against the LANE, not the canvas. On a wide desktop window the lane is a
+   *   centred portrait column with water either side, so placing the skill button at
+   *   `canvasWidth - 76 * scale` put it 2021px across on a 2560px window -- off the screen entirely, which
+   *   is a control the player simply does not have.
+   */
+  layout(laneLeft: number, laneWidth: number, canvasWidth: number, canvasHeight: number, scale: number): void {
     this.canvasHeight = canvasHeight;
+    this.laneLeft = laneLeft;
+    this.laneWidth = laneWidth;
 
     this.surface.clear();
     this.surface.rect(0, 0, canvasWidth, canvasHeight).fill({ color: 0xffffff, alpha: 0.001 });
 
     /**
-     * The skill button sits low and centred-right, where a thumb rests without covering the bubble.
+     * The skill button sits low and to the right WITHIN THE LANE, where a thumb rests without covering
+     * the bubble.
      *
-     * It used to be tucked beside an accelerate button in the corner. With the whole screen now being
-     * the steering surface, the button has to be somewhere a drag will not accidentally start, and the
-     * bottom-right is the one region a player does not drag through -- the bubble is ahead of them.
+     * It used to be tucked beside an accelerate button in the corner. With the whole lane now being the
+     * steering surface, the button has to be somewhere a drag will not accidentally start, and the
+     * bottom-right of the lane is the one region a player does not drag through -- the bubble is ahead of
+     * them.
      */
+    const buttonRadius = Math.min(38 * scale, laneWidth * 0.13);
     this.skillButton = {
-      x: canvasWidth - 76 * scale,
-      y: canvasHeight - 92 * scale,
-      radius: 38 * scale,
+      x: laneLeft + laneWidth - buttonRadius - 12 * scale,
+      y: canvasHeight - buttonRadius - 22 * scale,
+      radius: buttonRadius,
     };
     this.update();
   }

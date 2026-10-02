@@ -1,3 +1,4 @@
+import { VIEW } from './config';
 import { WORLD_HEIGHT, WORLD_WIDTH } from './levels';
 
 /**
@@ -26,29 +27,67 @@ export interface Viewport {
 }
 
 /**
- * Fit the world play area to a canvas, filling it horizontally.
+ * Fit the world play area to a canvas, capping how WIDE the lane may be.
  *
- * The world's own aspect (`WORLD_WIDTH / WORLD_HEIGHT`) is wider than a phone screen, so scaling
- * to fill the width means the visible depth is the canvas height divided by that scale. The
- * resulting view is a consistent, isotropic zoom: circles stay circles and lateral handling is
- * unchanged because speed and position are expressed lane-relative.
+ * ---------------------------------------------------------------------------------------------
+ * WHY THE PLAY AREA IS NARROWER THAN THE CANVAS
+ * ---------------------------------------------------------------------------------------------
+ * Scaling by width so the lane fills the canvas is what this used to do, and it breaks on anything wider
+ * than a phone. On a 2560x1440 desktop window it computed 7.09 px per metre, which put the bubble at a
+ * 109px radius, made the HUD (which scales with the viewport) render its headline at 283px until the
+ * readouts collided, and pushed the skill button to x=2485 -- past the right edge of the screen.
  *
- * On a taller-than-world canvas this fills exactly; on a wider one it also fills, showing more
- * depth. Either way there are no letterbox bars, which is the point.
+ * So the lane is capped at a portrait-shaped width and centred, and the water either side is drawn by the
+ * background layer, filling the canvas. A wide window gets empty ocean at the sides rather than a
+ * distorted game.
+ *
+ * @param maxLaneWidthPx the widest the play area may be, in pixels.
+ *
+ *   900 is chosen for how big the BUBBLE ends up. Player radius derives from the lane's width in metres
+ *   times the scale, so on a phone the bubble is ~2.1% of the canvas height and at a 700px cap on a
+ *   1440-tall desktop it was 29.8px -- a 5x difference between the two screens the game runs on. 900
+ *   brings the desktop bubble to 38px, which is much closer to what a phone shows.
  */
-export function computeViewport(screenWidth: number, screenHeight: number): Viewport {
-  const scale = screenWidth / WORLD_WIDTH;
+export function computeViewport(screenWidth: number, screenHeight: number, maxLaneWidthPx = 900): Viewport {
+  /**
+   * The lane is as wide as the canvas when that is already narrow enough -- which is every phone, the
+   * shipping target -- and is capped otherwise.
+   *
+   * The cap is on the LANE rather than on `scale`, because the two must not disagree: the scale is derived
+   * from the lane, so capping the scale alone would leave the lane wider than the canvas and clip the play
+   * area. An earlier version capped the width by taking the MAXIMUM of two scales, which is backwards --
+   * the maximum always let the "fill the width" scale win, so the cap did nothing at all.
+   */
+  const laneWidthPx = Math.min(screenWidth, maxLaneWidthPx);
+  const scale = laneWidthPx / WORLD_WIDTH;
 
   return {
     scale,
-    left: 0,
+    // Centred: the water either side is drawn by the background layer, which fills the whole canvas, so
+    // this reads as open ocean rather than as bars.
+    left: (screenWidth - laneWidthPx) / 2,
     cy: screenHeight / 2,
     width: screenWidth,
     height: screenHeight,
-    laneWidthPx: screenWidth,
+    laneWidthPx,
     laneWidthMeters: WORLD_WIDTH,
     visibleDepthMeters: screenHeight / scale,
   };
+}
+
+/**
+ * Scale for the fixed HUD, INDEPENDENT of the world zoom.
+ *
+ * The readouts are screen furniture, not world content: deriving their size from `viewport.scale` meant a
+ * 2560px-wide desktop window rendered the headline at 283px, because world scale is 7x a phone's. It is
+ * tied to the canvas size instead, against the same design box the HUD's proportions were authored for.
+ *
+ * Capped at 1.5 so text does not grow without bound on a large monitor, and floored at 0.55 so it stays
+ * legible on a small window.
+ */
+export function designScale(screenWidth: number, screenHeight: number): number {
+  const s = Math.min(screenWidth / VIEW.width, screenHeight / VIEW.height);
+  return Math.min(1.5, Math.max(0.55, s));
 }
 
 /** Sanity check used by the layout probe: how much of the canvas the play area covers. */

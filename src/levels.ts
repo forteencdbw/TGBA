@@ -217,6 +217,10 @@ export const LEVELS: readonly Level[] = [
  * Aspect of the play area, as width / height. Sets the shipping lane width.
  *
  * Not part of a level: it is a projection choice, and every level is played through the same lens.
+ *
+ * 1.9 is WIDER than it is tall, which is deliberate: the world is authored so a screenful shows plenty
+ * of water across, and the lane-relative sizes of collectables then line up with the metre-scaled depth
+ * through `PLAY_AREA_ASPECT`. Changing this changes how big everything looks, not just the layout.
  */
 export const PLAY_AREA_ASPECT = 1.9;
 

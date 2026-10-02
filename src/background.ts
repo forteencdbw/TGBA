@@ -3,9 +3,9 @@ import { LATERAL_DAMPING, VIEW } from './config';
 import { DEPTH_TOTAL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Player } from './player';
-import { computeViewport, type Viewport } from './viewport';
+import { computeViewport, designScale, type Viewport } from './viewport';
 
-export { computeViewport, type Viewport };
+export { computeViewport, designScale, type Viewport };
 
 export class Camera {
   /** World y (metres above seabed) at the centre of the screen. */
@@ -122,7 +122,9 @@ export class WorldLayer {
   /** Cached colours so the gradient object is only rebuilt when a colour actually changes. */
   private lastTopColour = -1;
   private lastBottomColour = -1;
-
+  /** Cached canvas size, so a resize also forces a rebuild. See `update`. */
+  private lastGradientWidth = -1;
+  private lastGradientHeight = -1;
   constructor() {
     this.snow.eventMode = 'none';
     this.gradient.eventMode = 'none';
@@ -171,6 +173,8 @@ export class WorldLayer {
     // Rebuild the gradient on the next update: its geometry depends on the viewport.
     this.lastTopColour = -1;
     this.lastBottomColour = -1;
+    this.lastGradientWidth = -1;
+    this.lastGradientHeight = -1;
 
     const columnLeft = viewport.left;
     const columnWidth = viewport.laneWidthPx;
@@ -213,9 +217,20 @@ export class WorldLayer {
     const topColour = waterColour(camera.y + halfSpan, levelDepth);
     const bottomColour = waterColour(camera.y - halfSpan, levelDepth);
 
-    if (topColour !== this.lastTopColour || bottomColour !== this.lastBottomColour) {
+    /**
+     * Rebuild the gradient when the COLOUR changes **or the canvas changes size**.
+     *
+     * The colour cache alone was not enough, and the symptom was subtle: the rectangle is built from
+     * `viewport.width`, so a canvas resize left the geometry stale and the water was drawn at the OLD width,
+     * showing as flat bands either side of the play area with a soft vertical seam. Easy to misread as a
+     * letterboxing decision rather than as a caching bug.
+     */
+    const sizeChanged = viewport.width !== this.lastGradientWidth || viewport.height !== this.lastGradientHeight;
+    if (topColour !== this.lastTopColour || bottomColour !== this.lastBottomColour || sizeChanged) {
       this.lastTopColour = topColour;
       this.lastBottomColour = bottomColour;
+      this.lastGradientWidth = viewport.width;
+      this.lastGradientHeight = viewport.height;
 
       const gradient = new FillGradient({
         start: { x: 0, y: 0 },
@@ -325,6 +340,13 @@ export class Hud {
   private readonly debug: Text;
   private readonly landmarkLabels: Text[] = [];
   private barGeometry = { barX: 0, barTop: 0, barBottom: 0, barW: 0 };
+  /**
+   * The HUD's own scale, set by `layout`.
+   *
+   * Separate from the world zoom on purpose: this is screen furniture, sized against the canvas. See
+   * `designScale`.
+   */
+  private hudScale = 1;
   private debugTimer = 0;
   /** Which of the three birth types this run rolled. Set by the game after construction. */
   private seedLabel = '';
@@ -354,7 +376,17 @@ export class Hud {
   }
 
   layout(viewport: Viewport): void {
-    const s = viewport.scale;
+    /**
+     * The HUD's own scale, NOT the world zoom.
+     *
+     * `viewport.scale` is how many pixels a world metre occupies, which is a property of the GAME VIEW --
+     * on a wide window it is several times a phone's, so sizing readouts with it rendered the headline at
+     * 283px. The readouts are screen furniture, so they are sized against the canvas.
+     */
+    const s = designScale(viewport.width, viewport.height);
+    // Remembered for `update`, which draws the gauge in screen pixels and would otherwise have to
+    // re-derive it -- and previously reached for the world zoom instead, which is a different number.
+    this.hudScale = s;
     const right = viewport.left + viewport.laneWidthPx;
     const centreX = viewport.left + viewport.laneWidthPx / 2;
 
@@ -450,7 +482,7 @@ export class Hud {
     // the cursor. Empty at the seabed, full at the surface.
     const travelled = Math.min(Math.max(scrolled / DEPTH_TOTAL, 0), 1);
     const rise = travelled;
-    const s = this.headline.scale.x;
+    const s = this.hudScale;
 
     const g = this.gauge;
     g.clear();
