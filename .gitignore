@@ -12,6 +12,9 @@ dist/
 .devserver.err.log
 *.log
 
+# Release archives. Reproducible in under a second with `pnpm build`, so they are not source.
+release/
+
 # Screenshots produced by the verification scripts in scripts/.
 /screenshot*.png
 /shot-*.png
@@ -23,89 +26,12 @@ dist/
 # Tooling scratch directories (editor / agent temp workspaces)
 .dsh-*/
 
-# Temporary commit-message file
+# Temporary commit-message files.
+#
+# One pattern rather than an entry per commit: they accumulated to twenty-two near-identical lines,
+# which is worse than useless in a file nobody reads closely.
+CM*.tmp
 commit-msg.tmp
-
-# Temporary commit-message files
-commit-msg.tmp
-msg.txt
-
-# Temporary commit-message files
-.commit-msg.txt
-msg.txt
-commit-msg.tmp
-
-# Temporary commit-message files
-MSG.tmp
-
-# Temporary commit-message files
 COMMIT_MSG.tmp
 MSG.tmp
-
-# Temporary commit-message files
-CM.tmp
-COMMIT_MSG.tmp
-MSG.tmp
-
-# Temporary commit-message files
-CM2.tmp
-
-# Temporary commit-message files
-CM3.tmp
-
-# Temporary commit-message files
-CM4.tmp
-
-# Temporary commit-message files
-CM5.tmp
-
-# Temporary commit-message files
-CM6.tmp
-
-# Temporary commit-message files
-CM7.tmp
-
-# Temporary commit-message files
-CM8.tmp
-
-# Temporary commit-message files
-CM9.tmp
-
-# Temporary commit-message files
-CM10.tmp
-
-# Temporary commit-message files
-CM11.tmp
-
-# Temporary commit-message files
-CM12.tmp
-
-# Temporary commit-message files
-CM13.tmp
-
-# Temporary commit-message files
-CM14.tmp
-
-# Temporary commit-message files
-CM15.tmp
-
-# Temporary commit-message files
-CM16.tmp
-
-# Temporary commit-message files
-CM17.tmp
-
-# Temporary commit-message files
-CM18.tmp
-
-# Temporary commit-message files
-CM19.tmp
-
-# Temporary commit-message files
-CM20.tmp
-
-# Temporary commit-message files
-CM21.tmp
-
-# Temporary commit-message files
-CM22.tmp
+msg.txt

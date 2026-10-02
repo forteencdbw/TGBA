@@ -18,11 +18,45 @@ pnpm dev            # http://localhost:5173，同时暴露在局域网，手机�
 | `pnpm dev` | 开发服务器（HMR，局域网可访问） |
 | `pnpm typecheck` | TypeScript 类型检查 |
 | `pnpm build` | 类型检查 + 生产构建到 `dist/` |
+| `node scripts/verify-dist.mjs` | **验证打包产物真的能跑**（静态服务 `dist/` 于子目录下 + headless 启动） |
 | `node scripts/probe-layout.mjs <url> <w> <h> <out.png>` | 截一张图并打印布局数字（**人看**，不断言） |
 | `node scripts/measure-pixels.mjs` | 解 CDP 截图读真实像素（验证布局用，见下） |
 | `node scripts/performance.mjs <url> <w> <h>` | 帧时百分位（软件光栅化，不能代表真机，但能测**变化**） |
 | `pwsh -File scripts/dev-server.ps1 status\|start\|stop` | 脱离会话的 dev server 管理 |
 | `pwsh -File scripts/install-pwsh-path.ps1` | 重建 `pwsh` 的稳定 PATH 入口（PowerShell 升级后重跑） |
+
+## 发布流程
+
+```bash
+pnpm build                              # 类型检查 → dist/
+node scripts/verify-dist.mjs            # 必做：确认打包产物能跑
+```
+
+然后打包上传：
+
+```powershell
+Compress-Archive -Path dist\* -DestinationPath release\the-great-bubble-adventure.zip
+```
+
+**产物**：10 个文件 / **590 kB**（主包 gzip 后 101 kB），打成 zip **175 kB**。
+
+`vite.config.ts` 设了 `base: './'`，所有资源都是**相对路径**，所以：
+
+| 目标 | 做法 |
+|---|---|
+| itch.io | 把 `dist/` 里的**内容**（不是 `dist` 目录本身）压成 zip 上传 |
+| GitHub Pages / Netlify / 自建 | 把 `dist/` 整个目录作为站点根，**放在子目录也行**（`/bubble/` 已实测） |
+| 本地试跑 | 见下 |
+
+> ⚠️ **不能用 `file://` 直接打开 `dist/index.html`。** 这是 ES module 的 CORS 限制，浏览器会拒绝加载模块，
+> 页面上不会报有用的错，只是**白屏**。本地要起一个静态服务：
+> `npx serve dist`、`python -m http.server -d dist`，或 `node scripts/verify-dist.mjs`（它就顺带验证了）。
+
+**source map 默认不发。** 它们曾占产物的 2.9 MB / 3.0 MB，而浏览器只在打开 devtools 时才下载。
+需要读压缩后的堆栈时，把 `vite.config.ts` 里的 `sourcemap` 临时改成 `true` 再构建。
+
+> 这里**故意不做环境变量开关**：读环境变量要用 `process`，而本项目 tsconfig 是浏览器向的、没有 Node 类型，
+> 于是 `pnpm build`（会类型检查这个 config）会**直接失败**。这个坑踩过一次。
 
 ### 关于验证（约定）
 
@@ -86,6 +120,7 @@ src/
   audio.ts       合成音频（零素材），环境音随深度变亮
   main.ts        主循环（固定 120Hz 步进）、渲染、关卡时间表
 scripts/
+  verify-dist.mjs         验证打包产物（静态服务 dist/ + headless 启动）
   probe-layout.mjs        截图 + 视口几何与文本对象（人看，不断言）
   measure-pixels.mjs      CDP 截图 + PNG 解码，读真实像素
   performance.mjs         帧时百分位（软件光栅化，用于测变化）
