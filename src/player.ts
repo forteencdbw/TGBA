@@ -230,40 +230,37 @@ export class Player {
     /**
      * One multiplier for everything that follows, folding in the growth stage.
      *
-     * The stage applies to the KEYBOARD speed and to the TOUCH easing, because the design's tension -- bigger
-     * means slower -- has to be felt on the device the game ships to, and that device steers by dragging.
+     * The stage applies to EVERY steering source -- the keyboard and the touch wheel alike -- because the
+     * design's tension is that bigger means slower, and that has to be felt on the device the game ships to.
      */
     const steer = Math.max(0, this.steerScale) * Math.max(0, this.stageSpeedMultiplier);
     this.debugSteerMultiplier = steer;
 
-    if (input.dragTargetX !== null) {
-      // Touch eases toward where the finger is, on BOTH axes. On glass, dragging something directly is
-      // more legible than steering it with a virtual stick, and a stick would need a second control to
-      // express "go there at once". Both targets are SCREEN positions, which is what a finger reports.
-      const alpha = Math.min(1, lateral.damping * steer * dt);
-      this.x += (input.dragTargetX - this.x) * alpha;
-      if (input.dragTargetY !== null) {
-        this.screenY += (input.dragTargetY - this.screenY) * alpha;
-      }
-      this.vx = 0;
-      this.vy = 0;
+    /**
+     * ONE movement model, two producers.
+     *
+     * The axes are either -1/0/+1 from the keyboard or a fraction from the touch wheel, and nothing here needs
+     * to know which: the axis IS the throttle. That replaced a branch where touch named an absolute TARGET
+     * position and the bubble eased toward it, which was a different physics with its own damping constant, its
+     * own feel, and no way to express "move slowly".
+     *
+     * `axisX === 0` coasts to a stop rather than stopping dead, which is a released key and a centred wheel
+     * alike -- and coasting is what makes a small correction possible instead of a lurch.
+     */
+    if (input.axisX === 0) {
+      this.vx -= this.vx * Math.min(lateral.damping * dt, 1);
+      if (Math.abs(this.vx) < lateral.stopSpeed) this.vx = 0;
     } else {
-      if (input.axisX === 0) {
-        this.vx -= this.vx * Math.min(lateral.damping * dt, 1);
-        if (Math.abs(this.vx) < lateral.stopSpeed) this.vx = 0;
-      } else {
-        this.vx = input.axisX * lateral.keyboardSpeed * steer;
-      }
-      this.x += this.vx * dt;
-
-      // The vertical is in SCREEN FRACTIONS per second, derived from the same crossing-time calibration
-      // the horizontal uses so the two axes feel identical. `verticalSpeedScale` converts between a
-      // window height and a lane width, which are different lengths in metres but should take the same
-      // time to cross.
-      const verticalSpeed = lateral.keyboardSpeed * tuning.verticalSpeedScale * steer;
-      this.vy = input.axisY * verticalSpeed * this.slowMultiplier;
-      this.screenY += this.vy * dt;
+      this.vx = input.axisX * lateral.keyboardSpeed * steer;
     }
+    this.x += this.vx * dt;
+
+    // The vertical is in SCREEN FRACTIONS per second, derived from the same crossing-time calibration the
+    // horizontal uses so the two axes feel identical. `verticalSpeedScale` converts between a window height and
+    // a lane width, which are different lengths in metres but should take the same time to cross.
+    const verticalSpeed = lateral.keyboardSpeed * tuning.verticalSpeedScale * steer;
+    this.vy = input.axisY * verticalSpeed * this.slowMultiplier;
+    this.screenY += this.vy * dt;
 
     // A launch impulse is added on top of whichever input is driving, so being shoved does not cancel
     // the player's own control of the other axis.

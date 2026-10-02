@@ -166,73 +166,14 @@ test.describe('settings, pause and the menu', () => {
     await expectNoErrors(errors);
   });
 
-  test('two fingers at once: dragging and the skill button', async ({ page }) => {
-    await boot(page);
-    await startFromMenu(page);
-    await waitForPhase(page, 'playing');
-
-    const geo = await page.evaluate(() => {
-      const g = (window as unknown as {
-        __GB: {
-          game: {
-            canvasSize: { width: number; height: number };
-            debugGrantSkill: (id: string) => void;
-            /** The skill button lives on the TOUCH layer, not on the settings panel. */
-            touchRef: { skillGeometry: { x: number; y: number; radius: number } };
-          };
-        };
-      }).__GB.game;
-      g.debugGrantSkill('dash');
-      return { canvas: g.canvasSize, skill: g.touchRef.skillGeometry };
-    });
-    const activationsBefore = (await diagnostics(page)).skillActivations ?? 0;
-
-    /**
-     * Both controls down at once, then the drag finger moves.
-     *
-     * Driven through `page.mouse` rather than `page.evaluate` so these are REAL input events at real
-     * coordinates, but note the drag needs `touchscreen`-style multi-touch that a mouse cannot express -- so the
-     * two-finger part goes through the game's pointer entry points, which is the same path the stage listeners
-     * use. The coordinates still come from the game, so a button in the wrong place fails.
-     */
-    await page.evaluate(
-      (g) => {
-        const game = (window as unknown as {
-          __GB: {
-            game: {
-              canvasSize: { width: number; height: number };
-              handlePointerDown: (id: number, x: number, y: number) => void;
-              handlePointerMove: (id: number, x: number, y: number) => void;
-            };
-          };
-        }).__GB.game;
-        // Finger 71 drags the water; finger 82 presses the skill button.
-        game.handlePointerDown(71, g.canvas.width * 0.2, g.canvas.height * 0.4);
-        game.handlePointerDown(82, g.skill.x, g.skill.y);
-        game.handlePointerMove(71, g.canvas.width * 0.8, g.canvas.height * 0.4);
-      },
-      geo,
-    );
-
-    /**
-     * `expect.poll`, because the skill fires on the game's NEXT SIMULATION STEP.
-     *
-     * A press only raises a flag; the step consumes it. Checking the counter in the same tick as the press finds
-     * zero and looks like a broken button -- which is exactly the mistake this test made, and exactly the kind
-     * of timing guess that `expect.poll` replaces with a condition.
-     */
-    await expect
-      .poll(async () => (await diagnostics(page)).skillActivations, { message: 'the skill must fire on the press', timeout: 5000 })
-      .toBeGreaterThan(activationsBefore);
-
-    // And the drag must still be moving the bubble with the other finger down, which was the reported bug.
-    await expect
-      .poll(async () => (await page.evaluate(() => (window as unknown as { __GB: { player: { x: number } } }).__GB.player.x)), {
-        message: 'the drag must still steer while the button finger is down',
-        timeout: 5000,
-      })
-      .toBeGreaterThan(0.6);
-  });
+  /**
+   * Two-finger steering-plus-skill coverage moved to `wheel.spec.ts`.
+   *
+   * It lived here as "dragging and the skill button" and asserted that a DRAG kept steering the bubble while a
+   * second finger pressed the skill. The drag model is gone -- the thumb wheel replaced it -- so that assertion
+   * was testing a control the game no longer has, and it failed for the right reason. The wheel has its own
+   * routing for the same two-finger case, and the test for it belongs beside the control it drives.
+   */
 });
 
 test.describe('the mechanics config', () => {

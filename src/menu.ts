@@ -28,7 +28,7 @@ export class MainMenu {
   private readonly subtitle = mk('BUBBLE BATTLE', 0x8fd4f0, 13);
   private readonly levelLine = mk('', 0xbfe9ff, 15);
   private readonly buttonLabel = mk('开始游戏', 0x08131f, 18);
-  private readonly hint = mk('WASD / 方向键移动   ·   触屏拖动跟随手指', 0x7fb6d4, 12);
+  private readonly hint = mk('WASD / 方向键移动   ·   触屏用底部摇杆控制方向', 0x7fb6d4, 12);
 
   /** Called when the player asks to play. */
   onStart: () => void = () => {};

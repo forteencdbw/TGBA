@@ -74,7 +74,21 @@ export interface Mechanisms {
   movement: {
     keyboardCrossingSeconds: number;
     verticalSpeedScale: number;
-    touchDamping: number;
+    /**
+     * The on-screen thumb wheel: a virtual analog stick at the bottom of the lane.
+     *
+     * Push direction and push distance map to direction and speed, so the wheel reaches exactly the keyboard's
+     * full speed at full deflection -- they share one speed constant, which means changing device does not
+     * change the feel and there is no second set of speed numbers to keep in sync.
+     */
+    wheel: {
+      radiusRatio: number;
+      maxRadiusPx: number;
+      bottomInset: number;
+      deadZoneRatio: number;
+      idleAlpha: number;
+      activeAlpha: number;
+    };
   };
   collectables: {
     riseMin: number;
@@ -172,7 +186,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'volume.laneRatio', check: (v) => typeof v === 'number' && v > 0 && v < 0.5, describe: 'a small number above 0' },
   { path: 'movement.keyboardCrossingSeconds', check: (v) => typeof v === 'number' && v > 0.05, describe: 'seconds above 0.05' },
   { path: 'movement.verticalSpeedScale', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
-  { path: 'movement.touchDamping', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'movement.wheel.radiusRatio', check: (v) => typeof v === 'number' && v > 0.03 && v < 0.45, describe: 'a fraction of the lane width, above 0.03 and below 0.45' },
+  { path: 'movement.wheel.maxRadiusPx', check: (v) => typeof v === 'number' && v >= 30, describe: 'a pixel radius of at least 30' },
+  { path: 'movement.wheel.bottomInset', check: (v) => typeof v === 'number' && v >= 0, describe: 'a non-negative number of design pixels' },
+  { path: 'movement.wheel.deadZoneRatio', check: (v) => typeof v === 'number' && v >= 0 && v < 0.6, describe: 'a fraction of the wheel radius, below 0.6' },
+  { path: 'movement.wheel.idleAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'movement.wheel.activeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'collectables.riseMin', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'collectables.riseMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.riseMin') as number), describe: 'at least riseMin' },
   { path: 'collectables.riseSpeedExponent', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },

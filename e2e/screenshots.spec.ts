@@ -103,4 +103,37 @@ test.describe('screen captures @screenshots', () => {
       await page.screenshot({ path: testInfo.outputPath(`stage-${stage}.png`) });
     });
   }
+
+  /**
+   * The wheel with a thumb on it, pushed up and to the right.
+   *
+   * The idle wheel's appearance can be reasoned about from the code; this state cannot, because it is about
+   * whether the knob's offset and the pad brightening actually read as "I am pushing this way".
+   */
+  test('the wheel pushed up and right @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugSetSteadyCruise: () => void;
+            handlePointerDown: (id: number, x: number, y: number) => void;
+            touchRef: { wheelGeometry: { x: number; y: number; radius: number } };
+          };
+          player: { x: number; screenY: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+      g.game.debugSetSteadyCruise();
+      g.player.x = 0.42;
+      g.player.screenY = 0.5;
+      const w = g.game.touchRef.wheelGeometry;
+      // Up and to the right: clearly deflected, but not pinned to the rim.
+      g.game.handlePointerDown(71, w.x + w.radius * 0.6, w.y - w.radius * 0.6);
+      for (let i = 0; i < 20; i++) await raf();
+    });
+    await page.screenshot({ path: testInfo.outputPath('wheel-pushed.png') });
+  });
 });

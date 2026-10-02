@@ -473,12 +473,10 @@ class Game {
    */
   onPointerDownForTest(x: number, y: number): void {
     this.touch.onPointerDown(1, x, y);
-    this.touch.syncInput();
   }
 
   onPointerUpForTest(): void {
     this.touch.onPointerUp(1);
-    this.touch.syncInput();
   }
 
   /** Fractional damage accumulated from a trash bag's drain, so it costs whole hits over time. */
@@ -617,10 +615,8 @@ class Game {
    * not torn off by a struggling player during a measurement.
    */
   debugSetSteadyCruise(): void {
-    this.input.axisX = 0;
-    this.input.axisY = 0;
-    this.input.dragTargetX = null;
-    this.input.dragTargetY = null;
+    this.touch.releaseAll();
+    this.input.clearSteering();
   }
 
   /**
@@ -730,7 +726,6 @@ class Game {
      * holding a direction key then resumes still holding it would find the bubble unresponsive. The mute key
      * is handled here too, and muting while the settings panel is open is exactly when someone would want it.
      */
-    this.touch.syncInput();
     this.input.update();
     if (this.phase !== 'menu' && this.input.consumeMute()) this.audioMuted = audio.toggleMute();
 
@@ -979,14 +974,10 @@ class Game {
       descentSpeed: LEVEL.scrollSpeed,
       elapsed: this.elapsed,
       invulnerable: this.invulnerable > 0,
-      // Struggling is "actively steering", which is the intuitive way to tear free of a trash bag.
-      // Was a speed threshold when there was an accelerate control; with four-direction movement any
-      // deliberate input is the same idea, and it is legible to the player without a hidden number.
-      struggling:
-        this.input.axisX !== 0 ||
-        this.input.axisY !== 0 ||
-        this.input.dragTargetX !== null ||
-        this.input.dragTargetY !== null,
+      // Struggling is "actively steering", which is the intuitive way to tear free of a trash bag. Was a speed
+      // threshold when there was an accelerate control, and a raw pointer check when touch named a destination;
+      // now it is one question with one answer, because every steering source ends up in the axes.
+      struggling: this.input.steering,
       playerVolume: this.player.volume,
       bubbles: this.field.bubbles,
       eatenBubbleIds: [] as number[],

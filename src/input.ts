@@ -35,18 +35,27 @@ export class Input {
   axisY = 0;
 
   /**
-   * Touch: the lane fraction the bubble should ease toward while a finger is down.
-   * `null` means nobody is dragging, so the keyboard owns the axes.
-   */
-  dragTargetX: number | null = null;
-  /**
-   * Touch: the world y the bubble should ease toward, in metres, or null when not dragging.
+   * The touch wheel's deflection, -1..1 on each axis. Written by `TouchControls` before `update()` runs.
    *
-   * Absolute rather than an axis: the finger indicates WHERE to go, and the bubble follows it. A
-   * virtual stick would be a worse version of the same thing on a screen this size, and would need a
-   * second control to express "go there directly".
+   * An AXIS rather than a target position. The wheel's whole point is that push distance maps to speed, and a
+   * target position cannot express "move slowly" -- it only says where to end up.
    */
-  dragTargetY: number | null = null;
+  wheelX = 0;
+  wheelY = 0;
+  /** True while a thumb is on the wheel, including inside the dead zone. */
+  wheelHeld = false;
+
+  /**
+   * Whether any deliberate movement input is present: a key held, or the wheel pushed past its dead zone.
+   *
+   * Exposed because several systems ask "is the player actively steering" rather than "where are they going" --
+   * a trash bag is torn off by a struggling player, and a measurement wants a player who is not struggling.
+   * Deriving that from the axis magnitudes rather than from raw pointer state means it stays true for the wheel
+   * exactly when it was true for a drag.
+   */
+  get steering(): boolean {
+    return this.axisX !== 0 || this.axisY !== 0;
+  }
   /**
    * Touch: the on-screen skill button was pressed this frame.
    *
@@ -84,8 +93,18 @@ export class Input {
   update(): void {
     const held = (codes: readonly string[]) => codes.some((code) => this.down.has(code));
 
-    this.axisX = (held(KEYS.right) ? 1 : 0) - (held(KEYS.left) ? 1 : 0);
-    this.axisY = (held(KEYS.up) ? 1 : 0) - (held(KEYS.down) ? 1 : 0);
+    const keyX = (held(KEYS.right) ? 1 : 0) - (held(KEYS.left) ? 1 : 0);
+    const keyY = (held(KEYS.up) ? 1 : 0) - (held(KEYS.down) ? 1 : 0);
+
+    /**
+     * Keyboard wins when it is being used, otherwise the wheel does.
+     *
+     * A SUM would be worse: pressing a key while the thumb rests off-centre would move the bubble faster than
+     * either input alone, and the wheel's own deflection is already a full 0..1 range. Taking the one that was
+     * actually touched keeps each device's ceiling exactly where it was tuned.
+     */
+    this.axisX = keyX !== 0 ? keyX : this.wheelX;
+    this.axisY = keyY !== 0 ? keyY : this.wheelY;
 
     // Keyboard is edge-detected here rather than in the event handler, so the key repeat rate and a
     // held key cannot fire the skill more than once.
@@ -113,6 +132,21 @@ export class Input {
   /** Signal a skill press from a touch control. */
   pressSkill(): void {
     this.skillPressed = true;
+  }
+
+  /**
+   * Drop every steering input at once.
+   *
+   * Used by the measurement hook that needs a player who is deliberately NOT steering -- a trash bag's grip is
+   * torn off by a struggling player, so a measurement taken while struggling is measuring something else. With
+   * the axes as the single source of truth this is one place rather than one per input device.
+   */
+  clearSteering(): void {
+    this.wheelX = 0;
+    this.wheelY = 0;
+    this.wheelHeld = false;
+    this.axisX = 0;
+    this.axisY = 0;
   }
 
   /**

@@ -49,20 +49,28 @@ export const MAX_LANE_WIDTH_PX = 900;
 export const TOUCH_SLOP_PX = 12;
 
 /**
- * Touch steering: how fast the bubble eases toward the finger, per second.
+ * How fast lateral velocity bleeds off when the player is not steering, per second.
  *
- * A rate rather than a speed, because a drag has no "speed" -- the finger names a place and the bubble
- * approaches it. Larger is more responsive and less smooth; this is the config file's `movement.touchDamping`.
+ * This is the COAST-DOWN rate: releasing a key or centring the wheel decays `vx` by this factor each second
+ * rather than stopping dead, which is what makes a small correction possible instead of a lurch.
+ *
+ * It used to double as the touch steering's easing rate, when touch named a destination and the bubble eased
+ * toward it. That model is gone -- the wheel produces an axis like the keyboard does -- so this is now only the
+ * coast-down and the calibration value `src/lateral.ts` solves against. Kept out of the config file for that
+ * reason: it is part of the calibration contract, not a knob the balance depends on.
  */
-export const LATERAL_DAMPING = mech.movement.touchDamping;
+export const LATERAL_DAMPING = 5.5;
 
 /**
- * Keyboard steering: seconds to cross the play area.
+ * Player steering: seconds to cross the play area.
  *
  * A CONSTANT speed rather than an acceleration ramp. A binary key axis through a ramp saturates almost
  * immediately and overshoots, which reads as twitchy however the ramp is scaled -- scaling it down made the
  * top speed absurd rather than making it controllable. A crossing time is directly predictable: hold the key,
  * cross in this long.
+ *
+ * Shared by the keyboard and the touch wheel: full deflection on the wheel is exactly this speed. One constant
+ * for both, so switching device does not switch feel.
  */
 export const KEYBOARD_CROSSING_SECONDS = mech.movement.keyboardCrossingSeconds;
 
