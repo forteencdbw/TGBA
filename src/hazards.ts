@@ -90,7 +90,7 @@ export interface Hazard {
 /**
  * Hazard behaviour.
  *
- * Values marked "(config)" come from `config/mechanics.json` and are the ones worth hand-tuning. The rest are
+ * Values marked "(config)" come from `config/mechanics.json5` and are the ones worth hand-tuning. The rest are
  * internal shape constants -- how wide a fish's bite is, how fast it turns -- where a hand-edit would be
  * guesswork rather than tuning. They live here so the file that uses them is also the file that documents them.
  */

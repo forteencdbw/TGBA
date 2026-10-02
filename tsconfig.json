@@ -9,7 +9,7 @@
      * `vite/client` for the `?raw` import used by `src/mechanisms.ts`.
      *
      * That import is how the mechanics config becomes a real module dependency, which is what makes editing
-     * `config/mechanics.json` hot-reload instead of needing a rebuild. It needs these types or `pnpm build`
+     * `config/mechanics.json5` hot-reload instead of needing a rebuild. It needs these types or `pnpm build`
      * fails on the import itself, before any of the code is even reached.
      */
     "types": ["vite/client"],

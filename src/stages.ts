@@ -17,7 +17,7 @@ import { mech } from './mechanisms';
  * tiers can be retuned without touching the size economy, and vice versa.
  *
  * ---------------------------------------------------------------------------------------------
- * EVERY NUMBER COMES FROM config/mechanics.json
+ * EVERY NUMBER COMES FROM config/mechanics.json5
  * ---------------------------------------------------------------------------------------------
  * Nothing here is a literal. The thresholds, the multipliers, the floor, the colours and the names are all in
  * the config file with Chinese explanations, because the point of that file is that tuning does not mean

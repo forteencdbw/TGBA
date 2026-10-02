@@ -1,4 +1,5 @@
-import rawText from '../config/mechanics.json?raw';
+import JSON5 from 'json5';
+import rawText from '../config/mechanics.json5?raw';
 
 /**
  * The hand-editable mechanics configuration.
@@ -6,63 +7,24 @@ import rawText from '../config/mechanics.json?raw';
  * ---------------------------------------------------------------------------------------------
  * WHY THIS EXISTS
  * ---------------------------------------------------------------------------------------------
- * Every number that shapes the game lives in `config/mechanics.json`, which is JSON with `//` comments so each
- * value can carry a Chinese explanation next to it. The point is that tuning does not require reading or
- * editing TypeScript: open the file, change a number, save, and the page reloads.
+ * Every number that shapes the game lives in `config/mechanics.json5`, each with a Chinese explanation next to
+ * it. The point is that tuning does not require reading or editing TypeScript: open the file, change a number,
+ * save, and the page reloads.
  *
  * ---------------------------------------------------------------------------------------------
- * WHY THE PARSING IS DONE HERE RATHER THAN WITH JSON5
+ * WHY JSON5
  * ---------------------------------------------------------------------------------------------
- * `JSON.parse` rejects comments and trailing commas, and both are essential for a file a human edits -- a
- * per-value explanation is the whole reason this beats a TypeScript constant. A dependency would do it, and
- * this project has exactly one runtime dependency by choice, so the stripping is done here instead. It is
- * about thirty lines and it FAILS LOUDLY, which is the property that matters: a mistyped number must not
- * silently fall back to a default, or the tuning file becomes a lie.
+ * The file format has to allow comments -- a per-value explanation is the whole reason this beats a TypeScript
+ * constant -- and comments are not JSON. JSON5 also brings trailing commas, unquoted keys and hex literals,
+ * which is exactly what a hand-edited file wants, and it removes the need for this project to hand-roll a
+ * parser it would then have to maintain.
  *
- * The import uses `?raw` so Vite hands over the file's text. That is what makes a save hot-reload: the config
- * is a real module dependency, not something fetched at runtime.
- */
-
-/**
- * Remove `//` comments from JSON text, WITHOUT touching anything inside a string.
+ * It is a DEV dependency in spirit but gets bundled, because it runs in the page. Measured: about 20 kB
+ * minified. That is the price of a config file a human can edit, and it is paid once.
  *
- * A naive `replace(/\/\/.*$/gm, '')` corrupts any value containing `//` -- a URL, or a comment inside a string.
- * So this walks the text and tracks whether it is inside a string literal. Trailing commas are removed by a
- * separate pass for the same reason.
+ * The import uses `?raw` so Vite hands over the file's TEXT rather than trying to treat `.json5` as a module.
+ * That is also what makes a save hot-reload: the config is a real module dependency.
  */
-function stripJsonComments(text: string): string {
-  let out = '';
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inString) {
-      out += c;
-      if (escaped) escaped = false;
-      else if (c === '\\') escaped = true;
-      else if (c === '"') inString = false;
-      continue;
-    }
-    if (c === '"') {
-      inString = true;
-      out += c;
-      continue;
-    }
-    if (c === '/' && text[i + 1] === '/') {
-      // Skip to the end of the line, keeping the newline so line numbers stay honest in error messages.
-      while (i < text.length && text[i] !== '\n') i++;
-      out += '\n';
-      continue;
-    }
-    out += c;
-  }
-  return out;
-}
-
-/** Remove a comma that is followed only by whitespace and a closing bracket or brace. */
-function stripTrailingCommas(text: string): string {
-  return text.replace(/,(\s*[}\]])/g, '$1');
-}
 
 export interface StageConfig {
   /** Movement speed multiplier per stage. Index 0 is stage 1. */
@@ -77,8 +39,9 @@ export interface StageConfig {
   /**
    * Display colour and name per stage.
    *
-   * `color` is authored as "#rrggbb" strings and CONVERTED to numbers during load, in place. The declared type
-   * is therefore `number[]`: by the time anything can read it, the conversion has happened.
+   * `color` accepts EITHER a JSON5 hex literal (`0x9fe4ff`, which is a number) OR a `"#rrggbb"` string. Both
+   * end up as numbers here; see the conversion after validation. The strings are what the shipping file uses,
+   * because they are what a colour picker hands you, but a number is not an error.
    */
   color: number[];
   name: string[];}
@@ -131,8 +94,8 @@ export interface Mechanisms {
 /** Throw with the offending key named, so a typo in the file is a message rather than a mystery. */
 function fail(message: string): never {
   throw new Error(
-    `config/mechanics.json is invalid: ${message}\n` +
-      'The file allows // comments and trailing commas. Check the value named above.',
+    `config/mechanics.json5 is invalid: ${message}\n` +
+      'The file is JSON5, so it allows // comments, trailing commas, unquoted keys and hex literals.',
   );
 }
 
@@ -155,9 +118,9 @@ function readRaw(path: string): unknown {
  */
 let parsed: unknown;
 try {
-  parsed = JSON.parse(stripTrailingCommas(stripJsonComments(rawText)));
+  parsed = JSON5.parse(rawText);
 } catch (e) {
-  fail(`it is not valid JSON even after comments were removed (${(e as Error).message})`);
+  fail(`it is not valid JSON5 (${(e as Error).message})`);
 }
 
 if (parsed === null || typeof parsed !== 'object') fail('the top level must be an object');
@@ -168,7 +131,18 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'stages.absorbToStage2', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'stages.absorbToStage3', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'stages.growInvulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
-  { path: 'stages.color', check: (v) => Array.isArray(v) && v.every((n) => typeof n === 'string' && /^#[0-9a-fA-F]{6}$/.test(n)), describe: 'an array of "#rrggbb" strings' },
+  {
+    path: 'stages.color',
+    check: (v) =>
+      Array.isArray(v) &&
+      v.every(
+        (n) =>
+          // A number from a JSON5 hex literal, or a "#rrggbb" string. Both are accepted; see the interface.
+          (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 0xffffff) ||
+          (typeof n === 'string' && /^#[0-9a-fA-F]{6}$/.test(n)),
+      ),
+    describe: 'an array of colours, each either 0xrrggbb or "#rrggbb"',
+  },
   { path: 'stages.name', check: (v) => Array.isArray(v) && v.every((n) => typeof n === 'string'), describe: 'an array of names' },
   { path: 'volume.start', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'volume.max', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
@@ -213,13 +187,14 @@ for (const rule of REQUIRED) {
 export const mech = parsed as Mechanisms;
 
 /**
- * Colours are authored as "#rrggbb" strings and converted to the numbers Pixi wants, in place.
+ * Normalise colours to the numbers Pixi wants, in place.
  *
- * Strings rather than numbers because JSON has no `0x` literal -- the first version of the file said
- * `0x9fe4ff` and was not valid JSON at all, which the loader caught and reported by key. A hex string is also
- * what a colour picker gives you, so it can be pasted straight in.
+ * Both forms are accepted because JSON5 gives you the choice: `0x9fe4ff` is a plain number, and a `"#rrggbb"`
+ * string is what a colour picker gives you. Neither should be a mistake, so both are converted here rather
+ * than the file having to know which one the loader prefers.
  */
-mech.stages.color = (mech.stages.color as unknown as string[]).map((value, index) => {
+mech.stages.color = (mech.stages.color as unknown as (string | number)[]).map((value, index) => {
+  if (typeof value === 'number') return value;
   const parsedColour = Number.parseInt(value.slice(1), 16);
   if (!Number.isFinite(parsedColour)) fail(`stages.color[${index}] is "${value}", which is not a colour`);
   return parsedColour;

@@ -12,6 +12,9 @@ importers:
         specifier: 8.21.0
         version: 8.21.0
     devDependencies:
+      json5:
+        specifier: ^2.2.3
+        version: 2.2.3
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -288,6 +291,11 @@ packages:
 
   js-binary-schema-parser@2.0.3:
     resolution: {integrity: sha512-xezGJmOb4lk/M1ZZLTR/jaBHQ4gG/lqQnJqdIv4721DMggsa1bDVlHXNeHYogaIEHD9vCRv0fcL4hMA+Coarkg==}
+
+  json5@2.2.3:
+    resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
+    engines: {node: '>=6'}
+    hasBin: true
 
   lightningcss-android-arm64@1.33.0:
     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
@@ -589,6 +597,8 @@ snapshots:
   ismobilejs@1.1.1: {}
 
   js-binary-schema-parser@2.0.3: {}
+
+  json5@2.2.3: {}
 
   lightningcss-android-arm64@1.33.0:
     optional: true

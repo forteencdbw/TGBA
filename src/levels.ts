@@ -160,7 +160,7 @@ export const LEVELS: readonly Level[] = [
     name: '开阔水域',
     scrollLength: 1500,
     /**
-     * From `config/mechanics.json` (`level.scrollSpeed`). THE pacing dial: it sets how fast the world looks
+     * From `config/mechanics.json5` (`level.scrollSpeed`). THE pacing dial: it sets how fast the world looks
      * and how long the level lasts (`scrollLength / scrollSpeed` seconds), and it is fully decoupled from the
      * controls, so retuning the pace never changes how the bubble handles.
      */

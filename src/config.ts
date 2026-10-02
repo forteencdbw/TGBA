@@ -3,7 +3,7 @@ import { mech } from './mechanisms';
 /**
  * Non-tunable constants: the design box, and the display geometry.
  *
- * Deliberately NOT in `config/mechanics.json`. These are not tuning knobs -- they describe the shape of the
+ * Deliberately NOT in `config/mechanics.json5`. These are not tuning knobs -- they describe the shape of the
  * world and the reference resolution the HUD was authored against, and changing one is a code change with
  * consequences that a hand-edit should not invite. The hand-editable numbers all live in the config file, with
  * Chinese explanations.
@@ -11,7 +11,7 @@ import { mech } from './mechanisms';
  * ---------------------------------------------------------------------------------------------
  * WHERE TO CHANGE THINGS
  * ---------------------------------------------------------------------------------------------
- *   Feel, difficulty, economy, pacing   ->  config/mechanics.json
+ *   Feel, difficulty, economy, pacing   ->  config/mechanics.json5
  *   How the world is projected          ->  here, or `src/viewport.ts`
  *
  * `tuning` below is a thin alias of the config's gameplay sections, kept under its old name because a lot of

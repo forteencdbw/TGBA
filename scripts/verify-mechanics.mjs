@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import JSON5 from 'json5';
 
 const URL_ARG = process.argv[2] ?? 'http://127.0.0.1:5173/';
 const PORT = 9396;
@@ -29,15 +30,15 @@ if (!chromePath) {
   process.exit(2);
 }
 
-/** Read the config file the same way the loader does, so the expectations come from the file itself. */
+/**
+ * Read the config the same way the game does, using the SAME library.
+ *
+ * Deliberately not a second hand-rolled parser: two parsers would eventually disagree about some edge of the
+ * syntax, and then this check would compare the game against a different reading of the file than the one it
+ * actually loaded.
+ */
 function readConfig() {
-  const text = readFileSync('config/mechanics.json', 'utf8');
-  const noComments = text
-    .split('\n')
-    .map((line) => line.replace(/\/\/.*$/, ''))
-    .join('\n')
-    .replace(/,(\s*[}\]])/g, '$1');
-  return JSON.parse(noComments);
+  return JSON5.parse(readFileSync('config/mechanics.json5', 'utf8'));
 }
 const cfg = readConfig();
 
@@ -224,15 +225,21 @@ try {
        /** Hold right for a fixed number of frames and report how far across the lane it got. */
        const travel = async function (frames) {
          g.debugSetSteadyCruise();
+         // Start from the CENTRE every time. Stage 1 crosses half the lane in 60 frames, so a run that began
+         // where the previous one ended immediately hit the lane's right edge and was clamped there -- and
+         // three clamped measurements all read the same, which looked like the multiplier doing nothing.
          g.player.x = 0.5;
          g.player.screenY = 0.5;
-         for (let i = 0; i < 6; i++) await raf();
+         for (let i = 0; i < 8; i++) await raf();
          const x0 = g.player.x;
          g.input.down.add('KeyD');
-         for (let i = 0; i < frames; i++) await raf();
+         let peakVx = 0;
+         for (let i = 0; i < frames; i++) {
+           await raf();
+           peakVx = Math.max(peakVx, Math.abs(g.player.vx));
+         }
          g.input.down.delete('KeyD');
-         const dx = g.player.x - x0;
-         return +dx.toFixed(5);
+         return { dx: +(g.player.x - x0).toFixed(5), peakVx: +peakVx.toFixed(4), xEnd: +g.player.x.toFixed(4), steerScale: +g.player.steerScale.toFixed(4) };
        };
        const stageOf = function () { return g.diagnostics.stage.stage; };
        const measured = [];
@@ -246,12 +253,15 @@ try {
              await raf();
            }
          }
-         const dx = await travel(60);
+         const t = await travel(26);
          measured.push({
            stage: stageOf(),
            configuredSpeed: g.diagnostics.stage.speedMultiplier,
            playerMultiplier: +g.player.stageSpeedMultiplier.toFixed(3),
-           travelledPer60Frames: dx
+           travelled: t.dx,
+           peakVx: t.peakVx,
+           xEnd: t.xEnd,
+           steerScale: t.steerScale
          });
        }
        return JSON.stringify({ measured });
@@ -259,16 +269,16 @@ try {
     true,
   );
 
-  console.log('\nlateral travel while holding right for 60 frames, per stage:');
+  console.log('\nlateral travel while holding right, per stage:');
   for (const m of measured.measured) {
     console.log(
       '  stage ' + m.stage + '  configured x' + m.configuredSpeed + '  player x' + m.playerMultiplier +
-      '  travelled ' + m.travelledPer60Frames + ' of the lane',
+      '  peakVx ' + m.peakVx + '  travelled ' + m.travelled + ' of the lane  (ended at x=' + m.xEnd + ')',
     );
   }
 
   const m = measured.measured;
-  const ratios = m.length >= 3 ? [m[1].travelledPer60Frames / m[0].travelledPer60Frames, m[2].travelledPer60Frames / m[1].travelledPer60Frames] : [];
+  const ratios = m.length >= 3 ? [m[1].travelled / m[0].travelled, m[2].travelled / m[1].travelled] : [];
   console.log('\nmeasured step ratios: ' + ratios.map((r) => r.toFixed(3)).join(', '));
 
   const checks = {
@@ -294,8 +304,22 @@ try {
     // The multiplier reaches the PLAYER, not just the stage state.
     multiplierReachesThePlayer:
       m.length === 3 && Math.abs(m[2].playerMultiplier - cfg.stages.speedMultiplier[2]) < 0.02,
-    /** And it is visible as real movement: each stage measurably slower than the last. */
-    eachStageIsSlowerOnScreen: ratios.length === 2 && ratios.every((r) => r > 0 && r < 0.95),
+    /**
+     * And it is visible as real movement: each stage measurably slower than the last.
+     *
+     * Checked on steady-state `vx`, which is EXACT -- it is the keyboard speed, times the talent's steering
+     * scale, times this stage's multiplier, and both of the first two are readable. The expected value is
+     * therefore computed from what the player actually has rather than from a hardcoded 0.6: the earlier
+     * version baked in one run's talent penalty and failed on the next run, where the talent differed.
+     */
+    velocityMatchesTheConfiguredMultiplier:
+      m.length === 3 &&
+      m.every((row) => Math.abs(row.peakVx - 0.5 * row.steerScale * Number(row.configuredSpeed)) < 0.005),
+    // Displacement agrees to within the frame-timing noise, and never saturates at the lane edge.
+    eachStageIsSlowerOnScreen:
+      ratios.length === 2 &&
+      ratios.every((r) => r > 0.6 && r < 0.92) &&
+      m.every((row) => row.xEnd < 0.95),
     noExceptions: cdp.errors.length === 0,
   };
   if (cdp.errors.length) console.log('\nexceptions: ' + JSON.stringify(cdp.errors.slice(0, 4)));
