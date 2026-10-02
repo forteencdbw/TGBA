@@ -135,6 +135,30 @@ export interface Mechanisms {
     trashMinGripSeconds: number;
     invulnerableSeconds: number;
   };
+  /** Consuming hazards: the food-chain reversal. */
+  consumption: {
+    /**
+     * The volume ladder. Index 0 is tier 1, so the array length is the number of tiers and each value is the
+     * volume that ENTERS that tier.
+     *
+     * Its own ladder rather than the growth stages, because stages advance by absorption COUNT while volume
+     * accumulates by size -- see `src/consumption.ts` for what went wrong when the two were conflated.
+     */
+    tierVolume: number[];
+    /** Mass (in volume terms) of each hazard kind. */
+    mass: Record<string, number>;
+    /** The volume tier at which each hazard kind becomes edible. */
+    edibleAtTier: Record<string, number>;
+    massEfficiency: number;
+    eatInvulnerableSeconds: number;
+    marker: {
+      edibleColor: number;
+      widthRatio: number;
+      edibleAlpha: number;
+      blockedAlpha: number;
+      showBlocked: boolean;
+    };
+  };
   emergence: {
     fishPerceptionBaseMeters: number;
     fishPerceptionPerVolume: number;
@@ -152,6 +176,21 @@ function fail(message: string): never {
   throw new Error(
     `config/mechanics.json5 is invalid: ${message}\n` +
       'The file is JSON5, so it allows // comments, trailing commas, unquoted keys and hex literals.',
+  );
+}
+
+/** True if `v` is a non-empty object whose values are all finite numbers. */
+function isNumberTable(v: unknown): v is Record<string, number> {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const values = Object.values(v as Record<string, unknown>);
+  return values.length > 0 && values.every((n) => typeof n === 'number' && Number.isFinite(n));
+}
+
+/** True if `v` is a usable colour: a JSON5 hex literal, or a "#rrggbb" string. */
+function isColour(v: unknown): boolean {
+  return (
+    (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 0xffffff) ||
+    (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v))
   );
 }
 
@@ -258,6 +297,34 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.trashDrainPerSecond', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.trashMinGripSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.invulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  /**
+   * Consumption. The two per-kind tables are checked for PRESENCE of every hazard kind rather than for any
+   * particular key set, because the kinds live in `src/hazards.ts` and a new one added there without a row here
+   * would otherwise make that hazard silently inedible -- a content bug with no error, which is the worst kind.
+   * The loader cannot enumerate the kinds itself, so the check is that the tables agree with EACH OTHER.
+   */
+  {
+    path: 'consumption.tierVolume',
+    check: (v) => Array.isArray(v) && v.length >= 2 && v.every((n) => typeof n === 'number' && n >= 0) && (v as number[])[0] === 0,
+    describe: 'an array of at least two non-negative volumes, starting at 0 (index 0 is tier 1)',
+  },
+  {
+    path: 'consumption.mass',
+    check: (v) => isNumberTable(v) && Object.keys(v).length >= 1,
+    describe: 'an object of hazard kind to mass, e.g. { fish: 0.28, jelly: 0.42 }',
+  },
+  {
+    path: 'consumption.edibleAtTier',
+    check: (v) => isNumberTable(v) && Object.keys(v).length >= 1,
+    describe: 'an object of hazard kind to the volume tier that can eat it',
+  },
+  { path: 'consumption.massEfficiency', check: (v) => typeof v === 'number' && v > 0 && v <= 2, describe: 'a number above 0 and at most 2' },
+  { path: 'consumption.eatInvulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  { path: 'consumption.marker.edibleColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'consumption.marker.widthRatio', check: (v) => typeof v === 'number' && v >= 0.01 && v <= 0.6, describe: 'a stroke width ratio between 0.01 and 0.6' },
+  { path: 'consumption.marker.edibleAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'consumption.marker.blockedAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'consumption.marker.showBlocked', check: (v) => typeof v === 'boolean', describe: 'true or false' },
   { path: 'emergence.fishPerceptionBaseMeters', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'emergence.fishPerceptionPerVolume', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'emergence.fishFeedToSplit', check: (v) => typeof v === 'number' && v >= 2, describe: '2 or more, or nothing would ever split' },
@@ -278,8 +345,42 @@ for (const rule of REQUIRED) {
 export const mech = parsed as Mechanisms;
 
 /**
- * Check the appearance array key by key, so a mistake names the STAGE and the KEY it is about.
+ * The two consumption tables must describe the SAME set of hazard kinds.
  *
+ * This is the check the generic rules cannot make, and it guards a failure with no symptom: a hazard with a mass
+ * but no `edibleAtTier` row would simply never become edible, so the mechanic would appear to work while one
+ * creature silently stayed a pure threat forever. Nothing would error and nothing would look wrong.
+ */
+const massKinds = Object.keys(mech.consumption.mass).sort();
+const tierKinds = Object.keys(mech.consumption.edibleAtTier).sort();
+if (massKinds.join(',') !== tierKinds.join(',')) {
+  const missingTier = massKinds.filter((k) => !tierKinds.includes(k));
+  const missingMass = tierKinds.filter((k) => !massKinds.includes(k));
+  fail(
+    'consumption.mass and consumption.edibleAtTier must list the same hazard kinds' +
+      (missingTier.length ? `; missing from edibleAtTier: ${missingTier.join(', ')}` : '') +
+      (missingMass.length ? `; missing from mass: ${missingMass.join(', ')}` : ''),
+  );
+}
+
+/**
+ * Every named tier must exist on the ladder.
+ *
+ * A hazard asking for tier 6 on a five-rung ladder would be edible only if the player could reach a tier that
+ * does not exist -- so it would be permanently inedible, with no error and nothing visibly wrong. The same
+ * silent-content-bug shape as a missing table row, guarded the same way.
+ */
+for (const [kind, tier] of Object.entries(mech.consumption.edibleAtTier)) {
+  if (tier < 1 || tier > mech.consumption.tierVolume.length) {
+    fail(
+      `consumption.edibleAtTier.${kind} is ${tier}, but consumption.tierVolume defines only ` +
+        `${mech.consumption.tierVolume.length} tiers (1..${mech.consumption.tierVolume.length})`,
+    );
+  }
+}
+
+/**
+ * Check the appearance array key by key, so a mistake names the STAGE and the KEY it is about.
  * Kept out of the generic rules above because it is the file's only COMPOSITE value: thirty values across three
  * stages, where "the appearance is invalid" would leave the owner hunting through all of them. Naming the stage
  * and the key is the whole reason a hand-edited config beats a constant, and it is what caught the last bug --

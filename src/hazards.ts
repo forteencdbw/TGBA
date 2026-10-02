@@ -20,7 +20,6 @@
 
 import { Graphics } from 'pixi.js';
 import { mech, tuning } from './config';
-
 export type HazardKind = 'fish' | 'jelly' | 'trash' | 'crab';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
@@ -37,6 +36,13 @@ export interface HazardEffect {
   drainPerSecond?: boolean;
   /** The player broke free / was launched / bounced it, which is a comedy beat. */
   broke: boolean;
+  /**
+   * Set when the player ATE this hazard rather than being hurt by it, and the id to remove.
+   *
+   * The reversal beat: the same overlap that used to cost a hit now yields mass. The mass itself is applied by
+   * the caller, which owns the player's volume.
+   */
+  eaten?: { id: number };
 }
 
 /**
@@ -231,6 +237,15 @@ export interface HazardContext {
    */
   playerVolume: number;
   /**
+   * Whether the player is currently big enough to EAT this kind of hazard.
+   *
+   * A function rather than a size comparison, so the rule lives in exactly one place (`src/consumption.ts`) and
+   * the collision resolution cannot drift from the outline marker. If those two ever disagreed, the marker would
+   * promise food and the collision would deliver a hit -- the worst bug this feature could have, because it
+   * punishes the player for trusting what they were shown.
+   */
+  canEat: (kind: HazardKind) => boolean;
+  /**
    * The collectables, so fish can eat them and jellies can seek the biggest one.
    *
    * Passed in rather than owned: hazards do not manage the bubble field, but two of the emergence
@@ -270,6 +285,13 @@ export class HazardField {
    */
   grabs = 0;
   baits = 0;
+  /**
+   * Hazards EATEN, monotonic for the same reason as the others.
+   *
+   * The counter is how a test proves the reversal happened at all: the hazard is removed from the list on the
+   * frame it is eaten, so sampling "is it still there" afterwards proves nothing.
+   */
+  eaten = 0;
 
   private nextId = 1;
   private spawnTimer = 0;
@@ -279,6 +301,7 @@ export class HazardField {
     this.spawnTimer = 0;
     this.grabs = 0;
     this.baits = 0;
+    this.eaten = 0;
     this.splits = 0;
     this.bubblesEaten = 0;
   }
@@ -355,6 +378,22 @@ export class HazardField {
         continue;
       }
 
+      /**
+       * THE REVERSAL, checked BEFORE any per-kind behaviour.
+       *
+       * This ordering is the mechanic. Every case below is "the hazard hurts you"; if the player is big enough,
+       * none of them happen and the same overlap yields mass instead. Putting the check first means there is no
+       * way to add a new hazard whose damage path accidentally bypasses its edibility, and it means the marker
+       * and the collision ask the identical question.
+       *
+       * The hazard is removed rather than merely flagged: it is inside the bubble now.
+       */
+      if (ctx.canEat(h.kind)) {
+        this.eaten++;
+        effects.push({ kind: h.kind, broke: true, eaten: { id: h.id } });
+        continue;
+      }
+
       switch (h.kind) {
         case 'fish': {
           // COMEDY: a fish that crosses a bait bubble gets distracted and loses the player. This is an
@@ -417,8 +456,15 @@ export class HazardField {
       }
     }
 
-    // Retire what has left the working area, plus a trash bag that has been torn open.
+    /**
+     * Retire what has left the working area, plus a trash bag that has been torn open, plus anything EATEN.
+     *
+     * `eaten` is a set rather than a flag on the hazard because the effects list is the only channel back to the
+     * caller, and a hazard inside the bubble must not exist next frame to hit the player again on the way past.
+     */
+    const eatenIds = new Set(effects.filter((e) => e.eaten).map((e) => e.eaten!.id));
     this.hazards = this.hazards.filter((h) => {
+      if (eatenIds.has(h.id)) return false;
       const inside = h.y > ctx.min - 80 && h.y < ctx.max + 120;
       // `fired` is reused per kind: for trash it means "torn open", for a crab "already launched".
       // Neither should linger.
@@ -640,12 +686,51 @@ export class HazardField {
  * Procedural geometry only, and each kind is recognisable by SHAPE before colour: a fish is a
  * tapered blob with a tail, a jellyfish is a dome with trailing tentacles, a trash bag is an angular
  * sack, a crab is a wide body with legs. Colour then reinforces it.
+ *
+ * `canEat` adds the reversal's marker, described where it is drawn below.
  */
-export function paintHazards(g: Graphics, field: HazardField, laneWidth: number, elapsed: number): void {
+export function paintHazards(
+  g: Graphics,
+  field: HazardField,
+  laneWidth: number,
+  elapsed: number,
+  canEat: (kind: HazardKind) => boolean,
+): void {
   for (const h of field.hazards) {
     const r = laneWidth * h.radiusFraction;
     const x = h.x;
     const y = h.y;
+
+    /**
+     * THE EDIBILITY MARKER, drawn UNDER the hazard so it reads as a halo rather than as an outline bolted on.
+     *
+     * This is the piece that turns "can I eat this" from a memory test into a strategy decision, and it is
+     * deliberately a separate visual language from the player's own stage colours: the stage colour says "which
+     * tier am I", this says "which of these is food". Reusing the stage palette for it would make gold mean two
+     * things at once.
+     *
+     * Only the EDIBLE case is drawn by default. Not being able to eat something is the situation the player
+     * already assumes -- every hazard starts as a threat -- whereas being able to eat it is new information they
+     * have to act on. `consumption.marker.showBlocked` turns on the red ring for the other half.
+     */
+    const edible = canEat(h.kind);
+    if (edible) {
+      g.circle(x, y, r * 1.5).fill({
+        color: mech.consumption.marker.edibleColor,
+        alpha: mech.consumption.marker.edibleAlpha * 0.28,
+      });
+      g.circle(x, y, r * 1.35).stroke({
+        color: mech.consumption.marker.edibleColor,
+        alpha: mech.consumption.marker.edibleAlpha,
+        width: Math.max(1, r * mech.consumption.marker.widthRatio),
+      });
+    } else if (mech.consumption.marker.showBlocked) {
+      g.circle(x, y, r * 1.35).stroke({
+        color: 0xff6b6b,
+        alpha: mech.consumption.marker.blockedAlpha,
+        width: Math.max(1, r * mech.consumption.marker.widthRatio),
+      });
+    }
 
     switch (h.kind) {
       case 'fish': {

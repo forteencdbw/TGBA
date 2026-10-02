@@ -75,7 +75,15 @@ export interface Diagnostics {
     /** The drawn radius as a fraction of the lane, which is also the radius the eating rules use. */
     radiusFraction: number;
   };
-  hazards: { active: number; byKind: Record<string, number>; comedyBeats: number };
+  hazards: {
+    active: number;
+    byKind: Record<string, number>;
+    comedyBeats: number;
+    grabs: number;
+    baits: number;
+    /** Hazards EATEN this run: the food-chain reversal. Monotonic, so transient events are answerable. */
+    eaten: number;
+  };
   emergence: { fishCount: number; perceptionRadiusMeters: number };
   slow: { remaining: number; factor: number; impulseVy: number };
   ending: { surfaced: boolean; splash: number; bestClimbed: number };

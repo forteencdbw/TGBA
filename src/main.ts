@@ -6,6 +6,7 @@ import { HazardField, hazardTuning, paintHazards, type HazardKind } from './haza
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
 import { audio } from './audio';
+import { canEatHazard, massFromEating } from './consumption';
 import { MainMenu } from './menu';
 import { mech } from './mechanisms';
 import { SettingsUi } from './settings';
@@ -374,6 +375,16 @@ class Game {
   /** Test hook: the settings panel, so a probe can read its geometry and drive its real controls. */
   get settingsRef(): SettingsUi {
     return this.settings;
+  }
+
+  /**
+   * Test hook: whether the player could currently EAT this kind of hazard.
+   *
+   * Exposes the same function the collision and the outline marker use, so a test asserts the real rule rather
+   * than reimplementing the tier ladder and disagreeing with it at the edges.
+   */
+  canEatHazardForTest(kind: HazardKind): boolean {
+    return canEatHazard(kind, this.player.volume);
   }
 
   /**
@@ -979,6 +990,14 @@ class Game {
       // now it is one question with one answer, because every steering source ends up in the axes.
       struggling: this.input.steering,
       playerVolume: this.player.volume,
+      /**
+       * The food-chain reversal, asked of the ONE module that owns the rule.
+       *
+       * Passed as a function rather than as a size so the hazard module cannot implement its own comparison, and
+       * so the outline marker (which asks the same question while drawing) can never disagree with what happens
+       * on contact.
+       */
+      canEat: (kind: HazardKind) => canEatHazard(kind, this.player.volume),
       bubbles: this.field.bubbles,
       eatenBubbleIds: [] as number[],
       splitCount: 0,
@@ -994,6 +1013,25 @@ class Game {
     }
 
     for (const e of effects) {
+      /**
+       * THE REVERSAL, handled before anything else.
+       *
+       * An `eaten` effect carries no damage, so this cannot conflict with the branches below -- but it is checked
+       * first anyway, because "being eaten" and "hurting the player" are mutually exclusive outcomes of the same
+       * overlap and the ordering should say so rather than depend on the fields happening not to overlap.
+       *
+       * The hazard contributes its mass and a brief invulnerability: eating is the moment the bubble becomes
+       * bigger and slower, so going without it would mean the reward for a successful reversal is immediately
+       * being hit by whatever was next to it.
+       */
+      if (e.eaten) {
+        this.player.volume = growByAbsorbing(this.player.volume, massFromEating(e.kind));
+        this.stats.absorbed++;
+        this.invulnerable = Math.max(this.invulnerable, mech.consumption.eatInvulnerableSeconds);
+        audio.play('pop');
+        continue;
+      }
+
       if (e.damage) {
         for (let i = 0; i < e.damage; i++) this.takeHit();
         // The fish-fart talent fires on the contact that would have hurt, which is what makes it a
@@ -1635,7 +1673,11 @@ class Game {
 
     // Hazards last in this layer, so they sit on top of the water and the collectables. They are the
     // things the player must READ, so nothing should be drawn over them.
-    paintHazards(g, this.hazards, laneWidth, this.elapsed);
+    //
+    // `canEat` is the same function the collision uses, asked again here to draw the edibility marker. One
+    // source of truth on purpose: a marker that promised food while the collision delivered a hit would be the
+    // worst bug this feature could have, because it would punish the player for trusting what they saw.
+    paintHazards(g, this.hazards, laneWidth, this.elapsed, (kind) => canEatHazard(kind, this.player.volume));
 
     // The decoy bait bubble, while it lasts. Drawn like a bright collectable, because that is what it
     // is imitating -- the fish are supposed to fall for it.
@@ -1831,6 +1873,8 @@ class Game {
       lastBeat: { what: HazardKind; at: number } | null;
       grabs: number;
       baits: number;
+      /** Hazards eaten this run: the food-chain reversal. */
+      eaten: number;
     };
     slow: { remaining: number; factor: number; impulseVy: number };
     trashDrain: number;
@@ -1939,6 +1983,13 @@ class Game {
         /** Monotonic counters, for transient things a boolean sample would miss. */
         grabs: this.hazards.grabs,
         baits: this.hazards.baits,
+        /**
+         * Hazards eaten this run: the food-chain reversal.
+         *
+         * Monotonic because the hazard is REMOVED on the frame it is eaten, so "is it still in the list" cannot
+         * answer whether it was eaten or simply drifted off screen.
+         */
+        eaten: this.hazards.eaten,
       },
       /** Fractional damage accumulated from a trash bag, so the drain can be observed directly. */
       trashDrain: +this.trashDrain.toFixed(3),
