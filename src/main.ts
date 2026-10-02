@@ -6,6 +6,8 @@ import { HazardField, hazardTuning, paintHazards, type HazardKind } from './haza
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
 import { audio } from './audio';
+import { MainMenu } from './menu';
+import { SettingsUi } from './settings';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
@@ -53,6 +55,10 @@ class Game {
   private readonly hud = new Hud(LANDMARKS);
   private readonly touch = new TouchControls(this.input);
   private readonly finishBanner = makeLabel('海面 / SURFACE', 0xeaf9ff, 26);
+  /** The gear button and the pause panel it opens. */
+  private readonly settings = new SettingsUi();
+  /** The main menu, shown before a run and after exiting to it. */
+  private readonly menu = new MainMenu();
 
   /** Everything drawn in world metres: collectables, the bubble, and its trailing micro-bubbles. */
   private readonly pickups = new Graphics();
@@ -114,11 +120,18 @@ class Game {
   private bannerSeen = false;
 
   /**
-   * Run phase. `burst` is the slow-motion pop after the bubble is destroyed; the run cannot be
-   * controlled during it, which is what gives the death some weight before the restart.
+   * Run phase.
+   *
+   *   menu     the main menu; no level is running
+   *   intro    the birth animation, before control is handed over
+   *   playing  the level
+   *   burst    the slow-motion pop after the bubble is destroyed, or the held beat at the surface
+   *   paused   the settings panel is open; the whole simulation is frozen
    */
-  private phase: 'intro' | 'playing' | 'burst' = 'intro';
+  private phase: 'menu' | 'intro' | 'playing' | 'burst' | 'paused' = 'menu';
   private phaseTimer = INTRO_SECONDS;
+  /** The phase to restore when the settings panel closes. */
+  private phaseBeforePause: 'intro' | 'playing' | 'burst' = 'playing';
   /** Seconds of invulnerability remaining after a hit. */
   private invulnerable = 0;
   /** Sticky counters for probes and for the result card. */
@@ -150,6 +163,24 @@ class Game {
     this.runBanner.anchor.set(0.5);
     this.runBanner.alpha = 0;
     this.app.stage.addChild(this.runBanner);
+
+    /**
+     * The UI goes on top of everything, and the MENU on top of the UI.
+     *
+     * Order matters here rather than being incidental: the settings panel has to cover the HUD and the water,
+     * and the menu has to cover the settings gear while it is showing.
+     */
+    this.app.stage.addChild(this.settings.root, this.menu.root);
+    this.settings.setVolume(audio.getVolume());
+    this.settings.setOpen(false);
+    // The game opens on the menu, so the gear must not be showing behind it.
+    this.settings.root.visible = false;
+    this.settings.onVolume = (v) => audio.setVolume(v);
+    this.settings.onOpen = () => this.openSettings();
+    this.settings.onClose = () => this.closeSettings();
+    this.settings.onRestart = () => this.restartLevel();
+    this.settings.onExit = () => this.exitToMenu();
+    this.menu.onStart = () => this.enterFromMenu();
 
     this.input.attach(window);
 
@@ -225,21 +256,60 @@ class Game {
     if (this.pointerLog.length > 60) this.pointerLog.shift();
   }
 
+  /**
+   * The last known position of each pointer, so an `up` can be hit-tested.
+   *
+   * Pixi's `pointerup` carries global coordinates, but the host calls `handlePointerUp(pointerId)` without
+   * them -- and a press must only fire if the release is still over the same control. Remembering the last
+   * position is what lets a drag off a button cancel it, which is the behaviour a player expects.
+   */
+  private readonly pointerPositions = new Map<number, { x: number; y: number }>();
+
   handlePointerDown(pointerId: number, x: number, y: number): void {
     // The first real gesture is the only moment a browser lets audio start. Doing it here rather than
     // at boot is why the game is not silently muted on a phone.
     audio.unlock();
     this.logPointer('down', pointerId, x, y);
+    this.pointerPositions.set(pointerId, { x, y });
+
+    /**
+     * The UI gets first refusal, and consumes the event if it takes it.
+     *
+     * Order: menu, then the settings panel, then the water. Without this a tap meant for a button would also
+     * start steering the bubble, and a tap on the panel's scrim would move the player mid-decision.
+     */
+    if (this.phase === 'menu') {
+      this.menu.handlePointerDown(x, y);
+      return;
+    }
+    if (this.settings.handlePointerDown(pointerId, x, y)) return;
+    if (this.phase === 'paused') return;
     this.touch.onPointerDown(pointerId, x, y);
   }
 
   handlePointerMove(pointerId: number, x: number, y: number): void {
     this.logPointer('move', pointerId, x, y);
+    this.pointerPositions.set(pointerId, { x, y });
+    if (this.phase === 'menu') {
+      this.menu.handlePointerMove(x, y);
+      return;
+    }
+    if (this.settings.handlePointerMove(pointerId, x, y)) return;
+    if (this.phase === 'paused') return;
     this.touch.onPointerMove(pointerId, x, y);
   }
 
   handlePointerUp(pointerId: number): void {
     this.logPointer('up', pointerId, -1, -1);
+    const at = this.pointerPositions.get(pointerId) ?? { x: -1, y: -1 };
+    this.pointerPositions.delete(pointerId);
+
+    if (this.phase === 'menu') {
+      this.menu.handlePointerUp(at.x, at.y);
+      return;
+    }
+    if (this.settings.handlePointerUp(pointerId, at.x, at.y)) return;
+    if (this.phase === 'paused') return;
     this.touch.onPointerUp(pointerId);
   }
 
@@ -277,6 +347,16 @@ class Game {
   /** Test hook: the level, so a probe can read properties like the lead limit. */
   get levelRef(): Level {
     return LEVEL;
+  }
+
+  /** Test hook: the settings panel, so a probe can read its geometry and drive its real controls. */
+  get settingsRef(): SettingsUi {
+    return this.settings;
+  }
+
+  /** Test hook: the main menu. */
+  get menuRef(): MainMenu {
+    return this.menu;
   }
 
   /** Test hook: the last few evaluations of the end condition, so a failure is diagnosable. */
@@ -547,6 +627,8 @@ class Game {
     this.hud.layout(viewport);
     this.hud.setWorldMetrics(viewport.laneWidthMeters, viewport.visibleDepthMeters);
     this.touch.layout(viewport.left, viewport.laneWidthPx, screenW, screenH, viewport.scale);
+    this.settings.layout(viewport);
+    this.menu.layout(viewport);
 
     this.finishBanner.scale.set(viewport.scale);
     this.finishBanner.x = screenW / 2;
@@ -586,8 +668,28 @@ class Game {
   }
 
   private step(dt: number): void {
+    /**
+     * Shared input runs in EVERY phase, including paused and menu.
+     *
+     * `input.update` derives the axes from the raw key set rather than integrating anything, so it is
+     * stateless -- but skipping it leaves the axes frozen at their last value, and a player who pauses while
+     * holding a direction key then resumes still holding it would find the bubble unresponsive. The mute key
+     * is handled here too, and muting while the settings panel is open is exactly when someone would want it.
+     */
     this.touch.syncInput();
     this.input.update();
+    if (this.phase !== 'menu' && this.input.consumeMute()) this.audioMuted = audio.toggleMute();
+
+    /**
+     * PAUSED: freeze the rest of the simulation.
+     *
+     * Checked before anything else moves, so nothing accumulates while the panel is open -- not the scroll,
+     * not the hazard timers, not the invulnerability window. A pause that only stopped the drawing would let a
+     * trash bag finish draining the player while they read the menu.
+     *
+     * The menu is the same idea for the opposite reason: there is no level to simulate yet.
+     */
+    if (this.phase === 'paused' || this.phase === 'menu') return;
 
     if (this.invulnerable > 0) this.invulnerable = Math.max(0, this.invulnerable - dt);
 
@@ -660,7 +762,6 @@ class Game {
     // One-shots (the pop, the splash) still fire; only the continuous bed stops.
     audio.tick(dt);
     audio.setDepth(this.player.depth, DEPTH_TOTAL, this.phase === 'playing');
-    if (this.input.consumeMute()) this.audioMuted = audio.toggleMute();
 
     this.player.update(this.input, dt, this.lateral);
 
@@ -1258,6 +1359,59 @@ class Game {
     this.hud.setTalentLabel(this.talentEffects.talent.name);
   }
 
+  /**
+   * Open the settings panel and freeze the level.
+   *
+   * The phase is REMEMBERED rather than assumed to be `playing`: opening the panel during the birth intro or
+   * during the ending is legitimate, and restoring to `playing` would skip the rest of whichever animation was
+   * interrupted.
+   *
+   * Called BY the settings module when its gear is tapped -- `SettingsUi.handlePointerDown` returns true and
+   * this runs from the tap -- so it is not called from the pointer handler directly.
+   */
+  private openSettings(): void {
+    if (this.phase === 'paused' || this.phase === 'menu') return;
+    this.phaseBeforePause = this.phase;
+    this.phase = 'paused';
+    // Any finger that was steering is forgotten, or releasing it later would resume a drag the player has
+    // already mentally abandoned.
+    this.touch.releaseAll();
+    this.settings.setVolume(audio.getVolume());
+    this.settings.setOpen(true);
+  }
+
+  /** Close the panel and resume whichever phase it interrupted. */
+  private closeSettings(): void {
+    if (this.phase !== 'paused') return;
+    this.settings.setOpen(false);
+    this.phase = this.phaseBeforePause;
+  }
+
+  /**
+   * Restart the current level from the beginning.
+   *
+   * Goes through `startRun`, the same path a death or a surface finish takes, so there is one definition of
+   * "a fresh run" rather than a second one that drifts.
+   */
+  private restartLevel(): void {
+    this.closeSettings();
+    this.startRun();
+  }
+
+  /** Leave the level and show the main menu. */
+  private exitToMenu(): void {
+    this.settings.setOpen(false);
+    this.phase = 'menu';
+    this.touch.releaseAll();
+    this.menu.root.visible = true;
+  }
+
+  /** Leave the menu and begin a run. */
+  private enterFromMenu(): void {
+    this.menu.root.visible = false;
+    this.startRun();
+  }
+
   private reachSurface(): void {
     this.phase = 'burst';
     // Longer than a death: the surface is a reward, not a failure, and the design asks for a beat of
@@ -1295,12 +1449,33 @@ class Game {
 
   private render(dt: number): void {
     this.scene.update(this.camera, this.player, dt, this.scrolled);
-    this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled);
-    this.touch.update();
 
-    this.drawPickups();
-    this.drawBubble();
+    /**
+     * The HUD and the water are hidden on the menu.
+     *
+     * The menu draws an opaque backdrop, so leaving them visible underneath would only cost fill rate -- but
+     * the HUD also reports a live depth for a level that is not running, which is worse than wasteful.
+     */
+    const inMenu = this.phase === 'menu';
+    this.hud.root.visible = !inMenu;
+    this.scene.root.visible = !inMenu;
+    // The water controls hide on the menu and behind the settings panel. The touch layer decides for itself
+    // whether the skill button is drawn; this only decides whether the layer exists at all.
+    this.touch.root.visible = !inMenu && !this.settings.isOpen;
+    this.flash.visible = this.flash.visible && !inMenu;
 
+    if (!inMenu) {
+      this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled);
+      this.touch.update();
+      this.drawPickups();
+      this.drawBubble();
+    }
+
+    // The gear must not be reachable while the menu is up, and the panel goes with it.
+    this.settings.root.visible = !inMenu;
+    this.settings.update();
+    this.menu.root.visible = inMenu;
+    if (inMenu) this.menu.update(dt);
     // Both banners decay in render; `step` only seeds their alpha, because a transient message
     // that is set and faded in the same frame would never be visible.
     const decay = dt * 0.6;

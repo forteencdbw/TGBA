@@ -45,6 +45,14 @@ export class GameAudio {
   /** Master switch. Muted by default until a gesture happens. */
   private enabled = true;
   private started = false;
+  /**
+   * The player's volume, 0..1, set by the settings slider.
+   *
+   * SEPARATE from `enabled`. Muting is the M key and is a hard silence; this is how loud the game is, and the
+   * two must not overwrite each other -- turning the volume to zero and pressing M twice should not leave the
+   * game at a volume the player did not choose.
+   */
+  private volume = 0.8;
   /** Throttle, so a swarm of pickups cannot stack into a buzz. */
   private lastPlayed = new Map<SoundEvent, number>();
   private now = 0;
@@ -109,11 +117,37 @@ export class GameAudio {
 
   setMuted(muted: boolean): void {
     this.enabled = !muted;
-    this.requested.master = muted ? 0 : 1;
-    if (this.master && this.ctx) {
-      this.master.gain.setTargetAtTime(this.requested.master, this.ctx.currentTime, 0.05);
-    }
+    this.applyMaster();
     if (!muted) this.unlock();
+  }
+
+  /**
+   * The player's volume, 0..1.
+   *
+   * Applied through the master gain, so ONE number scales the ambience and every one-shot together -- which
+   * is what the slider is for. Setting it also unlocks audio, because the slider is a gesture: without that a
+   * player who turned the volume up before pressing anything would hear nothing and conclude it was broken.
+   */
+  setVolume(volume: number): void {
+    this.volume = Math.min(1, Math.max(0, volume));
+    this.applyMaster();
+    if (this.volume > 0) this.unlock();
+  }
+
+  getVolume(): number {
+    return this.volume;
+  }
+
+  /**
+   * Push the effective master gain: zero when muted, the player's volume otherwise.
+   *
+   * The single place the two are combined. Computing it at each call site is how "muted" and "quiet" end up
+   * fighting, each restoring a gain the other had just set.
+   */
+  private applyMaster(): void {
+    const target = this.enabled ? this.volume : 0;
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
+    this.requested.master = target;
   }
 
   toggleMute(): boolean {
@@ -129,7 +163,10 @@ export class GameAudio {
     this.ctx = ctx;
 
     this.master = ctx.createGain();
-    this.master.gain.value = this.enabled ? 1 : 0;
+    // The player's volume, not 1: a graph built after the slider was moved must start at the right level,
+    // which is what happens on the FIRST gesture if the settings panel was opened before any input.
+    this.master.gain.value = this.enabled ? this.volume : 0;
+    this.requested.master = this.master.gain.value;
     this.master.connect(ctx.destination);
 
     this.filter = ctx.createBiquadFilter();
