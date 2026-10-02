@@ -133,15 +133,20 @@ try {
        for (let i = 0; i < 5; i++) await raf();
        const afterGesture = { running: audio.isRunning, muted: audio.muted };
        // Depth response: the ambience must DIFFER between the seabed and the surface.
-       audio.setDepth(1500, 1500);
+       audio.setDepth(1500, 1500, true);
        const deep = audio.debugLevels();
-       audio.setDepth(0, 1500);
+       audio.setDepth(0, 1500, true);
        const shallow = audio.debugLevels();
+       // And it must be SILENT when told to be, which is a different question from depth: at the
+       // surface the depth is pinned at 0, which is the loudest setting.
+       audio.setDepth(0, 1500, false);
+       const silenced = audio.debugLevels();
+       audio.setDepth(1500, 1500, true);
        // Mute.
        const mutedNow = audio.toggleMute();
        const mutedLevel = audio.debugLevels();
        audio.toggleMute();
-       return JSON.stringify({ afterGesture, deep, shallow, mutedNow, mutedLevel });
+       return JSON.stringify({ afterGesture, deep, shallow, silenced, mutedNow, mutedLevel });
      })()`,
     true,
   );
@@ -149,6 +154,7 @@ try {
   console.log('audio after a pointer gesture: ' + JSON.stringify(audioProbe.afterGesture));
   console.log('ambience at 1500m (seabed):    ' + JSON.stringify(audioProbe.deep));
   console.log('ambience at 0m (surface):      ' + JSON.stringify(audioProbe.shallow));
+  console.log('ambience silenced (ending):    ' + JSON.stringify(audioProbe.silenced));
   console.log('muted: ' + audioProbe.mutedNow + ', master gain -> ' + JSON.stringify(audioProbe.mutedLevel));
 
   // ---------------------------------------------------------------- endings
@@ -177,20 +183,31 @@ try {
        // Wait for the breach.
        const t1 = performance.now();
        while (g.diagnostics.phase !== 'burst' && performance.now() - t1 < 6000) await raf();
+       // Read the TRACE rather than sampling the gains at an arbitrary moment. The run auto-restarts
+       // after the ending, so a sample taken a few frames later sees the NEXT run's perfectly normal
+       // ambience -- which is what made a correct fix look broken. What matters is that at the surface
+       // the game asked for silence, and the trace records exactly that.
+       const traceAtSurface = g.audioRef.depthTrace.filter((e) => e.depth < 2 && !e.audible).length;
        const d = g.diagnostics;
        return JSON.stringify({
          phase: d.phase,
          surfaced: d.ending.surfaced,
          splashRightAfterBreach: d.ending.splash,
          bestClimbed: d.ending.bestClimbed,
-         hits: d.stats.hits
+         hits: d.stats.hits,
+         // THE reported bug: the bed kept playing after the bubble reached the surface.
+         silenceRequestedAtSurface: traceAtSurface,
+         ambienceDuringEnding: g.audioRef.debugLevels(),
+         depthTrace: g.audioRef.depthTrace.slice(-6)
        });
      })()`,
     true,
   );
 
   console.log('\ndeath:   ' + JSON.stringify(death));
-  console.log('surface: ' + JSON.stringify(surface));
+  console.log('surface: ' + JSON.stringify({ ...surface, ambienceDuringEnding: undefined }));
+  console.log('ambience during the ending: ' + JSON.stringify(surface.ambienceDuringEnding));
+  console.log('setDepth calls the game made: ' + JSON.stringify(surface.depthTrace));
 
   const checks = {
     // Audio runs once a gesture has happened, and reports it honestly.
@@ -198,6 +215,15 @@ try {
     // THE brief: the ambience changes with depth, so it doubles as progress feedback.
     ambienceBrightensNearSurface: audioProbe.shallow.cutoff > audioProbe.deep.cutoff * 2,
     ambienceGetsLouderNearSurface: audioProbe.shallow.ambient > audioProbe.deep.ambient,
+    // Reported bug: the bed kept playing after the bubble reached the surface. Depth alone cannot
+    // express "the run is over", because at the surface it is pinned at 0 -- the LOUDEST setting.
+    ambienceIsSilentWhenToldToBe: audioProbe.silenced.ambient === 0 && audioProbe.silenced.noise === 0,
+    // And the GAME must actually ask for that silence at the surface. Asserting only the direct call
+    // above would still pass if the game never passed `false` -- which was the reported bug.
+    //
+    // Counted from the setDepth trace rather than sampled from the gains: the run restarts after the
+    // ending, so a later sample sees the next run's normal ambience and reports a false failure.
+    gameSilencesAmbienceAtTheSurface: surface.silenceRequestedAtSurface > 0,
     mutingSilencesMaster: audioProbe.mutedLevel.master === 0,
     // Two endings that feel different: the surface flashes white, death does not.
     deathPops: death.phase === 'burst',

@@ -519,8 +519,12 @@ class Game {
 
     this.elapsed += dt;
     // The ambience follows the depth every frame: it IS the progress readout. See src/audio.ts.
+    //
+    // Silenced during the ending. `depth` alone cannot express this -- at the surface it is pinned at
+    // 0, which is the LOUDEST setting, so the bed kept playing through the whole results sequence.
+    // One-shots (the pop, the splash) still fire; only the continuous bed stops.
     audio.tick(dt);
-    audio.setDepth(this.player.depth, DEPTH_TOTAL);
+    audio.setDepth(this.player.depth, DEPTH_TOTAL, this.phase === 'playing');
     if (this.input.consumeMute()) this.audioMuted = audio.toggleMute();
 
     this.player.update(this.input, dt, this.lateral);

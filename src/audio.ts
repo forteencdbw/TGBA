@@ -60,6 +60,9 @@ export class GameAudio {
    */
   private requested = { cutoff: 260, ambient: 0, noise: 0.5, master: 1 };
 
+  /** The last few `setDepth` calls, for probes. See `setDepth`. */
+  readonly depthTrace: { depth: number; audible: boolean }[] = [];
+
   get isRunning(): boolean {
     return this.started && this.ctx?.state === 'running';
   }
@@ -165,15 +168,27 @@ export class GameAudio {
    *
    * @param depth metres from the surface
    * @param totalDepth the level's length, so this works for any level rather than only 1500m
+   * @param audible whether the ambience should be heard AT ALL right now
+   *
+   * `audible` exists because depth alone cannot express this, and inferring it was a bug: once the
+   * bubble reaches the surface its depth is pinned at 0, so the ambience sat at its loudest and
+   * brightest -- and kept playing through the whole results sequence. Depth says WHERE the player is;
+   * it does not say whether the run is still happening.
    */
-  setDepth(depth: number, totalDepth: number): void {
+  setDepth(depth: number, totalDepth: number, audible = true): void {
+    // Trace the last few calls, so a probe can see what the GAME actually passed rather than inferring
+    // it from the resulting gains -- which was ambiguous when two call sites disagreed.
+    this.depthTrace.push({ depth: +depth.toFixed(1), audible });
+    if (this.depthTrace.length > 24) this.depthTrace.shift();
     if (!this.ctx || !this.filter || !this.ambientGain || !this.noiseGain) return;
     const t = Math.min(1, Math.max(0, 1 - depth / Math.max(1, totalDepth))); // 0 seabed, 1 surface
     const now = this.ctx.currentTime;
     // Cutoff sweeps roughly three octaves: 220Hz muffled down deep to 2600Hz bright at the surface.
     const cutoff = 220 + t * t * 2400;
-    const ambient = 0.16 + t * 0.5;
-    const noise = 0.42 + t * 0.5;
+    // Silence, not just quiet: the ending is a held beat, and a bed still running under it reads as
+    // the game having forgotten to stop rather than as atmosphere.
+    const ambient = audible ? 0.16 + t * 0.5 : 0;
+    const noise = audible ? 0.42 + t * 0.5 : 0;
     this.filter.frequency.setTargetAtTime(cutoff, now, 0.4);
     this.ambientGain.gain.setTargetAtTime(ambient, now, 0.5);
     // Busier water near the light.
