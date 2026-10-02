@@ -11,7 +11,7 @@ import { canEatHazard, hazardMass, massFromEating, volumeTier } from './consumpt
 import { MainMenu } from './menu';
 import { CodexUi } from './codexUi';
 import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
-import { mech } from './mechanisms';
+import { OBSTACLE_KINDS, mech } from './mechanisms';
 import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
@@ -55,6 +55,19 @@ const BURST_SECONDS = 1.5;
  * what to call it. Indexed by landmark, so a level states its own beats through `Level.landmarks`.
  */
 const EVENT_CALLOUTS = ['鱼群来了', '气泡潮', '爆发'];
+
+/**
+ * Whether a level entry names an obstacle.
+ *
+ * A type PREDICATE rather than an `includes` check with a cast, and the difference is not style: the predicate is
+ * what lets the remaining branch narrow to "a hazard kind", so `makeHazard` cannot be handed an obstacle. The
+ * enumerated version of this check (`crate` || `coral`) was one new kind away from quietly building a CREATURE out of
+ * scenery -- it would have placed, drifted and collided as a hazard while looking like a crate -- and the narrowing
+ * is the half of the fix that turns that into a compile error.
+ */
+function isObstacleKind(kind: LevelEntry['kind']): kind is ObstacleKind {
+  return (OBSTACLE_KINDS as readonly string[]).includes(kind);
+}
 
 class Game {
   private readonly player = new Player();
@@ -1363,7 +1376,7 @@ class Game {
 
     this.fireDepthEvents();
 
-    this.resolveContacts();
+    this.resolveContacts(dt);
 
     // Skills are edge-triggered and consumed, so a single press costs exactly one use however many
     // frames it spans.
@@ -1436,7 +1449,15 @@ class Game {
       };
       return;
     }
-    if (entry.kind === 'crate' || entry.kind === 'coral') {
+    /**
+     * Anything in the obstacle list IS an obstacle, asked of the list rather than enumerated.
+     *
+     * The two-kind version of this was kind === 'crate' || kind === 'coral', which is the kind of check that fails
+     * quietly: a new obstacle kind would fall through to makeHazard and become a creature with an obstacle's name,
+     * which would place, move and collide as a hazard while looking like scenery. Asking OBSTACLE_KINDS means the
+     * fall-through cannot happen, because there is nothing left for it to fall through to.
+     */
+    if (isObstacleKind(entry.kind)) {
       this.obstacles.spawn(entry.kind, entry.x * laneWidth, worldY);
       return;
     }
@@ -1871,7 +1892,7 @@ class Game {
    * `bigger eats smaller` is the whole rule. The player's radius is its hitbox, so growing makes
    * absorbing easier and being hit easier in the same motion -- that is the built-in cost.
    */
-  private resolveContacts(): void {
+  private resolveContacts(dt: number): void {
     const laneWidth = this.camera.viewport.laneWidthMeters;
     const playerX = this.player.x * laneWidth;
     const playerR = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
@@ -1884,19 +1905,42 @@ class Game {
      * stuck on a crate would mean the scenery does not exist as far as the reward is concerned, which is worse
      * than not having scenery at all.
      *
-     * Two outcomes, and which one happens is the mechanic: big enough and the crate is smashed, too small and the
-     * player is STOPPED by it and takes a hit. A player with nothing to spend on a detour has to go through, and
-     * going through is what the growth is for.
+     * Three outcomes now, and which one happens is the mechanic: big enough and the crate is smashed, too small and
+     * the player is STOPPED by it and takes a hit, and against a NET they are stopped and take nothing -- it tears
+     * instead, and pushing is the price. `dt` goes in because that tear is a rate.
      */
-    const contact = this.obstacles.resolvePlayer(playerX, this.player.y, playerR, this.player.volume, this.invulnerable > 0);
+    const contact = this.obstacles.resolvePlayer(
+      playerX,
+      this.player.y,
+      playerR,
+      this.player.volume,
+      this.invulnerable > 0,
+      dt,
+    );
     if (contact.hit?.broke) {
       this.lastComedyBeat = { what: 'crab', at: this.elapsed };
       audio.play('hit');
     }
     if (contact.blocked) {
-      this.takeHit();
+      /**
+       * `hurt` rather than `blocked` decides the hit, and it exists for the obstacle that cannot hurt you. Charging
+       * a hit point for the one kind a small player can get through would cost exactly what the kinds they cannot
+       * get through cost, which would remove the reason it exists.
+       */
+      if (contact.hurt) this.takeHit();
       // Pushed back down the screen, out of the obstacle, so one crate cannot cost several hits.
       this.player.impulseVy = -Math.max(this.player.impulseVy, 0.25);
+    }
+    /**
+     * A net does not stop the player and does not hurt them -- it DRAGS.
+     *
+     * The slow is applied fresh every frame it is in contact, with a short tail, so it lasts exactly as long as the
+     * net does and lets go a fraction of a second later. That tail is not padding: applied as a single frame it
+     * would flicker as the overlap test came and went. The slow is also what makes a net DISCOVERABLE, and it is
+     * why the tear is affordable -- being dragged through the mesh is the time it takes to tear it.
+     */
+    if (contact.dragging) {
+      this.player.applySlow(mech.obstacles.netDragSeconds, mech.obstacles.netDrag);
     }
     if (contact.hit || contact.blocked) {
       this.invulnerable = Math.max(this.invulnerable, mech.obstacles.collideInvulnerableSeconds);

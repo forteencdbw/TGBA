@@ -342,20 +342,42 @@ export interface Mechanisms {
     buttonStroke: number;
     buttonStrokeAlpha: number;
   };
-  /** Destructible obstacles: crates to smash and coral to squeeze past. */
+  /**
+   * Obstacles: what is in the water that is neither food nor threat, but scenery you have to answer.
+   *
+   * Four kinds, and they are four DIFFERENT ANSWERS rather than four durability tiers -- see the config block for the
+   * table. The kind list itself is `OBSTACLE_KINDS`, below, because the config tables and the `ObstacleKind` union
+   * have to agree and one list that both derive from is the only way to make that a compile or boot error instead of
+   * a silent default.
+   */
   obstacles: {
     health: Record<string, number>;
     radius: Record<string, number>;
+    /**
+     * Per-kind override of the volume needed to ram it through, or `null` for "no ram ever".
+     *
+     * Keyed by kind and sparse: a kind that is happy with the shared `ramVolumeThreshold` simply is not listed.
+     */
+    ramVolume: Record<string, number | null>;
     minGapFraction: number;
     projectileDamage: number;
     ramVolumeThreshold: number;
     ramDamagePerVolume: number;
     collideDamage: number;
     collideInvulnerableSeconds: number;
+    /** Speed multiplier while inside a net, and how long the drag lingers after leaving one. */
+    netDrag: number;
+    netDragSeconds: number;
     crateColor: number;
     crateRimColor: number;
     coralColor: number;
     coralRimColor: number;
+    wallColor: number;
+    wallRimColor: number;
+    netColor: number;
+    netRimColor: number;
+    /** Mesh lines each way in a net's drawn grid. */
+    netMesh: number;
     crackWidthRatio: number;
     damagedDarken: number;
   };
@@ -499,6 +521,17 @@ const CODEX_COLOURS = [
   'skillColour',
   'talentColour',
 ] as const;
+
+/**
+ * The obstacle kinds, as the single list both the config's tables and the `ObstacleKind` union derive from.
+ *
+ * `ObstacleType` in `src/obstacles.ts` is `(typeof OBSTACLE_KINDS)[number]`, so adding a kind here is what makes it
+ * a kind, and the boot check below then demands a `health` and a `radius` row for it. That combination is the point:
+ * the lookups used to carry `?? 1` and `?? 0.05` fallbacks, which meant a kind with no row would quietly be a
+ * one-hit-point obstacle instead of an error -- a content bug with no symptom, which is the shape this project
+ * guards everywhere else.
+ */
+export const OBSTACLE_KINDS = ['crate', 'coral', 'wall', 'net'] as const;
 
 const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string }[] = [
   { path: 'stages.speedMultiplier', check: (v) => Array.isArray(v) && v.length >= 2 && v.every((n) => typeof n === 'number'), describe: 'an array of at least two numbers' },
@@ -684,16 +717,32 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'audio.musicVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity-like level between 0 and 1' },
   { path: 'obstacles.health', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to hit points' },
   { path: 'obstacles.radius', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to a radius fraction' },
+  {
+    path: 'obstacles.ramVolume',
+    check: (v) =>
+      typeof v === 'object' &&
+      v !== null &&
+      !Array.isArray(v) &&
+      Object.entries(v as Record<string, unknown>).every(([, x]) => x === null || (typeof x === 'number' && x >= 0)),
+    describe: 'an object of obstacle kind to a volume, or to null for "cannot be rammed at all"',
+  },
   { path: 'obstacles.minGapFraction', check: (v) => typeof v === 'number' && v > 0.02 && v < 0.9, describe: 'a fraction above 0.02 and below 0.9' },
   { path: 'obstacles.projectileDamage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'obstacles.ramVolumeThreshold', check: (v) => typeof v === 'number' && v >= 0, describe: 'a volume of 0 or more' },
   { path: 'obstacles.ramDamagePerVolume', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'obstacles.collideDamage', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'obstacles.collideInvulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  { path: 'obstacles.netDrag', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a speed multiplier above 0 and at most 1' },
+  { path: 'obstacles.netDragSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'obstacles.crateColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'obstacles.crateRimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'obstacles.coralColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'obstacles.coralRimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'obstacles.wallColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'obstacles.wallRimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'obstacles.netColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'obstacles.netRimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'obstacles.netMesh', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 2 && v <= 10, describe: 'a whole number of mesh lines between 2 and 10' },
   { path: 'obstacles.crackWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.5, describe: 'a stroke width ratio between 0 and 0.5' },  { path: 'obstacles.damagedDarken', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
   { path: 'emergence.fishPerceptionBaseMeters', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'emergence.fishPerceptionPerVolume', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
@@ -713,6 +762,36 @@ for (const rule of REQUIRED) {
 
 /** The validated configuration. Mutating this at runtime still works, and is how live tuning is done. */
 export const mech = parsed as Mechanisms;
+
+/**
+ * Every obstacle kind must have a `health` and a `radius` row, and the `ramVolume` overrides must name real kinds.
+ *
+ * The generic rules above can only see that these are tables of numbers. Whether they cover the KINDS is the check
+ * they cannot make, and it guards a failure with no symptom: the lookups in `src/obstacles.ts` fall back to 1 hit
+ * point and a 0.05 radius, so an obstacle with no row would be a weak obstacle rather than a broken one -- it would
+ * place, draw, collide and break, and nobody would ever know the row was missing.
+ *
+ * The reverse direction is checked too, because a typo in a key (`"corral"`) is exactly as silent and rather more
+ * likely.
+ */
+for (const table of ['health', 'radius'] as const) {
+  const rows = Object.keys(mech.obstacles[table]).sort();
+  const wanted = [...OBSTACLE_KINDS].sort();
+  const missing = wanted.filter((k) => !rows.includes(k));
+  const extra = rows.filter((k) => !(wanted as string[]).includes(k));
+  if (missing.length || extra.length) {
+    fail(
+      `obstacles.${table} must have exactly one row per obstacle kind` +
+        (missing.length ? `; missing: ${missing.join(', ')}` : '') +
+        (extra.length ? `; not a kind: ${extra.join(', ')}` : ''),
+    );
+  }
+}
+{
+  const rows = Object.keys(mech.obstacles.ramVolume);
+  const extra = rows.filter((k) => !(OBSTACLE_KINDS as readonly string[]).includes(k));
+  if (extra.length) fail(`obstacles.ramVolume names kinds that do not exist: ${extra.join(', ')}`);
+}
 
 /**
  * The two consumption tables must describe the SAME set of hazard kinds.
@@ -813,6 +892,10 @@ for (const [where, get, set] of [
   ['obstacles.crateRimColor', () => mech.obstacles.crateRimColor, (v: number) => (mech.obstacles.crateRimColor = v)],
   ['obstacles.coralColor', () => mech.obstacles.coralColor, (v: number) => (mech.obstacles.coralColor = v)],
   ['obstacles.coralRimColor', () => mech.obstacles.coralRimColor, (v: number) => (mech.obstacles.coralRimColor = v)],
+  ['obstacles.wallColor', () => mech.obstacles.wallColor, (v: number) => (mech.obstacles.wallColor = v)],
+  ['obstacles.wallRimColor', () => mech.obstacles.wallRimColor, (v: number) => (mech.obstacles.wallRimColor = v)],
+  ['obstacles.netColor', () => mech.obstacles.netColor, (v: number) => (mech.obstacles.netColor = v)],
+  ['obstacles.netRimColor', () => mech.obstacles.netRimColor, (v: number) => (mech.obstacles.netRimColor = v)],
 ] as const) {
   set(normaliseColour(get() as string | number, where));
 }

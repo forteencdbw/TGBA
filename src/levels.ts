@@ -69,8 +69,18 @@ export interface LevelEntry {
     | 'rot'
     | 'oil'
     | 'skill'
+    /**
+     * The four obstacle kinds.
+     *
+     * Spelled out rather than `ObstacleKind`, because this union is what the LEVEL files are allowed to place, and a
+     * hazard kind and an obstacle kind are different things that happen to share a spelling (`crab` is a creature;
+     * `crate` is scenery). Keeping the list explicit means `place.barrier(340, 'fish', ...)` is a type error, which
+     * it should be -- fish cannot be arranged into rows.
+     */
     | 'crate'
-    | 'coral';
+    | 'coral'
+    | 'wall'
+    | 'net';
   /**
    * Size for a collectable, as a multiple of the player's radius at full size. Ignored otherwise.
    *
@@ -277,6 +287,16 @@ export const LEVELS: readonly Level[] = [
       ...place.spread(560, 240, 14, 'bubble', weave(0.34), sizes([0.3, 0.6, 0.45])),
       ...place.line(640, 'fish', 5),
       place.one(700, 'trash', 0.4),
+
+      /**
+       * --- 750m: the first NET, and the first obstacle that cannot hurt you. ---
+       *
+       * Two blocks and a wide gap, because a net teaches something no other obstacle does: it stops you, it costs
+       * you nothing, and it gives way if you keep leaning on it. A player who has learned "crates are smashed, coral
+       * is avoided" has no reason to guess that, so the first one is a place to find out rather than a place to be
+       * tested -- and 80m before the coral at 830, so there is room to be wrong.
+       */
+      ...place.barrier(750, 'net', 2, 0.5, 0.34),
       place.one(760, 'crab', 0.35),
       ...place.column(800, 60, 3, 'jelly', 0.72),
       /**
@@ -329,6 +349,20 @@ export const LEVELS: readonly Level[] = [
        * anyone who had been enjoying the growth curve.
        */
       ...place.barrier(830, 'coral', 4, 0.3, 0.22),
+      /**
+       * --- 920m and 960m: the NET and the WALL, side by side, so the contrast is legible. ---
+       *
+       * The same trick as the coral-then-crate pair at 1030/1070, and for the same reason: two obstacles 40m apart
+       * is enough to notice that they are answered differently, and not enough to forget the first one.
+       *
+       * The net costs TIME and nothing else; the wall cannot be answered by size at all, only by ammunition or by
+       * being narrow enough for the gap. Putting them together is what makes "what am I carrying, and how wide am
+       * I" a single question rather than two separate ones.
+       *
+       * The wall's health is over two fish shots and its gap is the minimum, so neither answer is free.
+       */
+      ...place.barrier(920, 'net', 2, 0.28, 0.3),
+      ...place.barrier(960, 'wall', 5, 0.5, 0.19),
       ...place.barrier(1030, 'coral', 4, 0.72, 0.22),
       // A crate row right after the coral, so the two answers sit next to each other and the contrast is legible.
       ...place.barrier(1070, 'crate', 4, 0.5, 0.26),
@@ -360,27 +394,44 @@ export const LEVELS: readonly Level[] = [
       place.one(1370, 'oil', 0.5),
       place.one(1345, 'rot', 0.2),
 
-      // --- 1260-1500m: the burst, then a clear run to the surface. ---
+      // --- 1260-1500m: the burst, then the corridor to the surface. ---
       ...place.line(1280, 'fish', 7, 0.08, 0.92),
       ...place.spread(1300, 80, 8, 'bubble', weave(0.45), sizes([0.6, 0.8, 0.5])),
       ...place.line(1360, 'jelly', 4),
       ...place.line(1400, 'trash', 2, 0.25, 0.75),
-      ...place.line(1440, 'fish', 6, 0.12, 0.88),
       place.one(1470, 'crab', 0.5),
       // One last urchin, just before the squeeze: the level's final "do I need this?" and the last chance to be
       // carrying something that is bleeding you when the gap arrives.
       place.one(1395, 'urchin', 0.72),
       /**
-       * --- 1410m: the final squeeze, and the design's "极限瘦身" moment. ---
+       * --- 1386-1446m: the CORRIDOR, and the design's "极限瘦身" as a stretch rather than a moment. ---
        *
-       * The tightest gap in the level, right before the surface, and coral rather than crates -- so it cannot be
-       * solved by having grown. Everything the player has swallowed is exactly what is in their way here, and the
-       * spit button is the answer. Placed AFTER the last swarm so a player who arrives fat has the room to deal
-       * with it rather than being punished mid-fight.
+       * Three tight rows 30m apart -- 1.2s of scrolling -- with the level's last urchin and last pair of trash bags
+       * BETWEEN them. That is the whole point of the change: a single squeeze is a thing you survive, and three of
+       * them with hazards inside is a state you have to HOLD. Being thin stops being a decision made once and
+       * becomes a decision not to relent, and everything the player swallowed is in the way for four seconds
+       * rather than one.
+       *
+       * The gaps are the minimum the rule allows (`place.barrier` widens a request to the passability rule's own
+       * requirement, so these are as tight as a legal gap can be), and the rows are coral rather than crates
+       * because a corridor that could be smashed by growing would be a different, easier level.
+       *
+       * The oil at 1370 stays immediately before it: the answer to a tight gap is to spit, and oil is the thing
+       * that refuses to be spat. Placed AFTER the last swarm so a player who arrives fat has room to deal with it
+       * rather than being punished mid-fight.
        */
-      ...place.barrier(1410, 'coral', 5, 0.5, 0.19),
-      // The last stretch is deliberately sparse: the surface should feel earned, and a level that ends
-      // mid-onslaught gives the player no moment to notice they have won.
+      ...place.barrier(1386, 'coral', 5, 0.5, 0.19),
+      ...place.barrier(1416, 'coral', 5, 0.5, 0.19),
+      ...place.barrier(1446, 'coral', 5, 0.5, 0.19),
+      /**
+       * The last stretch is deliberately sparse: the surface should feel earned, and a level that ends
+       * mid-onslaught gives the player no moment to notice they have won.
+       *
+       * The endgame fish swarm that used to sit at 1440 is GONE, and not to make room -- it had stopped being
+       * pressure. Fish chase the largest bubble, and the corridor's job is to make sure the player arrives at the
+       * surface small; a school of fish in front of a small player is a meal, not a threat. Leaving it there would
+       * have been a reward dressed as a hazard.
+       */
       ...place.spread(1470, 30, 4, 'bubble', weave(0.2), sizes([0.4])),
     ],
   },

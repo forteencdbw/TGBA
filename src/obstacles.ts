@@ -1,15 +1,20 @@
 import { Graphics } from 'pixi.js';
-import { mech } from './mechanisms';
+import { OBSTACLE_KINDS, mech } from './mechanisms';
 
 /**
- * The two kinds, and they pull in opposite directions on purpose.
+ * The four kinds, and they are four different ANSWERS rather than four durability tiers.
  *
  *   crate  weak, and worth destroying -- a target for a spat crab, and free passage for anything big enough
  *   coral  tough, and worth AVOIDING -- the thing that makes being small an advantage
+ *   wall   cannot be rammed at ANY size: the answer is ammunition, or the minimum gap
+ *   net    soft and wraparound: it stops you and does not hurt you, and you tear it by pushing
  *
  * A player has to tell them apart at a glance, which is why their silhouettes differ as much as their numbers do.
+ *
+ * The union is DERIVED from the config's kind list rather than written twice, so adding a kind is one edit in
+ * `mechanisms.ts` and the boot check there then insists on a health and a radius row for it.
  */
-export type ObstacleKind = 'crate' | 'coral';
+export type ObstacleKind = (typeof OBSTACLE_KINDS)[number];
 
 /** A placed obstacle. */
 export interface Obstacle {
@@ -84,10 +89,52 @@ export function projectileDamage(impact: number): number {
  *
  * Proportional to how far past the threshold the player is, so "just big enough" is a scratch and a giant goes
  * straight through. Zero below the threshold is what makes a small player BLOCKED rather than damaging.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * ZERO IS ALSO WHAT A WALL AND A NET ALWAYS GET
+ * ---------------------------------------------------------------------------------------------
+ * The threshold is per KIND (`ramVolume`), and for those two it is `null`: no volume smashes them. A wall wants
+ * ammunition or the gap, and a net is not smashed at all -- it is torn, by pushing, for which `tornPerSecond` is
+ * the rate. So the same function answers "how much does ramming this do", and for two kinds the answer is "nothing,
+ * ever", which is a rule rather than a big number.
  */
-export function ramDamage(playerVolume: number): number {
-  if (playerVolume < mech.obstacles.ramVolumeThreshold) return 0;
-  return (playerVolume - mech.obstacles.ramVolumeThreshold) * mech.obstacles.ramDamagePerVolume;
+export function ramDamage(playerVolume: number, kind: ObstacleKind): number {
+  const threshold = ramVolumeFor(kind);
+  if (threshold === null) return 0;
+  if (playerVolume < threshold) return 0;
+  return (playerVolume - threshold) * mech.obstacles.ramDamagePerVolume;
+}
+
+/**
+ * The volume needed to smash this kind, or null when nothing does.
+ *
+ * Spelled as `null` in the config rather than as an unreachably large number, because "unreachably large" stops
+ * being true the moment `volume.max` is raised and nothing would have to be revisited.
+ */
+export function ramVolumeFor(kind: ObstacleKind): number | null {
+  const override = mech.obstacles.ramVolume[kind];
+  return override === undefined ? mech.obstacles.ramVolumeThreshold : override;
+}
+
+/**
+ * What a frame of CONTACT does to this kind, in the same units as its `health`.
+ *
+ * Almost everything takes its damage from the ram, so this is zero for them -- contact alone does nothing and the
+ * only ways through are smashing or going around. A net is the exception, and it is what makes a net a net: pushing
+ * against it tears it at one point per second, so its `health` reads as "seconds of shoving".
+ */
+export function contactDamage(kind: ObstacleKind, dt: number): number {
+  return touchTears(kind) ? dt : 0;
+}
+
+/** Whether pushing against this kind wears it down. True for exactly the kinds that cannot be rammed by size. */
+export function touchTears(kind: ObstacleKind): boolean {
+  return kind === 'net';
+}
+
+/** Whether touching this kind can hurt the player. A net never does; everything else does when it stops you. */
+export function contactHurts(kind: ObstacleKind): boolean {
+  return !touchTears(kind);
 }
 
 /**
@@ -195,15 +242,21 @@ export class ObstacleField {
   /**
    * Resolve the player against the obstacles.
    *
-   * TWO OUTCOMES, and which one happens is the whole point of the mechanic:
+   * THREE OUTCOMES, and which one happens is the whole point of the mechanic:
    *
-   *   big enough   ->  the obstacle takes ram damage, and a crate simply ceases to exist
+   *   big enough     ->  the obstacle takes ram damage, and a crate simply ceases to exist
    *   not big enough ->  the player is stopped by it and takes a hit
+   *   soft (a net)   ->  the player is stopped, takes NOTHING, and tears it by pushing
    *
    * The "big enough" threshold is a volume, not a size comparison, so it is the same ladder the eating rules use
-   * and the player can reason about it the same way.
+   * and the player can reason about it the same way. For a wall that ladder simply never arrives, and for a net it
+   * does not apply at all.
    *
-   * @return the hit if the player broke something, or a `blocked` result when they could not.
+   * `dt` is here rather than in the caller because a net's tear IS a rate: the caller knows how much time passed,
+   * but only this function knows which obstacle it was passing against.
+   *
+   * @return the hit if the player broke something, whether they were stopped, whether being stopped HURT, and
+   *   whether something is dragging on them this frame.
    */
   resolvePlayer(
     x: number,
@@ -211,7 +264,8 @@ export class ObstacleField {
     playerRadius: number,
     playerVolume: number,
     invulnerable: boolean,
-  ): { hit: ObstacleHit | null; blocked: boolean } {
+    dt: number,
+  ): { hit: ObstacleHit | null; blocked: boolean; hurt: boolean; dragging: boolean } {
     for (const o of this.obstacles) {
       const r = mech.obstacles.radius[o.kind] ?? 0.05;
       const reach = playerRadius + r;
@@ -219,15 +273,39 @@ export class ObstacleField {
       const dy = o.y - y;
       if (dx * dx + dy * dy > reach * reach) continue;
 
-      const ram = ramDamage(playerVolume);
+      /**
+       * Pushing, for the kinds that are torn rather than smashed.
+       *
+       * Checked BEFORE the ram, because a net is never rammed -- but the two are not exclusive in principle, and
+       * the order states which rule wins if a kind were ever both.
+       *
+       * Note what this does NOT return: `blocked`. A net does not stop the player and does not hurt them. It DRAGS,
+       * and `dragging` is how the game knows to slow them down -- which is the only thing that makes a net felt at
+       * all. A soft obstacle that silently did nothing on contact would be indistinguishable from open water: the
+       * player would fly through, tear nothing, and never learn it had been there.
+       */
+      const rub = contactDamage(o.kind, dt);
+      if (rub > 0) {
+        const hit = this.damage(o.id, rub);
+        // Still intact, so still dragging. Torn through, and it lets go.
+        //
+        // `hit.broke`, NOT `!hit`: `damage` returns a hit object whether or not the thing died, so a bare
+        // truthiness test reads as "already broken" on every frame of the tear and the drag is never applied. The
+        // net still tore correctly, which is why this was invisible until a probe looked at the slow factor and
+        // found it flat at 1.
+        return { hit, blocked: false, hurt: false, dragging: hit?.broke !== true };
+      }
+
+      const ram = ramDamage(playerVolume, o.kind);
       if (ram > 0) {
         const hit = this.damage(o.id, ram);
-        return { hit, blocked: false };
+        return { hit, blocked: false, hurt: false, dragging: false };
       }
-      // Too small to matter: an invulnerable player still cannot pass, they just do not get hurt for trying.
-      return { hit: null, blocked: !invulnerable };
+      // Too small to matter: an invulnerable player still cannot pass through unharmed, they just do not get hurt
+      // for trying.
+      return { hit: null, blocked: !invulnerable, hurt: !invulnerable && contactHurts(o.kind), dragging: false };
     }
-    return { hit: null, blocked: false };
+    return { hit: null, blocked: false, hurt: false, dragging: false };
   }
 
   /** Test hook: how many are alive. */
@@ -258,6 +336,68 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
       g.moveTo(o.x - r, o.y).lineTo(o.x + r, o.y);
       g.moveTo(o.x, o.y - r).lineTo(o.x, o.y + r);
       g.stroke({ color: rim, alpha: 0.6, width: r * 0.1 });
+    } else if (o.kind === 'wall') {
+      const body = shade(mech.obstacles.wallColor, darken);
+      const rim = shade(mech.obstacles.wallRimColor, darken);
+      /**
+       * The same wood, stacked as BOARDS.
+       *
+       * The rule this has to carry is "the crate you know, but it is not going anywhere in one push", so the material
+       * stays the same and only the shape changes.
+       *
+       * It took three attempts to find a shape that says that. Four quarters read as a WINDOW (one object with a
+       * thick frame); four quarters with plank lines inside read as a GRATING, which is the worst of the three --
+       * a wall that looks like the net is a wall a player cannot identify at a glance, and the two are answered in
+       * opposite ways. Horizontal boards share no shape with a rope mesh and no shape with a single crate.
+       */
+      const planks = 3;
+      const plank = (r * 2) / planks;
+      for (let i = 0; i < planks; i++) g.rect(o.x - r, o.y - r + i * plank, r * 2, plank);
+      g.fill({ color: body, alpha: 0.92 });
+      for (let i = 1; i < planks; i++) {
+        g.moveTo(o.x - r, o.y - r + i * plank).lineTo(o.x + r, o.y - r + i * plank);
+      }
+      g.stroke({ color: rim, alpha: 0.8, width: r * 0.1 });
+      g.rect(o.x - r, o.y - r, r * 2, r * 2).stroke({ color: rim, alpha: 0.95, width: r * 0.16 });
+    } else if (o.kind === 'net') {
+      /**
+       * A mesh, and the hole GROWS as it tears.
+       *
+       * The tear is the whole interaction -- you hold a direction for a second and a half and it gives -- so it has
+       * to be visible from the inside of it. A net that looked the same the whole time would read as "this is a wall
+       * and the game is broken", which is the one failure a soft obstacle cannot afford.
+       *
+       * Drawn as whole grid lines with the middle ones omitted near the tear, so the hole is a real gap in the mesh
+       * rather than a dot drawn on top of it.
+       */
+      const body = mech.obstacles.netColor;
+      const rim = shade(mech.obstacles.netRimColor, darken);
+      const mesh = mech.obstacles.netMesh;
+      // 1 when whole, 0 when torn through: the radius of the intact ring around the hole.
+      const torn = Math.min(1, damaged * 1.6);
+      const hole = r * 0.9 * torn;
+      g.rect(o.x - r, o.y - r, r * 2, r * 2).fill({ color: rim, alpha: 0.22 });
+      for (let i = 0; i < mesh; i++) {
+        const t = (i / (mesh - 1)) * 2 - 1; // -1..1 across the square
+        const d = Math.abs(t * r);
+        /**
+         * Where this line meets the edge of the hole, or 0 when it misses the hole entirely.
+         *
+         * The exact chord rather than a flat `hole` radius: with a flat radius every line stops at the same distance
+         * from the centre, so the "hole" comes out as a square-ish notch and the rope ends float away from the tear.
+         * `sqrt(hole^2 - d^2)` is where a line at distance `d` actually leaves the circle, and it is automatically 0
+         * for lines outside it -- which is why there is no separate skip case.
+         */
+        const gap = hole > 0 && d < hole ? Math.sqrt(hole * hole - d * d) : 0;
+        for (const sign of [-1, 1] as const) {
+          g.moveTo(o.x + t * r, o.y + sign * r);
+          g.lineTo(o.x + t * r, o.y + sign * gap);
+          g.moveTo(o.x + sign * r, o.y + t * r);
+          g.lineTo(o.x + sign * gap, o.y + t * r);
+        }
+      }
+      g.stroke({ color: body, alpha: 0.85, width: r * 0.09 });
+      g.rect(o.x - r, o.y - r, r * 2, r * 2).stroke({ color: rim, alpha: 0.75, width: r * 0.11 });
     } else {
       const body = shade(mech.obstacles.coralColor, darken);
       const rim = shade(mech.obstacles.coralRimColor, darken);

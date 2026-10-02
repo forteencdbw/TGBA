@@ -328,6 +328,54 @@ test.describe('screen captures @screenshots', () => {
   });
 
   /**
+   * The two NEW obstacles, half-torn and half-broken, so the owner can see them without playing to 960m.
+   *
+   * Four kinds now have to be told apart at a glance, and two of them carry their state in their shape: the net's
+   * hole grows as it tears and the wall is a stack rather than a box. Both of those are judgements about a picture,
+   * which is why this is a screenshot and not an assertion -- and the net in particular is the one obstacle in the
+   * game whose whole interaction is invisible from its numbers alone.
+   */
+  test('a wall and a half-torn net @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
+            obstaclesRef: { obstacles: { kind: string; x: number; y: number; healthFraction: number }[] };
+            camera: { viewport: { laneWidthMeters: number } };
+            levelRef: { scrollSpeed: number };
+          };
+          player: { x: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      // Freeze the water: otherwise the pair sweeps past in half a second and the capture is of empty sea.
+      g.game.levelRef.scrollSpeed = 0;
+      g.player.volume = 6;
+      g.player.x = 0.5;
+      // Low on the screen, because both obstacles are placed ABOVE the player and the top of the canvas is where
+      // the debug readout lives. The first capture put the net behind that overlay.
+      g.player.screenY = 0.62;
+      const lane = g.game.camera.viewport.laneWidthMeters;
+
+      g.game.debugSpawnObstacleOnPlayer('wall', lane * 0.2);
+      g.game.debugSpawnObstacleOnPlayer('net', lane * 0.2);
+      for (const o of g.game.obstaclesRef.obstacles) {
+        if (o.kind === 'wall') o.x = g.player.x * lane + lane * 0.18;
+        if (o.kind === 'net') o.x = g.player.x * lane - lane * 0.18;
+        // Part-torn, so the hole is visible: a whole net and a torn one are the two states worth seeing.
+        if (o.kind === 'net') o.healthFraction = 0.55;
+      }
+      await raf();
+    });
+    await page.screenshot({ path: testInfo.outputPath('obstacles-new.png') });
+  });
+
+  /**
    * The five negative food creatures, loose.
    *
    * All of them have to be recognisable from their SILHOUETTE alone, because that is what the player reads at
