@@ -178,6 +178,16 @@ export interface Mechanisms {
   /** Spitting a swallowed hazard back out as a projectile. */
   spit: {
     capacity: number;
+    /** The over-eating fuse: seconds from a full stomach to a burst. 0 disables the whole mechanic. */
+    overloadFuseSeconds: number;
+    overloadMoveSpeedFactor: number;
+    overloadSuctionFactor: number;
+    bulgePerItem: number;
+    bulgeMax: number;
+    pulseHz: number;
+    rimColor: number;
+    panicBelowFraction: number;
+    panicPulseFactor: number;
     speedPerSecond: number;
     decaySeconds: number;
     hitRadiusRatio: number;
@@ -368,6 +378,15 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'suction.tetherAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'suction.tetherWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
   { path: 'spit.capacity', check: (v) => typeof v === 'number' && v >= 1 && v <= 12, describe: 'a whole number of items, at least 1' },
+  { path: 'spit.overloadFuseSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'seconds between 0 and 60; 0 disables the over-eating mechanic' },
+  { path: 'spit.overloadMoveSpeedFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction above 0 and at most 1' },
+  { path: 'spit.overloadSuctionFactor', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a multiple of at least 1' },
+  { path: 'spit.bulgePerItem', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.5, describe: 'a fraction between 0 and 0.5' },
+  { path: 'spit.bulgeMax', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
+  { path: 'spit.pulseHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
+  { path: 'spit.rimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'spit.panicBelowFraction', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction above 0 and at most 1' },
+  { path: 'spit.panicPulseFactor', check: (v) => typeof v === 'number' && v >= 1 && v <= 6, describe: 'a multiple of at least 1' },
   { path: 'spit.speedPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 6, describe: 'a number above 0, at most 6' },
   { path: 'spit.decaySeconds', check: (v) => typeof v === 'number' && v > 0.02, describe: 'seconds above 0.02' },
   { path: 'spit.hitRadiusRatio', check: (v) => typeof v === 'number' && v > 0.005 && v <= 0.5, describe: 'a fraction of the lane width between 0.005 and 0.5' },
@@ -489,6 +508,7 @@ const APPEARANCE_COLOUR_KEYS = ['inner', 'rim', 'glow', 'sheen', 'specular', 'hu
 for (const [where, get, set] of [
   ['consumption.marker.edibleColor', () => mech.consumption.marker.edibleColor, (v: number) => (mech.consumption.marker.edibleColor = v)],
   ['suction.fieldColor', () => mech.suction.fieldColor, (v: number) => (mech.suction.fieldColor = v)],
+  ['spit.rimColor', () => mech.spit.rimColor, (v: number) => (mech.spit.rimColor = v)],
 ] as const) {
   set(normaliseColour(get() as string | number, where));
 }

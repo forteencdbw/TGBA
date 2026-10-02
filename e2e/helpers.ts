@@ -95,7 +95,18 @@ export interface Diagnostics {
    *
    * `contents` is the ORDER, not just the count: spitting takes the oldest.
    */
-  spit: { contents: string[]; capacity: number; full: boolean; inFlight: number; hits: number };
+  spit: {
+    contents: string[];
+    capacity: number;
+    full: boolean;
+    inFlight: number;
+    hits: number;
+    /** Whether the over-eating fuse is lit, how much is left, and the bulge it produces. */
+    overloaded: boolean;
+    fuseRemaining: number | null;
+    fuseFraction: number;
+    bulge: number;
+  };
   /** Which skill is in the slot and how many uses are left, or null. */
   skill: { id: string; uses: number } | null;
   /** How many skills have been used this run. */

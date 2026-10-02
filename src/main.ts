@@ -10,7 +10,7 @@ import { canEatHazard, hazardMass, massFromEating } from './consumption';
 import { MainMenu } from './menu';
 import { mech } from './mechanisms';
 import { suctionMoveFactor, suctionRadiusFraction } from './suction';
-import { Stomach, spitDirection, spitImpact, spitRadiusFraction, type SpitProjectile } from './spit';
+import { Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { demote, initialStageState, recordAbsorb, stageAppearance, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
@@ -414,6 +414,21 @@ class Game {
   private updateSpit(dt: number, laneWidth: number): void {
     this.spitCooldown = Math.max(0, this.spitCooldown - dt);
     this.spitFlash = Math.max(0, this.spitFlash - dt * 3);
+
+    /**
+     * THE OVER-EATING FUSE, ticked before the button so that spitting on the last frame saves the player.
+     *
+     * A burst here is the ONLY thing that can end a run through the stomach, and it is reachable only by ignoring
+     * the warning for the whole fuse -- the escape is one press away at all times.
+     */
+    if (this.stomach.tick(dt)) {
+      // The stomach is emptied by the burst: the contents are what is scattered.
+      this.stomach.reset();
+      this.projectiles.length = 0;
+      this.startBurst();
+      return;
+    }
+
     if (!this.input.consumeSpit()) return;
     if (this.spitCooldown > 0) return;
 
@@ -501,6 +516,29 @@ class Game {
         this.projectiles.splice(i, 1);
       }
     }
+  }
+
+  /**
+   * How much the suction field is widened right now.
+   *
+   * Over capacity it runs away with itself, pulling in MORE than the player can eat -- the punishment mixed with
+   * temptation that the design's over-eating state is for. A getter passed to BOTH the drawing and the physics,
+   * so the field the player sees is the field that is actually pulling. Computing it in two places would let them
+   * drift, and a visible promise would become a lie.
+   */
+  private get suctionRadiusFactor(): number {
+    return this.stomach.overloaded ? mech.spit.overloadSuctionFactor : 1;
+  }
+
+  /**
+   * Test hook: the suction field's reach in metres, as the physics actually uses it.
+   *
+   * Exposed because the field's radius has two multipliers (the player's size and, when over-full, the runaway
+   * bonus) and a test asserting only the config value would pass while a bonus that never reached the physics did
+   * nothing.
+   */
+  suctionReachForTest(): number {
+    return this.camera.viewport.laneWidthMeters * suctionRadiusFraction(this.player.volume) * this.suctionRadiusFactor;
   }
 
   /**
@@ -921,10 +959,26 @@ class Game {
      * pull and the collision agree on where the bubble is by construction.
      */
     const suctionAt = this.input.sucking ? { x: this.player.x * viewport.laneWidthMeters, y: this.player.y } : null;
-    // The gathering cost, pushed into the player each frame because it lasts exactly as long as the input does.
-    this.player.suctionMoveFactor = suctionAt ? suctionMoveFactor() : 1;
+    /**
+     * The gathering cost, pushed into the player each frame because it lasts exactly as long as the input does.
+     *
+     * MULTIPLIED with the over-eating slow rather than replacing it, so a player who is both gathering and
+     * over-full is genuinely nearly immobile -- which is the intended worst case and not a number to protect them
+     * from.
+     */
+    this.player.suctionMoveFactor =
+      (suctionAt ? suctionMoveFactor() : 1) * (this.stomach.overloaded ? mech.spit.overloadMoveSpeedFactor : 1);
 
-    this.field.update(dt, viewport.laneWidthMeters, min, max, this.player.volume, LEVEL.scrollSpeed, suctionAt);
+    this.field.update(
+      dt,
+      viewport.laneWidthMeters,
+      min,
+      max,
+      this.player.volume,
+      LEVEL.scrollSpeed,
+      suctionAt,
+      this.suctionRadiusFactor,
+    );
 
     switch (this.phase) {
       case 'intro': {
@@ -1118,7 +1172,9 @@ class Game {
      * drive hazards through it. If the two disagreed about where the field is centred, the pull and the collision
      * would be pulling toward different points.
      */
-    const suctionAt = this.input.sucking ? { x: this.player.x * laneWidth, y: this.player.y } : null;
+    const suctionAt = this.input.sucking
+      ? { x: this.player.x * laneWidth, y: this.player.y, radiusFactor: this.suctionRadiusFactor }
+      : null;
 
     // The bubble field is handed in so the emergence rules can act on it: fish eat collectables and
     // split, and the seeking hazards go after the biggest one. Anything eaten is removed here, by the
@@ -1863,7 +1919,13 @@ class Game {
     if (this.input.sucking) {
       const cx = this.player.x * laneWidth;
       const cy = this.player.y;
-      const reach = laneWidth * suctionRadiusFraction(this.player.volume);
+      /**
+       * Over capacity, the field runs away with itself: a bigger radius that drags in MORE than the player can
+       * eat. That is the punishment mixed with temptation -- you cannot help pulling things toward a mouth that is
+       * already full, which is exactly the pressure the design's over-eating state is supposed to create.
+       */
+      const overloadBonus = this.stomach.overloaded ? mech.spit.overloadSuctionFactor : 1;
+      const reach = laneWidth * suctionRadiusFraction(this.player.volume) * overloadBonus;
       g.circle(cx, cy, reach).fill({ color: mech.suction.fieldColor, alpha: mech.suction.fieldAlpha * 0.35 });
       g.circle(cx, cy, reach).stroke({
         color: mech.suction.fieldColor,
@@ -1963,7 +2025,59 @@ class Game {
     // Blink while invulnerable: the single cross-type rule that stops a swarm chain-killing.
     const blink = this.invulnerable > 0 ? 0.45 + 0.55 * Math.abs(Math.sin(this.invulnerable * 22)) : 1;
 
-    this.paintBubble(this.player.x * viewport.laneWidthMeters, this.player.y, radius, burstAlpha * blink);
+    this.paintBubble(
+      this.player.x * viewport.laneWidthMeters,
+      this.player.y,
+      radius,
+      burstAlpha * blink,
+      /**
+       * The bulge, and how hard it is pulsing.
+       *
+       * The bubble STRAINS as it fills, which is how the player knows they are near capacity without reading
+       * anything. The pulse speed rises as the fuse burns down, so "I am about to burst" is legible in the
+       * silhouette itself rather than only on a HUD line -- and it speeds up hardest in the last stretch, which is
+       * when the player needs to look up from the water.
+       */
+      this.stomach.size > 0 ? stomachBulge(this.stomach.size) : 0,
+      this.stomach.overloaded ? this.overloadPulse() : { phase: 0, strength: 0 },
+    );
+  }
+
+  /** The bulge's pulse rate, in radians per second, rising as the over-eating fuse burns down. */
+  private overloadPulse(): { phase: number; strength: number } {
+    const fraction = this.stomach.fuseFraction;
+    const panic = fraction <= mech.spit.panicBelowFraction;
+    const hz = mech.spit.pulseHz * (panic ? mech.spit.panicPulseFactor : 1);
+    return { phase: this.elapsed * hz * Math.PI * 2, strength: panic ? 1 : 0.5 };
+  }
+
+  /**
+   * Build an irregular closed outline: an ellipse whose radius is modulated around its circumference.
+   *
+   * A polygon rather than a Pixi ellipse because the whole point is that it is NOT an ellipse -- an over-full
+   * bubble has to look like it is straining, and a scaled circle cannot do that. Sampled densely enough (48
+   * points) that the facets are invisible at phone sizes, and left as an open path so the caller can fill it,
+   * stroke it, or both.
+   */
+  private bulgedEllipse(
+    cx: number,
+    cy: number,
+    rx: number,
+    ry: number,
+    radiusAt: (angle: number) => number,
+  ): Graphics {
+    const g = this.bubble;
+    const steps = 48;
+    const points: number[] = [];
+    for (let i = 0; i < steps; i++) {
+      const angle = (i / steps) * Math.PI * 2;
+      const k = radiusAt(angle);
+      points.push(cx + Math.cos(angle) * rx * k, cy + Math.sin(angle) * ry * k);
+    }
+    // Closed by repeating the first point, because `poly` does not imply a closing edge.
+    points.push(points[0]!, points[1]!);
+    g.poly(points);
+    return g;
   }
 
   /**
@@ -1973,7 +2087,20 @@ class Game {
    * Drawn in WORLD METRES. `radius` is already in metres, derived from the lane width.
    * `alpha` carries the invulnerability blink and the pop fade.
    */
-  private paintBubble(worldX: number, worldY: number, radius: number, alpha: number): void {
+  private paintBubble(
+    worldX: number,
+    worldY: number,
+    radius: number,
+    alpha: number,
+    /**
+     * How far the stomach is stretching the silhouette, as a fraction of the radius, and the pulse driving it.
+     *
+     * Passed in rather than read from the stomach here, so the drawing stays a function of its arguments and the
+     * bulge cannot silently disagree with the capacity that produced it.
+     */
+    bulge = 0,
+    pulse: { phase: number; strength: number } = { phase: 0, strength: 0 },
+  ): void {
     const g = this.bubble;
     const p = this.particles;
     // Graphics retains its path between `clear()` calls, so both must be cleared every frame.
@@ -2022,14 +2149,31 @@ class Game {
       g.circle(worldX, worldY, radius * 1.75).fill({ color: 0xc79bff, alpha: 0.07 * alpha * fade });
     }
 
+    /**
+     * The over-full silhouette.
+     *
+     * The bubble becomes a wobbling blob rather than a circle: a low-frequency deformation with a few lobes, its
+     * amplitude set by how much is inside and its speed by the fuse. It is the piece that says "there is something
+     * straining to get out of here" without a word of UI -- and because the lobes travel around the rim rather than
+     * pulsing uniformly, it reads as contents shifting rather than as the whole bubble breathing.
+     *
+     * The rim also swaps to the warning colour, so the state survives being glanced at out of the corner of an eye
+     * while the player is watching a fish.
+     */
+    const bodyRim = this.stomach.overloaded ? mech.spit.rimColor : look.rim;
+    const bulgeAt = (angle: number): number => {
+      if (bulge <= 0) return 1;
+      const wobble = pulse.strength > 0 ? pulse.phase : this.elapsed * 2;
+      // Three lobes, so the outline never looks like a clean ellipse of a different size.
+      const lobes = Math.sin(angle * 3 + wobble) * 0.6 + Math.sin(angle * 5 - wobble * 0.7) * 0.4;
+      return 1 + bulge * lobes * (0.5 + 0.5 * pulse.strength);
+    };
+
     // The body: a very translucent wash of the stage colour, then the rim. The wash hints at the hue inside; the
     // RIM is what states it.
-    g.ellipse(worldX, worldY, radius / squash, radius * squash).fill({ color: look.inner, alpha: look.innerAlpha * alpha });
-    g.ellipse(worldX, worldY, radius / squash, radius * squash).stroke({
-      color: look.rim,
-      alpha: look.rimAlpha * alpha,
-      width: radius * look.rimWidthRatio,
-    });
+    const outline = this.bulgedEllipse(worldX, worldY, radius / squash, radius * squash, bulgeAt);
+    outline.fill({ color: look.inner, alpha: look.innerAlpha * alpha });
+    outline.stroke({ color: bodyRim, alpha: look.rimAlpha * alpha, width: radius * look.rimWidthRatio });
 
     /**
      * A second rim just inside the first, when the stage asks for one.
@@ -2040,7 +2184,7 @@ class Game {
      */
     if (look.innerRing) {
       g.ellipse(worldX, worldY, radius / squash, radius * squash).stroke({
-        color: look.rim,
+        color: bodyRim,
         alpha: look.innerRingAlpha * alpha,
         width: radius * look.innerRingWidthRatio,
       });
@@ -2118,7 +2262,18 @@ class Game {
      * `contents` is the ORDER, not just the count: spitting takes the oldest, so a test asserting "it fires what it
      * swallowed first" needs the sequence rather than the size.
      */
-    spit: { contents: readonly HazardKind[]; capacity: number; full: boolean; inFlight: number; hits: number };
+    spit: {
+      contents: readonly HazardKind[];
+      capacity: number;
+      full: boolean;
+      inFlight: number;
+      hits: number;
+      /** Whether the over-eating fuse is lit, how much is left, and the bulge it produces. */
+      overloaded: boolean;
+      fuseRemaining: number | null;
+      fuseFraction: number;
+      bulge: number;
+    };
     trashDrain: number;
     maxGripSeconds: number;
     talent: {
@@ -2251,6 +2406,10 @@ class Game {
         full: this.stomach.full,
         inFlight: this.projectiles.length,
         hits: this.spitHits,
+        overloaded: this.stomach.overloaded,
+        fuseRemaining: this.stomach.fuseRemaining,
+        fuseFraction: this.stomach.fuseFraction,
+        bulge: stomachBulge(this.stomach.size),
       },
       /** Fractional damage accumulated from a trash bag, so the drain can be observed directly. */
       trashDrain: +this.trashDrain.toFixed(3),

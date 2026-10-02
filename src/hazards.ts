@@ -268,7 +268,7 @@ export interface HazardContext {
    * things would remove the entire risk of using it. Dragging a crab you cannot eat toward yourself has to be
    * possible, or "when do I hold this" is not a decision.
    */
-  suction: { x: number; y: number } | null;
+  suction: { x: number; y: number; radiusFactor: number } | null;
   /**
    * The collectables, so fish can eat them and jellies can seek the biggest one.
    *
@@ -520,7 +520,7 @@ export class HazardField {
   private applySuction(dt: number, ctx: HazardContext): void {
     const at = ctx.suction;
     if (!at) return;
-    const radius = ctx.laneWidth * suctionRadiusFraction(ctx.playerVolume);
+    const radius = ctx.laneWidth * suctionRadiusFraction(ctx.playerVolume) * Math.max(0, at.radiusFactor);
     if (radius <= 0) return;
     const radiusSq = radius * radius;
 

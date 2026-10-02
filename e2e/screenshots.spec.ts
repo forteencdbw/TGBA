@@ -236,4 +236,40 @@ test.describe('screen captures @screenshots', () => {
     });
     await page.screenshot({ path: testInfo.outputPath('spit.png') });
   });
+
+  /**
+   * The bubble over capacity: strained silhouette and the warning rim.
+   *
+   * The state's whole job is to be legible without reading anything, at a glance, while the player is watching a
+   * fish -- so a picture is the only way to judge whether it worked.
+   */
+  test('the bubble over capacity @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: { debugSpawnHazardOnPlayer: (kind: string) => void; debugSetSteadyCruise: () => void };
+          player: { x: number; screenY: number; volume: number };
+          mechRef: { spit: { capacity: number } };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      g.player.volume = 20;
+      g.game.debugSetSteadyCruise();
+      g.player.x = 0.5;
+      g.player.screenY = 0.5;
+      // Fill the stomach exactly to capacity.
+      for (let i = 0; i < g.mechRef.spit.capacity; i++) {
+        g.game.debugSpawnHazardOnPlayer('fish');
+        await raf();
+        await raf();
+      }
+      // Part-way into the fuse, so the pulse is running but the bubble is not yet bursting.
+      for (let i = 0; i < 12; i++) await raf();
+    });
+    await page.screenshot({ path: testInfo.outputPath('overloaded.png') });
+  });
 });

@@ -180,6 +180,9 @@ export class EntityField {
    * @param suction where the player is and whether the field is up, or null when it is not. Applied BEFORE the
    *   motion solve so a pulled bubble covers the whole frame's distance, and so the solve's own velocity stays
    *   the bubble's own -- a pull written into `vy` would be re-derived away on the next frame.
+   * @param suctionRadiusFactor a multiplier on the field's reach, so an over-full stomach's runaway suction pulls
+   *   as wide as it is drawn. Passed in rather than read from the config again, so the drawing and the physics
+   *   cannot disagree about how big the field is.
    */
   update(
     dt: number,
@@ -189,10 +192,11 @@ export class EntityField {
     playerVolume: number,
     scrollSpeed: number,
     suction: { x: number; y: number } | null = null,
+    suctionRadiusFactor = 1,
   ): void {
     this.scrollSpeed = Math.max(0.001, scrollSpeed);
     this.playerVolume = playerVolume;
-    if (suction) this.applySuction(dt, laneWidth, suction.x, suction.y, playerVolume);
+    if (suction) this.applySuction(dt, laneWidth, suction.x, suction.y, playerVolume, suctionRadiusFactor);
     this.advance(dt);
     this.advanceParallax(dt, this.scrollSpeed);
     this.recycle(min, max);
@@ -209,8 +213,15 @@ export class EntityField {
    * The radius is in LANE WIDTHS, matching how every other spawn and size is expressed, so the field does not
    * need to know about the camera.
    */
-  private applySuction(dt: number, laneWidth: number, playerX: number, playerY: number, playerVolume: number): void {
-    const radius = laneWidth * suctionRadiusFraction(playerVolume);
+  private applySuction(
+    dt: number,
+    laneWidth: number,
+    playerX: number,
+    playerY: number,
+    playerVolume: number,
+    radiusFactor: number,
+  ): void {
+    const radius = laneWidth * suctionRadiusFraction(playerVolume) * Math.max(0, radiusFactor);
     if (radius <= 0) return;
     const radiusSq = radius * radius;
 
