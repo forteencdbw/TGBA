@@ -45,6 +45,7 @@ const codex = (page: Page) =>
               gameHazards: string[];
               gameSkills: string[];
               gameTalents: string[];
+              gameBubbleTypes: string[];
             };
           };
           codexRef: { texts: string[] };
@@ -135,6 +136,17 @@ test.describe('the codex', () => {
     }
     for (const id of c.gameTalents) {
       expect(c.entryIds, `the ${id} talent has no card`).toContain(`talent:${id}`);
+    }
+    /**
+     * And every bubble TYPE, which is the newest way this page could have gone stale.
+     *
+     * The bubble tab was written when there was one bubble, and its cards read as if suction, spitting and digesting
+     * were rules of the game rather than one character's verbs -- true for exactly as long as it took a second type
+     * to exist. The card ids are `bubble:<type>` now, keyed by the game's own type ids, so a third type with no prose
+     * fails here.
+     */
+    for (const id of c.gameBubbleTypes) {
+      expect(c.entryIds, `the ${id} bubble has no card`).toContain(`bubble:${id}`);
     }
 
     /**

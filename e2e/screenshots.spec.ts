@@ -576,6 +576,10 @@ test.describe('screen captures @screenshots', () => {
   for (const [tab, name] of [
     ['enemy', 'codex-enemies'],
     ['skill', 'codex-skills'],
+    // The bubble tab now PAGES, because it documents two types: page one is the devour bubble, page two the
+    // volatile one. Both pages are captured, since "the second type is in the codex" is only true if a reader can
+    // turn to it.
+    ['bubble', 'codex-bubble-devour'],
   ] as const) {
     test(`the codex, on the ${tab} tab @screenshots`, async ({ page }, testInfo) => {
       await boot(page);
@@ -602,6 +606,44 @@ test.describe('screen captures @screenshots', () => {
       await page.screenshot({ path: testInfo.outputPath(`${name}.png`) });
     });
   }
+
+  /**
+   * The codex's bubble tab, turned to the VOLATILE bubble's page.
+   *
+   * The tab now documents two types and therefore pages, and the point of the capture is that the second type is
+   * reachable by a reader: a tab that listed only the devour bubble would look exactly the same on page one.
+   */
+  test('the codex, on the volatile bubble page @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugOpenCodexForTest: () => void;
+            codexRef: {
+              geometry: {
+                tabs: { id: string; rect: { x: number; y: number; w: number; h: number } }[];
+                buttons: { id: string; rect: { x: number; y: number; w: number; h: number } }[];
+              };
+            };
+            handlePointerDown: (id: number, x: number, y: number) => void;
+            handlePointerUp: (id: number) => void;
+          };
+        };
+      }).__GB.game;
+      const press = (rect: { x: number; y: number; w: number; h: number }): void => {
+        g.handlePointerDown(71, rect.x + rect.w / 2, rect.y + rect.h / 2);
+        g.handlePointerUp(71);
+      };
+      g.debugOpenCodexForTest();
+      press(g.codexRef.geometry.tabs.find((t) => t.id === 'bubble')!.rect);
+      // One page turn, through the real button.
+      press(g.codexRef.geometry.buttons.find((b) => b.id === 'next')!.rect);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    });
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: testInfo.outputPath('codex-bubble-angry.png') });
+  });
 
   /**
    * The rage burst, caught mid-wave with the gauge emptying.

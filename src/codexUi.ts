@@ -567,6 +567,118 @@ export class CodexUi {
         g.circle(cx, cy, r).stroke({ color: colour, alpha: 0.95, width: stroke });
         g.circle(cx - r * 0.32, cy + r * 0.34, r * 0.2).fill({ color: 0xffffff, alpha: 0.8 });
         break;
+      case 'angry': {
+        /**
+         * The volatile bubble: the same disc, PRESSED.
+         *
+         * The design's "like a frown, made of deformation" rather than a drawn face -- so the top of the circle is
+         * flattened and pinched, and the rim is the type's own resting colour. It reads as a bubble that is being
+         * squeezed, which is what anger does to it.
+         */
+        const points: number[] = [];
+        const steps = 32;
+        for (let i = 0; i < steps; i++) {
+          const a = (i / steps) * Math.PI * 2;
+          // Squashed at the top, and a small inward pinch dead centre, which is the "brow".
+          const top = Math.max(0, -Math.sin(a));
+          const pinch = Math.exp(-((a - Math.PI * 1.5) ** 2) * 40);
+          const k = 1 - top * 0.28 - pinch * 0.24;
+          points.push(cx + Math.cos(a) * r * k, cy + Math.sin(a) * r * k);
+        }
+        points.push(points[0]!, points[1]!);
+        g.poly(points);
+        g.fill({ color: colour, alpha: 0.18 });
+        g.poly(points);
+        g.stroke({ color: colour, alpha: 0.95, width: stroke });
+        break;
+      }
+      case 'binge': {
+        /**
+         * Over-full: a swollen bubble with an item too many.
+         *
+         * Drawn as a circle with a bulge and three filled dots inside, because the state is literally "the things in
+         * here do not fit" -- and the pulse mark above it is the fuse, which is the half of the mechanic a player
+         * forgets.
+         */
+        g.circle(cx, cy, r * 0.95).fill({ color: colour, alpha: 0.2 });
+        g.circle(cx, cy, r * 0.95).stroke({ color: colour, alpha: 0.9, width: stroke });
+        for (const [dx, dy] of [
+          [-0.38, 0.1],
+          [0.36, -0.2],
+          [0.05, 0.42],
+        ] as const) {
+          g.circle(cx + r * dx, cy + r * dy, r * 0.24).fill({ color: colour, alpha: 0.85 });
+        }
+        // The fuse: a short stalk and a spark, which is what turns a full stomach into a countdown.
+        g.moveTo(cx, cy - r * 0.95).lineTo(cx + r * 0.22, cy - r * 1.45);
+        g.stroke({ color: 0xffffff, alpha: 0.8, width: stroke * 0.6 });
+        g.circle(cx + r * 0.26, cy - r * 1.5, r * 0.16).fill({ color: mech.spit.rimColor, alpha: 0.95 });
+        break;
+      }
+      case 'rageGauge': {
+        // A bar with a tick, in the four stage colours: the resource, and what it is measured against.
+        const w = r * 2.1;
+        const h = r * 0.5;
+        const x = cx - w / 2;
+        const y = cy - h / 2;
+        g.roundRect(x, y, w, h, h / 2).stroke({ color: colour, alpha: 0.8, width: stroke * 0.7 });
+        g.roundRect(x, y, w * 0.62, h, h / 2).fill({ color: colour, alpha: 0.85 });
+        for (let i = 1; i < mech.angry.appearance.length; i++) {
+          const row = mech.angry.appearance[i]!;
+          const at = x + (row.minRage / Math.max(1e-6, mech.angry.rage.max)) * w;
+          g.moveTo(at, y - h * 0.35).lineTo(at, y + h * 1.35);
+        }
+        g.stroke({ color: 0xffffff, alpha: 0.35, width: stroke * 0.4 });
+        break;
+      }
+      case 'charge': {
+        // A core with four outward spikes: the wind-up, the same shape the button uses.
+        g.circle(cx, cy, r * 0.42).fill({ color: colour, alpha: 0.9 });
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+          g.moveTo(cx + Math.cos(a) * r * 0.6, cy + Math.sin(a) * r * 0.6);
+          g.lineTo(cx + Math.cos(a) * r * 1.3, cy + Math.sin(a) * r * 1.3);
+        }
+        g.stroke({ color: colour, alpha: 0.95, width: stroke });
+        break;
+      }
+      case 'rageBurst': {
+        // Three rings going out and a bright core: a wave, not a star (the 爆散 skill already owns the star).
+        for (let i = 0; i < 3; i++) {
+          g.circle(cx, cy, r * (0.45 + i * 0.42)).stroke({
+            color: colour,
+            alpha: 0.9 - i * 0.26,
+            width: stroke * (1 - i * 0.2),
+          });
+        }
+        g.circle(cx, cy, r * 0.2).fill({ color: mech.angry.burst.waveColour, alpha: 0.95 });
+        break;
+      }
+      case 'overload': {
+        /**
+         * A bubble with a countdown arc around it, and a crack.
+         *
+         * The arc is deliberately INCOMPLETE -- three quarters of a circle -- because the state is defined by a clock
+         * that runs out, and a closed ring would say "sealed" instead.
+         */
+        g.circle(cx, cy, r * 0.78).fill({ color: colour, alpha: 0.22 });
+        g.circle(cx, cy, r * 0.78).stroke({ color: colour, alpha: 0.9, width: stroke });
+        const arc = r * 1.25;
+        const from = -Math.PI / 2;
+        const steps = 24;
+        for (let i = 0; i <= steps; i++) {
+          const a = from + (i / steps) * Math.PI * 1.55;
+          const px = cx + Math.cos(a) * arc;
+          const py = cy + Math.sin(a) * arc;
+          if (i === 0) g.moveTo(px, py);
+          else g.lineTo(px, py);
+        }
+        g.stroke({ color: mech.angry.appearance[mech.angry.appearance.length - 1]!.rim, alpha: 0.95, width: stroke });
+        // The crack: two short strokes, which is the whole hint that this ends badly.
+        g.moveTo(cx - r * 0.25, cy - r * 0.5).lineTo(cx + r * 0.1, cy).lineTo(cx - r * 0.15, cy + r * 0.5);
+        g.stroke({ color: 0xffffff, alpha: 0.75, width: stroke * 0.6 });
+        break;
+      }
       case 'stages':
         // Three nested rims in the stages' own colours: the size ladder, in the palette the game uses for it.
         for (let i = 0; i < 3; i++) {
@@ -644,8 +756,7 @@ export class CodexUi {
         }
         g.stroke({ color: colour, alpha: 0.9, width: stroke * 0.7 });
         break;
-      case 'stink':
-        for (const [dx, dy, rr] of [
+      case 'stink':        for (const [dx, dy, rr] of [
           [-0.6, 0.1, 0.55],
           [0.5, 0.25, 0.45],
           [0, -0.5, 0.5],

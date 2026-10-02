@@ -410,7 +410,7 @@ P = P₀ × (1 + 1.5 × R/100)
 
 | | 内容 | 状态 |
 |---|---|---|
-| A | 抽出 `BubbleType` 接口，吞噬气泡改为它的实现 | ✅ [src/bubbleTypes.ts](../../../src/bubbleTypes.ts)、[src/bubbleLook.ts](../../../src/bubbleLook.ts)、[src/touch.ts](../../../src/touch.ts) 的表驱动控件；控制在 [src/menu.ts](../../../src/menu.ts) 选择 |
+| A | 抽出 `BubbleType` 接口，吞噬气泡改为它的实现 | ✅（**图鉴里也有它的卡片**：气泡那一页按类型生成，5 张） [src/bubbleTypes.ts](../../../src/bubbleTypes.ts)、[src/bubbleLook.ts](../../../src/bubbleLook.ts)、[src/touch.ts](../../../src/touch.ts) 的表驱动控件；控制在 [src/menu.ts](../../../src/menu.ts) 选择 |
 | B | 怒气槽与阶段 | ✅ [src/rage.ts](../../../src/rage.ts) + HUD 一行 + **一根槽**（填充色 = 当前阶段色，刻度 = 阶段阈值）+ 外观（四阶段颜色/抖动/膨胀）。槽是**爆破之后**才做的，理由见下 |
 | C | 压缩蓄力 + 冲撞（含"撞中不停下"） | ✅ 在 [src/main.ts](../../../src/main.ts) 的 `updateCharge`；冲量沿锁定方向发射，所以撞中天然不停下 |
 | D | 怒气爆破 | ✅ 已做（花光全部怒气；半径随怒气变大；清小敌人 / 推尖锐的 / 震碎脆弱障碍）|

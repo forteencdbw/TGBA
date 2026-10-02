@@ -3357,6 +3357,8 @@ class Game {
       gameHazards: readonly string[];
       gameSkills: readonly string[];
       gameTalents: readonly string[];
+      /** The bubble types the game offers, so the codex's coverage of them is checkable. */
+      gameBubbleTypes: readonly string[];
     };
     frames: number;
     elapsed: number;
@@ -3565,6 +3567,14 @@ class Game {
         gameHazards: Object.keys(KIND_TUNING),
         gameSkills: SKILLS.map((s) => s.id),
         gameTalents: TALENTS.map((t) => t.id),
+        /**
+         * The bubble types, so the codex's coverage can be checked the same way the creatures' is.
+         *
+         * From `BUBBLE_TYPES` -- the list the main menu itself is built from -- rather than from the codex, which is
+         * the whole point: a third type added to the game but not to the codex shows up as a difference between this
+         * and `entryIds`, and that is a failing test rather than a page nobody notices is out of date.
+         */
+        gameBubbleTypes: BUBBLE_TYPES.map((t) => t.id),
       },
       frames: this.frameCount,
       elapsed: this.elapsed,
