@@ -2,7 +2,8 @@
 
 一个关于「涌现」的 GameJam 项目。9:16 竖屏、手机优先、浏览器直接玩。
 
-设计文档：`.scratch/bubble-ascent/spec.md`
+设计文档：`.scratch/bubble-ascent/spec.md`（完整设计）
+后续工作：`.scratch/bubble-ascent/plan.md`（做到哪里、还剩什么、刻意没做什么）
 
 ## 改数值看这里
 
