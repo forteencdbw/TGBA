@@ -6,25 +6,42 @@ import type { Input } from './input';
 /**
  * The bubble.
  *
- * Moves FREELY in the plane: four directions, and holding nothing means hovering. There is no ascent
- * curve and no boost -- those existed to shape a forced climb, and with the player in control of both
- * axes they would only be second ways to do what the direction keys already do.
+ * Moves freely WITHIN THE SCREEN. It does not climb the level: the camera scrolls on its own, at a rate
+ * the level sets, and the player's job is to move around inside the window that scroll presents.
  *
- * `x` is a FRACTION of the play area width, not metres, and `vx` is in lane-widths per second. The play
- * area is as wide as the display needs, so metre-based position and speed would mean different handling
- * on every screen. Fractions keep the feel identical everywhere and make the lane bounds a constant
- * 0..1. `y` stays in world metres because the vertical axis is the level's own length, which is the same
- * on every display. Convert with `Camera.toScreenX/Y` when drawing.
+ * That is why position is stored as SCREEN-space fractions rather than world metres. An earlier version
+ * put the player in world space and let the camera follow them, which made "press up" also advance the
+ * level -- the two are independent, and storing screen position is what makes that structural rather
+ * than a rule someone has to remember.
+ *
+ *   x        fraction across the play area, 0..1
+ *   screenY  fraction up the visible window, 0 at the bottom edge and 1 at the top
+ *
+ * `y` is DERIVED: the world position the player currently occupies, which is what hazards and
+ * collectables are compared against. See `syncToCamera`.
  */
 export class Player {
-  /** Metres above the seabed. */
-  y = 0;
+  /**
+   * Vertical position as a fraction of the VISIBLE WINDOW, 0 at the bottom edge and 1 at the top.
+   *
+   * Clamped to `SCREEN_Y_MIN..SCREEN_Y_MAX` rather than to the window edges, so the bubble cannot be
+   * pushed half off the screen where it would be impossible to see or steer.
+   */
+  screenY = 0.5;
   /** Horizontal position as a fraction of the play area width, 0..1. */
   x = SPAWN_X_RATIO;
 
+  /**
+   * World position in metres, derived every frame from the camera and `screenY`.
+   *
+   * A field rather than a getter: it is read many times per frame, including by the hazard simulation,
+   * and recomputing it would require every reader to know the camera.
+   */
+  y = 0;
+
   /** Horizontal speed in play-area widths per second. */
   vx = 0;
-  /** Vertical speed in metres per second. Positive is up. */
+  /** Vertical speed in screen fractions per second. Positive is up. */
   vy = 0;
 
   /** Bubble volume. Becomes HP; the volume economy is unchanged by free movement. */
@@ -41,7 +58,17 @@ export class Player {
 
   readonly tuning = tuning;
 
+  /**
+   * How far up and down the bubble may be positioned, as fractions of the visible window.
+   *
+   * The bottom band stays clear for the skill button and the top for the depth readout, and neither
+   * extreme lets the bubble sit against a letterboxed edge where it would look clipped.
+   */
+  static readonly SCREEN_Y_MIN = 0.12;
+  static readonly SCREEN_Y_MAX = 0.94;
+
   reset(): void {
+    this.screenY = 0.5;
     this.y = 0;
     this.x = SPAWN_X_RATIO;
     this.vx = 0;
@@ -62,12 +89,31 @@ export class Player {
   /**
    * Metres still to climb, i.e. distance left to the surface.
    *
-   * Was `this.y`, which was correct when the bubble was born at y = 0 and y WAS the distance travelled.
-   * Kept honest now that y is a free position in the level, so the name cannot quietly come to mean
-   * something else.
+   * The LEVEL's remaining length, not the player's: progress belongs to the scroll, and a player who
+   * could add to it by holding up is the bug this model exists to prevent.
    */
   get remaining(): number {
     return Math.max(0, DEPTH_TOTAL - this.y);
+  }
+
+  /** How far above the camera's centre the bubble sits, in world metres. */
+  screenOffsetMetres(visibleDepthMeters: number): number {
+    return (this.screenY - 0.5) * visibleDepthMeters;
+  }
+
+  /** The world position the bubble would occupy at a given camera position. */
+  worldYFor(cameraY: number, visibleDepthMeters: number): number {
+    return cameraY + this.screenOffsetMetres(visibleDepthMeters);
+  }
+
+  /**
+   * Recompute the world position from the camera.
+   *
+   * The only place `y` is written from position, which is what keeps the two coordinate systems from
+   * drifting apart.
+   */
+  syncToCamera(cameraY: number, visibleDepthMeters: number): void {
+    this.y = this.worldYFor(cameraY, visibleDepthMeters);
   }
 
   /** Metres below the surface, which is what the HUD shows. */
@@ -87,7 +133,13 @@ export class Player {
     return this.slowRemaining > 0 ? this.slowFactor : 1;
   }
 
-  /** A launch impulse from a crab, decaying on its own, in m/s on each axis. */
+  /**
+   * A launch impulse from a crab, decaying on its own.
+   *
+   * `impulseVy` is in SCREEN FRACTIONS per second and `impulseVx` in lane widths per second, because
+   * both are shoves within the screen the player moves in. They were m/s when the player lived in world
+   * space; keeping the old unit would have launched them through the whole level in a frame.
+   */
   impulseVy = 0;
   impulseVx = 0;
 
@@ -118,6 +170,9 @@ export class Player {
    * Movement is a CONSTANT speed in the input direction, with no acceleration ramp. An acceleration
    * model on a binary axis saturates almost immediately and overshoots, which reads as twitchy however
    * the ramp is scaled -- the same conclusion the horizontal axis reached earlier, now applied to both.
+   *
+   * Both axes move within the SCREEN. Neither touches the level's scroll, which the game advances
+   * independently -- that separation is the whole point of this model.
    */
   update(input: Input, dt: number, lateral: LateralAuthority): void {
     this.debugUpdates++;
@@ -131,7 +186,7 @@ export class Player {
       const decay = Math.exp(-dt / tuning.hazardLaunchDecaySeconds);
       this.impulseVy *= decay;
       this.impulseVx *= decay;
-      if (Math.abs(this.impulseVy) < 0.05) this.impulseVy = 0;
+      if (Math.abs(this.impulseVy) < 1e-4) this.impulseVy = 0;
       if (Math.abs(this.impulseVx) < 0.005) this.impulseVx = 0;
     }
     if (this.skillRemaining > 0) {
@@ -142,48 +197,47 @@ export class Player {
       }
     }
 
-    // --- Horizontal and vertical ------------------------------------------
-    // Touch eases toward where the finger is, on BOTH axes. On glass, dragging something directly is
-    // more legible than steering it with a virtual stick, and a stick would need a second control to
-    // express "go there at once". Keyboard drives a constant speed on each axis.
     const steer = Math.max(0, this.steerScale);
     this.debugSteerMultiplier = steer;
 
     if (input.dragTargetX !== null) {
+      // Touch eases toward where the finger is, on BOTH axes. On glass, dragging something directly is
+      // more legible than steering it with a virtual stick, and a stick would need a second control to
+      // express "go there at once". Both targets are SCREEN positions, which is what a finger reports.
       const alpha = Math.min(1, lateral.damping * steer * dt);
       this.x += (input.dragTargetX - this.x) * alpha;
-      this.vx = 0;
       if (input.dragTargetY !== null) {
-        // The same ease on the vertical, so the two axes respond identically.
-        this.y += (input.dragTargetY - this.y) * alpha;
+        this.screenY += (input.dragTargetY - this.screenY) * alpha;
       }
+      this.vx = 0;
       this.vy = 0;
     } else {
-      const targetX = input.axisX * lateral.keyboardSpeed * steer;
       if (input.axisX === 0) {
         this.vx -= this.vx * Math.min(lateral.damping * dt, 1);
         if (Math.abs(this.vx) < lateral.stopSpeed) this.vx = 0;
       } else {
-        this.vx = targetX;
+        this.vx = input.axisX * lateral.keyboardSpeed * steer;
       }
       this.x += this.vx * dt;
 
-      // The lateral calibration is in LANE FRACTIONS per second, so it is converted through the lane
-      // width to get metres: both axes then move at the same rate and a diagonal is not faster than a
-      // straight line.
-      const verticalSpeed = lateral.keyboardSpeed * lateral.laneWidth * tuning.verticalSpeedScale;
+      // The vertical is in SCREEN FRACTIONS per second, derived from the same crossing-time calibration
+      // the horizontal uses so the two axes feel identical. `verticalSpeedScale` converts between a
+      // window height and a lane width, which are different lengths in metres but should take the same
+      // time to cross.
+      const verticalSpeed = lateral.keyboardSpeed * tuning.verticalSpeedScale;
       this.vy = input.axisY * verticalSpeed * this.slowMultiplier;
-      this.y += this.vy * dt;
+      this.screenY += this.vy * dt;
     }
 
     // A launch impulse is added on top of whichever input is driving, so being shoved does not cancel
     // the player's own control of the other axis.
-    this.y += this.impulseVy * dt;
+    this.screenY += this.impulseVy * dt;
     this.x += this.impulseVx * dt;
 
-    // Keep the bubble inside the play area. The ceiling is the camera's, enforced by the game.
+    // Keep the bubble inside the play area. The bounds are the SCREEN's, since that is the space the
+    // player moves in.
     const margin = 0.006;
     this.x = Math.min(Math.max(this.x, margin), 1 - margin);
-    this.y = Math.max(0, this.y);
+    this.screenY = Math.min(Math.max(this.screenY, Player.SCREEN_Y_MIN), Player.SCREEN_Y_MAX);
   }
 }

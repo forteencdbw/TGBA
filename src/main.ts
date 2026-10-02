@@ -155,7 +155,9 @@ class Game {
 
     this.rollSeed();
     this.player.reset();
-    this.camera.follow(this.player);
+    this.scrolled = 0;
+    this.camera.setScroll(0);
+    this.player.syncToCamera(this.camera.y, this.camera.viewport.visibleDepthMeters);
     this.layout();
 
     // Expose the tuning object so feel can be dialled in live from the browser console.
@@ -274,7 +276,10 @@ class Game {
     this.field.placeTimeline(TIMELINE, this.scrolled);
     this.field.takePending();
     this.hazards.hazards = [];
-    this.player.y = LEVEL.scrollLength;
+    // Move the CAMERA, not the player: the scroll is the level's position, and the player's world
+    // position is derived from it. Writing player.y directly would be overwritten on the next frame.
+    this.camera.setScroll(this.scrolled);
+    this.player.syncToCamera(this.camera.y, this.camera.viewport.visibleDepthMeters);
   }
 
   /** Test hook: force the boost state, bypassing the event system. Gone with the accelerate control. */
@@ -498,14 +503,6 @@ class Game {
     this.hud.layout(viewport);
     this.hud.setWorldMetrics(viewport.laneWidthMeters, viewport.visibleDepthMeters);
     this.touch.layout(screenW, screenH, viewport.scale);
-    /**
-     * Teach the touch layer where a finger is IN THE WATER.
-     *
-     * Reinstalled on every layout, not once at boot: the mapping depends on the camera's position and
-     * the viewport scale, so a resize or a scroll would leave it pointing at the wrong depth. Reading it
-     * through `this.camera` each call means it always reflects the camera as it is now.
-     */
-    this.touch.setWorldMapper((screenY: number) => this.camera.toWorldY(screenY));
 
     this.finishBanner.scale.set(viewport.scale);
     this.finishBanner.x = screenW / 2;
@@ -559,21 +556,29 @@ class Game {
     /**
      * Advance the scroll, and place whatever the level's timeline calls for.
      *
-     * The scroll is the level's own motion: the camera travels up a fixed stretch of water at a
-     * constant rate, which is what makes everything appear to descend and what carries new content in
-     * from the top of the screen. The player no longer rises on their own, so this is the ONLY thing
-     * moving the world.
+     * The scroll is the level's own motion, and it is INDEPENDENT of the player: it runs at the level's
+     * configured speed whether the player pushes up, holds still, or sinks. That independence is the
+     * point -- an earlier version had the camera follow the player, so holding up advanced the level.
      *
      * Placed during 'playing' only. During the intro the level has not begun, and during the ending it
      * is over -- emitting content in either would drop hazards onto a player with no control.
      */
-    if (this.phase === 'playing') {
+    if (this.phase === 'playing' || this.phase === 'burst') {
       this.scrolled = Math.min(LEVEL.scrollLength, this.scrolled + LEVEL.scrollSpeed * dt);
-      this.field.placeTimeline(TIMELINE, this.scrolled);
-      for (const placed of this.field.takePending()) {
-        this.emitTimelineEntry(placed.entry, placed.worldY, viewport.laneWidthMeters);
-        this.timelineEmitted++;
+      this.camera.setScroll(this.scrolled);
+      this.player.syncToCamera(this.camera.y, viewport.visibleDepthMeters);
+      if (this.phase === 'playing') {
+        this.field.placeTimeline(TIMELINE, this.scrolled);
+        for (const placed of this.field.takePending()) {
+          this.emitTimelineEntry(placed.entry, placed.worldY, viewport.laneWidthMeters);
+          this.timelineEmitted++;
+        }
       }
+    } else {
+      // The intro holds the camera still but still positions the bubble, so it is visible on screen
+      // rather than at the world origin.
+      this.camera.setScroll(this.scrolled);
+      this.player.syncToCamera(this.camera.y, viewport.visibleDepthMeters);
     }
 
     this.field.update(dt, viewport.laneWidthMeters, min, max, this.player.volume, LEVEL.scrollSpeed);
@@ -582,14 +587,12 @@ class Game {
       case 'intro': {
         this.phaseTimer -= dt;
         this.elapsed += dt;
-        this.camera.follow(this.player);
         if (this.phaseTimer <= 0) this.phase = 'playing';
         return;
       }
       case 'burst': {
         // Slow motion: the pop plays out before the run resets, so death has some weight.
         this.phaseTimer -= dt;
-        this.camera.follow(this.player);
         if (this.phaseTimer <= 0) this.startRun();
         return;
       }
@@ -610,19 +613,15 @@ class Game {
     this.player.update(this.input, dt, this.lateral);
 
     /**
-     * The camera is a soft ceiling: the player moves freely but cannot outrun the current.
+     * Re-derive the world position after the player moved within the screen.
      *
-     * Without this a player could hold "up" and skip the level, meeting nothing the level placed. The
-     * limit is generous enough that climbing still feels like climbing -- and the camera is also a hard
-     * FLOOR, so a player who sinks is not left behind by the scroll and stranded off the bottom of the
-     * level.
+     * The clamp that used to live here -- keeping the player within a lead limit of the scroll -- is
+     * gone, and its absence is the point. It existed to stop a player outrunning the current by holding
+     * up, which was only possible because the camera followed them. Now the camera does not care where
+     * the player is: they are bounded by the SCREEN instead, in `Player.update`, and cannot affect
+     * progress at all.
      */
-    const lead = LEVEL.playerLeadLimit ?? 130;
-    const ceiling = this.scrolled + lead;
-    if (this.player.y > ceiling) this.player.y = ceiling;
-    if (this.player.y < this.scrolled - lead) this.player.y = this.scrolled - lead;
-
-    this.camera.follow(this.player);
+    this.player.syncToCamera(this.camera.y, viewport.visibleDepthMeters);
 
     // Hazards move AFTER the player, so a hazard's contact test uses the position the player is
     // actually at this frame rather than the one it started from.
@@ -781,8 +780,15 @@ class Game {
         audio.play('slow');
       }
       if (e.impulse) {
-        // Added to whatever the ascent is doing, so a launch while accelerating carries further.
-        this.player.impulseVy = Math.max(this.player.impulseVy, e.impulse);
+        /**
+         * A crab launches the bubble UP THE SCREEN, not up the level.
+         *
+         * The hazard module deals in m/s because it works in world metres, so the impulse is converted
+         * here through the visible height. The player moves in screen fractions, and passing the raw
+         * m/s figure would fling them from one edge of the window to the other in a single frame.
+         */
+        const asScreenFraction = e.impulse / Math.max(1, this.camera.viewport.visibleDepthMeters);
+        this.player.impulseVy = Math.max(this.player.impulseVy, asScreenFraction);
         this.lastComedyBeat = { what: 'crab', at: this.elapsed };
         // The crab is the one hazard that can HELP, so it gets an upward cue rather than a thud.
         audio.play('crab');
@@ -1618,12 +1624,18 @@ class Game {
   }
 
   /**
-   * Test hook: park the bubble just under the surface so the finish-and-reset path can be
-   * exercised in seconds instead of a three-minute run. The value is deliberately just under
-   * DEPTH_TOTAL so the next simulation step crosses the line.
+   * Test hook: jump the level to its last metre, so the finish-and-reset path can be exercised in
+   * seconds instead of a minute.
+   *
+   * Moves the SCROLL rather than the player. "Reaching the surface" is now a property of the level's
+   * progress, not of where the bubble happens to be on screen -- the player cannot get there by holding
+   * up, which is the entire point of the current model.
    */
   teleportToSurface(): void {
-    this.player.y = DEPTH_TOTAL - 0.2;
+    const justShort = Math.max(0, DEPTH_TOTAL - 0.2);
+    this.scrolled = justShort;
+    this.camera.setScroll(this.scrolled);
+    this.player.syncToCamera(this.camera.y, this.camera.viewport.visibleDepthMeters);
     this.player.vy = 0;
   }
 

@@ -55,23 +55,19 @@ export class TouchControls {
   private skillFlash = 0;
 
   /**
-   * Converts a screen y to a world y.
+   * The canvas height, so a finger position can be turned into a SCREEN fraction.
    *
-   * Injected by the host because only the camera knows the mapping, and the touch layer deliberately
-   * knows nothing about the world.
+   * The touch layer no longer needs to know anything about the world: the player moves within the
+   * window, so a finger maps straight to a place on the glass. The screen-to-world mapper this replaced
+   * existed only because the player used to live in world space.
    */
-  private worldYFromScreenY: (screenY: number) => number = () => 0;
+  private canvasHeight = 0;
 
   constructor(private readonly input: Input) {
     this.root.eventMode = 'none';
     this.root.addChild(this.surface, this.buttonGfx);
     this.surface.eventMode = 'none';
     this.buttonGfx.eventMode = 'none';
-  }
-
-  /** Install the screen-to-world mapping. Called on every layout, since the camera changes with size. */
-  setWorldMapper(mapper: (screenY: number) => number): void {
-    this.worldYFromScreenY = mapper;
   }
 
   /**
@@ -142,12 +138,11 @@ export class TouchControls {
   }
 
   private steerTo(canvasX: number, canvasY: number): void {
-    if (this.canvasWidth <= 0) return;
+    if (this.canvasWidth <= 0 || this.canvasHeight <= 0) return;
     this.targetX = Math.min(1, Math.max(0, canvasX / this.canvasWidth));
-    // The vertical target is a WORLD position, not a screen one, so the bubble keeps heading for the
-    // same point in the water while the camera scrolls under it. Aiming at a screen position would
-    // mean the bubble drifts upward on its own as the world moved.
-    this.targetY = this.worldYFromScreenY(canvasY);
+    // Screen y grows DOWNWARDS and the player's screen fraction grows UPWARDS, so it is flipped. The
+    // target is a place on the glass, which is exactly what the finger reports -- no camera involved.
+    this.targetY = Math.min(1, Math.max(0, 1 - canvasY / this.canvasHeight));
   }
 
   /** Push touch state into the shared input each frame, before physics. */
@@ -158,6 +153,7 @@ export class TouchControls {
 
   layout(canvasWidth: number, canvasHeight: number, scale: number): void {
     this.canvasWidth = canvasWidth;
+    this.canvasHeight = canvasHeight;
 
     this.surface.clear();
     this.surface.rect(0, 0, canvasWidth, canvasHeight).fill({ color: 0xffffff, alpha: 0.001 });

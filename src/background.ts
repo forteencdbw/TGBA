@@ -1,5 +1,5 @@
 import { Application, Container, FillGradient, Graphics, Text } from 'pixi.js';
-import { LATERAL_DAMPING, PLAYER_SCREEN_Y_RATIO, VIEW } from './config';
+import { LATERAL_DAMPING, VIEW } from './config';
 import { DEPTH_TOTAL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Player } from './player';
@@ -20,8 +20,15 @@ export class Camera {
    * the bubble that far below the middle. The sign matters: an earlier build subtracted instead of
    * adding, which mirrored the bias and parked the bubble at 38% down instead of 62%.
    */
-  follow(player: Player): void {
-    this.y = player.y + (PLAYER_SCREEN_Y_RATIO - 0.5) * this.viewport.visibleDepthMeters;
+  /**
+   * Put the camera at a scroll position.
+   *
+   * The camera does NOT follow the player. That was the earlier model, and it coupled the two things
+   * this design needs kept apart: following meant holding "up" advanced the level. The camera's height
+   * is the level's own progress, and the player moves independently within the window it presents.
+   */
+  setScroll(scrolledMetres: number): void {
+    this.y = scrolledMetres;
   }
 
   /** World (metres) -> screen (pixels). */
