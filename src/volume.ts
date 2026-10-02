@@ -24,8 +24,6 @@
 //
 //   Fixing the hit at one hit-point solves both: hits-to-die is exactly `hitPoints` at any size,
 //   and the reward for absorbing scales with the bubble you ate, so the economy stays proportional.
-//
-// Run `node scripts/solve-volume.mjs` to see the resulting curve and to re-check it after a change.
 
 import { tuning } from './config';
 
@@ -54,7 +52,7 @@ export function growByAbsorbing(volume: number, bubbleVolume: number): number {
  * discount. It is applied HERE rather than by the caller on purpose: the "one hit is worth the same
  * at every size" invariant is the delicate part of this economy, and it should have exactly one
  * implementation. A caller computing `volume - hitPointVolume * (1 - r)` itself would quietly fork
- * that rule, and `solve-volume.mjs` asserts it through this function.
+ * that rule.
  *
  * Note a hit still costs one hit-POINT: resistance changes how much volume leaves, not how many hits
  * the bubble has left, so `hitsSurvived` is unaffected.

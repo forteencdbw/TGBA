@@ -863,11 +863,16 @@ class Game {
         /**
          * A crab launches the bubble UP THE SCREEN, not up the level.
          *
-         * The hazard module deals in m/s because it works in world metres, so the impulse is converted
-         * here through the visible height. The player moves in screen fractions, and passing the raw
-         * m/s figure would fling them from one edge of the window to the other in a single frame.
+         * The hazard module deals in m/s because it works in world metres, so the impulse is converted here
+         * through the visible height. The player moves in screen fractions, and passing the raw m/s figure
+         * would fling them from one edge of the window to the other in a single frame.
+         *
+         * The bonus exists because the conversion alone is not enough to be visible: 30 m/s over a 454m view
+         * is 0.066 of the screen per second, and the scroll drags the bubble back down at 25 m/s, so the two
+         * nearly cancel and the launch reads as nothing happening at all. See the tuning note.
          */
-        const asScreenFraction = e.impulse / Math.max(1, this.camera.viewport.visibleDepthMeters);
+        const asScreenFraction =
+          (e.impulse / Math.max(1, this.camera.viewport.visibleDepthMeters)) * tuning.hazardCrabLaunchScreenBonus;
         this.player.impulseVy = Math.max(this.player.impulseVy, asScreenFraction);
         this.lastComedyBeat = { what: 'crab', at: this.elapsed };
         // The crab is the one hazard that can HELP, so it gets an upward cue rather than a thud.
@@ -1730,7 +1735,6 @@ class Game {
     const laneWidth = this.camera.viewport.laneWidthMeters;
     const playerRadius = laneWidth * visualRadiusFraction(this.player.volume);
     const radius = (playerRadius * sizeRatio) / laneWidth;
-    // vy 0 holds it on the player regardless of its size, so the collision is immediate.
     this.field.addTestBubble({
       x: this.player.x * laneWidth,
       y: this.player.y,
@@ -1739,6 +1743,14 @@ class Game {
       volume: bubbleVolumeFromRadius(radius),
       phase: 0,
       wobble: tuning.bubbleWobbleMin,
+      /**
+       * HELD, not merely `vy: 0`.
+       *
+       * `advance` re-solves every bubble's velocity from its size each frame, so a zero velocity is
+       * overwritten immediately and the test bubble drifts away before contact resolves. With the world now
+       * scrolling at 25 m/s that happens in a few frames, which is why this stopped working.
+       */
+      held: true,
     });
   }
 

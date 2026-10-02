@@ -63,6 +63,15 @@ export class GameAudio {
   /** The last few `setDepth` calls, for probes. See `setDepth`. */
   readonly depthTrace: { depth: number; audible: boolean }[] = [];
 
+  /**
+   * How many times the game has asked for silence while near the surface.
+   *
+   * A counter rather than a read of `depthTrace`, because the trace is a small RING BUFFER: by the time a
+   * probe looked, the entry it wanted had often been pushed out, and the suite then failed on a working fix.
+   * This records the fact itself, so the assertion cannot be evicted.
+   */
+  silencedAtSurfaceCount = 0;
+
   get isRunning(): boolean {
     return this.started && this.ctx?.state === 'running';
   }
@@ -180,6 +189,7 @@ export class GameAudio {
     // it from the resulting gains -- which was ambiguous when two call sites disagreed.
     this.depthTrace.push({ depth: +depth.toFixed(1), audible });
     if (this.depthTrace.length > 24) this.depthTrace.shift();
+    if (!audible && depth < 2) this.silencedAtSurfaceCount++;
     if (!this.ctx || !this.filter || !this.ambientGain || !this.noiseGain) return;
     const t = Math.min(1, Math.max(0, 1 - depth / Math.max(1, totalDepth))); // 0 seabed, 1 surface
     const now = this.ctx.currentTime;

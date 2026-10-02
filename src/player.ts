@@ -1,4 +1,4 @@
-import { SPAWN_X_RATIO, tuning } from './config';
+﻿import { SPAWN_X_RATIO, tuning } from './config';
 import { DEPTH_TOTAL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Input } from './input';
@@ -48,7 +48,7 @@ export class Player {
   volume = 1;
 
   /**
-   * Instrumentation, read by `scripts/smoke.mjs`. Needed because a frozen bubble is
+   * Instrumentation, read by probes. Needed because a frozen bubble is
    * indistinguishable by eye from broken input: these prove `update` ran, and with what dt.
    */
   debugUpdates = 0;

@@ -125,7 +125,7 @@ export const tuning = {
   // --- Volume economy (D2: volume IS health) ------------------------------
   //
   // A closed economy: these numbers constrain each other. `src/volume.ts` holds the formulas and
-  // the reasoning; `node scripts/solve-volume.mjs` prints the resulting curve.
+  // the reasoning.
   //
   // Health is a fixed number of hits; volume is the pool holding them. A hit costs exactly one
   // hit-point, so hits-to-die is the same at any size. See `src/volume.ts` for the two shapes this
@@ -203,6 +203,18 @@ export const tuning = {
    * to take, not a punishment.
    */
   hazardCrabLaunchMps: 30,
+  /**
+   * Extra screen-fraction launch a crab gives, on top of its world-space impulse.
+   *
+   * The crab was authored to shove the bubble upward in a game where the player's own ascent was the
+   * reference. The world scrolls now and the player merely moves within the screen, so a 30 m/s impulse
+   * against a 190m-tall view is 0.066 of the screen height per second -- and the scroll drags the bubble down
+   * at 25 m/s the whole time, so the two very nearly cancel and the launch is invisible from the inside.
+   *
+   * This restores the part that was lost: the bubble LEAPS up the glass, which is the manoeuvre the hazard is
+   * for, while the world-space impulse still carries it further up the level.
+   */
+  hazardCrabLaunchScreenBonus: 2.4,
   /**
    * How quickly a launch impulse decays, as a time constant in seconds.
    *

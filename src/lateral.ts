@@ -1,12 +1,10 @@
-// `.ts` extension so Node's native type stripping can resolve it when scripts/solve-lateral.mjs
-// imports this module directly. Vite resolves either form.
 import {
   COLUMN_CROSSING_SECONDS,
   BOOST_CROSSING_SECONDS,
   KEYBOARD_CROSSING_SECONDS,
   LATERAL_DAMPING,
   SIM_DT,
-} from './config.ts';
+} from './config';
 
 /**
  * Lateral (horizontal) control authority, calibrated to the actual play-area width.

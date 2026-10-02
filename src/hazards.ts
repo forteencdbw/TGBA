@@ -19,10 +19,7 @@
  */
 
 import { Graphics } from 'pixi.js';
-// `.ts` extension so Node's native type stripping can resolve it when scripts/emergence.mjs imports
-// this module directly. `Graphics` above is a type-only use at runtime, so Pixi is erased and the
-// emergence rules can be driven headlessly. Vite resolves either form.
-import { tuning } from './config.ts';
+import { tuning } from './config';
 
 export type HazardKind = 'fish' | 'jelly' | 'trash' | 'crab';
 

@@ -543,13 +543,15 @@ export class Hud {
       this.debug.text = [
         `fps     ${fps.toFixed(0)}`,
         `depth   ${player.depth.toFixed(1)} m`,
-        `vy      ${player.vy.toFixed(2)} m/s`,
+        // The player's own motion, on both axes, and the SCREEN fraction the vertical is expressed in:
+        // "depth" alone no longer describes where the bubble is, because the world moves under it.
+        `vy      ${player.vy.toFixed(3)} screen/s`,
         `vx      ${player.vx.toFixed(3)} lane/s`,
-        `x       ${(player.x * 100).toFixed(1)}% of lane`,
-        `time    ${elapsed.toFixed(1)}s   eta ${nominalSeconds.toFixed(0)}s`,
+        `x       ${(player.x * 100).toFixed(1)}% of lane   screenY ${(player.screenY * 100).toFixed(0)}%`,
+        `time    ${elapsed.toFixed(1)}s   level ${nominalSeconds.toFixed(0)}s`,
         `lane    ${this.laneWidthMeters.toFixed(1)} m   depth view ${this.visibleDepthMeters.toFixed(0)} m`,
-        `accel   ${lateral.accel.toFixed(0)}  damp ${LATERAL_DAMPING}`,
-        `cross   ${lateral.crossingSeconds}s cruise / ${lateral.boostCrossingSeconds}s boost (steer ${lateral.boostSteerFactor})`,
+        `lateral ${lateral.keyboardSpeed.toFixed(3)} lane/s keyboard  damp ${LATERAL_DAMPING}`,
+        `cross   ${lateral.crossingSeconds}s rest / ${lateral.boostCrossingSeconds}s with boost penalty`,
       ].join('\n');
     }
   }

@@ -1,4 +1,4 @@
-import { LEVEL, WORLD_HEIGHT } from './levels.ts';
+﻿import { LEVEL, WORLD_HEIGHT } from './levels';
 
 /**
  * Where the camera should be, given how far the level has scrolled.

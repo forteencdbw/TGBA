@@ -1,5 +1,5 @@
-import { tuning } from './config';
-import type { LevelEntry } from './levels.ts';
+﻿import { tuning } from './config';
+import type { LevelEntry } from './levels';
 import { bubbleRelativeFallRatio, bubbleVolumeFromRadius } from './volume';
 
 /**
