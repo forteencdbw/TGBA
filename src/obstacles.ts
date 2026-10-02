@@ -119,6 +119,24 @@ export function ramDamage(playerVolume: number, kind: ObstacleKind): number {
 }
 
 /**
+ * What each obstacle kind is called on screen.
+ *
+ * Here rather than in the codex's prose or in a banner string, because a name that appears in two places is a name
+ * that will disagree with itself: the codex card, the release banner and any future prompt all read this.
+ */
+export const OBSTACLE_NAMES: Record<ObstacleKind, string> = {
+  crate: '木箱',
+  coral: '珊瑚',
+  wall: '封路木箱',
+  net: '渔网',
+};
+
+/** A kind's display name. */
+export function obstacleName(kind: ObstacleKind): string {
+  return OBSTACLE_NAMES[kind] ?? kind;
+}
+
+/**
  * The volume needed to smash this kind, or null when nothing does.
  *
  * Spelled as `null` in the config rather than as an unreachably large number, because "unreachably large" stops

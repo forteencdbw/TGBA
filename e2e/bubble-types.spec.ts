@@ -312,6 +312,7 @@ test.describe('bubble types', () => {
             camera: { viewport: { laneWidthMeters: number } };
           };
           player: { x: number; screenY: number; volume: number };
+          mechRef: { angry: { rage: { max: number } } };
         };
       }).__GB;
       const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -323,17 +324,33 @@ test.describe('bubble types', () => {
        */
       const scroll = g.game.levelRef.scrollSpeed;
       g.game.levelRef.scrollSpeed = 0;
+      const lane = g.game.camera.viewport.laneWidthMeters;
       g.player.x = 0.5;
       g.player.screenY = 0.5;
       g.player.volume = 6;
       await raf();
 
-      // Full rage, so the slam is at its strongest -- and so the spend afterwards is unmistakable.
-      g.game.debugGrantRageForTest(100);
+      /**
+       * NEAR full rage, not full, and that distinction is the whole test.
+       *
+       * A full gauge puts the bubble into OVERLOAD now, and the overload smashes barriers by itself -- so a wall
+       * spawned on an overloaded bubble is broken by the state rather than by the charge, the loop's baseline is
+       * already stale when it starts, and the test reports that letting go never opened a slam window. Fifteen under
+       * the cap is still a strong slam (the damage is 2.3 of 2.5) with the charge as the only thing acting.
+       */
+      g.game.debugGrantRageForTest(g.mechRef.angry.rage.max - 15);
       const rageBefore = g.game.diagnostics.rage.value;
 
-      // A wall: `ramVolume` is null, so NO volume smashes it. The volatile bubble's answer is the charge.
-      g.game.debugSpawnObstacleOnPlayer('wall', 0);
+      /**
+       * A wall: `ramVolume` is null, so NO volume smashes it. The volatile bubble's answer is the charge.
+       *
+       * Spawned AHEAD rather than on the player, and that is not tidiness. A wall in contact during the wind-up
+       * charges a hit point, and a hit is +25 rage -- which pushed this test's near-full gauge straight to the cap,
+       * started the OVERLOAD, and let the overload's free smash break the wall before the release. The test then
+       * reported that letting go never opened a slam window, which was true and had nothing to do with the charge.
+       * Out of reach, the only thing acting on the wall is the verb under test; the dash carries the bubble into it.
+       */
+      g.game.debugSpawnObstacleOnPlayer('wall', lane * 0.22);
       const brokeBefore = g.game.diagnostics.obstacles.broken;
 
       // Hold the real button, then let go: the verb lives on the release.
@@ -557,6 +574,190 @@ test.describe('bubble types', () => {
     console.log(`burst radii: ${JSON.stringify(radii)}`);
     expect(radii[1]!.radius, 'more rage must mean a wider wave').toBeGreaterThan(radii[0]!.radius);
     expect(radii[2]!.radius, 'and the widest at full').toBeGreaterThan(radii[1]!.radius);
+  });
+
+  test('a full gauge starts an overload, and letting the clock run out wounds without killing', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await waitForPhase(page, 'playing');
+
+    const c = await page.evaluate(() => {
+      const m = (window as unknown as { __GB: { mechRef: { angry: { overload: { seconds: number; steerFactor: number } } } } }).__GB.mechRef;
+      return m.angry.overload;
+    });
+
+    const run = await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugGrantRageForTest: (amount: number) => number;
+            debugSetSteadyCruise: () => void;
+            diagnostics: {
+              rage: { value: number; overloaded: boolean; overloadLeft: number };
+              stats: { overloads: number };
+              gameSeconds: number;
+            };
+            hazardsRef: { hazards: unknown[] };
+          };
+          player: { volume: number; slowFactor: number; screenY: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      g.game.debugSetSteadyCruise();
+      g.game.hazardsRef.hazards.length = 0;
+      g.player.volume = 6;
+      await raf();
+      const volumeBefore = g.player.volume;
+      const overloadsBefore = g.game.diagnostics.stats.overloads;
+
+      /**
+       * Fill the gauge through `gainRage`, which is the same path a hit takes to reach the cap.
+       *
+       * `debugForceHit` is NOT used here: a hit also resets the safe-time clock, needs four of them at the configured
+       * per-hit value, and would fold the damage it does into the volume this test is measuring.
+       */
+      g.game.debugGrantRageForTest(100);
+      await raf();
+      const started = { overloaded: g.game.diagnostics.rage.overloaded, left: g.game.diagnostics.rage.overloadLeft };
+
+      // The steering penalty, sampled while overloaded: the same slow the net drag uses.
+      g.game.hazardsRef.hazards.length = 0;
+      await raf();
+      const slowest = g.player.slowFactor;
+
+      const t0 = g.game.diagnostics.gameSeconds;
+      while (g.game.diagnostics.rage.overloaded && g.game.diagnostics.gameSeconds - t0 < 8) {
+        g.game.hazardsRef.hazards.length = 0;
+        await raf();
+      }
+      return {
+        volumeBefore,
+        started,
+        slowest,
+        elapsed: +(g.game.diagnostics.gameSeconds - t0).toFixed(2),
+        stillOverloaded: g.game.diagnostics.rage.overloaded,
+        rageAfter: g.game.diagnostics.rage.value,
+        volumeAfter: g.player.volume,
+        overloads: g.game.diagnostics.stats.overloads - overloadsBefore,
+      };
+    });
+
+    console.log(`overload: ${JSON.stringify(run)} (config ${JSON.stringify(c)})`);
+    expect(run.started.overloaded, 'a full gauge must put the bubble into overload').toBe(true);
+    expect(run.started.left, 'with a countdown running').toBeGreaterThan(0);
+    expect(run.elapsed, 'which lasts about as long as the config says').toBeGreaterThan(c.seconds * 0.6);
+    expect(run.elapsed, 'and no longer').toBeLessThan(c.seconds + 2);
+    expect(run.stillOverloaded, 'and it must be over when it is over').toBe(false);
+    expect(run.slowest, 'the bubble must be harder to steer while it lasts').toBeLessThan(c.steerFactor + 0.05);
+
+    expect(run.overloads, 'an expired overload must be counted').toBe(1);
+    expect(run.rageAfter, 'and must empty the gauge').toBe(0);
+    expect(run.volumeAfter, 'and must cost real volume').toBeLessThan(run.volumeBefore);
+    /**
+     * But never the run. The document is explicit -- "it does NOT end the game, it takes a heavy wound" -- and this is
+     * the assertion that keeps the guard rail honest, since three hit points is enough to kill a small bubble and the
+     * punishment stops while one is left.
+     */
+    expect(run.volumeAfter, 'and must NOT be able to kill the bubble').toBeGreaterThan(0);
+  });
+
+  test('the burst releases the overload, and so does breaking something large', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await waitForPhase(page, 'playing');
+
+    const result = await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugGrantRageForTest: (amount: number) => number;
+            debugSetSteadyCruise: () => void;
+            useBurstForTest: () => void;
+            debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
+            diagnostics: {
+              rage: { overloaded: boolean; value: number };
+              obstacles: { broken: number };
+            };
+            hazardsRef: { hazards: unknown[] };
+            obstaclesRef: { obstacles: unknown[] };
+            levelRef: { scrollSpeed: number };
+          };
+          player: { x: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      g.game.debugSetSteadyCruise();
+      g.player.x = 0.5;
+      g.player.screenY = 0.5;
+      g.player.volume = 6;
+
+      /** First escape route: the burst, which is the one the player always has. */
+      g.game.debugGrantRageForTest(100);
+      await raf();
+      const beforeBurst = g.game.diagnostics.rage.overloaded;
+      g.game.useBurstForTest();
+      await raf();
+      const afterBurst = { overloaded: g.game.diagnostics.rage.overloaded, rage: g.game.diagnostics.rage.value };
+
+      /**
+       * Second: smashing something LARGE while overloaded.
+       *
+       * A wall, because it is the largest thing the bubble can meet and volume cannot ram it at all -- so the only
+       * way to break it here is the overload's own smash, which is exactly the document's "can destroy most ordinary
+       * obstacles". The scroll is frozen so the wall stays on the player instead of being carried away.
+       */
+      const scroll = g.game.levelRef.scrollSpeed;
+      g.game.levelRef.scrollSpeed = 0;
+      g.game.obstaclesRef.obstacles.length = 0;
+      g.game.hazardsRef.hazards.length = 0;
+      g.game.debugGrantRageForTest(100);
+      await raf();
+      const beforeSmash = g.game.diagnostics.rage.overloaded;
+      g.game.debugSpawnObstacleOnPlayer('wall', 0);
+      const brokeBefore = g.game.diagnostics.obstacles.broken;
+      let frames = 0;
+      while (g.game.diagnostics.rage.overloaded && frames < 90) {
+        g.game.hazardsRef.hazards.length = 0;
+        await raf();
+        frames++;
+      }
+      const afterSmash = {
+        overloaded: g.game.diagnostics.rage.overloaded,
+        broke: g.game.diagnostics.obstacles.broken - brokeBefore,
+      };
+
+      // A crate, for contrast: smashing something SMALL is not a release.
+      g.game.obstaclesRef.obstacles.length = 0;
+      g.game.debugGrantRageForTest(100);
+      await raf();
+      g.game.debugSpawnObstacleOnPlayer('crate', 0);
+      for (let i = 0; i < 6; i++) {
+        g.game.hazardsRef.hazards.length = 0;
+        await raf();
+      }
+      const afterCrate = { overloaded: g.game.diagnostics.rage.overloaded, obstacles: g.game.obstaclesRef.obstacles.length };
+      g.game.levelRef.scrollSpeed = scroll;
+      return { beforeBurst, afterBurst, beforeSmash, afterSmash, afterCrate };
+    });
+
+    console.log(`overload escapes: ${JSON.stringify(result)}`);
+    expect(result.beforeBurst, 'the burst test needs an overload to release').toBe(true);
+    expect(result.afterBurst.overloaded, 'using the burst must release the overload').toBe(false);
+    expect(result.afterBurst.rage, 'and spend the gauge doing it').toBe(0);
+
+    expect(result.beforeSmash, 'and so does the smash test').toBe(true);
+    expect(result.afterSmash.broke, 'an overloaded bubble must break a wall by ramming it').toBeGreaterThan(0);
+    expect(result.afterSmash.overloaded, 'breaking something LARGE must release the overload').toBe(false);
+
+    /**
+     * Breaking something SMALL is not a release.
+     *
+     * The document's list is "smash a LARGE target, a cold current, split, or burst" -- a crate is none of those, and
+     * if it counted, the overload would end the moment the player bumped into scenery, which is not a decision.
+     */
+    expect(result.afterCrate.overloaded, 'breaking a crate must NOT be a release').toBe(true);
   });
 
   test('the aim locks while winding up, so a released stick still slams where it was pointed', async ({ page }) => {

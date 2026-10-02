@@ -1,5 +1,6 @@
 import { mech } from './mechanisms';
 import { KIND_TUNING, stomachEffect, blastRadiusFraction, type HazardKind } from './hazards';
+import { OBSTACLE_NAMES } from './obstacles';
 import { spitImpact } from './spit';
 import { SKILLS, activationFor, type SkillId } from './skills';
 import { TALENTS, talentTuning, type TalentId } from './talents';
@@ -243,7 +244,7 @@ const ENVIRONMENT: readonly CodexEntry[] = [
   {
     id: 'env:crate',
     category: 'environment',
-    name: '木箱',
+    name: OBSTACLE_NAMES.crate,
     tagline: '可以直接撞碎，也可以绕',
     facts: [
       { label: '耐久', value: `${num(mech.obstacles.health.crate ?? 0, 1)} 点` },
@@ -259,7 +260,7 @@ const ENVIRONMENT: readonly CodexEntry[] = [
   {
     id: 'env:coral',
     category: 'environment',
-    name: '珊瑚',
+    name: OBSTACLE_NAMES.coral,
     tagline: '撞不碎，只能绕——或者变小穿过去',
     facts: [
       { label: '耐久', value: `${num(mech.obstacles.health.coral ?? 0, 1)} 点` },

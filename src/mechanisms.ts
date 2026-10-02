@@ -485,6 +485,15 @@ export interface Mechanisms {
       waveWidthRatio: number;
       waveColour: number;
     };
+    /** Overload: the state a full gauge puts the bubble in, and the price of not spending it. */
+    overload: {
+      seconds: number;
+      steerFactor: number;
+      radiusBonus: number;
+      ramDamage: number;
+      releaseHealth: number;
+      punishHits: number;
+    };
     /** The rage gauge on the HUD: a bar, drawn only for a type that has a resource. */
     gauge: {
       widthRatio: number;
@@ -903,6 +912,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.burst.waveWidthRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a stroke width ratio above 0 and at most 1' },
   { path: 'angry.burst.waveColour', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'angry.gauge.widthRatio', check: (v) => typeof v === 'number' && v > 0.05 && v <= 1, describe: 'a fraction of the lane above 0.05 and at most 1' },
+  { path: 'angry.overload.seconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.overload.steerFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a speed multiplier above 0 and at most 1' },
+  { path: 'angry.overload.radiusBonus', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a fraction between 0 and 2' },
+  { path: 'angry.overload.ramDamage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.overload.releaseHealth', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.overload.punishHits', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 20, describe: 'a whole number of hit points between 0 and 20' },
   { path: 'angry.gauge.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 40, describe: 'design pixels between 2 and 40' },
   { path: 'angry.gauge.gap', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'design pixels between 0 and 40' },
   { path: 'angry.gauge.radius', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'a corner radius between 0 and 20' },

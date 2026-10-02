@@ -3,7 +3,7 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeL
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, TIMELINE, type Level, type LevelEntry } from './levels';
 import { blastRadiusFraction, HazardField, KIND_TUNING, hazardTuning, paintHazards, stomachEffect, type HazardKind } from './hazards';
-import { ObstacleField, paintObstacles, type ObstacleKind } from './obstacles';
+import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
 import { audio } from './audio';
@@ -13,7 +13,7 @@ import { CodexUi } from './codexUi';
 import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
 import { BUBBLE_TYPES, defaultBubbleType, findBubbleType, hasControl, hasVerb, type BubbleType } from './bubbleTypes';
 import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
-import { gainRage, hitRage, initialRageState, rageColor, rageFraction, rageStageName, slamDamage, spendRage, tickRage, type RageState } from './rage';
+import { endOverload, gainRage, hitRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName, slamDamage, spendRage, tickRage, type RageState } from './rage';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
 import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
@@ -214,6 +214,11 @@ class Game {
     return this.slamSeconds > 0 && this.bubbleType.look === 'rage';
   }
 
+  /** Whether the bubble is in overload: full rage, on the clock. See `angry.overload`. */
+  private get overloaded(): boolean {
+    return this.bubbleType.look === 'rage' && isOverloaded(this.rage);
+  }
+
   /**
    * Spend the whole rage gauge on a shockwave.
    *
@@ -235,7 +240,6 @@ class Game {
     if (!hasVerb(this.bubbleType, 'burst')) return;
     const cfg = mech.angry.burst;
     const laneWidth = this.camera.viewport.laneWidthMeters;
-
     const radius = laneWidth * this.burstRadiusRatio();
     const px = this.player.x * laneWidth;
     const py = this.player.y;
@@ -275,6 +279,13 @@ class Game {
      * everything the player has.
      */
     spendRage(this.rage, this.rage.rage);
+    /**
+     * The burst is the document's headline way to release the overload, and it is the one the player always has.
+     *
+     * `endOverload` after the spend: emptying the gauge is what releases it, and the overload's own timers and
+     * penalties are done with either way.
+     */
+    endOverload(this.rage);
     this.burst = { radius, seconds: 0, kills, pushes };
     this.bursts++;
     audio.play('crab');
@@ -306,7 +317,8 @@ class Game {
    * lives here rather than being recomputed at draw time because "did this run beat the previous
    * best" is only answerable BEFORE the best is updated.
    */
-  private stats = { absorbed: 0, hits: 0, maxVolume: 1, ended: 0, newRecord: false };
+  /** overloads counts overloads that EXPIRED -- the ones the player failed to release. */
+  private stats = { absorbed: 0, hits: 0, maxVolume: 1, ended: 0, overloads: 0, newRecord: false };
   /** How many bubbles were absorbed in the last step, for probes. */
   private lastEaten = 0;
   private runBanner = makeLabel('', 0xd8fbff, 20);
@@ -1254,7 +1266,7 @@ class Game {
    * cost health" needs headroom rather than a precise starting number.
    */
   debugResetStats(): void {
-    this.stats = { absorbed: 0, hits: 0, maxVolume: this.stats.maxVolume, ended: this.stats.ended, newRecord: false };
+    this.stats = { absorbed: 0, hits: 0, maxVolume: this.stats.maxVolume, ended: this.stats.ended, overloads: this.stats.overloads, newRecord: false };
     this.player.volume = tuning.volumeMax;
     this.player.slowRemaining = 0;
     this.player.slowFactor = 1;
@@ -2110,9 +2122,17 @@ class Game {
     const contact = this.obstacles.resolvePlayer(
       playerX,
       this.player.y,
-      // The slam reaches a little further than the bubble is, so a committed attack connects on the frame it was
-      // aimed at rather than one frame of travel later.
-      playerR * (this.onSlam ? 1 + mech.angry.slamRadiusBonus : 1),
+      /**
+       * The bubble's reach, with the two bonuses that belong to it.
+       *
+       * `slamRadiusBonus` widens a committed attack so it connects on the frame it was aimed at; the overload's
+       * `radiusBonus` is a real enlargement of the bubble (the document says "碰撞体积增大"), drawn and collided with
+       * alike. The overload also widens the drawn radius in `drawBubble` -- the two must agree, which is why both
+       * read the same number.
+       */
+      playerR *
+        (this.onSlam ? 1 + mech.angry.slamRadiusBonus : 1) *
+        (this.overloaded ? 1 + mech.angry.overload.radiusBonus : 1),
       this.player.volume,
       this.invulnerable > 0,
       dt,
@@ -2121,14 +2141,33 @@ class Game {
        *
        * `breaksUnrammable` comes from the config rather than from the type descriptor because it is a balance
        * question about the WALL (does this bubble get to ignore masonry?), not about the bubble's identity.
+       *
+       * The OVERLOAD smashes too, and with a bigger number, because the document lists "can destroy most ordinary
+       * obstacles" as one of the things being overloaded DOES. It is a separate case rather than a bigger slam window
+       * because the two differ in what they cost -- see below.
        */
       this.onSlam
         ? { damage: slamDamage(this.rage.rage), breaksUnrammable: mech.angry.charge.slamBreaksUnrammable }
-        : undefined,
+        : this.overloaded
+          ? { damage: mech.angry.overload.ramDamage, breaksUnrammable: mech.angry.charge.slamBreaksUnrammable }
+          : undefined,
     );
     if (contact.hit?.broke) {
       this.lastComedyBeat = { what: 'crab', at: this.elapsed };
       audio.play('hit');
+      /**
+       * Breaking something LARGE is one of the document's ways to release the rage, and it is checked here because
+       * this is the only place that knows what was broken.
+       *
+       * "Large" is a health threshold rather than a size: coral and a wall count, a crate and a net do not. Shoving a
+       * crate aside is a side effect of being overloaded; taking a wall down is an achievement, and the document
+       * treats it as one of the four ways out.
+       */
+      if (this.overloaded && obstacleHealth(contact.hit.kind) >= mech.angry.overload.releaseHealth) {
+        endOverload(this.rage);
+        this.runBanner.text = `怒气释放  ·  撞碎了${obstacleName(contact.hit.kind)}`;
+        this.runBanner.alpha = 1;
+      }
     }
     if (contact.hit) {
       /**
@@ -2137,10 +2176,17 @@ class Game {
        * This is what makes the charge a resource rather than a cooldown: rage is the ammunition, so a player who
        * spends it all on one wall has nothing left for the next one, and the price of breaking something is the
        * reason to think about whether it was worth breaking.
+       *
+       * `this.onSlam` and NOT `this.overloaded`: while overloaded the smashing is FREE, and that is deliberate. If
+       * the overload's own ram charged rage per hit, a player could smash their way down to an empty gauge and then
+       * have nothing left to release the countdown with -- the state whose entire point is that you must release it
+       * would have become the state that makes releasing impossible.
        */
-      const cost = contact.hit.broke ? mech.angry.charge.rageCostPerBreak : mech.angry.charge.rageCostPerHit;
-      if (this.bubbleType.look === 'rage') spendRage(this.rage, cost);
-      if (this.onSlam) this.slams++;
+      if (this.onSlam) {
+        const cost = contact.hit.broke ? mech.angry.charge.rageCostPerBreak : mech.angry.charge.rageCostPerHit;
+        if (this.bubbleType.look === 'rage') spendRage(this.rage, cost);
+        this.slams++;
+      }
     }
     if (contact.blocked) {
       /**
@@ -2331,12 +2377,52 @@ class Game {
       this.burst.seconds += dt;
       if (this.burst.seconds >= mech.angry.burst.waveSeconds) this.burst = null;
     }
+
     /**
-     * "Dangerous behaviour" for the decay delay: being invulnerable means something hit the bubble moments ago, and
-     * being GRIPPED means something is still holding it. Both are the opposite of "left alone for three seconds".
+     * The overload's cost, applied every frame it lasts, and its end.
+     *
+     * The steering penalty rides the same slow the net drag uses, so "the bubble has gone sluggish" is one mechanic
+     * with two causes rather than two mechanics that look alike. Re-applied per frame, so it expires the moment the
+     * overload does.
      */
+    if (this.overloaded) this.player.applySlow(dt * 2, mech.angry.overload.steerFactor);
+
     const gripped = this.hazards.hazards.some((h) => h.gripping);
-    tickRage(this.rage, dt, this.invulnerable > 0 || gripped);
+    const wasOverloaded = isOverloaded(this.rage);
+    const { overloadExpired } = tickRage(this.rage, dt, this.invulnerable > 0 || gripped);
+    if (!wasOverloaded && isOverloaded(this.rage)) {
+      // Announced once, on the frame it starts: a warning that repeats every frame is noise.
+      this.runBanner.text = `失控  ·  ${mech.angry.overload.seconds.toFixed(1)} 秒内把怒气放掉`;
+      this.runBanner.alpha = 1;
+      audio.play('slow');
+    }
+    if (overloadExpired) this.punishOverload();
+  }
+
+  /**
+   * The overload expired: a heavy wound, and the gauge is gone.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * IT CANNOT KILL, AND THAT IS THE DESIGN RATHER THAN A MERCY
+   * ---------------------------------------------------------------------------------------------
+   * The document is explicit: "the bubble does NOT simply end the game, it takes a heavy wound". So the loss is
+   * applied one hit point at a time and STOPS while the bubble still has one left -- the same floor `drainByDigesting`
+   * uses, for the same reason. The punishment is real (the volume and the rage are both gone, and volume is
+   * everything in this game) without a player being executed for missing a button.
+   */
+  private punishOverload(): void {
+    const before = this.player.volume;
+    let hits = 0;
+    for (let i = 0; i < mech.angry.overload.punishHits; i++) {
+      // Stop while one hit point remains: see the note above.
+      if (hitsSurvived(this.player.volume) <= 1) break;
+      this.player.volume = shrinkFromHit(this.player.volume, this.player.shrinkResistance);
+      hits++;
+    }
+    this.stats.overloads++;
+    this.runBanner.text = `怒气失控  ·  体积 ${before.toFixed(2)} → ${this.player.volume.toFixed(2)}`;
+    this.runBanner.alpha = 1;
+    audio.play('pop');
   }
 
   private startRun(): void {
@@ -2418,7 +2504,7 @@ class Game {
     this.phase = 'intro';
     this.phaseTimer = INTRO_SECONDS;
     this.invulnerable = 0;
-    this.stats = { absorbed: 0, hits: 0, maxVolume: this.talentEffects.startVolume, ended: this.stats.ended, newRecord: false };
+    this.stats = { absorbed: 0, hits: 0, maxVolume: this.talentEffects.startVolume, ended: this.stats.ended, overloads: this.stats.overloads, newRecord: false };
     this.rollSeed();
     this.rollTalent();
   }
@@ -2611,7 +2697,16 @@ class Game {
         resource: this.bubbleType.resource
           ? {
               label: this.bubbleType.resource.label,
-              text: `${Math.round(this.rage.rage)}  ${rageStageName(this.rage.rage)}`,
+              /**
+               * The countdown rides on the resource line while it runs.
+               *
+               * "失控 3.2" rather than a separate warning: the number that matters during overload is how long is
+               * left, and it belongs beside the gauge it is counting down. The bar underneath empties or not
+               * independently -- it shows the rage, this shows the clock.
+               */
+              text: this.overloaded
+                ? `${Math.round(this.rage.rage)}  ${rageStageName(this.rage.rage)}  ${this.rage.overloadLeft.toFixed(1)}s`
+                : `${Math.round(this.rage.rage)}  ${rageStageName(this.rage.rage)}`,
               colour: rageColor(this.rage.rage),
               fraction: rageFraction(this.rage.rage),
             }
@@ -2858,7 +2953,16 @@ class Game {
     const burstAlpha = this.phase === 'burst' ? Math.max(0, 1 - burstT * 1.15) : 1;
 
     const radius =
-      viewport.laneWidthMeters * stageRadiusFraction(this.stage.stage, this.player.volume) * (0.25 + 0.75 * eased) * burstScale;
+      viewport.laneWidthMeters * stageRadiusFraction(this.stage.stage, this.player.volume) * (0.25 + 0.75 * eased) * burstScale *
+      /**
+       * The overload's enlargement, applied to the DRAWN radius because it is applied to the hitbox.
+       *
+       * The project's rule is that the bubble is exactly as big as it looks, and the overload is the one state where
+       * the envelope itself grows -- so this is not a decoration beside the collision number, it IS the collision
+       * number, read from the same config key. `bubbleSwell` below is the other kind of change: a breathing that is
+       * deliberately drawing-only.
+       */
+      (this.overloaded ? 1 + mech.angry.overload.radiusBonus : 1);
 
     /**
      * The volatile bubble's two drawing-only cues: a tremor and a breath.
@@ -3434,6 +3538,9 @@ class Game {
       waveAlive: boolean;
       lastBurstKills: number;
       lastBurstPushes: number;
+      /** Overload: full gauge, on the clock. `left` is what the HUD counts down. */
+      overloaded: boolean;
+      overloadLeft: number;
     };
     phase: string;
     volume: number;
@@ -3688,6 +3795,9 @@ class Game {
         waveAlive: this.burst !== null,
         lastBurstKills: this.burst?.kills ?? 0,
         lastBurstPushes: this.burst?.pushes ?? 0,
+        /** Overload: full gauge, on the clock. `left` is what the HUD counts down. */
+        overloaded: this.overloaded,
+        overloadLeft: +this.rage.overloadLeft.toFixed(2),
       },
       phase: this.phase,
       volume: this.player.volume,
