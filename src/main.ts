@@ -577,21 +577,42 @@ class Game {
       this.bannerSeen = true;
     }
 
+    /**
+     * The eel: the controls stop obeying for a moment.
+     *
+     * `applyMisfire` EXTENDS rather than replaces, so two eels cannot cut each other short. Nothing else here needs
+     * to know the eel exists -- the bubble carries the state, and `Player.update` reads it.
+     */
+    if (tick.shocks > 0) {
+      this.player.applyMisfire(tick.shocks);
+      audio.play('slow');
+      this.lastComedyBeat = { what: 'eel', at: this.elapsed };
+    }
+
     if (!this.input.consumeSpit()) return;
     if (this.spitCooldown > 0) return;
 
-    const item = this.stomach.takeOldest();
-    if (!item) {
+    const attempt = this.stomach.attemptSpit();
+    if (attempt.outcome !== 'fired') {
       /**
-       * Nothing to fire: a short cooldown rather than silence.
+       * Nothing to fire, or nothing that WILL fire: a short cooldown either way, but a different message.
        *
-       * A button that does nothing at all when empty reads as broken. The cooldown turns an empty spit into a
-       * discrete refusal, and the pulse on the button makes the refusal visible.
+       * A button that does nothing at all reads as broken, so the empty case gets a pulse. The CLOTTED case has to
+       * be told apart from it, though, or the oil slick's entire verb is invisible: the player presses, nothing
+       * flies, and the only honest reading of that is "the button is broken". Hence the banner and the different
+       * sound -- the refusal is the mechanic.
        */
       this.spitCooldown = mech.spit.emptyCooldownSeconds;
       this.spitFlash = 1;
+      if (attempt.outcome === 'clogged') {
+        this.spitClogs++;
+        this.runBanner.text = '油污卡住了  ·  吐不出来，只能压下去';
+        this.runBanner.alpha = 1;
+        audio.play('hit');
+      }
       return;
     }
+    const item = attempt.item;
 
     /**
      * Spitting hands the mass straight back, exactly as digesting hands it back by the slice.
@@ -897,6 +918,8 @@ class Game {
   private internalHits = 0;
   /** Volume destroyed inside by detonations this run, which buys no rank. Monotonic, for probes. */
   private destroyedMass = 0;
+  /** Spit attempts refused by a clog this run. Monotonic, because a refusal is invisible in any sampled state. */
+  private spitClogs = 0;
   /** Count of comedy beats this run, and the most recent one, for the HUD and probes. */
   private comedyBeats = 0;
   private lastComedyBeat: { what: HazardKind; at: number } | null = null;
@@ -1001,6 +1024,7 @@ class Game {
     this.stomachDrain = 0;
     this.internalHits = 0;
     this.destroyedMass = 0;
+    this.spitClogs = 0;
     this.comedyBeats = 0;
     this.lastComedyBeat = null;
     this.hazards.reset();
@@ -1951,6 +1975,7 @@ class Game {
     this.digestedMass = 0;
     this.internalHits = 0;
     this.destroyedMass = 0;
+    this.spitClogs = 0;
     this.obstacles.reset();
     this.field.reset();
     this.hazards.reset();
@@ -2567,6 +2592,43 @@ class Game {
     }
 
     /**
+     * Shocked by an eel: a jagged ring flickering around the bubble.
+     *
+     * ---------------------------------------------------------------------------------------------
+     * WHY THIS ONE MATTERS MORE THAN THE OTHER CUES
+     * ---------------------------------------------------------------------------------------------
+     * Every other penalty in this game changes what the bubble does; this one changes what the CONTROLS do, and
+     * that is the only failure a player will read as the game being broken. So it has to be unmistakable and
+     * instant: a spiky ring that strobes while the inversion lasts, drawn on the bubble rather than anywhere else,
+     * because the player's hands are already being told the wrong thing and this is the only other source of truth.
+     *
+     * Drawn as a polygon rather than a circle because a smooth ring reads as a status effect and a JAGGED one reads
+     * as electricity -- the same reason the urchin is drawn as needles: silhouette first, colour second.
+     */
+    if (this.player.misfiring) {
+      const colour = mech.hazards.eelShockColor;
+      const strobe = 0.45 + 0.55 * Math.abs(Math.sin(this.elapsed * 34));
+      const points: number[] = [];
+      const steps = 22;
+      for (let i = 0; i < steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        // Alternating in and out, so the ring is a sawtooth rather than a circle with a wobble.
+        const jag = i % 2 === 0 ? 1.34 : 1.2;
+        points.push(worldX + Math.cos(a) * radius * jag, worldY + Math.sin(a) * radius * jag);
+      }
+      points.push(points[0]!, points[1]!);
+      g.poly(points);
+      g.stroke({ color: colour, alpha: strobe * alpha, width: radius * mech.hazards.eelShockWidthRatio });
+      // A few bolts off the rim, so it reads as discharge rather than as a decorative outline.
+      for (let i = 0; i < 3; i++) {
+        const a = this.elapsed * 5 + (i / 3) * Math.PI * 2;
+        g.moveTo(worldX + Math.cos(a) * radius * 1.3, worldY + Math.sin(a) * radius * 1.3)
+          .lineTo(worldX + Math.cos(a + 0.35) * radius * 1.75, worldY + Math.sin(a + 0.35) * radius * 1.75)
+          .stroke({ color: colour, alpha: 0.7 * strobe * alpha, width: radius * mech.hazards.eelShockWidthRatio * 0.6 });
+      }
+    }
+
+    /**
      * The over-full silhouette.
      *
      * The bubble becomes a wobbling blob rather than a circle: a low-frequency deformation with a few lobes, its
@@ -2762,7 +2824,18 @@ class Game {
       internalHits: number;
       /** Volume destroyed inside by a detonation this run, which buys no rank. Monotonic. */
       destroyed: number;
+      /** What the contents multiply the digestion rate by: the worst thing in there. 1 is no effect. */
+      digestScale: number;
+      /** Spit attempts refused by a clog this run. Monotonic, because a refusal leaves no other trace. */
+      clogs: number;
     };
+    /**
+     * Lost control, from an electric eel.
+     *
+     * Reported as its own top-level fact rather than under `stomach`, because what it describes is a property of
+     * the PLAYER: the steering is inverted right now, whatever the reason was.
+     */
+    misfire: { remaining: number; inverted: boolean };
     trashDrain: number;
     maxGripSeconds: number;
     talent: {
@@ -2917,7 +2990,10 @@ class Game {
         partialDamage: +this.stomachDrain.toFixed(4),
         internalHits: this.internalHits,
         destroyed: +this.destroyedMass.toFixed(4),
+        digestScale: this.stomach.digestScale,
+        clogs: this.spitClogs,
       },
+      misfire: { remaining: +this.player.misfireSeconds.toFixed(3), inverted: this.player.misfiring },
       /** The obstacles, so a probe reads the state rather than inferring it from what is on screen. */
       obstacles: {
         active: this.obstacles.count,

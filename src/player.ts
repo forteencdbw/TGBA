@@ -84,6 +84,7 @@ export class Player {
     this.skillRemaining = 0;
     this.skillId = null;
     this.skillAscentBonus = 1;
+    this.misfireSeconds = 0;
   }
 
   /**
@@ -194,6 +195,37 @@ export class Player {
   /** Speed multiplier granted by the active skill. */
   skillAscentBonus = 1;
 
+  /**
+   * Seconds of LOST CONTROL remaining, from an electric eel inside the stomach.
+   *
+   * While this is running the LATERAL axis is inverted: push left and the bubble goes right. Nothing else in the
+   * game touches the controls, and the design asks for exactly one thing that does ("让气泡短暂失控"), so it lives
+   * here as its own state rather than as a modifier buried in the steering product -- which also means the drawing
+   * code can show it without knowing anything about eels.
+   *
+   * Only the LATERAL axis, deliberately. The level is a vertical ascent, so inverting the vertical would read as
+   * the LEVEL being broken rather than as the bubble being shocked, and the whole point of the eel is that the
+   * failure is felt as belonging to the player's own hands. Aim is left alone too: the shock breaks steering, not
+   * the ability to fire, or being shocked with a full stomach would be a death sentence with no play in it.
+   */
+  misfireSeconds = 0;
+
+  /** Whether the controls are currently inverted. */
+  get misfiring(): boolean {
+    return this.misfireSeconds > 0;
+  }
+
+  /**
+   * Take a shock, which EXTENDS rather than replaces one already running.
+   *
+   * `max` and not an assignment: two eels shocking a quarter of a second apart must not be able to cut each other
+   * short, or eating two would be gentler than eating one.
+   */
+  applyMisfire(seconds: number): void {
+    if (seconds <= 0) return;
+    this.misfireSeconds = Math.max(this.misfireSeconds, seconds);
+  }
+
   /** Apply a slow, taking the stronger of the two if one is already running. */
   applySlow(seconds: number, factor: number): void {
     if (seconds <= 0) return;
@@ -235,6 +267,7 @@ export class Player {
         this.skillAscentBonus = 1;
       }
     }
+    if (this.misfireSeconds > 0) this.misfireSeconds = Math.max(0, this.misfireSeconds - dt);
 
     /**
      * One multiplier for everything that follows, folding in the growth stage and the suction field.
@@ -259,12 +292,18 @@ export class Player {
      *
      * `axisX === 0` coasts to a stop rather than stopping dead, which is a released key and a centred wheel
      * alike -- and coasting is what makes a small correction possible instead of a lurch.
+     *
+     * `axisX` is flipped on the way IN when an eel has shocked the bubble, rather than the input itself being
+     * rewritten: the raw axis is what the wheel's knob is drawn from and what the spit aims with, so inverting it
+     * at the source would also make the controls LOOK wrong and the shots fly backwards. What breaks is the
+     * bubble's obedience, and that is what this line is.
      */
-    if (input.axisX === 0) {
+    const axisX = this.misfireSeconds > 0 ? -input.axisX : input.axisX;
+    if (axisX === 0) {
       this.vx -= this.vx * Math.min(lateral.damping * dt, 1);
       if (Math.abs(this.vx) < lateral.stopSpeed) this.vx = 0;
     } else {
-      this.vx = input.axisX * lateral.keyboardSpeed * steer;
+      this.vx = axisX * lateral.keyboardSpeed * steer;
     }
     this.x += this.vx * dt;
 

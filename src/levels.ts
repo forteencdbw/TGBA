@@ -51,12 +51,26 @@ export interface LevelEntry {
    * Collectables are `bubble`, hazards name their kind, `skill` is a pickup, and `crate` / `coral` are the
    * destructible and the solid obstacles.
    *
-   * `urchin` and `bombfish` are the negative food: ordinary hazards from the outside, and something that keeps
-   * acting once it is in the player's stomach. They are placed SPARINGLY, and that is a design decision rather
-   * than a difficulty one -- a risk decision is only a decision while it is occasional. A screen full of bomb fish
-   * would not be a choice between eating and avoiding, it would be a corridor of unavoidable damage.
+   * `urchin`, `bombfish`, `eel`, `rot` and `oil` are the negative food: ordinary hazards from the outside, and
+   * something that keeps acting once it is in the player's stomach. They are placed SPARINGLY, and that is a design
+   * decision rather than a difficulty one -- a risk decision is only a decision while it is occasional. A screen
+   * full of bomb fish would not be a choice between eating and avoiding, it would be a corridor of unavoidable
+   * damage.
    */
-  kind: 'bubble' | 'fish' | 'jelly' | 'trash' | 'crab' | 'urchin' | 'bombfish' | 'skill' | 'crate' | 'coral';
+  kind:
+    | 'bubble'
+    | 'fish'
+    | 'jelly'
+    | 'trash'
+    | 'crab'
+    | 'urchin'
+    | 'bombfish'
+    | 'eel'
+    | 'rot'
+    | 'oil'
+    | 'skill'
+    | 'crate'
+    | 'coral';
   /**
    * Size for a collectable, as a multiple of the player's radius at full size. Ignored otherwise.
    *
@@ -278,6 +292,36 @@ export const LEVELS: readonly Level[] = [
       place.one(920, 'skill', 0.25),
 
       /**
+       * --- 720m: the first EEL, which costs the player their hands rather than their health. ---
+       *
+       * Placed right after the first trash bag and before the first urchin, so the three "this one keeps acting
+       * after you swallow it" creatures arrive in an order of escalating strangeness: a grenade with a fuse, then
+       * controls that stop obeying, then something that just keeps bleeding you.
+       *
+       * It is also the cheapest of the three to discover by accident -- its whole cost is a moment of confusion --
+       * so it is safe to meet early, when a player has the least health to spare.
+       */
+      place.one(720, 'eel', 0.52),
+
+      /**
+       * --- 950m: the first ROT. ---
+       *
+       * The only negative food whose cost is paid LATER and somewhere else: it does not hurt you, it makes the
+       * answer you were going to use slower. That needs the player to already know that digesting is an answer, so
+       * it comes after the first coral squeeze and after the bubble tide has taught them what a full stomach is.
+       */
+      place.one(950, 'rot', 0.78),
+
+      /**
+       * --- 1080m: the first OIL. ---
+       *
+       * Deliberately placed where the player has just been taught that spitting is the way out of trouble (the
+       * coral at 1030 is a squeeze, and by now the over-eating fuse has probably been seen at least once). Oil is
+       * the creature that makes that answer fail, so it only means anything once the answer is familiar.
+       */
+      place.one(1080, 'oil', 0.15),
+
+      /**
        * --- 830m and 1030m: the first CORAL, which is the opposite lesson. ---
        *
        * A crate rewards being big; coral rewards being SMALL. These entrances are tight enough to matter and wide
@@ -301,6 +345,20 @@ export const LEVELS: readonly Level[] = [
       place.one(1200, 'crab', 0.5),
       // A short column of urchins, as a spiky wall to go around -- or to run through and regret.
       ...place.column(1250, 45, 3, 'urchin', 0.62),
+      /**
+       * A pair of eels in the burst, where losing the controls costs the most.
+       *
+       * This is the one placement of a negative food that is meant to be genuinely dangerous rather than inviting:
+       * the endgame swarm is where the player needs their hands, so an eel here is a real "do not" -- and the sine
+       * weave it swims in means it can be read and avoided rather than stumbled into.
+       */
+      place.one(1290, 'eel', 0.35),
+      place.one(1330, 'eel', 0.66),
+      // A slick right before the final squeeze, and one rot: the two ways of making the squeeze harder that are not
+      // about being big. Oil is especially pointed here -- the answer to a tight gap is to spit, and oil is the
+      // thing that refuses to be spat.
+      place.one(1370, 'oil', 0.5),
+      place.one(1345, 'rot', 0.2),
 
       // --- 1260-1500m: the burst, then a clear run to the surface. ---
       ...place.line(1280, 'fish', 7, 0.08, 0.92),

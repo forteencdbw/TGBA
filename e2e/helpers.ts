@@ -152,7 +152,13 @@ export interface Diagnostics {
     partialDamage: number;
     internalHits: number;
     destroyed: number;
+    /** What the contents multiply the digestion rate by: the worst thing in there. 1 is no effect. */
+    digestScale: number;
+    /** Spit attempts refused by a clog this run. Monotonic, because a refusal leaves no other trace. */
+    clogs: number;
   };
+  /** Lost control, from an electric eel: a property of the PLAYER, whatever caused it. */
+  misfire: { remaining: number; inverted: boolean };
   /** Which skill is in the slot and how many uses are left, or null. */
   skill: { id: string; uses: number } | null;
   /** How many skills have been used this run. */

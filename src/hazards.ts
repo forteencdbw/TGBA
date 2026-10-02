@@ -9,8 +9,15 @@
  *   jelly     SLOWS              -> a movement penalty with a timer
  *   trash     GRABS and drags    -> an ongoing drain you have to struggle out of
  *   crab      LAUNCHES           -> fires you upward along a telegraphed arc
- *   urchin    KEEPS HURTING      -> edible, and then bleeds you from inside until it is gone
- *   bombfish  COUNTS DOWN        -> edible, and then it is a grenade with a lit fuse in your stomach
+ *
+ * And five that are edible but keep acting once they are inside, each with a different way of making the player
+ * regret it -- five creatures that all just drained health would be one mechanic drawn five times:
+ *
+ *   urchin    KEEPS HURTING      -> bleeds you for as long as you carry it
+ *   bombfish  COUNTS DOWN        -> goes off inside, unless you spit it out as a grenade
+ *   eel       MISBEHAVES         -> your steering stops obeying you, for a moment at a time
+ *   rot       SLOWS YOUR EXITS   -> digestion crawls while it is in there
+ *   oil       CLOGS THE EXIT     -> it will not come back out, and it is holding a slot
  *
  * Everything is procedurally drawn from geometry, so colours carry the information instead of any
  * tutorial text: purple is a jellyfish, brown is a trash bag, and so on.
@@ -24,7 +31,7 @@ import { Graphics } from 'pixi.js';
 import { mech, tuning } from './config';
 import { hazardMass } from './consumption';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
-export type HazardKind = 'fish' | 'jelly' | 'trash' | 'crab' | 'urchin' | 'bombfish';
+export type HazardKind = 'fish' | 'jelly' | 'trash' | 'crab' | 'urchin' | 'bombfish' | 'eel' | 'rot' | 'oil';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
@@ -224,10 +231,38 @@ export interface StomachEffect {
   fuseSeconds: number;
   /** Hit points its detonation costs. */
   detonationHitPoints: number;
+  /** Seconds between shocks, and how long each lasts. A duration of 0 means it never does. */
+  shockPeriodSeconds: number;
+  shockSeconds: number;
+  /**
+   * What it multiplies the DIGESTION RATE by while it is inside. 1 is no effect; below 1 is slower.
+   *
+   * A multiplier rather than "seconds added", because what it does is make the answer that works for everything
+   * else take longer -- and it therefore multiplies with the compress control, which is where it bites: the
+   * over-eating fuse does not wait for a slower stomach.
+   */
+  digestScale: number;
+  /**
+   * The chance a spit attempt gets it back out, 0..1.
+   *
+   * The only exit in the game that can refuse, which is what "占据容量且难以排出" means in a game whose other four
+   * hundred rules are deterministic. At 0 it is a permanent clog and digestion is the only way out; at 1 it is an
+   * ordinary item. Note this is a PER-ATTEMPT roll, so a low value is not "it never comes out" -- it is "you will
+   * spend presses, and the fuse is still burning".
+   */
+  spitChance: number;
 }
 
 /** Swallowing most things costs nothing after the fact. */
-export const NO_STOMACH_EFFECT: StomachEffect = { damagePerSecond: 0, fuseSeconds: 0, detonationHitPoints: 0 };
+export const NO_STOMACH_EFFECT: StomachEffect = {
+  damagePerSecond: 0,
+  fuseSeconds: 0,
+  detonationHitPoints: 0,
+  shockPeriodSeconds: 0,
+  shockSeconds: 0,
+  digestScale: 1,
+  spitChance: 1,
+};
 
 /**
  * What this kind does once it is inside.
@@ -239,13 +274,23 @@ export const NO_STOMACH_EFFECT: StomachEffect = { damagePerSecond: 0, fuseSecond
 export function stomachEffect(kind: HazardKind): StomachEffect {
   switch (kind) {
     case 'urchin':
-      return { damagePerSecond: mech.hazards.urchinDrainPerSecond, fuseSeconds: 0, detonationHitPoints: 0 };
+      return { ...NO_STOMACH_EFFECT, damagePerSecond: mech.hazards.urchinDrainPerSecond };
     case 'bombfish':
       return {
-        damagePerSecond: 0,
+        ...NO_STOMACH_EFFECT,
         fuseSeconds: mech.hazards.bombfishFuseSeconds,
         detonationHitPoints: mech.hazards.bombfishDetonationHitPoints,
       };
+    case 'eel':
+      return {
+        ...NO_STOMACH_EFFECT,
+        shockPeriodSeconds: mech.hazards.eelShockPeriodSeconds,
+        shockSeconds: mech.hazards.eelShockSeconds,
+      };
+    case 'rot':
+      return { ...NO_STOMACH_EFFECT, digestScale: mech.hazards.rotDigestScale };
+    case 'oil':
+      return { ...NO_STOMACH_EFFECT, spitChance: mech.hazards.oilSpitChance };
     default:
       return NO_STOMACH_EFFECT;
   }
@@ -285,6 +330,18 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   urchin: { radius: 0.052, colour: 0x3d4a7a, spin: 0.2 },
   /** Deep red, well away from the crab's orange, with a stubby body: round and heavy rather than sleek. */
   bombfish: { radius: 0.048, colour: 0xd94a3f, spin: 0 },
+  /**
+   * Electric chartreuse, and nothing else in the game is that hue.
+   *
+   * The eel is the only creature whose effect is about the CONTROLS rather than about the bubble, so it gets the
+   * one colour that appears nowhere else -- a player who has been shocked once will read that colour again from
+   * across the screen, which is what makes it avoidable rather than random.
+   */
+  eel: { radius: 0.058, colour: 0xc8f24a, spin: 0.3 },
+  /** Olive: unmistakably brown-ish rather than the trash bag's tan, and duller than anything else alive. */
+  rot: { radius: 0.056, colour: 0x7d8a3c, spin: 0.5 },
+  /** Dark slate teal, drawn as a flat slick rather than a body: it is a substance, not a creature. */
+  oil: { radius: 0.066, colour: 0x2f4f4a, spin: 0.1 },
 };
 
 export interface HazardContext {
@@ -550,16 +607,22 @@ export class HazardField {
           break;
         }
         /**
-         * The two negative foods, below their tier.
+         * The negative foods, below their tier.
          *
          * Plain contact damage, exactly like a fish, and that is deliberate rather than lazy: the reversal is a
          * two-sided judgement, so a creature that is food above its tier has to be a threat below it or "when can I
          * eat this" stops being the same question for every kind. Their SIDE EFFECT is what is new, and it only
          * happens once they are inside -- which is also the only place it could be interesting, because a hazard
-         * that hurts you from outside is a fifth thing to dodge rather than a decision.
+         * that hurts you from outside is a sixth thing to dodge rather than a decision.
+         *
+         * Note the eel does NOT shock on contact, only from inside. Its listed side effect is an internal one, and
+         * giving it a second one at contact would make it the only creature with two verbs.
          */
         case 'urchin':
-        case 'bombfish': {
+        case 'bombfish':
+        case 'eel':
+        case 'rot':
+        case 'oil': {
           if (ctx.invulnerable) break;
           effects.push({ kind: h.kind, damage: 1, broke: false });
           // Bounce it away so one cannot immediately re-hit, as a fish does.
@@ -736,7 +799,7 @@ export class HazardField {
   }
 
   private spawn(ctx: HazardContext): Hazard {
-    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish'];
+    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
@@ -866,6 +929,35 @@ export class HazardField {
          */
         h.y -= base * 0.34 * dt;
         h.x += Math.sin(h.phase * 1.1 + h.seed) * 5 * dt;
+        break;
+      }
+      case 'eel': {
+        /**
+         * Swims in a wide S, and that is a fairness requirement rather than decoration.
+         *
+         * The eel is the one creature whose cost is paid by the PLAYER'S HANDS, so it has to be readable before it is
+         * touched: a sine weave of this amplitude makes its heading obvious a second ahead, which is what turns
+         * "my controls stopped working" from an ambush into something the player walked into.
+         */
+        h.y -= base * 0.3 * dt;
+        h.x += Math.sin(h.phase * 2.6 + h.seed) * ctx.laneWidth * 0.055 * dt;
+        break;
+      }
+      case 'rot': {
+        // Barely moves and tumbles slowly: it is debris that has stopped being anything in particular.
+        h.y -= base * 0.2 * dt;
+        h.x += Math.sin(h.phase * 0.6 + h.seed) * 3 * dt;
+        break;
+      }
+      case 'oil': {
+        /**
+         * Floats almost still, which is what makes it a decision rather than an obstacle.
+         *
+         * A slick that drifted would be something to avoid; a slick that hangs there is something the player has to
+         * choose to touch. It also means a column of it can be left behind rather than chased.
+         */
+        h.y -= base * 0.1 * dt;
+        h.x += Math.sin(h.phase * 0.4 + h.seed) * 2 * dt;
         break;
       }
     }
@@ -1045,6 +1137,97 @@ export function paintHazards(
           .stroke({ color: 0x8a7a5c, alpha: 0.9, width: Math.max(1, r * 0.16) });
         g.circle(x + r * 0.25, y + r * 1.85, r * 0.16).fill({ color: 0xe8d9b0, alpha: 0.9 });
         g.circle(x + r * 0.75, y + r * 0.1, r * 0.18).fill({ color: 0x08131f, alpha: 0.9 });
+        break;
+      }
+      case 'eel': {
+        /**
+         * A long thin body in an S, with a spark at the head.
+         *
+         * The only creature drawn as a LINE rather than a blob, which is the point: at a glance the silhouette has
+         * to say "this is the one that does something to my hands", and a shape nothing else in the water shares is
+         * how that gets said without a legend. The curve is sampled from the same phase its motion uses, so the
+         * drawing and the weaving cannot disagree about which way it is going.
+         *
+         * A FULL SINE along the body, and only about three radii long. The first version bent the tail linearly and
+         * ran to four and a half radii, which came out as a 90-metre wedge -- it read as an arrow, not a fish, and
+         * it was drawn across a quarter of the lane. The head is taken from the same curve rather than placed, so
+         * the eye cannot end up floating beside its own body.
+         */
+        const spark = 0.4 + 0.6 * Math.abs(Math.sin(h.phase * 6));
+        const half = r * 1.6;
+        const bendAt = (t: number): number => Math.sin(h.phase * 2.2 + h.seed + t * Math.PI * 2.2) * r * 0.55;
+        const points: number[] = [];
+        const segments = 10;
+        for (let i = 0; i <= segments; i++) {
+          const t = i / segments;
+          points.push(x - half + t * half * 2, y + bendAt(t));
+        }
+        g.poly(points);
+        g.stroke({ color: KIND_TUNING.eel.colour, alpha: 0.9, width: Math.max(1, r * 0.32) });
+        // The head, and the spark that says "electric".
+        const headX = x + half;
+        const headY = y + bendAt(1);
+        g.circle(headX, headY, r * 0.42).fill({ color: KIND_TUNING.eel.colour, alpha: 0.95 });
+        for (let i = 0; i < 3; i++) {
+          const a = h.phase * 3 + (i / 3) * Math.PI * 2;
+          g.moveTo(headX, headY)
+            .lineTo(headX + Math.cos(a) * r * 0.85, headY + Math.sin(a) * r * 0.85)
+            .stroke({ color: KIND_TUNING.eel.colour, alpha: 0.5 * spark, width: Math.max(1, r * 0.1) });
+        }
+        break;
+      }
+      case 'rot': {
+        /**
+         * A lumpy mass with bubbles coming off it.
+         *
+         * Drawn as a polygon whose radius wobbles rather than as a circle: it is decaying, so a clean edge would be
+         * the wrong shape. The bubbles are the readable part -- they say "this is rotting" without a word, and they
+         * are the only animated exhaust in the game.
+         */
+        const points: number[] = [];
+        const lobes = 11;
+        for (let i = 0; i < lobes; i++) {
+          const a = (i / lobes) * Math.PI * 2;
+          const wob = 1 + Math.sin(a * 3 + h.phase * 0.7 + h.seed) * 0.16;
+          points.push(x + Math.cos(a) * r * wob, y + Math.sin(a) * r * wob);
+        }
+        points.push(points[0]!, points[1]!);
+        g.poly(points);
+        g.fill({ color: KIND_TUNING.rot.colour, alpha: 0.72 });
+        for (let i = 0; i < 3; i++) {
+          const p = (h.phase * 0.5 + i * 0.33) % 1;
+          g.circle(x + Math.sin(i * 2.3 + h.seed) * r * 0.7, y + r * 0.6 + p * r * 2.4, r * (0.1 + p * 0.16)).stroke({
+            color: KIND_TUNING.rot.colour,
+            alpha: 0.5 * (1 - p),
+            width: Math.max(1, r * 0.1),
+          });
+        }
+        break;
+      }
+      case 'oil': {
+        /**
+         * A flat slick, wider than it is tall, with a sheen across it.
+         *
+         * Wider than tall because that is what makes it read as a SUBSTANCE lying on the water rather than as a
+         * creature swimming in it -- and the sheen line is what says "oil" rather than "rock". It is also the only
+         * hazard that is easier to go around than through, so its silhouette wants to be wide.
+         */
+        const points: number[] = [];
+        const lobes = 13;
+        for (let i = 0; i < lobes; i++) {
+          const a = (i / lobes) * Math.PI * 2;
+          const wob = 1 + Math.sin(a * 4 + h.phase * 0.35 + h.seed) * 0.14;
+          points.push(x + Math.cos(a) * r * 1.15 * wob, y + Math.sin(a) * r * 0.72 * wob);
+        }
+        points.push(points[0]!, points[1]!);
+        g.poly(points);
+        g.fill({ color: KIND_TUNING.oil.colour, alpha: 0.85 });
+        g.poly(points);
+        g.stroke({ color: KIND_TUNING.oil.colour, alpha: 1, width: Math.max(1, r * 0.16) });
+        // The sheen: one arc across the top, in the only place light would catch a film of oil.
+        g.moveTo(x - r * 0.8, y + r * 0.25)
+          .quadraticCurveTo(x, y + r * 0.62, x + r * 0.8, y + r * 0.25)
+          .stroke({ color: 0xbfe8dd, alpha: 0.5, width: Math.max(1, r * 0.12) });
         break;
       }
     }

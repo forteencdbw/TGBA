@@ -73,7 +73,27 @@ export interface StomachItem {
    * are two separate countdowns, and a single stomach-wide timer could not say when the first one goes off.
    */
   fuse: number;
+  /**
+   * Seconds until this item shocks the player again, or 0 for something that never does.
+   *
+   * Counts DOWN from the period and resets when it fires, so the first shock arrives one period after swallowing
+   * rather than instantly -- which is what makes the eel something the player can feel coming and act on.
+   */
+  shockTimer: number;
 }
+
+/**
+ * What came of trying to spit.
+ *
+ * A union rather than `StomachItem | null`, because "there was nothing in there" and "there is something in there
+ * and it will not come out" are completely different things to tell the player, and a nullable return cannot say
+ * which one happened. The second is the oil slick's entire verb, and collapsing it into a null would make it
+ * indistinguishable from an empty stomach -- the one case where a player would conclude the button is broken.
+ */
+export type SpitAttempt =
+  | { outcome: 'fired'; item: StomachItem }
+  | { outcome: 'empty' }
+  | { outcome: 'clogged' };
 
 /**
  * What one tick of the stomach did.
@@ -116,6 +136,14 @@ export interface StomachTick {
   completed: StomachItem[] | null;
   /** Items that went off inside this frame, so the caller can make it loud. */
   detonations: StomachItem[] | null;
+  /**
+   * Seconds of LOST CONTROL the contents asked for this frame.
+   *
+   * The eel's whole verb, and the only thing in this game that takes the controls away. Reported as a duration
+   * rather than a flag so the caller can extend an effect that is already running rather than restarting it, and so
+   * two eels shocking at once cannot cut each other short.
+   */
+  shocks: number;
 }
 
 /** A projectile in flight. */
@@ -238,9 +266,22 @@ export class Stomach {
     return Math.max(0, this.items.length - (oldest ? oldest.digest : 0));
   }
 
-  /** Everything inside, with its mass, progress and fuse, for probes and for the rim markers. */
-  get detail(): readonly { kind: HazardKind; mass: number; digest: number; fuse: number }[] {
-    return this.items.map((i) => ({ kind: i.kind, mass: i.mass, digest: i.digest, fuse: i.fuse }));
+  /** Everything inside, with its mass, progress, fuse and shock timer, for probes and for the rim markers. */
+  get detail(): readonly { kind: HazardKind; mass: number; digest: number; fuse: number; shockTimer: number }[] {
+    return this.items.map((i) => ({ kind: i.kind, mass: i.mass, digest: i.digest, fuse: i.fuse, shockTimer: i.shockTimer }));
+  }
+
+  /**
+   * What the contents multiply the digestion rate by: the WORST item in there, not the product of all of them.
+   *
+   * The minimum rather than a product, because a product compounds: two rotting things at 0.35 would give 0.12,
+   * which is not "twice as bad" in any sense a player could predict, and three would be indistinguishable from a
+   * stopped stomach. "The worst thing in your stomach sets the pace" is a sentence someone can act on.
+   */
+  get digestScale(): number {
+    let scale = 1;
+    for (const item of this.items) scale = Math.min(scale, item.effect.digestScale);
+    return scale;
   }
 
   /**
@@ -278,18 +319,46 @@ export class Stomach {
      * drifting down the screen for twenty seconds arrives with its full time, exactly as a crab's launch fuse
      * arms on proximity rather than on spawn. Starting it earlier would make the countdown depend on how long the
      * player took to reach the creature, which is not something they can see or plan around.
+     *
+     * The eel's shock timer starts at a FULL period for the same reason, so the first shock is one period after the
+     * bite rather than on it: a side effect that fires on the frame you swallow is not something you can react to.
      */
-    this.items.push({ kind, age: 0, mass: Math.max(0, mass), digest: 0, effect, fuse: effect.fuseSeconds });
+    this.items.push({
+      kind,
+      age: 0,
+      mass: Math.max(0, mass),
+      digest: 0,
+      effect,
+      fuse: effect.fuseSeconds,
+      shockTimer: effect.shockPeriodSeconds,
+    });
     if (this.full && this.fuseTotal > 0) this.fuse = this.fuseTotal;
     return true;
   }
 
-  /** Remove and return the OLDEST item, or null when empty. */
-  takeOldest(): StomachItem | null {
-    const item = this.items.shift() ?? null;
+  /**
+   * Try to spit the oldest thing out.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THIS CAN REFUSE
+   * ---------------------------------------------------------------------------------------------
+   * Every other exit in this game is deterministic, and this one is not, on purpose: "占据容量且难以排出" cannot be
+   * said by a mechanic that always works. The roll is PER ATTEMPT, so a low `spitChance` is not "it never comes
+   * out" -- it is "you will spend presses, and the over-eating fuse does not care".
+   *
+   * Only the OLDEST item is ever attempted, which is what makes a clog a real problem: something stuck at the
+   * front of the queue blocks everything behind it, so the answer is not "spit the others instead" but "get this
+   * one loose, or digest it away".
+   */
+  attemptSpit(): SpitAttempt {
+    const item = this.items[0];
+    if (!item) return { outcome: 'empty' };
+    if (Math.random() >= Math.max(0, Math.min(1, item.effect.spitChance))) return { outcome: 'clogged' };
+
+    this.items.shift();
     // Making room puts the fuse out. See the class comment: the escape has to be real.
     this.releaseFuseIfThereIsRoom();
-    return item;
+    return { outcome: 'fired', item };
   }
 
   /**
@@ -311,6 +380,7 @@ export class Stomach {
     let drained = 0;
     let destroyed = 0;
     let damage = 0;
+    let shocks = 0;
     let completed: StomachItem[] | null = null;
     let detonations: StomachItem[] | null = null;
 
@@ -324,6 +394,22 @@ export class Stomach {
     for (let i = this.items.length - 1; i >= 0; i--) {
       const item = this.items[i]!;
       damage += item.effect.damagePerSecond * dt;
+
+      /**
+       * The eel: a shock every period, counted per item.
+       *
+       * Reset to the period rather than to zero, so the shocks keep coming at a steady rate for as long as the eel
+       * is inside. The reported duration is the shock LENGTH, and the caller is expected to extend rather than
+       * replace an effect that is already running -- two eels must not be able to shorten each other.
+       */
+      if (item.effect.shockSeconds > 0 && item.effect.shockPeriodSeconds > 0) {
+        item.shockTimer -= dt;
+        if (item.shockTimer <= 0) {
+          item.shockTimer += item.effect.shockPeriodSeconds;
+          shocks = Math.max(shocks, item.effect.shockSeconds);
+        }
+      }
+
       if (item.effect.fuseSeconds <= 0) continue;
       item.fuse -= dt;
       if (item.fuse > 0) continue;
@@ -353,7 +439,7 @@ export class Stomach {
      * Reading `items[0]` fresh each pass is what makes this correct after a detonation removed the very item that
      * was being digested: the budget simply continues on whatever is now at the front.
      */
-    let budget = Math.max(0, digestPerSecond) * dt;
+    let budget = Math.max(0, digestPerSecond) * this.digestScale * dt;
     let guard = 0;
     while (budget > 1e-9 && this.items.length > 0 && guard++ < 64) {
       const item = this.items[0]!;
@@ -373,9 +459,9 @@ export class Stomach {
     // still lights the fuse, so the rule cannot be bypassed by an edit. Checked AFTER digestion, so an item that
     // finished this frame really does buy the player the whole window back instead of one frame of it.
     if (this.full && this.fuse === null && this.fuseTotal > 0) this.fuse = this.fuseTotal;
-    if (this.fuse === null) return { burst: false, drained, destroyed, damage, completed, detonations };
+    if (this.fuse === null) return { burst: false, drained, destroyed, damage, shocks, completed, detonations };
     this.fuse -= dt;
-    return { burst: this.fuse <= 0, drained, destroyed, damage, completed, detonations };
+    return { burst: this.fuse <= 0, drained, destroyed, damage, shocks, completed, detonations };
   }
 
   /**
@@ -435,6 +521,12 @@ export function spitImpact(kind: HazardKind): number {
     urchin: 1.2,
     // Heavy and blunt, on top of the blast it carries when it lands.
     bombfish: 1.3,
+    // Still live, and it does not care that it is no longer in the water.
+    eel: 1.1,
+    // Wet and soft: the one round in the game that is worse than nothing much.
+    rot: 0.5,
+    // Heavy and smothering: a slick of oil is a good thing to throw at something.
+    oil: 1.35,
   };
   return perKind[kind];
 }

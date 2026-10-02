@@ -52,7 +52,7 @@ test.describe('negative food', () => {
             hazardsRef: { hazards: unknown[] };
             debugSetSteadyCruise: () => void;
             debugSwallowForTest: (kind: string) => number;
-            stomachRef: { takeOldest: () => unknown };
+            stomachRef: { attemptSpit: () => { outcome: string } };
             diagnostics: { stomach: { internalHits: number } };
           };
         };
@@ -106,7 +106,9 @@ test.describe('negative food', () => {
       // Keep going, then take it out and confirm the bleeding stops.
       await settle(120);
       const bleeding = { volume: g.player.volume, hits: g.game.diagnostics.stomach.internalHits };
-      g.game.stomachRef.takeOldest();
+      // Taken out through the real spit path, so "it stops when it is gone" is a claim about the game rather than
+      // about a test hook that removes things.
+      g.game.stomachRef.attemptSpit();
       const whenEmptied = g.player.volume;
       await settle(120);
 
@@ -398,7 +400,7 @@ test.describe('negative food', () => {
       };
 
       const out: Record<string, { hurt: boolean; eaten: boolean; inside: boolean }> = {};
-      for (const kind of ['urchin', 'bombfish']) {
+      for (const kind of ['urchin', 'bombfish', 'eel', 'rot', 'oil']) {
         const tier = g.mechRef.consumption.edibleAtTier[kind]!;
         /**
          * Just below the tier and comfortably at it.
@@ -414,7 +416,7 @@ test.describe('negative food', () => {
       return out;
     });
 
-    for (const kind of ['urchin', 'bombfish']) {
+    for (const kind of ['urchin', 'bombfish', 'eel', 'rot', 'oil']) {
       const below = r[`${kind}@below`]!;
       const at = r[`${kind}@at`]!;
       // Below the tier: the ordinary hazard path, exactly like a fish.
@@ -424,5 +426,295 @@ test.describe('negative food', () => {
       expect(at.eaten, `${kind} at its tier must be eaten rather than hurting`).toBe(true);
       expect(at.inside, `and it must end up in the stomach, where its side effect can act`).toBe(true);
     }
+  });
+
+  test('an eel takes the controls away, and gives them back', async ({ page }) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+
+    const r = await page.evaluate(async () => {
+      const raf = (): Promise<void> => new Promise<void>((res) => requestAnimationFrame(() => res()));
+      const g = (window as unknown as {
+        __GB: {
+          mechRef: { hazards: Record<string, number>; digest: Record<string, number> };
+          player: { x: number; vx: number; volume: number };
+          game: {
+            fieldRef: { bubbles: unknown[] };
+            hazardsRef: { hazards: unknown[] };
+            debugSwallowForTest: (kind: string) => number;
+            diagnostics: { misfire: { remaining: number; inverted: boolean } };
+          };
+        };
+      }).__GB;
+      g.game.fieldRef.bubbles.length = 0;
+      g.game.hazardsRef.hazards.length = 0;
+      g.mechRef.digest.passivePerSecond = 0;
+      /**
+       * A shock that is both frequent and long enough to catch in a sampled loop.
+       *
+       * Set before swallowing, because the item captures the effect at that moment. Half the time inverted, half
+       * not, so BOTH states are observable inside one window -- a test that only ever saw the inverted state could
+       * not tell "the controls break" from "the controls are broken forever".
+       */
+      g.mechRef.hazards.eelShockPeriodSeconds = 1.0;
+      g.mechRef.hazards.eelShockSeconds = 0.5;
+      g.player.volume = 8;
+      g.game.debugSwallowForTest('eel');
+
+      /**
+       * Hold RIGHT for the whole run, through the real keyboard path.
+       *
+       * Dispatched as a real key event because `Input.update` recomputes the axes from the held-key set every step,
+       * so writing `axisX` directly would be overwritten and would not be testing the input path at all.
+       */
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }));
+      await raf();
+
+      let sawInverted = false;
+      let sawObeying = false;
+      let invertedSign = 0;
+      let obeyingSign = 0;
+      let shockFired = false;
+      for (let i = 0; i < 60; i++) {
+        await raf();
+        const d = g.game.diagnostics.misfire;
+        if (d.inverted) {
+          shockFired = true;
+          sawInverted = true;
+          invertedSign = Math.sign(g.player.vx);
+        } else if (shockFired) {
+          // Only counted AFTER the first shock, so "obeying" is the controls coming back rather than the calm
+          // before anything happened.
+          sawObeying = true;
+          obeyingSign = Math.sign(g.player.vx);
+        }
+      }
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowRight' }));
+      for (let i = 0; i < 90; i++) await raf();
+      const after = g.game.diagnostics.misfire;
+
+      return { sawInverted, sawObeying, invertedSign, obeyingSign, after };
+    });
+
+    console.log(
+      `eel: inverted ${r.sawInverted} (vx sign ${r.invertedSign}), obeyed again ${r.sawObeying} (sign ${r.obeyingSign}), ` +
+        `remaining after ${r.after.remaining.toFixed(2)}s`,
+    );
+
+    expect(r.sawInverted, 'the eel must actually take the controls away').toBe(true);
+    /**
+     * Held RIGHT, so obeying means a POSITIVE vx and being shocked means a NEGATIVE one.
+     *
+     * The sign is the whole assertion: "the bubble moved" would pass for a bubble that ignored the input entirely,
+     * and "the axis was inverted" is exactly a reversal of where the same held key sends it.
+     */
+    expect(r.obeyingSign, 'while obeying, holding right must move the bubble right').toBe(1);
+    expect(r.invertedSign, 'and while shocked, the same held key must send it LEFT').toBe(-1);
+    expect(r.sawObeying, 'and the controls must come BACK -- otherwise this is a bug, not a shock').toBe(true);
+    expect(r.after.remaining, 'and the state must expire once the eel is gone').toBe(0);
+  });
+
+  test('rot makes the exits slower: digestion crawls while it is inside, and recovers when it is out', async ({ page }) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+
+    const r = await page.evaluate(async () => {
+      const raf = (): Promise<void> => new Promise<void>((res) => requestAnimationFrame(() => res()));
+      const g = (window as unknown as {
+        __GB: {
+          mechRef: { hazards: Record<string, number>; digest: Record<string, number> };
+          player: { volume: number };
+          game: {
+            fieldRef: { bubbles: unknown[] };
+            hazardsRef: { hazards: unknown[] };
+            debugSwallowForTest: (kind: string) => number;
+            diagnostics: { gameSeconds: number; stomach: { digestScale: number }; digest: { progress: number }; spit: { contents: string[] } };
+            stomachRef: { attemptSpit: () => { outcome: string } };
+          };
+        };
+      }).__GB;
+      g.game.fieldRef.bubbles.length = 0;
+      g.game.hazardsRef.hazards.length = 0;
+      /**
+       * A fast, round digest rate (1.0 per second) so a short window measures a large, unambiguous fraction.
+       *
+       * Passive rather than compressed: the compress control costs suction and double damage, and neither has
+       * anything to do with what is being measured here.
+       */
+      const rate = 1;
+      const rotScale = 0.25;
+      g.mechRef.digest.passivePerSecond = rate;
+      g.mechRef.digest.compressPerSecond = rate;
+      g.mechRef.hazards.rotDigestScale = rotScale;
+      g.player.volume = 8;
+
+      /**
+       * Measured as PROGRESS PER SECOND OF GAME TIME, and measured UNTIL A TARGET rather than for a fixed number
+       * of frames.
+       *
+       * Two traps that the first version of this test fell into. Frame counts are not comparable -- the game steps
+       * a fixed 120Hz internally while the browser under test runs at whatever rate it manages -- so `gameSeconds`
+       * is the clock the mechanic itself uses. And a fixed WINDOW is not comparable either: the same window that
+       * reads 0.4 of an item at the slowed rate finishes the item outright at the full rate, after which the
+       * progress reading is a flatline and the measured rate is zero. Stopping at a target keeps the item alive in
+       * both halves.
+       */
+      const measureTo = async (target: number): Promise<{ rate: number; progress: number; soaked: boolean }> => {
+        const p0 = g.game.diagnostics.digest.progress;
+        const t0 = g.game.diagnostics.gameSeconds;
+        let guard = 0;
+        while (g.game.diagnostics.digest.progress < target && guard++ < 900) await raf();
+        const p1 = g.game.diagnostics.digest.progress;
+        const t1 = g.game.diagnostics.gameSeconds;
+        return { rate: (p1 - p0) / Math.max(1e-6, t1 - t0), progress: p1, soaked: guard >= 900 };
+      };
+
+      // The rot first, so it is the item at the front of the queue and the one being digested.
+      g.game.debugSwallowForTest('rot');
+      g.game.debugSwallowForTest('fish');
+      const scaleWithRot = g.game.diagnostics.stomach.digestScale;
+      const slowed = await measureTo(0.4);
+
+      // Take the rot out through the real spit path; the fish behind it is now what gets digested.
+      const spit = g.game.stomachRef.attemptSpit();
+      const scaleWithout = g.game.diagnostics.stomach.digestScale;
+      const normal = await measureTo(0.4);
+
+      return {
+        rate,
+        rotScale,
+        scaleWithRot,
+        scaleWithout,
+        slowed,
+        normal,
+        spit: spit.outcome,
+        contents: g.game.diagnostics.spit.contents,
+      };
+    });
+
+    console.log(
+      `rot: scale ${r.scaleWithRot} -> ${r.scaleWithout}; digest ${r.slowed.rate.toFixed(3)}/s slowed, ${r.normal.rate.toFixed(3)}/s normal (configured ${r.rate}/s), ` +
+        `progress ${r.slowed.progress.toFixed(2)} / ${r.normal.progress.toFixed(2)}`,
+    );
+
+    expect(r.slowed.soaked, 'the slowed half must reach its target rather than timing out').toBe(false);
+    expect(r.normal.soaked, 'and so must the normal half').toBe(false);
+    expect(r.contents, 'the fish must still be in the stomach for the second measurement').toEqual(['fish']);
+    expect(r.spit, 'the rot must be spittable -- that is the answer to it').toBe('fired');
+    expect(r.scaleWithRot, 'the rot must report the scale it is applying').toBeCloseTo(r.rotScale, 6);
+    expect(r.scaleWithout, 'and stop applying it once it is gone').toBe(1);
+
+    /**
+     * The measurement, not the multiplier: the rate must actually BE the configured rate times the scale.
+     *
+     * The tolerance is loose because this is a sampled average of a real-time simulation, but it is far tighter
+     * than the gap between "1.0" and "0.25" -- so it distinguishes the mechanic from a no-op and from a full stop.
+     */
+    expect(r.slowed.rate, 'digestion must actually crawl while the rot is inside').toBeCloseTo(r.rate * r.rotScale, 1);
+    expect(r.normal.rate, 'and recover once it is out').toBeCloseTo(r.rate, 1);
+  });
+
+  test('oil clogs the exit: the spit refuses, and says so, until it lets go', async ({ page }) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+
+    const r = await page.evaluate(async () => {
+      const raf = (): Promise<void> => new Promise<void>((res) => requestAnimationFrame(() => res()));
+      const g = (window as unknown as {
+        __GB: {
+          mechRef: { hazards: Record<string, number>; digest: Record<string, number> };
+          player: { volume: number };
+          game: {
+            fieldRef: { bubbles: unknown[] };
+            hazardsRef: { hazards: unknown[] };
+            debugSwallowForTest: (kind: string) => number;
+            touchRef: { spitGeometry: { x: number; y: number } };
+            handlePointerDown: (id: number, x: number, y: number) => void;
+            handlePointerUp: (id: number) => void;
+            diagnostics: { spit: { contents: string[]; inFlight: number }; stomach: { clogs: number } };
+            stomachRef: { reset: () => void };
+          };
+        };
+      }).__GB;
+      g.game.fieldRef.bubbles.length = 0;
+      g.game.hazardsRef.hazards.length = 0;
+      g.mechRef.digest.passivePerSecond = 0;
+      g.player.volume = 8;
+
+      /**
+       * One press of the real spit button.
+       *
+       * Reports whether a round was in the air ONE frame after the press, because the projectile is gone within a
+       * second or so: it leaves the level's band long before it slows down, so sampling it after the cooldown wait
+       * below reads zero even for a shot that worked. The wait is only there so the next press is not swallowed by
+       * the refusal cooldown.
+       */
+      const press = async (): Promise<number> => {
+        const b = g.game.touchRef.spitGeometry;
+        g.game.handlePointerDown(96, b.x, b.y);
+        g.game.handlePointerUp(96);
+        await raf();
+        const inFlight = g.game.diagnostics.spit.inFlight;
+        await raf();
+        for (let i = 0; i < 20; i++) await raf();
+        return inFlight;
+      };
+
+      /**
+       * A clogged oil first, then a willing one -- TWO creatures rather than one, and that is not a workaround.
+       *
+       * A creature's properties are captured when it is SWALLOWED (`StomachEffect` is stored on the item, so the
+       * eel's period and the bomb's fuse cannot change under a countdown that is already running). Changing
+       * `oilSpitChance` therefore cannot loosen an oil that is already inside -- which is the honest semantic, and
+       * the reason this test needs a second slick to show that the chance is what governs.
+       */
+      g.mechRef.hazards.oilSpitChance = 0;
+      g.game.debugSwallowForTest('oil');
+      const cloggedInFlight = await press();
+      const clogged = {
+        contents: g.game.diagnostics.spit.contents.slice(),
+        clogs: g.game.diagnostics.stomach.clogs,
+        inFlight: cloggedInFlight,
+      };
+
+      // The same press with a slick that is willing to let go.
+      g.game.stomachRef.reset();
+      g.mechRef.hazards.oilSpitChance = 1;
+      g.game.debugSwallowForTest('oil');
+      const firedInFlight = await press();
+
+      return {
+        clogged,
+        after: {
+          contents: g.game.diagnostics.spit.contents.slice(),
+          clogs: g.game.diagnostics.stomach.clogs,
+          inFlight: firedInFlight,
+        },
+      };
+    });
+
+    console.log(
+      `oil: clogged -> contents ${r.clogged.contents.join(',')} clogs ${r.clogged.clogs} inFlight ${r.clogged.inFlight}; ` +
+        `then contents ${r.after.contents.join(',') || '(empty)'} clogs ${r.after.clogs} inFlight ${r.after.inFlight}`,
+    );
+
+    /**
+     * A refusal is not an empty stomach.
+     *
+     * The item must STAY, nothing may be launched, and the refusal must be counted -- because the count is the only
+     * trace a refusal leaves, and without the distinct cue the player would conclude the button is broken rather
+     * than that the oil is stuck.
+     */
+    expect(r.clogged.contents, 'a clogged item must stay in the stomach').toEqual(['oil']);
+    expect(r.clogged.inFlight, 'and nothing may be launched').toBe(0);
+    expect(r.clogged.clogs, 'and the refusal must be counted').toBe(1);
+
+    // And it is a CHANCE, not a wall: the same press gets it out once it is willing.
+    expect(r.after.contents, 'with the oil willing to let go, it must leave').toEqual([]);
+    expect(r.after.inFlight, 'and be in the air').toBe(1);
+    expect(r.after.clogs, 'with no further refusals').toBe(1);
   });
 });

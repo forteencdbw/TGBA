@@ -328,16 +328,19 @@ test.describe('screen captures @screenshots', () => {
   });
 
   /**
-   * The two negative food creatures, loose and side by side.
+   * The five negative food creatures, loose.
    *
-   * Both have to be recognisable as "not food" from their SILHOUETTE, because that is what the player reads at
-   * speed: an urchin is a ball of needles and a bomb fish is a round body with a fuse, and if either of those needs
-   * colour to be told apart from a fish, it will not be read at all on a phone in daylight.
+   * All of them have to be recognisable from their SILHOUETTE alone, because that is what the player reads at
+   * speed and because they are the creatures the player is meant to make a decision about: an urchin is a ball of
+   * needles, a bomb fish is a round body with a fuse, an eel is a long thin S, rot is a lumpy mass, and oil is a
+   * flat slick. If any of those needs colour to be told apart from a fish, it will not be read at all on a phone in
+   * daylight.
    *
-   * Parked in a fixed lane position, like the stage captures, so the two can be compared against each other and
-   * against whatever the owner changes.
+   * Captured at volume 1, so NONE of them is edible and all five show the "threat" reading. That is the reading
+   * worth having: below its tier each is an ordinary hazard, and the golden "this is food" halo is already shown on
+   * the other creatures by the captures above.
    */
-  test('an urchin and a bomb fish, loose @screenshots', async ({ page }, testInfo) => {
+  test('the negative food creatures, loose @screenshots', async ({ page }, testInfo) => {
     await boot(page);
     await startFromMenu(page);
     await waitForPhase(page, 'playing');
@@ -365,21 +368,24 @@ test.describe('screen captures @screenshots', () => {
       g.player.volume = 1;
       g.game.debugSetSteadyCruise();
       g.player.x = 0.5;
-      g.player.screenY = 0.3;
+      g.player.screenY = 0.28;
       const lane = g.game.camera.viewport.laneWidthMeters;
 
-      for (const [kind, dx, dy] of [
-        ['urchin', -0.2, 0.16],
-        ['bombfish', 0.2, 0.16],
-        ['urchin', -0.2, -0.14],
-        ['bombfish', 0.2, -0.14],
-      ] as const) {
+      // Two rows of five, spread across the lane, each pair offset so none of them overlaps.
+      const layout: readonly (readonly [string, number, number])[] = [
+        ['urchin', -0.28, 0.12],
+        ['bombfish', 0.0, 0.12],
+        ['eel', 0.28, 0.12],
+        ['rot', -0.14, -0.12],
+        ['oil', 0.16, -0.12],
+      ];
+      for (const [kind, dx, dy] of layout) {
         g.game.debugSpawnHazardOnPlayer(kind);
         const h = g.game.hazardsRef.hazards[g.game.hazardsRef.hazards.length - 1]!;
         h.x = g.player.x * lane + lane * dx;
         h.y = g.player.y + lane * dy;
       }
-      // Let the urchin needles rotate off their spawn angle so the drawing is not a still frame of one pose.
+      // Let the eel's weave and the urchin's needles rotate off their spawn pose.
       for (let i = 0; i < 20; i++) await raf();
     });
     await page.screenshot({ path: testInfo.outputPath('negative-food.png') });

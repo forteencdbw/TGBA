@@ -144,6 +144,16 @@ export interface Mechanisms {
     bombfishFuseSeconds: number;
     bombfishDetonationHitPoints: number;
     bombfishBlastRadiusRatio: number;
+    /** The eel: how often it shocks, and for how long. Zero duration disables the side effect entirely. */
+    eelShockPeriodSeconds: number;
+    eelShockSeconds: number;
+    /** The rot: what it multiplies the digestion rate by while it is inside. 1 means no effect. */
+    rotDigestScale: number;
+    /** The oil: the chance a spit attempt gets it out. 0 is a permanent clog, 1 is an ordinary item. */
+    oilSpitChance: number;
+    /** The cue that must exist: the electric shock on the bubble is the only warning that the controls are broken. */
+    eelShockColor: number;
+    eelShockWidthRatio: number;
     invulnerableSeconds: number;
   };
   /** Consuming hazards: the food-chain reversal. */
@@ -418,6 +428,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.bombfishFuseSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'seconds, 0 or more; 0 makes a swallowed bomb fish inert' },
   { path: 'hazards.bombfishDetonationHitPoints', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of hit points, 0 or more' },
   { path: 'hazards.bombfishBlastRadiusRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1.5, describe: 'a fraction of the lane width between 0 and 1.5; 0 makes its ammunition an ordinary pellet' },
+  { path: 'hazards.eelShockPeriodSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
+  { path: 'hazards.eelShockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10; 0 disables the eel\'s loss of control' },
+  { path: 'hazards.rotDigestScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier between 0 and 2; 1 means the rot does not slow digestion' },
+  { path: 'hazards.oilSpitChance', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a probability between 0 and 1; 0 is a permanent clog' },
+  { path: 'hazards.eelShockColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.eelShockWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
   { path: 'hazards.invulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   /**
    * Consumption. The two per-kind tables are checked for PRESENCE of every hazard kind rather than for any
@@ -621,6 +637,7 @@ for (const [where, get, set] of [
   ['suction.fieldColor', () => mech.suction.fieldColor, (v: number) => (mech.suction.fieldColor = v)],
   ['spit.rimColor', () => mech.spit.rimColor, (v: number) => (mech.spit.rimColor = v)],
   ['digest.rimColor', () => mech.digest.rimColor, (v: number) => (mech.digest.rimColor = v)],
+  ['hazards.eelShockColor', () => mech.hazards.eelShockColor, (v: number) => (mech.hazards.eelShockColor = v)],
   ['obstacles.crateColor', () => mech.obstacles.crateColor, (v: number) => (mech.obstacles.crateColor = v)],
   ['obstacles.crateRimColor', () => mech.obstacles.crateRimColor, (v: number) => (mech.obstacles.crateRimColor = v)],
   ['obstacles.coralColor', () => mech.obstacles.coralColor, (v: number) => (mech.obstacles.coralColor = v)],
