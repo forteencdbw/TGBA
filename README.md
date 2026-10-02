@@ -342,12 +342,52 @@ Pixi 的绘制调用，所以"气泡动了"没有诚实的 locator。钩子是**
 
 ## 发布流程
 
+### 公网：push 到 `main` 就自动发布
+
+站点在 **<https://forteencdbw.github.io/TGBA/>**，HTTPS，手机流量直接打开就能玩。
+
+[`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) 在**每次 push 到 `main`** 时自动
+跑：`vite build` → 把 `dist/` 的内容 force push 到 `gh-pages` 分支 → GitHub Pages 从那个分支发布。
+实测从 push 到 run `success` 约 40 秒。
+
+**唯一的前提是「必须 push」。** `git commit` 是纯本地操作，GitHub **看不见**它，所以不会触发任何东西——
+**这个坑真踩过一次**：两个提交做完了但停在本地，站点一直没动，看起来像"workflow 坏了"，其实只是"没推"。
+一句话：**站点永远等于 `origin/main` 的尖端，不是你本地 `HEAD` 的尖端。**
+
+> 想重发不用造一个提交：Actions 页面 → Deploy to GitHub Pages → **Run workflow**
+> （workflow 里有 `workflow_dispatch`）。
+
+**为什么跑的是 `vite build`，不是 `pnpm build`。** `pnpm build` 是
+`tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json && vite build`，会**连带类型检查 `e2e/`**。
+那样**正在开发中的一个 spec 文件里哪怕只是一个未使用变量，就能让站点停止更新**。Vite 只转译、
+不检查类型，所以类型错误照样发布。**这是刻意的取舍**：宁可发布半成品，也不要让站点变得可被一个
+坏测试文件卡死。想加质量门禁就是在 workflow 里加一行——但那就把上面这句话反过来了。
+
+**为什么推分支，而不是用官方的 `actions/deploy-pages`。** 官方那套要求把 Pages 的 Source 改成
+"GitHub Actions"，那是一次额外的仓库设置改动，而且 workflow 一旦有问题站点就直接**空白**。推分支沿用
+"Deploy from a branch" 的现有设置，也让构建产物不进 `main` 的历史（`dist/` 仍然是 gitignore 的）。
+
+**Pages 设置**（已在仓库配好，这里只是记录）：Settings → Pages → Source = **Deploy from a branch**，
+分支 **`gh-pages`**，目录 **`/ (root)`**。
+
+> ⚠️ **不要选 `main` + `/ (root)`。** 仓库根目录的 `index.html` 是**开发入口**
+> （`<script type="module" src="/src/main.ts">`，TypeScript 源码），而 Pages 只是把文件当静态资源发出去，
+> 结果是**白屏**，且报不出有用的错。要发布的是 `gh-pages` 分支，那里才是构建产物。
+
+> **`gh-pages` 是生成产物，不要手工编辑它。** workflow 每次 force push 覆盖它，所以它没有值得保留的历史。
+
+> **缓存**：Pages 回 `Cache-Control: max-age=600`，所以刚发布后手机上**最多可能滞后约 10 分钟**才看到
+> 新版——"明明发布了手机还是旧的"多半是这个，不是没发布。资源文件名带内容哈希，新资源本身立刻可取，
+> 被缓存的是 `index.html`；强刷或换无痕窗口即可立刻确认。
+
+### 手动打包（itch.io、离线分发）
+
+需要 zip 的场合才走这条：
+
 ```bash
 pnpm build                              # 类型检查 → dist/
 node scripts/verify-dist.mjs            # 必做：确认打包产物能跑
 ```
-
-然后打包上传：
 
 ```powershell
 Compress-Archive -Path dist\* -DestinationPath release\bubble-battle.zip
@@ -360,7 +400,7 @@ Compress-Archive -Path dist\* -DestinationPath release\bubble-battle.zip
 | 目标 | 做法 |
 |---|---|
 | itch.io | 把 `dist/` 里的**内容**（不是 `dist` 目录本身）压成 zip 上传 |
-| GitHub Pages / Netlify / 自建 | 把 `dist/` 整个目录作为站点根，**放在子目录也行**（`/bubble/` 已实测） |
+| 任何静态托管 | 把 `dist/` 整个目录作为站点根，**放在子目录也行**（`/bubble/` 已实测；GitHub Pages 就是 `/TGBA/`） |
 | 本地试跑 | 见下 |
 
 > ⚠️ **不能用 `file://` 直接打开 `dist/index.html`。** 这是 ES module 的 CORS 限制，浏览器会拒绝加载模块，
@@ -441,6 +481,8 @@ scripts/
   performance.mjs         帧时百分位（软件光栅化，用于测变化）
   dev-server.ps1          脱离会话的 dev server 管理
   install-pwsh-path.ps1   重建 pwsh 的稳定 PATH 入口
+.github/
+  workflows/deploy-pages.yml  push 到 main 就构建并发布到 gh-pages（见「发布流程」）
 ```
 
 ## 注意
