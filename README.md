@@ -2,7 +2,8 @@
 
 一个关于「涌现」的 GameJam 项目。9:16 竖屏、手机优先、浏览器直接玩。
 
-设计文档：`.scratch/bubble-ascent/spec.md`（完整设计）
+设计文档：`.scratch/bubble-ascent/spec.md`（吞噬气泡的完整设计）
+　　　　　`.scratch/bubble-ascent/types/angry.md`（暴躁气泡，第二种类型，仅成文）
 后续工作：`.scratch/bubble-ascent/plan.md`（做到哪里、还剩什么、刻意没做什么）
 
 ## 版本号：这一页跑的是哪个 build
