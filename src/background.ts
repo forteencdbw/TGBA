@@ -186,9 +186,16 @@ export class WorldLayer {
     this.seedSnow(viewport.laneWidthMeters);
   }
 
-  update(camera: Camera, player: Player, dt: number): void {
+  /**
+   * `WorldLayer.update`: the scenery. Draws no readouts, so it does not need the player.
+   *
+   * @param scrolled how far the LEVEL has travelled, in metres. Used by the marine-snow recycle, which
+   *   keeps the drifting specks distributed across the visible band.
+   */
+  update(camera: Camera, _player: Player, dt: number, scrolled: number): void {
     const viewport = camera.viewport;
     const { min, max } = camera.visibleWorldRange(20);
+    void scrolled;
 
     // --- World transform --------------------------------------------------
     camera.applyTo(this.world);
@@ -196,9 +203,15 @@ export class WorldLayer {
     // --- Depth gradient (screen space) ------------------------------------
     // Sample in world metres across the visible vertical span, so the colour is a pure function
     // of depth rather than of the device pixel ratio.
+    //
+    // `depth` here is the LEVEL's depth, not the bubble's. It used to be the bubble's, which was right
+    // when the two were the same thing and wrong the moment the player could move: steering toward the
+    // top of the screen raised the bubble's world position, which brightened the whole sea as though the
+    // surface were near, and at the top of the level drove the value negative.
     const halfSpan = viewport.height / 2 / viewport.scale;
-    const topColour = waterColour(camera.y + halfSpan, player.depth);
-    const bottomColour = waterColour(camera.y - halfSpan, player.depth);
+    const levelDepth = DEPTH_TOTAL - scrolled;
+    const topColour = waterColour(camera.y + halfSpan, levelDepth);
+    const bottomColour = waterColour(camera.y - halfSpan, levelDepth);
 
     if (topColour !== this.lastTopColour || bottomColour !== this.lastBottomColour) {
       this.lastTopColour = topColour;
@@ -242,12 +255,35 @@ function toCss(colour: number): string {
 }
 
 /**
+ * The water colour function, exposed for probes.
+ *
+ * Exported so a test can assert on the REAL implementation rather than a copy of its arithmetic. An
+ * earlier probe re-derived the channels itself and therefore kept reporting the overflow after the
+ * function had been fixed -- the classic shape of a test that measures its own model of the code.
+ */
+export function waterColourForTest(worldY: number, depth: number): number {
+  return waterColour(worldY, depth);
+}
+
+/**
  * Water colour as a function of world height, brightening with height so the whole climb reads as
  * progress rather than only the last stretch.
  *
  * The exponent is deliberately gentle: measured on screen, a steeper curve left the first 400m
  * a flat near-black and put all the visible change in the final 90m. `depth` drives an extra
  * bloom near the surface, which is the "almost there" cue.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * EVERY CHANNEL IS CLAMPED, AND THAT IS NOT DEFENSIVE PADDING
+ * ---------------------------------------------------------------------------------------------
+ * The channels are packed with bit shifts, and `Math.round(r) << 16` SILENTLY WRAPS when `r` exceeds
+ * 255. A caller passing a slightly out-of-range value therefore does not get a wrong shade of blue, it
+ * gets an illegal colour: measured with `depth = -400`, the channels came out (406, 384, 342) and packed
+ * to `#1978156` -- a seven-digit value that is not a colour at all. The screen goes red and the renderer
+ * is handed garbage.
+ *
+ * The bloom is what pushes a channel past its limit, and `depth` reaching the bubble is what pushed the
+ * bloom. Clamping here means no future caller can reproduce that, whatever it passes.
  */
 function waterColour(worldY: number, depth: number): number {
   const deep = { r: 0x02, g: 0x07, b: 0x10 };
@@ -262,12 +298,13 @@ function waterColour(worldY: number, depth: number): number {
 
   // Surface bloom over the last 55m, on top of the gradient. Kept narrow and subtle: a wider,
   // stronger bloom washed out most of the screen whenever the camera was anywhere near the top.
-  const bloom = Math.max(0, 1 - depth / 55);
+  const bloom = Math.max(0, Math.min(1, 1 - depth / 55));
   r += (0xbf - r) * bloom * 0.3;
   g += (0xf0 - g) * bloom * 0.3;
   b += (0xff - b) * bloom * 0.3;
 
-  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
+  const channel = (value: number): number => Math.max(0, Math.min(255, Math.round(value)));
+  return (channel(r) << 16) | (channel(g) << 8) | channel(b);
 }
 
 export interface Landmark {
@@ -380,9 +417,11 @@ export class Hud {
   }
 
   /**
-   * @param scrolled how far the LEVEL has travelled, in metres. Progress belongs to the scroll, not to
-   *   the player: the bubble moves freely within the window, so reading progress off its world position
-   *   made every press of "up" advance the bar.
+   * `Hud.update`: the readouts, and the water's colour.
+   *
+   * @param scrolled how far the LEVEL has travelled, in metres. Progress and depth both belong to the
+   *   scroll, not to the player: the bubble moves freely within the window, so reading either off its
+   *   world position made every press of "up" advance the bar AND brighten the whole sea.
    */
   update(
     player: Player,

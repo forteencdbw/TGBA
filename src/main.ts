@@ -1,5 +1,5 @@
 import { Application, Graphics } from 'pixi.js';
-import { Camera, Hud, WorldLayer, computeViewport, createApp, makeLabel, type Landmark } from './background';
+import { Camera, Hud, WorldLayer, computeViewport, createApp, makeLabel, waterColourForTest, type Landmark } from './background';
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, TIMELINE, type Level, type LevelEntry } from './levels';
 import { HazardField, hazardTuning, paintHazards, type HazardKind } from './hazards';
@@ -273,6 +273,16 @@ class Game {
   /** Test hook: where recent timeline entries appeared relative to the view. */
   get spawnLogRef(): readonly { kind: string; worldY: number; visibleTop: number; visibleBottom: number }[] {
     return this.spawnLog;
+  }
+
+  /**
+   * Test hook: the REAL water-colour function.
+   *
+   * Exposed so a probe does not re-derive the arithmetic. A probe that copies the implementation keeps
+   * reporting the old bug after the bug is fixed, which is worse than having no probe.
+   */
+  waterColourAt(worldY: number, depth: number): number {
+    return waterColourForTest(worldY, depth);
   }
 
   /**
@@ -601,6 +611,17 @@ class Game {
       this.player.syncToCamera(this.camera.y, viewport.visibleDepthMeters);
     }
 
+    /**
+     * Tell both fields whether the level's scroll is finished.
+     *
+     * They use it to discard anything stranded above the view: with the scroll stopped, a hazard up there
+     * can never descend into reach, so leaving it would make "the water is clear" a condition that can
+     * never be satisfied -- which is exactly the hang that was reported.
+     */
+    const levelOver = this.scrolled >= LEVEL.scrollLength;
+    this.hazards.levelOver = levelOver;
+    this.field.levelOver = levelOver;
+
     this.field.update(dt, viewport.laneWidthMeters, min, max, this.player.volume, LEVEL.scrollSpeed);
 
     switch (this.phase) {
@@ -657,7 +678,25 @@ class Game {
     // frames it spans.
     if (this.input.consumeSkill()) this.useSkill();
 
-    if (this.scrolled >= LEVEL.scrollLength && this.hazards.hazards.length === 0) {
+    /**
+     * The level ends when the scroll is done AND everything it placed has left the water behind.
+     *
+     * "The water is clear" was the earlier rule, and it HANGS. Measured at the end of a full level:
+     * `scroll=1500, emitted=135/135, hazards=1, phase=playing` forever. The stranded hazard was sitting
+     * in the cull band above the view, and the scroll had stopped, so nothing would ever move it again --
+     * a hazard the player cannot see and cannot reach, blocking the ending indefinitely.
+     *
+     * "Everything has passed below the view" is the rule that cannot hang: either something is still
+     * coming, or it is behind the player for good. The count check keeps it honest, so items still queued
+     * in the timeline cannot end the level early.
+     */
+    if (
+      this.scrolled >= LEVEL.scrollLength &&
+      this.timelineEmitted >= TIMELINE.length &&
+      this.hazards.hazards.length === 0 &&
+      this.field.bubbles.length === 0 &&
+      this.skillPickup === null
+    ) {
       this.reachSurface();
     }
 
@@ -1238,7 +1277,7 @@ class Game {
   }
 
   private render(dt: number): void {
-    this.scene.update(this.camera, this.player, dt);
+    this.scene.update(this.camera, this.player, dt, this.scrolled);
     this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled);
     this.touch.update();
 
