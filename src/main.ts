@@ -1,12 +1,12 @@
 import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, makeLabel, type Landmark } from './background';
 import { tuning } from './config';
-import { DEPTH_TOTAL, LEVEL } from './levels';
+import { DEPTH_TOTAL, LEVEL, TIMELINE, type Level, type LevelEntry } from './levels';
 import { HazardField, hazardTuning, paintHazards, type HazardKind } from './hazards';
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
 import { audio } from './audio';
-import { ascentSpeedAtDepth, nominalAscentSeconds, secondsPerScreenSeries } from './depth';
+import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
 import { calibrateLateral, type LateralAuthority } from './lateral';
@@ -33,11 +33,17 @@ const INTRO_SECONDS = 1.6;
  * surface is the thing the whole run was for, so it gets a moment to land.
  */
 const SURFACE_SECONDS = 2.6;
-/** Seconds between skill pickups. See `updateSkillPickup` for why it is not shorter. */
-const SKILL_PICKUP_SECONDS = 20;
 
 /** Slow-motion pop after the bubble is destroyed, before the next run starts. */
 const BURST_SECONDS = 1.5;
+
+/**
+ * What to shout when a level's landmark is reached.
+ *
+ * The beats are announced rather than generated: the timeline decides WHAT is there, and this decides
+ * what to call it. Indexed by landmark, so a level states its own beats through `Level.landmarks`.
+ */
+const EVENT_CALLOUTS = ['鱼群来了', '气泡潮', '爆发'];
 
 class Game {
   private readonly player = new Player();
@@ -61,8 +67,21 @@ class Game {
    */
   private readonly flash = new Graphics();
 
-  /** Collectables and decoration, maintained by density within the visible range. */
+  /** Collectables and decoration. Collectables now come from the level's timeline, not from a density. */
   private readonly field = new EntityField();
+
+  /**
+   * Metres the level has scrolled. The level's own progress, independent of where the player is.
+   *
+   * Separate from the player's y on purpose: the player moves freely, so "how far through the level are
+   * we" and "how high is the bubble" are now two different questions. The scroll decides what content
+   * exists and when the level ends; the player's y decides what they run into.
+   */
+  private scrolled = 0;
+  /** Entries emitted from the timeline so far, for diagnostics. */
+  private timelineEmitted = 0;
+  /** Last few evaluations of the end condition, for probes. See `step`. */
+  private readonly endTrace: { scrolled: number; hazardCount: number; phase: string }[] = [];
 
   private seedLabel: string = SEEDS[0];
   private elapsed = 0;
@@ -212,12 +231,48 @@ class Game {
     // for a host that letterboxes or scales the canvas element.
   }
 
-  /** Accelerate button geometry in canvas coordinates, so tests touch the real thing. */
+  /** Skill button geometry in canvas coordinates, so tests touch the real control. */
   get touchGeometry() {
-    return this.touch.geometry;
+    return this.touch.skillGeometry;
   }
 
-  /** Test hook: force the boost state, bypassing the event system. */
+  /** Canvas size in CSS pixels, so a probe can aim a drag at a real screen position. */
+  get canvasSize(): { width: number; height: number } {
+    return { width: this.app.renderer.screen.width, height: this.app.renderer.screen.height };
+  }
+
+  /** Test hook: the touch layer, so a probe can read where a drag is aiming. */
+  get touchRef(): TouchControls {
+    return this.touch;
+  }
+
+  /** Test hook: the level, so a probe can read properties like the lead limit. */
+  get levelRef(): Level {
+    return LEVEL;
+  }
+
+  /** Test hook: the last few evaluations of the end condition, so a failure is diagnosable. */
+  get endTraceRef(): readonly { scrolled: number; hazardCount: number; phase: string }[] {
+    return this.endTrace;
+  }
+
+  /**
+   * Test hook: jump the scroll to the end of the level and clear the water.
+   *
+   * The win condition is "the scroll finished AND the water is clear", which would otherwise take a
+   * full minute of real time to reach. Two things have to be forced, so they are forced together --
+   * setting only the scroll would leave the player waiting on a screen full of hazards.
+   */
+  debugSkipToLevelEnd(): void {
+    this.scrolled = LEVEL.scrollLength;
+    this.timelineEmitted = TIMELINE.length;
+    this.field.placeTimeline(TIMELINE, this.scrolled);
+    this.field.takePending();
+    this.hazards.hazards = [];
+    this.player.y = LEVEL.scrollLength;
+  }
+
+  /** Test hook: force the boost state, bypassing the event system. Gone with the accelerate control. */
   debugSetBoosting(value: boolean): boolean {
     return this.touch.debugSetBoosting(value);
   }
@@ -260,8 +315,14 @@ class Game {
   /** How many skills have been used this run, for the results card. */
   private skillActivations = 0;
   /** The skill lying in the water, if any, and the countdown to the next one. */
-  private skillPickup: { id: SkillId; x: number; y: number } | null = null;
-  private skillPickupTimer = 6;
+  /**
+   * A skill lying in the water, waiting to be taken.
+   *
+   * `id` is null until it is collected, because WHICH skill it is gets rolled at pickup time. It used to
+   * be decided on creation, which committed the player's next twenty seconds before they had even seen
+   * the thing.
+   */
+  private skillPickup: { id: SkillId | null; x: number; y: number } | null = null;
   /** When the fish-fart talent can fire again, and how many times it has. */
   private fartReadyAt = 0;
   private farts = 0;
@@ -360,10 +421,18 @@ class Game {
     return this.hazards.baitEnabled;
   }
 
-  /** Test hook: force cruising speed, so a trash bag's grip is not torn off instantly. */
+  /**
+   * Test hook: clear any input so a probe measures the hazard, not the player's own movement.
+   *
+   * Used to force a steady cruise, back when "cruising" was a thing a player could be in. With free
+   * movement there is no cruise to force -- the equivalent is to stop steering, so a trash bag's grip is
+   * not torn off by a struggling player during a measurement.
+   */
   debugSetSteadyCruise(): void {
-    this.player.speedMultiplier = 1;
-    this.input.touchBoosting = false;
+    this.input.axisX = 0;
+    this.input.axisY = 0;
+    this.input.dragTargetX = null;
+    this.input.dragTargetY = null;
   }
 
   /**
@@ -424,6 +493,14 @@ class Game {
     this.hud.layout(viewport);
     this.hud.setWorldMetrics(viewport.laneWidthMeters, viewport.visibleDepthMeters);
     this.touch.layout(screenW, screenH, viewport.scale);
+    /**
+     * Teach the touch layer where a finger is IN THE WATER.
+     *
+     * Reinstalled on every layout, not once at boot: the mapping depends on the camera's position and
+     * the viewport scale, so a resize or a scroll would leave it pointing at the wrong depth. Reading it
+     * through `this.camera` each call means it always reflects the camera as it is now.
+     */
+    this.touch.setWorldMapper((screenY: number) => this.camera.toWorldY(screenY));
 
     this.finishBanner.scale.set(viewport.scale);
     this.finishBanner.x = screenW / 2;
@@ -473,30 +550,28 @@ class Game {
     // empty ocean and only fills in once control returns.
     const viewport = this.camera.viewport;
     const { min, max } = this.camera.visibleWorldRange(20);
-    // Two ascent speeds, because they drive two different things:
-    //
-    //   cruiseAscent  the depth curve WITHOUT the boost. Collectables are measured against this, so
-    //                 accelerating moves the player and leaves the ocean alone.
-    //   playerAscent  what the player is actually doing, boost included. Drives the parallax layers,
-    //                 because scenery SHOULD sweep past faster when the player climbs faster.
-    //
-    // The cruising speed is computed from the input target rather than by dividing `player.vy` by
-    // the multiplier: dividing reconstructs it only approximately while the ramp is in flight, which
-    // leaked a fraction of the boost into collectable motion.
-    const base = ascentSpeedAtDepth(this.player.depth);
-    const cruiseAscent = base;
-    const playerAscent = this.player.vy > 0 ? this.player.vy : base;
 
-    this.field.update(
-      dt,
-      viewport.laneWidthMeters,
-      min,
-      max,
-      visualRadiusFraction(this.player.volume),
-      this.player.volume,
-      cruiseAscent,
-      playerAscent,
-    );
+    /**
+     * Advance the scroll, and place whatever the level's timeline calls for.
+     *
+     * The scroll is the level's own motion: the camera travels up a fixed stretch of water at a
+     * constant rate, which is what makes everything appear to descend and what carries new content in
+     * from the top of the screen. The player no longer rises on their own, so this is the ONLY thing
+     * moving the world.
+     *
+     * Placed during 'playing' only. During the intro the level has not begun, and during the ending it
+     * is over -- emitting content in either would drop hazards onto a player with no control.
+     */
+    if (this.phase === 'playing') {
+      this.scrolled = Math.min(LEVEL.scrollLength, this.scrolled + LEVEL.scrollSpeed * dt);
+      this.field.placeTimeline(TIMELINE, this.scrolled);
+      for (const placed of this.field.takePending()) {
+        this.emitTimelineEntry(placed.entry, placed.worldY, viewport.laneWidthMeters);
+        this.timelineEmitted++;
+      }
+    }
+
+    this.field.update(dt, viewport.laneWidthMeters, min, max, this.player.volume, LEVEL.scrollSpeed);
 
     switch (this.phase) {
       case 'intro': {
@@ -528,6 +603,20 @@ class Game {
     if (this.input.consumeMute()) this.audioMuted = audio.toggleMute();
 
     this.player.update(this.input, dt, this.lateral);
+
+    /**
+     * The camera is a soft ceiling: the player moves freely but cannot outrun the current.
+     *
+     * Without this a player could hold "up" and skip the level, meeting nothing the level placed. The
+     * limit is generous enough that climbing still feels like climbing -- and the camera is also a hard
+     * FLOOR, so a player who sinks is not left behind by the scroll and stranded off the bottom of the
+     * level.
+     */
+    const lead = LEVEL.playerLeadLimit ?? 130;
+    const ceiling = this.scrolled + lead;
+    if (this.player.y > ceiling) this.player.y = ceiling;
+    if (this.player.y < this.scrolled - lead) this.player.y = this.scrolled - lead;
+
     this.camera.follow(this.player);
 
     // Hazards move AFTER the player, so a hazard's contact test uses the position the player is
@@ -544,52 +633,89 @@ class Game {
     // frames it spans.
     if (this.input.consumeSkill()) this.useSkill();
 
-    if (this.player.y >= DEPTH_TOTAL) {
+    if (this.scrolled >= LEVEL.scrollLength && this.hazards.hazards.length === 0) {
       this.reachSurface();
     }
+
+    // Trace the end condition, so a probe can see WHY a level failed to end rather than only that it
+    // did. A win condition with two clauses is exactly the kind of thing that reports "still playing"
+    // for several possible reasons.
+    this.endTrace.push({
+      scrolled: +this.scrolled.toFixed(1),
+      hazardCount: this.hazards.hazards.length,
+      phase: this.phase,
+    });
+    if (this.endTrace.length > 8) this.endTrace.shift();
+  }
+
+  /**
+   * Place one timeline entry.
+   *
+   * The timeline is the level, so this is where a level's content becomes live objects. Entries are
+   * placed at their own distance, which means they enter from the top of the screen and travel down with
+   * the scroll rather than appearing in place.
+   *
+   * Collectables go into the shared field; hazards and skills are owned by the game, so the field hands
+   * them over rather than building them.
+   */
+  private emitTimelineEntry(entry: LevelEntry, worldY: number, laneWidth: number): void {
+    if (entry.kind === 'bubble') {
+      this.field.bubbles.push(this.field.bubbleFromEntry({ ...entry, at: worldY }, laneWidth, visualRadiusFraction(this.player.volume)));
+      return;
+    }
+    if (entry.kind === 'skill') {
+      // A skill sits where the level put it and drifts down with the water, waiting to be taken.
+      this.skillPickup = {
+        x: entry.x * laneWidth,
+        y: worldY,
+        // The skill is rolled when it is COLLECTED, not when it is created: granting it here would
+        // decide the player's next twenty seconds before they had even seen the pickup.
+        id: null,
+      };
+      return;
+    }
+    const hazard = this.makeHazard(entry.kind, entry.x * laneWidth, worldY);
+    this.hazards.hazards.push(hazard);
   }
 
   /**
    * Skills lie in the water as pickups, on their own timer.
    *
    * Deliberately NOT one per screen: a skill is a decision, and a decision every few seconds is just
-   * noise. Roughly one every twenty seconds means a player meets three or four in a run, which is
-   * enough that the slot is usually occupied without it being a constant interruption.
+   * Skills lie in the water as pickups, placed by the LEVEL'S TIMELINE.
+   *
+   * There used to be a timer here that dropped one every ~20 seconds regardless of the level. That is
+   * gone: a level now says where its skills are, which is the difference between an authored level and a
+   * difficulty curve. The level can put one where the player will need it, or deliberately withhold one.
+   *
+   * This method is left with only motion and collection, because that is all that is left to do.
    */
   private updateSkillPickup(dt: number, min: number, max: number, laneWidth: number): void {
     // Held in a local so TypeScript can see it cannot become null between the checks: assigning
     // `this.skillPickup = null` inside the block below widens it back to nullable.
     const pickup = this.skillPickup;
-    if (pickup) {
-      // Drift down with the water and retire when it leaves.
-      const descent = (this.player.vy > 0 ? this.player.vy : 13) * 0.45;
-      pickup.y -= descent * dt;
-      if (pickup.y < min - 40 || pickup.y > max + 160) {
-        this.skillPickup = null;
-        return;
-      }
+    if (!pickup) return;
 
-      const dx = pickup.x - this.player.x * laneWidth;
-      const dy = pickup.y - this.player.y;
-      const reach = laneWidth * (visualRadiusFraction(this.player.volume) + 0.05);
-      if (dx * dx + dy * dy <= reach * reach) {
-        this.grantSkill(pickup.id);
-        this.skillPickup = null;
-        this.skillPickupTimer = SKILL_PICKUP_SECONDS * (0.7 + Math.random() * 0.6);
-        return;
-      }
+    // The pickup is stationary in the water, so the SCROLL is what carries it down past the player.
+    // It used to be offset by the player's ascent, which was the same relative motion expressed the
+    // other way round; with the player able to hold still, the world has to do the moving.
+    pickup.y -= LEVEL.scrollSpeed * dt;
+    if (pickup.y < min - 40 || pickup.y > max + 160) {
+      this.skillPickup = null;
+      return;
     }
 
-    this.skillPickupTimer -= dt;
-    if (this.skillPickupTimer > 0 || this.skillPickup) return;
-    const skill = SKILLS[Math.floor(Math.random() * SKILLS.length)] ?? SKILLS[0];
-    const margin = laneWidth * 0.12;
-    this.skillPickup = {
-      id: skill.id,
-      x: margin + Math.random() * Math.max(0.01, laneWidth - margin * 2),
-      y: max + 30 + Math.random() * 40,
-    };
-    this.skillPickupTimer = SKILL_PICKUP_SECONDS * (0.7 + Math.random() * 0.6);
+    const dx = pickup.x - this.player.x * laneWidth;
+    const dy = pickup.y - this.player.y;
+    const reach = laneWidth * (visualRadiusFraction(this.player.volume) + 0.05);
+    if (dx * dx + dy * dy <= reach * reach) {
+      // Rolled on COLLECTION. Deciding at placement would commit the player's next twenty seconds
+      // before they had even seen the pickup, and would make the level author's choice of WHERE into a
+      // choice of WHAT.
+      const skill = pickup.id ?? (SKILLS[Math.floor(Math.random() * SKILLS.length)] ?? SKILLS[0]).id;
+      this.grantSkill(skill);
+      this.skillPickup = null;
+    }
   }
 
   /**
@@ -610,11 +736,18 @@ class Game {
       playerX: this.player.x * laneWidth,
       playerY: this.player.y,
       playerRadiusFraction: visualRadiusFraction(this.player.volume),
-      ascentSpeed: this.player.vy > 0 ? this.player.vy : ascentSpeedAtDepth(this.player.depth),
+      // The level's scroll, not the player's speed: hazards approach because the WORLD moves now.
+      descentSpeed: LEVEL.scrollSpeed,
       elapsed: this.elapsed,
       invulnerable: this.invulnerable > 0,
-      // Struggling is "asking to go faster", which is the intuitive way to tear free of a trash bag.
-      struggling: this.player.speedMultiplier > 1.35,
+      // Struggling is "actively steering", which is the intuitive way to tear free of a trash bag.
+      // Was a speed threshold when there was an accelerate control; with four-direction movement any
+      // deliberate input is the same idea, and it is legible to the player without a hidden number.
+      struggling:
+        this.input.axisX !== 0 ||
+        this.input.axisY !== 0 ||
+        this.input.dragTargetX !== null ||
+        this.input.dragTargetY !== null,
       playerVolume: this.player.volume,
       bubbles: this.field.bubbles,
       eatenBubbleIds: [] as number[],
@@ -836,11 +969,14 @@ class Game {
   /**
    * The level's scripted events, at the depths its landmarks announce.
    *
-   * These are the "suddenly everything happens at once" beats the whole game is built around. Each
-   * fires ONCE, on first crossing, and the run tracks which have happened.
+   * These are the "suddenly everything happens at once" beats the whole game is built around, and they
+   * are now ANNOUNCEMENTS rather than spawners.
    *
-   * The depths come from the level's own landmarks rather than being hardcoded here: what happens at
-   * 960m is level content, and a second level should state its own beats.
+   * They used to generate their own hazards -- a random swarm of 15-26 fish, a cloud of jellyfish --
+   * which was the procedural model this refactor replaced. A level's timeline states exactly what
+   * happens, so an event that also invented hazards would be content nobody authored, arriving on top of
+   * the content somebody did. What is left is the part a timeline cannot express: telling the player
+   * that the thing they are about to meet is about to happen.
    */
   private fireDepthEvents(): void {
     const depth = this.player.depth;
@@ -855,55 +991,12 @@ class Game {
   private fireEvent(index: number, label: string): void {
     this.eventsSeen++;
     this.lastEvent = { label, at: this.elapsed };
-    const laneWidth = this.camera.viewport.laneWidthMeters;
-    const viewport = this.camera.viewport;
-    const halfSpan = viewport.visibleDepthMeters / 2;
 
-    if (index === 0) {
-      // 鱼群: the first real "this game does this", and the tutorial for the rest of the run.
-      const count = 15 + Math.floor(Math.random() * 11);
-      for (let i = 0; i < count; i++) {
-        this.hazards.hazards.push(this.makeHazard('fish', Math.random() * laneWidth, this.player.y + halfSpan * (0.6 + Math.random() * 0.9)));
-      }
-      this.runBanner.text = `${label}  ·  鱼群来了`;
-    } else if (index === 1) {
-      // 气泡潮: looks like a reward, and it IS one -- which is exactly the trap. It grows the player,
-      // and a bigger player is noticed from further away. That is the setup for index 2.
-      const count = 26;
-      for (let i = 0; i < count; i++) {
-        const radiusFraction = 0.028 + Math.random() * 0.02;
-        this.field.addTestBubble({
-          x: Math.random() * laneWidth,
-          y: this.player.y + halfSpan * (0.3 + Math.random() * 1.5),
-          vy: 0,
-          radius: radiusFraction,
-          volume: bubbleVolumeFromRadius(radiusFraction),
-          phase: Math.random() * Math.PI * 2,
-          wobble: tuning.bubbleWobbleMin,
-        });
-      }
-      this.runBanner.text = `${label}  ·  气泡潮`;
-    } else {
-      /**
-       * 终局爆发: scaled by the player's CURRENT volume.
-       *
-       * This is the payoff of the whole emergence design, and the line to say to a judge: "it is not
-       * that I scheduled a wave at the two-minute mark -- YOU got bigger, so the world got worse."
-       * A player who skipped the bubbles gets a survivable wave; one who ate everything gets buried.
-       */
-      const intensity = Math.max(0.5, Math.min(2.4, this.player.volume / 1.2));
-      const fishCount = Math.round(8 * intensity);
-      const jellyCount = Math.round(4 * intensity);
-      for (let i = 0; i < fishCount; i++) {
-        this.hazards.hazards.push(this.makeHazard('fish', Math.random() * laneWidth, this.player.y + halfSpan * (0.5 + Math.random() * 1.2)));
-      }
-      for (let i = 0; i < jellyCount; i++) {
-        this.hazards.hazards.push(this.makeHazard('jelly', Math.random() * laneWidth, this.player.y + halfSpan * (0.5 + Math.random() * 1.2)));
-      }
-      this.runBanner.text = `${label}  ·  爆发（强度 ×${intensity.toFixed(1)}）`;
-    }
+    // A banner and a sound for each beat. No hazards: the level's timeline already placed them, and the
+    // job here is to tell the player what they are swimming into.
+    this.runBanner.text = `${label}  ·  ${EVENT_CALLOUTS[index] ?? ''}`.trim();
     this.runBanner.alpha = 1;
-    this.bannerSeen = true;
+    audio.play('skill');
   }
 
   /**
@@ -1018,7 +1111,6 @@ class Game {
     // strictly easier than the run that just ended.
     this.skill = null;
     this.skillPickup = null;
-    this.skillPickupTimer = 6;
     this.skillActivations = 0;
     this.decoy = null;
     this.fartReadyAt = 0;
@@ -1312,20 +1404,20 @@ class Game {
     level: {
       id: string;
       name: string;
-      totalDepth: number;
-      metresPerScreen: number;
-      screenHeights: number;
+      scrollLength: number;
+      scrollSpeed: number;
+      scrolled: number;
+      entriesEmitted: number;
+      entriesTotal: number;
       secondsPerScreen: number[];
     };
-    ascentSpeed: number;
+    playerVx: number;
+    playerVy: number;
     bannerAlpha: number;
     bannerSeen: boolean;
     lateral: LateralAuthority;
     laneWidthMeters: number;
     visibleDepthMeters: number;
-    speedMultiplier: number;
-    boostMultiplier: number;
-    boostAccelSeconds: number;
     gameSeconds: number;
     hazards: {
       active: number;
@@ -1358,7 +1450,8 @@ class Game {
     events: { seen: number; fired: number[]; last: { label: string; at: number } | null };
     audio: { muted: boolean; running: boolean };
     ending: { surfaced: boolean; splash: number; bestClimbed: number; bestVolume: number };
-    skillPickup: { id: string; y: number } | null;
+    /** A skill lying in the water. `id` is null until collected, since it is rolled at pickup. */
+    skillPickup: { id: string | null; y: number } | null;
     activeSkill: { id: string; remaining: number } | null;
     phase: string;
     volume: number;
@@ -1382,27 +1475,31 @@ class Game {
       level: {
         id: LEVEL.id,
         name: LEVEL.name,
-        totalDepth: LEVEL.totalDepth,
-        metresPerScreen: LEVEL.metresPerScreen,
-        screenHeights: +(LEVEL.totalDepth / LEVEL.metresPerScreen).toFixed(3),
+        scrollLength: LEVEL.scrollLength,
+        scrollSpeed: LEVEL.scrollSpeed,
+        /** How far the level has scrolled, and so how far through it the camera is. */
+        scrolled: +this.scrolled.toFixed(2),
+        /** Entries emitted so far, and the total, so progress through the TIMELINE is observable. */
+        entriesEmitted: this.timelineEmitted,
+        entriesTotal: TIMELINE.length,
         /**
          * Seconds per screenful, in order from the seabed up.
          *
-         * Reported as a SERIES, not an average. The mean of a curve running 13.5s -> 3.6s is 7.7s,
-         * which describes no part of the actual experience and was actively misleading when it was
-         * used as the readout for "how fast does this look".
+         * Reported as a SERIES, not an average. A mean of a curve describes no part of the actual
+         * experience and was actively misleading when it was used as the readout for "how fast does this
+         * look". With a constant scroll speed the series is flat, and it will stop being flat the moment
+         * a level varies its pace.
          */
         secondsPerScreen: secondsPerScreenSeries().map((v) => +v.toFixed(1)),
       },
-      ascentSpeed: ascentSpeedAtDepth(this.player.depth),
+      /** The player's own motion. Vertical and horizontal are symmetric now. */
+      playerVx: +this.player.vx.toFixed(4),
+      playerVy: +this.player.vy.toFixed(2),
       bannerAlpha: this.finishBanner.alpha,
       bannerSeen: this.bannerSeen,
       lateral: this.lateral,
       laneWidthMeters: this.camera.viewport.laneWidthMeters,
       visibleDepthMeters: this.camera.viewport.visibleDepthMeters,
-      speedMultiplier: this.player.speedMultiplier,
-      boostMultiplier: tuning.boostMultiplier,
-      boostAccelSeconds: tuning.boostAccelSeconds,
       /**
        * Accumulated GAME time in seconds, which is not wall-clock time below 20fps.
        *
@@ -1476,8 +1573,7 @@ class Game {
        */
       audio: { muted: this.audioMuted, running: audio.isRunning },
       ending: { surfaced: this.surfaced, splash: +this.splash.toFixed(3), bestClimbed: Math.round(this.bestClimbed), bestVolume: +this.bestVolume.toFixed(2) },
-      skillPickup: this.skillPickup ? { id: this.skillPickup.id, y: +this.skillPickup.y.toFixed(1) } : null,
-      /** Active effect timers, so a skill that lasts can be observed while it runs. */
+      skillPickup: this.skillPickup ? { id: this.skillPickup.id, y: +this.skillPickup.y.toFixed(1) } : null,      /** Active effect timers, so a skill that lasts can be observed while it runs. */
       activeSkill: this.player.skillId ? { id: this.player.skillId, remaining: +this.player.skillRemaining.toFixed(2) } : null,
       phase: this.phase,
       volume: this.player.volume,
@@ -1633,9 +1729,8 @@ class Game {
     trackedBubbleRiseRatio: number | null;
     trackedBubbleRelativeFallMps: number | null;
     trackedBubbleScreenSpeedPxPerS: number | null;
-    cruiseAscentMps: number;
-    fieldCruiseAscentMps: number;
-    playerAscentMps: number;
+    scrollSpeedMps: number;
+    fieldScrollSpeedMps: number;
     collectables: {
       sizeRatio: number;
       wobble: number;
@@ -1693,17 +1788,16 @@ class Game {
        */
       trackedBubbleScreenSpeedPxPerS: tracked ? +(tracked.vy * cam.viewport.scale).toFixed(3) : null,
       /**
-       * The two ascent speeds, so a probe can prove they are used for different things.
+       * The scroll speed collectables are measured against, and what the live field is actually using.
        *
-       * `cruiseAscentMps` is what collectable motion is measured against; `ascentSpeedMps` is what
-       * the player is actually doing. Holding accelerate must widen the gap between them while
-       * leaving collectable motion unchanged.
+       * These used to be two different numbers -- the player's cruising ascent versus their boosted
+       * ascent -- because accelerating had to move the player and leave the ocean alone. With the world
+       * scrolling at a fixed rate and the player moving freely, there is only one number, and the check
+       * that matters is that both agree.
        */
-      cruiseAscentMps: +ascentSpeedAtDepth(this.player.depth).toFixed(3),
-      /** What the live field is actually solving collectables against. Must match cruiseAscentMps. */
-      fieldCruiseAscentMps: +this.field.cruiseAscentSpeed.toFixed(3),
-      /** What the field is using for parallax. Must follow the player, boost included. */
-      playerAscentMps: +(this.player.vy > 0 ? this.player.vy : ascentSpeedAtDepth(this.player.depth)).toFixed(3),
+      scrollSpeedMps: LEVEL.scrollSpeed,
+      /** What the live field is actually solving collectables against. Must match scrollSpeedMps. */
+      fieldScrollSpeedMps: +this.field.cruiseAscentSpeed.toFixed(3),
       /**
        * Every visible collectable with its size and relative motion, sorted smallest first.
        *

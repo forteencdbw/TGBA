@@ -33,6 +33,16 @@ export class Camera {
     return this.viewport.cy - (worldY - this.y) * this.viewport.scale;
   }
 
+  /**
+   * Screen (pixels) -> world (metres), the inverse of `toScreenY`.
+   *
+   * Needed by the touch controls, which receive finger positions in canvas pixels and have to turn them
+   * into a place in the water for the bubble to head for.
+   */
+  toWorldY(screenY: number): number {
+    return this.y + (this.viewport.cy - screenY) / this.viewport.scale;
+  }
+
   /** Lowest / highest world y currently on screen, with a margin in metres. */
   visibleWorldRange(margin = 12): { min: number; max: number } {
     const halfSpan = this.viewport.height / 2 / this.viewport.scale;

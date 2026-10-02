@@ -1,4 +1,5 @@
 import { tuning } from './config';
+import type { LevelEntry } from './levels.ts';
 import { bubbleRelativeFallRatio, bubbleVolumeFromRadius } from './volume';
 
 /**
@@ -96,11 +97,10 @@ export class EntityField {
   reset(): void {
     this.bubbles = [];
     this.specks = [];
-    this.spawnedThisRun = 0;
+    this.timelineCursor = 0;
+    this.pending = [];
+    this.emittedCount = 0;
   }
-
-  /** Collectables created since the last reset, used to distinguish seeding from streaming. */
-  private spawnedThisRun = 0;
 
   /**
    * Insert a bubble provided by a test, assigning it an id.
@@ -115,66 +115,102 @@ export class EntityField {
   }
 
   /**
+   * Place whatever the level's timeline calls for as the camera passes it.
+   *
+   * This replaces the old "keep a population topped up" model. A level is now AUTHORED: the entries
+   * say what exists and where, so nothing appears that the designer did not ask for. The cursor only
+   * moves forwards, so an entry is emitted exactly once however the frame rate behaves.
+   *
+   * @param scrollMetres how far the camera has travelled from the seabed
+   */
+  placeTimeline(timeline: readonly LevelEntry[], scrollMetres: number): void {
+    while (this.timelineCursor < timeline.length) {
+      const entry = timeline[this.timelineCursor];
+      if (!entry || entry.at > scrollMetres) break;
+      this.timelineCursor++;
+      // Placed at its own distance, so it enters from the top of the screen and travels down with the
+      // scroll rather than appearing in place.
+      this.pending.push({ entry, worldY: entry.at });
+    }
+  }
+
+  /** The timeline cursor, and entries emitted but not yet handed to the game. */
+  private timelineCursor = 0;
+  private pending: { entry: LevelEntry; worldY: number }[] = [];
+
+  /**
+   * Collect the entries placed since the last call, and clear the queue.
+   *
+   * The game owns hazards and skill pickups, so the field cannot build them; it hands over what the
+   * timeline asked for and lets the caller decide what each kind means.
+   */
+  takePending(): { entry: LevelEntry; worldY: number }[] {
+    const out = this.pending;
+    this.pending = [];
+    this.emittedCount += out.length;
+    return out;
+  }
+
+  /** True once every timeline entry has been emitted. */
+  get timelineExhausted(): boolean {
+    return this.timelineCursor > 0 && this.pending.length === 0;
+  }
+
+  /** Cursor position and queue depth, for probes. A level that will not end needs these. */
+  get debugTimeline(): { cursor: number; pending: number; emitted: number } {
+    return { cursor: this.timelineCursor, pending: this.pending.length, emitted: this.emittedCount };
+  }
+
+  /** Total entries handed out so far, which is what proves nothing is placed twice. */
+  private emittedCount = 0;
+
+  /**
    * @param laneWidth metres across the play area
    * @param min,max visible world y range
-   * @param playerRadiusFraction the player's drawn radius as a fraction of the lane, so bubble
-   *   sizes can be expressed relative to it. Ratios are far easier to reason about than absolute
-   *   radii: >1 means "too big to eat", and the mix of ratios IS the difficulty curve.
    * @param playerVolume the player's current volume, used to solve each bubble's rise speed.
-   * @param cruiseAscent the player's CRUISING ascent speed (the depth curve, WITHOUT the boost
-   *   multiplier). Collectables are sized against this so that accelerating moves only the player.
-   * @param playerAscent the player's ACTUAL ascent speed, boost included. Used for the parallax
-   *   layers only -- world scenery should sweep past faster when the player climbs faster.
+   * @param scrollSpeed the camera's travel in m/s. Collectables are measured against this, because it
+   *   is what makes the world move now that the player no longer rises on their own.
    */
   update(
     dt: number,
     laneWidth: number,
     min: number,
     max: number,
-    playerRadiusFraction: number,
     playerVolume: number,
-    cruiseAscent: number,
-    playerAscent: number,
+    scrollSpeed: number,
   ): void {
-    this.cruiseAscent = Math.max(0.001, cruiseAscent);
-    this.playerAscent = Math.max(0.001, playerAscent);
+    this.scrollSpeed = Math.max(0.001, scrollSpeed);
     this.playerVolume = playerVolume;
     this.advance(dt);
-    this.advanceParallax(dt, this.playerAscent);
+    this.advanceParallax(dt, this.scrollSpeed);
     this.recycle(min, max);
-    this.topUp(laneWidth, min, max, playerRadiusFraction);
+    this.topUpSpecks(laneWidth, min, max);
   }
 
   /** Player volume the bubble speeds are currently solved against. */
   private playerVolume = 1;
 
   /**
-   * Cruising ascent speed: what collectable motion is measured against.
+   * The camera's scroll speed: what collectable motion is measured against.
    *
-   * Deliberately NOT the boosted speed. Collectables have their own rise rate, and holding the
-   * accelerate control makes the PLAYER climb faster -- it must not also make every bubble stream
-   * down faster, or accelerating would scale the whole world instead of just the player.
+   * This is the world's motion. It replaced the player's ascent speed as the reference, because with
+   * free movement the player may be stationary while the world still visibly moves.
    */
-  private cruiseAscent = 1.7;
-
-  /** Actual ascent speed, boost included. Drives the parallax layers only. */
-  private playerAscent = 1.7;
+  private scrollSpeed = 25;
 
   /**
    * A collectable's signed relative speed in m/s: positive travels down-screen, negative up.
    *
-   * Pulled out as its own function so a test can compare it across boost states WITHOUT also moving
-   * the player: it is a pure function of the bubble's size, the player's size, and the player's
-   * CRUISING ascent speed. Testing it indirectly, by tracking a live bubble, cannot separate the
-   * boost from the player growing mid-sample.
+   * Pulled out as its own function so a test can compare it directly: it is a pure function of the
+   * bubble's size, the player's size, and the camera's scroll speed.
    */
   solveBubbleVelocity(bubbleVolume: number, playerVolume: number): number {
-    return bubbleRelativeFallRatio(bubbleVolume, playerVolume) * this.cruiseAscent;
+    return bubbleRelativeFallRatio(bubbleVolume, playerVolume) * this.scrollSpeed;
   }
 
-  /** The cruising ascent speed collectables are currently solved against. */
+  /** The scroll speed collectables are currently solved against. */
   get cruiseAscentSpeed(): number {
-    return this.cruiseAscent;
+    return this.scrollSpeed;
   }
 
   private advance(dt: number): void {
@@ -220,10 +256,7 @@ export class EntityField {
     this.specks = this.specks.filter((s) => s.y > min - span * 0.05 && s.y < max + span * 0.05);
   }
 
-  private topUp(laneWidth: number, min: number, max: number, playerRadiusFraction: number): void {
-    while (this.bubbles.length < this.targetBubbles) {
-      this.bubbles.push(this.spawnBubble(laneWidth, min, max, playerRadiusFraction));
-    }
+  private topUpSpecks(laneWidth: number, min: number, max: number): void {
     const speckMargin = 4;
     while (this.specks.length < this.targetSpecks) {
       this.specks.push(this.spawnSpeck(laneWidth, min, max, speckMargin));
@@ -231,26 +264,41 @@ export class EntityField {
   }
 
   /**
-   * How far above the visible range a new collectable appears, as a fraction of the VISIBLE HEIGHT.
+   * Build a collectable for a timeline entry.
    *
-   * Expressed as a fraction rather than in metres, which is the fix for a bug that took three
-   * attempts: the visible height changes as the camera moves and the old absolute values (a full
-   * span, then 55m, then 60m) meant completely different things. 60m against a 454m view is 13%, so
-   * new bubbles appeared barely off-screen and took over half a minute to arrive at 1.5 px/s.
-   *
-   * THE CONSTRAINT: `CULL_ABOVE` must be strictly GREATER, or a bubble is destroyed on the step it
-   * is created and immediately replaced. In that state the field holds a full complement of bubbles
-   * while almost none are ever visible.
+   * A level says how big something is relative to the player, so the food in a level scales with the
+   * player rather than being a fixed size that stops mattering once they grow.
    */
-  private static readonly SPAWN_ABOVE_FRACTION = 0.15;
-  /** How far above the view a collectable survives. MUST exceed SPAWN_ABOVE_FRACTION. */
+  bubbleFromEntry(entry: LevelEntry, laneWidth: number, playerRadiusFraction: number): Bubble {
+    const ratio = entry.size ?? 0.5;
+    const radius = playerRadiusFraction * ratio;
+    const volume = bubbleVolumeFromRadius(radius);
+    return {
+      id: this.nextId++,
+      x: radius + entry.x * Math.max(0.01, laneWidth - radius * 2),
+      y: entry.at,
+      vy: bubbleRelativeFallRatio(volume, this.playerVolume) * this.scrollSpeed,
+      radius,
+      volume,
+      phase: Math.random() * Math.PI * 2,
+      wobble: Math.max(tuning.bubbleWobbleMin, Math.min(tuning.bubbleWobbleMax, 0.3 / Math.max(0.2, ratio))),
+    };
+  }
+
+  /**
+   * How far above the view a collectable survives, as a fraction of the visible height.
+   *
+   * Only a cull margin now, not a spawn distance: with a timeline deciding what exists and where,
+   * nothing is placed "just off screen" any more, so the SPAWN/CULL pairing that used to be a
+   * hard constraint here no longer applies.
+   */
   private static readonly CULL_ABOVE_FRACTION = 0.3;
   /**
    * How far BELOW the view a collectable survives, again as a fraction of the visible height.
    *
-   * Generous, because a large bubble rises faster than the player and so travels UP the screen: it
-   * ends up below the view while still being part of the field. Culling it there would keep deleting
-   * exactly the big bubbles, which are the ones that matter most.
+   * Generous, because a large bubble rises faster than the scroll and so travels UP the screen: it ends
+   * up below the view while still being part of the level. Culling it there would keep deleting exactly
+   * the big bubbles, which are the ones that matter most.
    */
   private static readonly CULL_BELOW_FRACTION = 0.35;
 
@@ -271,51 +319,6 @@ export class EntityField {
    * There is no clamp on y: anything above the play area simply streams in later. Clamping to
    * DEPTH_TOTAL here once piled the whole initial fill into a single band at the top.
    */
-  private spawnBubble(laneWidth: number, min: number, max: number, playerRadiusFraction: number): Bubble {
-    const span = max - min;
-    const cullAbove = span * EntityField.CULL_ABOVE_FRACTION;
-    // SEEDING vs STREAMING, distinguished by how many have been created this run rather than by the
-    // live count (which drops whenever the player eats one).
-    //
-    //   seeding: spread uniformly from the bottom of the view up to the highest position that will
-    //            survive the cull, so the player starts inside a populated world AND has a reserve
-    //            above the view to stream down. Bounded by the cull margin on purpose -- seeding
-    //            beyond it meant the bubbles were destroyed the moment they were created.
-    //   streaming: just above the view, so they enter from the top of the screen.
-    const seeding = this.spawnedThisRun < this.targetBubbles;
-    const y = seeding
-      ? min + Math.random() * (span + cullAbove)
-      : max + Math.random() * span * EntityField.SPAWN_ABOVE_FRACTION;
-    this.spawnedThisRun++;
-
-    // Size relative to the PLAYER, so the mix stays meaningful as the player grows.
-    //
-    // The distribution is deliberately lopsided: mostly edible, with a minority that are too big.
-    // The first version used `0.45 + roll^2 * 2.1`, whose mean factor was 1.15 -- i.e. the AVERAGE
-    // bubble was bigger than the player, and the screen filled up with giant obstacles.
-    const roll = Math.random();
-    const ratio = roll < 0.72 ? 0.3 + Math.random() * 0.45 : 1.05 + Math.random() * 0.6;
-
-    const radius = playerRadiusFraction * ratio;
-    const volume = bubbleVolumeFromRadius(radius);
-
-    return {
-      id: this.nextId++,
-      x: radius + Math.random() * Math.max(0.01, laneWidth - radius * 2),
-      y,
-      // Signed and re-solved every frame; see `advance`.
-      vy: bubbleRelativeFallRatio(volume, this.playerVolume) * this.cruiseAscent,
-      radius,
-      volume,
-      phase: Math.random() * Math.PI * 2,
-      // Larger bubbles are steadier: surface tension holds them together against the churn.
-      wobble: Math.max(
-        tuning.bubbleWobbleMin,
-        Math.min(tuning.bubbleWobbleMax, tuning.bubbleWobbleMax * (playerRadiusFraction / Math.max(1e-4, radius)) * 0.5),
-      ),
-    };
-  }
-
   /**
    * Specks come in two depth classes. Far ones barely move and give the water body; near ones sweep
    * past several times faster and are the actual speed cue.

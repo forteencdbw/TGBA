@@ -50,6 +50,8 @@ export interface LateralAuthority {
    * A constant speed is directly predictable: hold the key, move at exactly this rate.
    */
   keyboardSpeed: number;
+  /** The lane's width in metres, so a caller can convert these lane-relative speeds for the OTHER axis. */
+  laneWidth: number;
 }
 
 /** Simulate the real update loop; returns seconds to travel `laneWidth` from a standstill. */
@@ -129,6 +131,7 @@ export function calibrateLateral(laneWidth: number): LateralAuthority {
     cruiseTopSpeed: topSpeed(accel, 1, 6),
     // A crossing time IS a speed when there is no ramp: one lane width in KEYBOARD_CROSSING_SECONDS.
     keyboardSpeed: 1 / KEYBOARD_CROSSING_SECONDS,
+    laneWidth,
   };
 
   cache.set(laneWidth, result);

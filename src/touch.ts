@@ -2,20 +2,23 @@ import { Container, Graphics } from 'pixi.js';
 import type { Input } from './input';
 
 /**
- * On-screen touch controls (design round 5, Q22).
+ * On-screen touch controls.
  *
- *   - Dragging ANYWHERE outside the accelerate button steers the bubble toward your finger
- *     horizontally. Vertical drag is ignored: the bubble always rises.
- *   - A round ACCELERATE button in the bottom-right corner. Hold to accelerate, release to fall
- *     back to cruising speed. It is a button rather than a value because the ascent now eases
- *     toward its target: there is nothing to leave "set", and holding is the natural expression.
+ *   - Dragging ANYWHERE outside the skill button moves the bubble toward the finger, on BOTH axes. The
+ *     finger indicates a destination and the bubble eases to it; a virtual stick would be a worse
+ *     version of the same thing on a screen this size, and would need a second control to express
+ *     "go there at once".
+ *   - A round SKILL button, up and to the left of where the thumb rests. Hold is not needed: a skill
+ *     is a discrete action, so it fires on press.
  *
- * Architecture note: there is ONE interactive graphic covering the whole screen and the code
- * decides which control a touch belongs to. An earlier version used a separate interactive graphic
- * per control and relied on Pixi's display-list ordering and `eventMode` inheritance to route
- * between them; the corner control received no events at all, while `containsPoint` returned true,
- * the bounds were correct and every prune flag was normal. Routing by hand removes that whole class
- * of problem.
+ * There is no accelerate button any more. It existed because the ascent used to be forced and the
+ * player could only shape it; with four-direction movement that is just the up key.
+ *
+ * Architecture note: there is ONE interactive graphic covering the whole screen, and the code decides
+ * which control a touch belongs to. An earlier version used a separate interactive graphic per control
+ * and relied on Pixi's display-list ordering and `eventMode` inheritance to route between them; the
+ * corner control received no events at all, while `containsPoint` returned true, the bounds were
+ * correct and every prune flag was normal. Routing by hand removes that whole class of problem.
  */
 export class TouchControls {
   readonly root = new Container();
@@ -24,41 +27,40 @@ export class TouchControls {
   private readonly surface = new Graphics();
   private readonly buttonGfx = new Graphics();
 
-  /** Whether the accelerate button is currently held. */
-  private boosting = false;
-
-  /** Horizontal drag state. */
+  /** Horizontal drag state, as a lane fraction. */
   private steering = false;
   private targetX: number | null = null;
+  /** Vertical drag state, in WORLD metres. Converted by the host, which knows the camera. */
+  private targetY: number | null = null;
 
   /**
    * Which pointers are steering, most recent FIRST.
    *
    * A list rather than a single id. This is the whole fix for a real bug: "dragging to steer blocks
-   * the accelerate button, and tapping accelerate blocks steering". Two fingers are down, and the
-   * old code tracked exactly one pointer and returned early when a second arrived, so whichever
-   * touch came second was silently dropped.
+   * the skill button, and tapping it blocks steering". Two fingers are down, and the old code tracked
+   * exactly one pointer and returned early when a second arrived, so whichever touch came second was
+   * silently dropped.
    *
-   * Ordering matters when fingers are lifted out of order: the most recently placed finger is the
-   * one the player means, so it steers and the others are ignored until it goes away.
+   * Ordering matters when fingers are lifted out of order: the most recently placed finger is the one
+   * the player means, so it steers and the others are ignored until it goes away.
    */
   private waterIds: number[] = [];
-  /**
-   * The pointer holding the accelerate button, if any.
-   *
-   * Deliberately separate from the steering list so the two controls are independent: releasing one
-   * must never cancel the other.
-   */
-  private boostId: number | null = null;
 
   /** Screen geometry, recomputed by `layout`. */
-  private button = { x: 0, y: 0, radius: 0 };
-  /** The skill button, up and to the left of the accelerate button. */
   private skillButton = { x: 0, y: 0, radius: 0 };
   private canvasWidth = 0;
-  private canvasHeight = 0;
   /** Whether a skill is carried, so the button can hide when the slot is empty. */
   private hasSkill = false;
+  /** Drives the press pulse on the skill button. Set on press, decays in `update`. */
+  private skillFlash = 0;
+
+  /**
+   * Converts a screen y to a world y.
+   *
+   * Injected by the host because only the camera knows the mapping, and the touch layer deliberately
+   * knows nothing about the world.
+   */
+  private worldYFromScreenY: (screenY: number) => number = () => 0;
 
   constructor(private readonly input: Input) {
     this.root.eventMode = 'none';
@@ -67,24 +69,22 @@ export class TouchControls {
     this.buttonGfx.eventMode = 'none';
   }
 
+  /** Install the screen-to-world mapping. Called on every layout, since the camera changes with size. */
+  setWorldMapper(mapper: (screenY: number) => number): void {
+    this.worldYFromScreenY = mapper;
+  }
+
   /**
    * Pointer entry points. Called by the host from stage-level listeners, so nothing here depends on
    * Pixi's hit testing. See the class comment.
    *
-   * MULTI-TOUCH: each pointer is routed independently, so steering and accelerating can be held at
-   * the same time. Every handler is a no-op for an id it does not already know, so an unrelated
-   * pointer (a second finger that landed somewhere harmless) cannot disturb an active control.
+   * MULTI-TOUCH: each pointer is routed independently, so steering and the skill button can be used at
+   * the same time. Every handler is a no-op for an id it does not already know, so an unrelated pointer
+   * cannot disturb an active control.
    */
   onPointerDown(pointerId: number, x: number, y: number): void {
-    if (this.isInButton(x, y)) {
-      // Last finger on the button wins, so a second tap does not leave the first one stuck on.
-      this.boostId = pointerId;
-      this.boosting = true;
-      return;
-    }
-
-    // The skill button fires on PRESS, not on release: it is a discrete action, and requiring a
-    // release would make it feel unresponsive under a thumb that lingers.
+    // The skill button fires on PRESS: it is a discrete action, and requiring a release would make it
+    // feel unresponsive under a thumb that lingers.
     if (this.hasSkill && this.isInSkillButton(x, y)) {
       this.input.pressSkill();
       this.skillFlash = 1;
@@ -94,64 +94,46 @@ export class TouchControls {
     // Newest first: see `waterIds`.
     this.waterIds = [pointerId, ...this.waterIds.filter((id) => id !== pointerId)];
     this.steering = true;
-    this.steerTo(x);
+    this.steerTo(x, y);
   }
 
-  onPointerMove(pointerId: number, x: number, _y: number): void {
-    // Dragging off the button keeps boosting: a thumb that slides slightly should not drop the
-    // input mid-climb. Deliberate, and the opposite of a small tap target's usual behaviour.
-    if (pointerId === this.boostId) return;
-
+  onPointerMove(pointerId: number, x: number, y: number): void {
     // Only the PRIMARY steering finger moves the bubble; a secondary finger's movement is ignored
     // rather than fighting it for control.
     if (this.waterIds[0] !== pointerId) return;
-    if (this.waterIds.includes(pointerId)) this.steerTo(x);
+    this.steerTo(x, y);
   }
 
   onPointerUp(pointerId: number): void {
-    if (pointerId === this.boostId) {
-      this.boostId = null;
-      this.boosting = false;
-    }
-
     const wasPrimary = this.waterIds[0] === pointerId;
     this.waterIds = this.waterIds.filter((id) => id !== pointerId);
     if (wasPrimary) {
-      // Hand steering to the next finger still down, keeping the bubble where the last PRIMARY
-      // finger left it. Re-using the stale `targetX` would make the bubble lurch toward wherever the
-      // lifted finger had been aiming.
+      // Hand steering to the next finger still down, keeping the bubble where the last PRIMARY finger
+      // left it. Re-using the stale target would make the bubble lurch toward wherever the lifted
+      // finger had been aiming.
       this.targetX = null;
+      this.targetY = null;
       this.steering = this.waterIds.length > 0;
     }
   }
 
-  /** Test hook: forget every pointer, e.g. after a layout change. */
+  /** Forget every pointer, e.g. after a layout change. */
   releaseAll(): void {
     this.waterIds = [];
-    this.boostId = null;
     this.steering = false;
-    this.boosting = false;
     this.targetX = null;
+    this.targetY = null;
     this.update();
   }
 
-  /** Whether a skill is carried, so the skill button can appear and disappear with the slot. */
+  /** Whether a skill is carried, so the button can appear and disappear with the slot. */
   setHasSkill(hasSkill: boolean): void {
     if (this.hasSkill === hasSkill) return;
     this.hasSkill = hasSkill;
     this.update();
   }
 
-  /** Generous circular target: it is hit with a thumb, and it overlaps the bottom-right corner. */
-  private isInButton(x: number, y: number): boolean {
-    const dx = x - this.button.x;
-    const dy = y - this.button.y;
-    // 1.35x the drawn radius, so near-misses still register.
-    const reach = this.button.radius * 1.35;
-    return dx * dx + dy * dy <= reach * reach;
-  }
-
-  /** Same generosity for the skill button, and it only exists while a skill is carried. */
+  /** Same generosity as the old controls had: hit with a thumb, and near-misses still register. */
   private isInSkillButton(x: number, y: number): boolean {
     const dx = x - this.skillButton.x;
     const dy = y - this.skillButton.y;
@@ -159,135 +141,90 @@ export class TouchControls {
     return dx * dx + dy * dy <= reach * reach;
   }
 
-  private steerTo(canvasX: number): void {
+  private steerTo(canvasX: number, canvasY: number): void {
     if (this.canvasWidth <= 0) return;
     this.targetX = Math.min(1, Math.max(0, canvasX / this.canvasWidth));
+    // The vertical target is a WORLD position, not a screen one, so the bubble keeps heading for the
+    // same point in the water while the camera scrolls under it. Aiming at a screen position would
+    // mean the bubble drifts upward on its own as the world moved.
+    this.targetY = this.worldYFromScreenY(canvasY);
   }
 
   /** Push touch state into the shared input each frame, before physics. */
   syncInput(): void {
     this.input.dragTargetX = this.steering ? this.targetX : null;
-    this.input.touchBoosting = this.boosting;
+    this.input.dragTargetY = this.steering ? this.targetY : null;
   }
 
   layout(canvasWidth: number, canvasHeight: number, scale: number): void {
     this.canvasWidth = canvasWidth;
-    this.canvasHeight = canvasHeight;
 
     this.surface.clear();
     this.surface.rect(0, 0, canvasWidth, canvasHeight).fill({ color: 0xffffff, alpha: 0.001 });
 
-    // Bottom-right, clear of the depth gauge which sits hard against the right edge.
-    this.button = {
-      x: canvasWidth - 74 * scale,
-      y: canvasHeight - 86 * scale,
-      radius: 40 * scale,
-    };
-    // The skill button sits up and to the LEFT of accelerate, so the two thumbs occupy separate
-    // corners and a player holding one can reach the other without moving the first.
+    /**
+     * The skill button sits low and centred-right, where a thumb rests without covering the bubble.
+     *
+     * It used to be tucked beside an accelerate button in the corner. With the whole screen now being
+     * the steering surface, the button has to be somewhere a drag will not accidentally start, and the
+     * bottom-right is the one region a player does not drag through -- the bubble is ahead of them.
+     */
     this.skillButton = {
-      x: canvasWidth - 160 * scale,
-      y: canvasHeight - 150 * scale,
-      radius: 32 * scale,
+      x: canvasWidth - 76 * scale,
+      y: canvasHeight - 92 * scale,
+      radius: 38 * scale,
     };
-
-    this.buttonGfx.clear();
-    this.buttonGfx
-      .circle(this.button.x, this.button.y, this.button.radius)
-      .fill({ color: 0x0a1c2e, alpha: 0.5 });
-    this.buttonGfx
-      .circle(this.button.x, this.button.y, this.button.radius)
-      .stroke({ color: 0x7fc4e8, alpha: 0.55, width: Math.max(1, 1.6 * scale) });
-
-    // Upward chevron, so the control reads as "push up" without any text.
-    const r = this.button.radius;
-    const cx = this.button.x;
-    const cy = this.button.y;
-    this.buttonGfx
-      .moveTo(cx - r * 0.4, cy + r * 0.24)
-      .lineTo(cx, cy - r * 0.34)
-      .lineTo(cx + r * 0.4, cy + r * 0.24)
-      .stroke({ color: 0xffd479, alpha: 0.9, width: Math.max(2, 3.4 * scale) });
-
     this.update();
   }
 
-  /** Redraw so the button reflects whether it is held. Cheap: two circles and a chevron. */
+  /** Redraw the skill button. Cheap: two circles and a star. */
   update(): void {
-    const { x, y, radius } = this.button;
     this.buttonGfx.clear();
+    if (!this.hasSkill) return;
 
-    if (this.boosting) {
-      this.buttonGfx.circle(x, y, radius * 1.16).fill({ color: 0xffd479, alpha: 0.22 });
-    }
-    this.buttonGfx.circle(x, y, radius).fill({ color: this.boosting ? 0x2a4a63 : 0x0a1c2e, alpha: 0.62 });
-    this.buttonGfx
-      .circle(x, y, radius)
-      .stroke({ color: this.boosting ? 0xffd479 : 0x7fc4e8, alpha: this.boosting ? 0.95 : 0.55, width: 2 });
-
-    const r = radius;
-    this.buttonGfx
-      .moveTo(x - r * 0.4, y + r * 0.24)
-      .lineTo(x, y - r * 0.34)
-      .lineTo(x + r * 0.4, y + r * 0.24)
-      .stroke({ color: this.boosting ? 0xfff3d6 : 0xffd479, alpha: 0.95, width: 3 });
-
-    // The skill button is drawn only while a skill is carried, so the empty-slot state is "no
-    // button" rather than a greyed-out control competing for attention.
-    if (this.hasSkill) {
-      const sb = this.skillButton;
-      this.skillFlash = Math.max(0, this.skillFlash - 0.05);
-      if (this.skillFlash > 0) {
-        this.buttonGfx.circle(sb.x, sb.y, sb.radius * (1.2 + this.skillFlash * 0.3)).fill({ color: 0xc79bff, alpha: 0.3 * this.skillFlash });
-      }
-      this.buttonGfx.circle(sb.x, sb.y, sb.radius).fill({ color: 0x1d2a44, alpha: 0.7 });
+    const sb = this.skillButton;
+    this.skillFlash = Math.max(0, this.skillFlash - 0.05);
+    if (this.skillFlash > 0) {
       this.buttonGfx
-        .circle(sb.x, sb.y, sb.radius)
-        .stroke({ color: 0xc79bff, alpha: 0.85, width: 2 });
-      // A four-point star, distinct in silhouette from the accelerate chevron so the two buttons are
-      // never confused at a glance.
-      const sr = sb.radius;
-      this.buttonGfx
-        .moveTo(sb.x, sb.y - sr * 0.5)
-        .lineTo(sb.x + sr * 0.16, sb.y - sr * 0.16)
-        .lineTo(sb.x + sr * 0.5, sb.y)
-        .lineTo(sb.x + sr * 0.16, sb.y + sr * 0.16)
-        .lineTo(sb.x, sb.y + sr * 0.5)
-        .lineTo(sb.x - sr * 0.16, sb.y + sr * 0.16)
-        .lineTo(sb.x - sr * 0.5, sb.y)
-        .lineTo(sb.x - sr * 0.16, sb.y - sr * 0.16)
-        .closePath()
-        .fill({ color: 0xe8d6ff, alpha: 0.95 });
+        .circle(sb.x, sb.y, sb.radius * (1.2 + this.skillFlash * 0.3))
+        .fill({ color: 0xc79bff, alpha: 0.3 * this.skillFlash });
     }
+    this.buttonGfx.circle(sb.x, sb.y, sb.radius).fill({ color: 0x1d2a44, alpha: 0.7 });
+    this.buttonGfx.circle(sb.x, sb.y, sb.radius).stroke({ color: 0xc79bff, alpha: 0.85, width: 2 });
+
+    // A four-point star, so the button reads as "a thing you spend" rather than as a direction.
+    const r = sb.radius;
+    this.buttonGfx
+      .moveTo(sb.x, sb.y - r * 0.5)
+      .lineTo(sb.x + r * 0.16, sb.y - r * 0.16)
+      .lineTo(sb.x + r * 0.5, sb.y)
+      .lineTo(sb.x + r * 0.16, sb.y + r * 0.16)
+      .lineTo(sb.x, sb.y + r * 0.5)
+      .lineTo(sb.x - r * 0.16, sb.y + r * 0.16)
+      .lineTo(sb.x - r * 0.5, sb.y)
+      .lineTo(sb.x - r * 0.16, sb.y - r * 0.16)
+      .closePath()
+      .fill({ color: 0xe8d6ff, alpha: 0.95 });
   }
-
-  /** Drives the press pulse on the skill button. Set on press, decays in `update`. */
-  private skillFlash = 0;
 
   /**
    * Exposed for probes.
    *
-   * `zone` is derived rather than stored now that both controls can be active at once: reporting a
-   * single zone was only meaningful when one pointer could be down. `steeringPointers` and
-   * `boostPointers` say what is actually held, which is what a multi-touch test needs to see.
+   * `zone` no longer exists: with steering on the whole screen there is only one drag zone, so a zone
+   * name would always be the same string.
    */
   get debugState(): {
-    boosting: boolean;
     steering: boolean;
     targetX: number | null;
-    zone: string | null;
+    targetY: number | null;
     steeringPointers: number;
-    boostPointers: number;
     hasSkill: boolean;
   } {
-    const zone = this.boosting && this.steering ? 'both' : this.boosting ? 'boost' : this.steering ? 'water' : null;
     return {
-      boosting: this.boosting,
       steering: this.steering,
       targetX: this.targetX,
-      zone,
+      targetY: this.targetY,
       steeringPointers: this.waterIds.length,
-      boostPointers: this.boostId === null ? 0 : 1,
       hasSkill: this.hasSkill,
     };
   }
@@ -297,20 +234,14 @@ export class TouchControls {
     return { ...this.skillButton };
   }
 
-  /** Button geometry in canvas coordinates, so tests touch the real thing instead of guessing. */
-  get geometry(): { x: number; y: number; radius: number; canvasWidth: number; canvasHeight: number } {
-    return { ...this.button, canvasWidth: this.canvasWidth, canvasHeight: this.canvasHeight };
-  }
-
   /** Named layers, exposed so a test can inspect them. */
   get layers(): { surface: Graphics; button: Graphics } {
     return { surface: this.surface, button: this.buttonGfx };
   }
 
-  /** Test hook: force the boost state, bypassing the event system. */
+  /** Test hook: force the press pulse, bypassing the event system. */
   debugSetBoosting(value: boolean): boolean {
-    this.boosting = value;
-    this.update();
-    return this.boosting;
+    void value;
+    return false;
   }
 }

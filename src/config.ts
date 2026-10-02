@@ -146,30 +146,23 @@ export const tuning = {
 
   // --- Collectables -------------------------------------------------------
   /**
-   * How fast a collectable rises ON ITS OWN, as a multiple of the player's ascent speed.
+   * How fast a collectable rises ON ITS OWN, as a multiple of the LEVEL'S SCROLL SPEED.
    *
-   * This is the real-world relationship: bigger bubbles rise faster, because buoyancy grows with
-   * volume while drag grows with cross-section, so terminal velocity increases with radius.
+   * The reference used to be the player's ascent speed, because the player was always rising and every
+   * apparent motion was measured against that. With free movement there is no player ascent to measure
+   * against -- the camera's scroll is what makes the world move -- so the scroll speed is the new
+   * reference, and these bounds are the same ratios retargeted.
    *
-   * What the player sees is the DIFFERENCE:
+   * Real bubbles rise faster the bigger they are: buoyancy grows with volume while drag grows with
+   * cross-section, so terminal velocity increases with radius.
    *
-   *     screen speed = playerAscent - the bubble's own rise speed
+   * The consequence for the player is the interesting part:
    *
-   * so with these bounds:
-   *   - a bubble at 0.15x the player's radius rises at 0.15 of the player's pace, so it falls away
-   *     down the screen at 0.85x the ascent;
-   *   - one the player's own size rises at about 1.0, so it hangs almost still alongside;
-   *   - one at 1.6x or more rises FASTER than the player and climbs up the screen.
+   *     apparent speed of a bubble = scrollSpeed - itsOwnRiseSpeed
    *
-   * That makes size legible with no UI at all: what drifts downward is what you can eat, and what
-   * climbs away is what you cannot.
-   *
-   * Note the whole field is measured RELATIVE to the ascent, so the spread is modest near the
-   * seabed (about 1-2 px/s on a phone) and obvious near the surface (about 3-5 px/s across a
-   * 13-second crossing). That follows from being physically consistent, and is not a defect.
-   *
-   * Replaces an earlier model that scaled a fixed downward speed by the player's ascent. That got
-   * the magnitude right -- the stream moved -- but had no relationship to bubble size whatsoever.
+   * so with these bounds a small bubble (0.15) falls down the screen at 0.85 of the scroll and a very
+   * large one (1.6) actually outruns the scroll and climbs. Size stays legible with no UI: what drifts
+   * downward is what you can eat.
    */
   bubbleRiseMin: 0.15,
   bubbleRiseMax: 1.6,
@@ -228,6 +221,15 @@ export const tuning = {
    * becomes a free escape, which is exactly what the design principle forbids.
    */
   fartBaitCount: 3,
+
+  /**
+   * Vertical speed relative to horizontal, as a multiplier.
+   *
+   * 1 means the bubble crosses its own height in the same time it crosses the lane's width. Larger
+   * makes the level scroll past faster for a given amount of holding, which is what a vertical
+   * scroller wants: climbing is the point, so it should not be the slower axis.
+   */
+  verticalSpeedScale: 1.35,
 
   // --- Invulnerability ----------------------------------------------------
   /** Seconds of invulnerability after a hit, so a swarm cannot chain-kill in one touch. */

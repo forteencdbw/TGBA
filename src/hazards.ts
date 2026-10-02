@@ -202,13 +202,26 @@ export interface HazardContext {
   playerX: number;
   playerY: number;
   playerRadiusFraction: number;
-  /** The player's own ascent speed, which hazards are measured against. */
-  ascentSpeed: number;
+  /**
+   * How fast the WORLD is moving past the player, in m/s: the level's scroll speed.
+   *
+   * This replaced the player's ascent speed as the reference for hazard motion. With free movement the
+   * player may be stationary, so "how fast is this thing approaching me" is a property of the level, not
+   * of the player. Hazard speeds are still expressed as fractions of it, so the approach rate stays
+   * proportional however the level's pace is retuned.
+   */
+  descentSpeed: number;
   /** Seconds since the run started, for the bait timers. */
   elapsed: number;
   /** Whether the player is currently invulnerable, in which case contact must not re-trigger. */
   invulnerable: boolean;
-  /** True while the player is actively struggling (accelerating), which can tear off trash. */
+  /**
+   * True while the player is actively steering, which can tear off trash.
+   *
+   * Was "accelerating" when there was an accelerate control. The intuitive reading is unchanged -- fight
+   * the bag and you get free -- but the trigger is now any deliberate movement input, which is more
+   * legible than a speed threshold the player cannot see.
+   */
   struggling: boolean;
   /**
    * The player's volume, which drives the fish's perception radius.
@@ -286,17 +299,32 @@ export class HazardField {
     return hazardTuning.fishPerceptionBaseMeters + over * hazardTuning.fishPerceptionPerVolume;
   }
 
+  /**
+   * Whether the field may generate hazards on its own.
+   *
+   * FALSE for a level, and that is the whole point of the refactor: content comes from the level's
+   * timeline, so anything this spawner adds is content nobody authored. It was the old "keep a
+   * population topped up" model, and leaving it on meant a level's carefully placed hazards were joined
+   * by a steady stream of random ones -- which also made the level impossible to END, because the win
+   * condition is "the scroll is done and the water is clear".
+   *
+   * Kept as a flag rather than deleted because a future endless mode is exactly the thing it does.
+   */
+  autoSpawn = false;
+
   update(dt: number, ctx: HazardContext): HazardEffect[] {
     const effects: HazardEffect[] = [];
     ctx.eatenBubbleIds = [];
     ctx.splitCount = 0;
 
-    this.spawnTimer -= dt;
-    const ceiling = Math.min(hazardTuning.maxActive, hazardTuning.minActive + Math.floor(ctx.elapsed / 25));
-    if (this.spawnTimer <= 0) {
-      this.spawnTimer = hazardTuning.spawnEverySeconds;
-      if (this.hazards.length < ceiling) {
-        this.hazards.push(this.spawn(ctx));
+    if (this.autoSpawn) {
+      this.spawnTimer -= dt;
+      const ceiling = Math.min(hazardTuning.maxActive, hazardTuning.minActive + Math.floor(ctx.elapsed / 25));
+      if (this.spawnTimer <= 0) {
+        this.spawnTimer = hazardTuning.spawnEverySeconds;
+        if (this.hazards.length < ceiling) {
+          this.hazards.push(this.spawn(ctx));
+        }
       }
     }
 
@@ -532,7 +560,7 @@ export class HazardField {
    */
   private advance(h: Hazard, dt: number, ctx: HazardContext): void {
     h.phase += dt;
-    const base = ctx.ascentSpeed;
+    const base = ctx.descentSpeed;
 
     switch (h.kind) {
       case 'fish': {

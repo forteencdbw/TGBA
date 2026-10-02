@@ -1,22 +1,24 @@
 /**
  * Input. Desktop is the development driver (keyboard); touch is the shipping target.
  *
- * Keyboard and touch are merged here rather than in the player, so the physics sees one pair of
- * axes regardless of device. Touch wins when it is active, because a player holding a finger on
- * the glass clearly means it.
+ * Both produce the same pair of axes, so the physics never learns which device is in use.
+ *
+ * The bubble moves FREELY in the plane, so the keyboard drives four directions and there is no boost
+ * or brake key: with the player in control of the vertical, both would just be second ways to do what
+ * the direction keys already do.
  */
 
 const KEYS = {
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
-  boost: ['Space', 'ShiftLeft', 'ShiftRight'],
-  brake: ['KeyS', 'ArrowDown'],
+  up: ['KeyW', 'ArrowUp'],
+  down: ['KeyS', 'ArrowDown'],
   /**
    * The active skill.
    *
-   * `KeyJ` sits under the right hand, next to the arrow keys and Space, so a reflex press does not
-   * require the left hand to leave WASD. Enter is also accepted because it is what a player tries
-   * first when a game has one obvious button.
+   * `KeyJ` sits under the right hand, next to the arrow keys, so a reflex press does not require the
+   * left hand to leave WASD. Enter is also accepted because it is what a player tries first when a
+   * game has one obvious button.
    */
   skill: ['KeyJ', 'Enter'],
   /** Mute toggle. `KeyM` is the near-universal convention and costs nothing to honour. */
@@ -27,24 +29,24 @@ export class Input {
   private readonly down = new Set<string>();
   private disposers: Array<() => void> = [];
 
-  /** Horizontal input axis, -1 (left) .. 1 (right). Keyboard only. */
+  /** Horizontal axis, -1 (left) .. 1 (right). */
   axisX = 0;
-  /** Ascend/descend intent: +1 boost, -1 brake, 0 coast. */
+  /** Vertical axis, +1 (up) .. -1 (down). */
   axisY = 0;
 
   /**
    * Touch: the lane fraction the bubble should ease toward while a finger is down.
-   * `null` means nobody is dragging, so the keyboard owns the axis.
+   * `null` means nobody is dragging, so the keyboard owns the axes.
    */
   dragTargetX: number | null = null;
   /**
-   * Touch: whether the on-screen accelerate button is held.
+   * Touch: the world y the bubble should ease toward, in metres, or null when not dragging.
    *
-   * A BUTTON, not a slider value. The ascent now accelerates toward its target, so holding is the
-   * natural expression and there is nothing to leave "set" between touches. A sticky slider made
-   * sense when the change was instantaneous; with a ramp it would just be a second accelerator.
+   * Absolute rather than an axis: the finger indicates WHERE to go, and the bubble follows it. A
+   * virtual stick would be a worse version of the same thing on a screen this size, and would need a
+   * second control to express "go there directly".
    */
-  touchBoosting = false;
+  dragTargetY: number | null = null;
   /**
    * Touch: the on-screen skill button was pressed this frame.
    *
@@ -83,11 +85,7 @@ export class Input {
     const held = (codes: readonly string[]) => codes.some((code) => this.down.has(code));
 
     this.axisX = (held(KEYS.right) ? 1 : 0) - (held(KEYS.left) ? 1 : 0);
-
-    const keyboardY = (held(KEYS.boost) ? 1 : 0) - (held(KEYS.brake) ? 1 : 0);
-    // The on-screen button only ever boosts, so it contributes on the positive side. A keyboard
-    // press takes precedence because it can also brake.
-    this.axisY = keyboardY !== 0 ? keyboardY : this.touchBoosting ? 1 : 0;
+    this.axisY = (held(KEYS.up) ? 1 : 0) - (held(KEYS.down) ? 1 : 0);
 
     // Keyboard is edge-detected here rather than in the event handler, so the key repeat rate and a
     // held key cannot fire the skill more than once.
