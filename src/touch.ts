@@ -1,6 +1,7 @@
 import { Container, Graphics } from 'pixi.js';
 import { mech } from './config';
 import type { Input } from './input';
+import type { ControlId } from './bubbleTypes';
 
 /** The field's accent colour, read from the config each frame so a live edit is visible immediately. */
 function suctionFieldColor(): number {
@@ -84,6 +85,13 @@ export class TouchControls {
    * compression the first is still holding, the same reason the suction pointer exists.
    */
   private compressPointer: number | null = null;
+  /**
+   * The pointer holding the charge button, or null.
+   *
+   * A state, like the compress button -- the wind-up lasts as long as the thumb does -- and its release is what
+   * fires the slam. Claimed so a second finger cannot let go of a charge the first is still winding.
+   */
+  private chargePointer: number | null = null;
   /** Knob offset from the pad centre, in canvas pixels, already clamped to the radius. */
   private knobX = 0;
   private knobY = 0;
@@ -132,6 +140,35 @@ export class TouchControls {
    * reasons, so a control where one happens on the way to the other is not a choice at all.
    */
   private compressButton = { x: 0, y: 0, radius: 0 };
+  /**
+   * The charge button: the volatile bubble's one deliberate verb.
+   *
+   * Bottom RIGHT, in the slot the suction/skill button uses for the devour bubble, and at the same size -- it is
+   * that type's primary action, so it belongs under the thumb that is not steering. Hold to wind up, release to
+   * slam, which is why nothing happens on the press.
+   */
+  private chargeButton = { x: 0, y: 0, radius: 0 };
+  /** Drives the wind-up pulse on the charge button, 0..1. */
+  private chargeHold = 0;
+
+  /**
+   * Which controls this type lays out.
+   *
+   * THE point of the abstraction: a type that does not name `spit` gets no spit button, and there is no rule
+   * anywhere saying "the volatile bubble has no spit" -- the button it would have been simply is not in the list.
+   * See `src/bubbleTypes.ts`.
+   */
+  private controls: readonly ControlId[] = ['wheel', 'suction', 'spit', 'compress'];
+
+  private has(control: ControlId): boolean {
+    return this.controls.includes(control);
+  }
+
+  /** Lay out a different control set. Called when a run starts, before `layout`. */
+  setControls(controls: readonly ControlId[]): void {
+    this.controls = controls;
+    this.update();
+  }
 
   constructor(private readonly input: Input) {
     this.root.eventMode = 'none';
@@ -157,16 +194,31 @@ export class TouchControls {
      * button also sets `suctionHeld` and the release clears it. Splitting them into two buttons would put two
      * thumb targets in the same corner of a phone screen for no gain -- they are never wanted simultaneously.
      */
-    if (this.isInSkillButton(x, y)) {
+    if (this.has('skill') && this.isInSkillButton(x, y)) {
       this.input.pressSkill();
       this.skillFlash = 1;
       /**
-       * Only one pointer owns the field. A second finger landing on the button must not be able to release a
-       * field the first is still holding, which it would if `onPointerUp` cleared the flag unconditionally.
+       * The press is always the skill; the HOLD is whichever field this type has.
+       *
+       * Both meanings on one control, because they are never wanted at once -- and the hold is a property of the
+       * type: the devour bubble gathers, the volatile one winds up. `suction` and `charge` are separate ids rather
+       * than one "hold" id precisely so this branch cannot pick the wrong one; see `ControlId`.
+       *
+       * Only one pointer owns the hold. A second finger landing on the button must not be able to release something
+       * the first is still holding, which it would if `onPointerUp` cleared the flag unconditionally.
        */
-      if (this.suctionPointer === null) {
+      if (this.has('suction') && this.suctionPointer === null) {
         this.suctionPointer = pointerId;
         this.input.suctionHeld = true;
+      } else if (this.has('charge') && this.chargePointer === null) {
+        /**
+         * The volatile bubble's version of the same corner: holding it winds up instead of gathering.
+         *
+         * The skill still fires on the press, so the type keeps the devour bubble's "one control, two meanings"
+         * economy rather than needing a fourth thumb target on a phone screen.
+         */
+        this.chargePointer = pointerId;
+        this.input.setChargeHeld(true);
       }
       this.update();
       return;
@@ -176,7 +228,7 @@ export class TouchControls {
      * The spit button fires on PRESS, like the skill: it is a discrete action, and requiring a release would make
      * a rapid one-two (spit, spit) feel sluggish under a thumb that lingers.
      */
-    if (this.isInSpitButton(x, y)) {
+    if (this.has('spit') && this.isInSpitButton(x, y)) {
       this.input.pressSpit();
       this.spitFlash = 1;
       this.update();
@@ -189,7 +241,7 @@ export class TouchControls {
      * Nothing fires on the press: compressing is not an event, it is a commitment, and the only thing the press
      * does is start the thumb's claim on it.
      */
-    if (this.isInCompressButton(x, y)) {
+    if (this.has('compress') && this.isInCompressButton(x, y)) {
       if (this.compressPointer === null) {
         this.compressPointer = pointerId;
         this.input.setCompressHeld(true);
@@ -237,6 +289,19 @@ export class TouchControls {
       this.input.setCompressHeld(false);
       this.update();
     }
+    /**
+     * Lifting off the charge button FIRES the slam.
+     *
+     * The one control in the game whose action is on the release. `setChargeHeld(false)` raises the release edge,
+     * which the game consumes once -- so this handler does not need to know how to launch anything, and the launch
+     * happens in the same place whichever device asked for it.
+     */
+    if (this.chargePointer === pointerId) {
+      this.chargePointer = null;
+      this.chargeHold = 0;
+      this.input.setChargeHeld(false);
+      this.update();
+    }
     if (this.wheelPointer !== pointerId) return;
     // Recentre. The knob is a stick, not a place: unlike a drag, releasing must not leave the bubble heading
     // for wherever the thumb happened to stop.
@@ -255,6 +320,8 @@ export class TouchControls {
     this.wheelPointer = null;
     this.suctionPointer = null;
     this.compressPointer = null;
+    this.chargePointer = null;
+    this.chargeHold = 0;
     this.knobX = 0;
     this.knobY = 0;
     this.deflection = 0;
@@ -263,6 +330,7 @@ export class TouchControls {
     this.input.wheelHeld = false;
     this.input.suctionHeld = false;
     this.input.setCompressHeld(false);
+    this.input.setChargeHeld(false);
     this.update();
   }
 
@@ -412,16 +480,39 @@ export class TouchControls {
       y: this.spitButton.y - buttonRadius - compressRadius - 10 * scale,
       radius: compressRadius,
     };
+    /**
+     * The charge button takes the RIGHT slot, where the devour bubble's suction button sits.
+     *
+     * Same place and same size, deliberately: a player who has learned "my deliberate verb is under my left thumb"
+     * should not have to relearn it because they picked the other bubble. What changes is the shape inside it --
+     * outward spikes rather than inward ticks -- which says "this one pushes" instead of "this one pulls".
+     */
+    /**
+     * The charge WIND-UP shares this button rather than getting its own.
+     *
+     * The devour bubble already puts two meanings on this control -- tap for the skill, hold for the field -- and
+     * the volatile bubble does the same with the charge. Two separate buttons in one corner would be two thumb
+     * targets a few pixels apart on a phone, for two verbs that are never wanted at once.
+     */
+    this.chargeButton = { ...this.skillButton };
     this.update();
   }
 
   /** Redraw the wheel and the buttons. Cheap: a few circles and paths per frame. */
   update(): void {
+    // The wheel is drawn for every type: it is the one control none of them can do without.
     this.drawWheel();
-    this.drawSkillButton();
-    this.drawSpitButton();
-    this.drawCompressButton();
+    /**
+     * `buttonGfx` is ONE layer for every button, so it is cleared once here and each draw adds its own shapes.
+     * Clearing inside `drawSkillButton` (which is how this started) is only correct while that button is always
+     * drawn -- with per-type controls it would erase whichever button was drawn before it.
+     */
+    this.buttonGfx.clear();
+    if (this.has('skill')) this.drawSkillButton();
+    if (this.has('spit')) this.drawSpitButton();
+    if (this.has('compress')) this.drawCompressButton();
   }
+
 
   /**
    * The compress button: hold to digest.
@@ -562,22 +653,27 @@ export class TouchControls {
   }
 
   /**
-   * The suction button, which doubles as the skill button.
+   * The right-hand button: the skill, plus whichever HOLD this type's bubble has.
    *
-   * ALWAYS drawn, because the suction field is always available -- and that is a change from when this was the
-   * skill button and hid itself when the slot was empty. A control that appears and disappears is one the player
-   * has to re-find; this one is a permanent verb.
+   * ALWAYS drawn, because the skill is always available -- and a control that appears and disappears is one the
+   * player has to re-find.
    *
-   * The two meanings are told apart by shape rather than by a label: the ring is the field (hold to gather), and
-   * the star inside it is the skill (tap to spend). Holding shows the ring lighting up, so the state is visible
-   * without a hint line.
+   * The two meanings are told apart by shape rather than by a label. A tap is the skill, and the star inside shows
+   * whether there is one to spend. The hold is the FIELD for the devour bubble (inward ticks, a ring that lights up)
+   * and the WIND-UP for the volatile one (outward spikes, a core that grows) -- the same opposition the spit and
+   * suction buttons use, so "inward means gather, outward means launch" holds across the whole control set.
    */
   private drawSkillButton(): void {
     const g = this.buttonGfx;
-    g.clear();
 
     const sb = this.skillButton;
-    const sucking = this.suctionPointer !== null;
+    /**
+     * `has('suction')` is checked as well as the pointer, because the flag is owned by the input rather than by this
+     * layer: a type without the field must not draw one even if a stray flag survived a type change.
+     */
+    const sucking = this.has('suction') && this.suctionPointer !== null;
+    const winding = this.has('charge') && this.chargePointer !== null;
+    const accent = winding ? mech.angry.appearance[mech.angry.appearance.length - 1]!.rim : suctionFieldColor();
     this.skillFlash = Math.max(0, this.skillFlash - 0.05);
 
     // The press pulse, for the skill's edge trigger.
@@ -595,29 +691,58 @@ export class TouchControls {
       g.circle(sb.x, sb.y, sb.radius * 1.45).fill({ color: suctionFieldColor(), alpha: 0.18 });
       g.circle(sb.x, sb.y, sb.radius * 1.45).stroke({ color: suctionFieldColor(), alpha: 0.8, width: Math.max(1, 2 * this.scale) });
     }
+    if (winding) {
+      // The wind-up's own pulse, growing with the hold: the bubble is being squeezed and is about to be let go.
+      this.chargeHold = Math.min(1, this.chargeHold + 0.035);
+      g.circle(sb.x, sb.y, sb.radius * (1.25 + 0.2 * this.chargeHold)).fill({
+        color: accent,
+        alpha: 0.14 + 0.2 * this.chargeHold,
+      });
+    } else {
+      this.chargeHold = 0;
+    }
 
-    g.circle(sb.x, sb.y, sb.radius).fill({ color: sucking ? 0x1b3f57 : 0x1d2a44, alpha: 0.75 });
+    g.circle(sb.x, sb.y, sb.radius).fill({ color: sucking ? 0x1b3f57 : winding ? 0x3a1a14 : 0x1d2a44, alpha: 0.75 });
     g.circle(sb.x, sb.y, sb.radius).stroke({
-      color: sucking ? suctionFieldColor() : 0xc79bff,
-      alpha: this.hasSkill || sucking ? 0.9 : 0.45,
+      color: sucking || winding ? accent : this.has('charge') ? accent : 0xc79bff,
+      alpha: this.hasSkill || sucking || winding ? 0.9 : 0.45,
       width: 2,
     });
 
-    // The gathered-field motif: three inward ticks, so the button reads as a pull rather than a direction.
-    for (let i = 0; i < 3; i++) {
-      const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
-      const outer = sb.radius * 0.86;
-      const inner = sb.radius * 0.62;
-      g.moveTo(sb.x + Math.cos(a) * outer, sb.y + Math.sin(a) * outer);
-      g.lineTo(sb.x + Math.cos(a) * inner, sb.y + Math.sin(a) * inner);
+    if (this.has('charge')) {
+      /**
+       * The wind-up motif: four OUTWARD spikes around a core that grows with the hold.
+       *
+       * The opposite of the field's inward ticks, and the reason it is drawn here rather than on a second button:
+       * one control, two meanings, and the shape says which. A core that GROWS also says "this is not a timer" --
+       * nothing is being waited for, the bubble is being wound.
+       */
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        const inner = sb.radius * 0.42;
+        const outer = sb.radius * (winding ? 0.95 : 0.78);
+        g.moveTo(sb.x + Math.cos(a) * inner, sb.y + Math.sin(a) * inner);
+        g.lineTo(sb.x + Math.cos(a) * outer, sb.y + Math.sin(a) * outer);
+      }
+      g.stroke({ color: accent, alpha: winding ? 0.95 : 0.6, width: Math.max(1, 2 * this.scale) });
+      g.circle(sb.x, sb.y, sb.radius * (0.16 + 0.2 * this.chargeHold)).fill({ color: 0xffe0d0, alpha: 0.9 });
+    } else {
+      // The gathered-field motif: three inward ticks, so the button reads as a pull rather than a direction.
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+        const outer = sb.radius * 0.86;
+        const inner = sb.radius * 0.62;
+        g.moveTo(sb.x + Math.cos(a) * outer, sb.y + Math.sin(a) * outer);
+        g.lineTo(sb.x + Math.cos(a) * inner, sb.y + Math.sin(a) * inner);
+      }
+      g.stroke({ color: suctionFieldColor(), alpha: sucking ? 0.95 : 0.5, width: Math.max(1, 1.6 * this.scale) });
     }
-    g.stroke({ color: suctionFieldColor(), alpha: sucking ? 0.95 : 0.5, width: Math.max(1, 1.6 * this.scale) });
 
     /**
      * The star, only when a skill is actually carried.
      *
-     * Its absence is the information: the ring is always there, so a player looking at the button can tell
-     * whether they have something to spend without checking a HUD line.
+     * Its absence is the information: the button is always there, so a player looking at it can tell whether they
+     * have something to spend without checking a HUD line.
      */
     if (!this.hasSkill) return;
     const r = sb.radius;
@@ -693,6 +818,16 @@ export class TouchControls {
   /** Compress button geometry, so a probe can hold the real control instead of guessing. */
   get compressGeometry(): { x: number; y: number; radius: number } {
     return { ...this.compressButton };
+  }
+
+  /** Charge button geometry, so a probe can hold and release the real control. */
+  get chargeGeometry(): { x: number; y: number; radius: number } {
+    return { ...this.chargeButton };
+  }
+
+  /** Test hook: which controls this type laid out. */
+  get controlIds(): readonly ControlId[] {
+    return this.controls;
   }
 
   /** Named layers, exposed so a test can inspect them. */

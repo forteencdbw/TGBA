@@ -38,6 +38,15 @@ const KEYS = {
    * BETWEEN cannot.
    */
   compress: ['KeyL'],
+  /**
+   * Charge: HOLD to wind up, RELEASE to slam. The volatile bubble's verb.
+   *
+   * Space is the one key a player tries without being told, and it sits under the thumb on the left hand -- so a
+   * player steering with WASD can wind up and let go without moving either hand. The release matters as much as the
+   * press here: this is the only verb in the game whose ACTION happens on the way up, which is why the input has to
+   * carry a release edge rather than only a held flag.
+   */
+  charge: ['Space'],
   /** Mute toggle. `KeyM` is the near-universal convention and costs nothing to honour. */
   mute: ['KeyM'],
 } as const;
@@ -98,6 +107,47 @@ export class Input {
   /** Whether the player is asking to compress the stomach right now. */
   get compressing(): boolean {
     return this.compressKeyHeld || this.compressTouchHeld;
+  }
+
+  /**
+   * Wind-up: true while the charge control is held, from either device.
+   *
+   * A HELD state, like suction and compression, because the wind-up is a commitment -- the bubble is slower and its
+   * aim is being fixed while it lasts. The LAUNCH is a separate edge (see `consumeChargeRelease`), so this verb has
+   * one of each within a single control, which is what makes it feel like winding a spring rather than pressing a
+   * button.
+   */
+  private chargeKeyHeld = false;
+  private chargeTouchHeld = false;
+  /** The release edge, consumed by the game exactly like a spit or a skill press. */
+  private chargeReleased = false;
+
+  get charging(): boolean {
+    return this.chargeKeyHeld || this.chargeTouchHeld;
+  }
+
+  /** Signal a charge release from a touch control. */
+  pressChargeRelease(): void {
+    this.chargeReleased = true;
+  }
+
+  /**
+   * Take the pending charge release, if any.
+   *
+   * Consuming rather than reading, for the same reason as the skill and the spit: the launch must happen exactly
+   * once. A plain flag would fire the slam on every frame the release was pending, which at 60fps would be a
+   * continuous barrage out of a single let-go.
+   */
+  consumeChargeRelease(): boolean {
+    if (!this.chargeReleased) return false;
+    this.chargeReleased = false;
+    return true;
+  }
+
+  /** Signal the charge hold from a touch control. See `setCompressHeld` for why this is a setter. */
+  setChargeHeld(held: boolean): void {
+    if (this.chargeTouchHeld && !held) this.chargeReleased = true;
+    this.chargeTouchHeld = held;
   }
 
   /**
@@ -196,6 +246,16 @@ export class Input {
     this.spitKeyWasDown = spitDown;
 
     this.compressKeyHeld = held(KEYS.compress);
+
+    /**
+     * The charge: the hold is written unconditionally, and the RELEASE raises an edge.
+     *
+     * The edge is what the launch reads, and it is raised here rather than in the keyup handler so that keyboard and
+     * touch produce the same single event -- the game consumes one release, not one per device.
+     */
+    const chargeDown = held(KEYS.charge);
+    if (this.chargeKeyHeld && !chargeDown) this.chargeReleased = true;
+    this.chargeKeyHeld = chargeDown;
   }
 
   private skillKeyWasDown = false;
@@ -263,6 +323,10 @@ export class Input {
     // bubble in a state it did not ask for.
     this.compressTouchHeld = false;
     this.compressKeyHeld = false;
+    // The charge goes with them, and notably WITHOUT raising a release edge: dropping every input is how the game
+    // says "forget what the player was doing", and launching a slam out of that would be the opposite.
+    this.chargeTouchHeld = false;
+    this.chargeKeyHeld = false;
   }
 
   /**

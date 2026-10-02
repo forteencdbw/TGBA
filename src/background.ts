@@ -374,6 +374,8 @@ export class Hud {
 
   private readonly headline: Text;
   private readonly subline: Text;
+  /** The second resource's readout, for a bubble type that has one. Hidden otherwise. */
+  private readonly resourceLabel: Text;
   private readonly gauge = new Graphics();
   private readonly debug: Text;
   private readonly landmarkLabels: Text[] = [];
@@ -400,10 +402,20 @@ export class Hud {
     this.subline = makeLabel('', 0x7fc4e8, 11);
     this.subline.anchor.set(0.5, 0);
 
+    /**
+     * The second resource's line, hidden until a type has one.
+     *
+     * Its own object rather than a slot in the subline because it carries its own colour, and because hiding it must
+     * leave no gap: a type with no resource shows exactly the HUD it always did.
+     */
+    this.resourceLabel = makeLabel('', 0x7fc4e8, 11);
+    this.resourceLabel.anchor.set(0.5, 0);
+    this.resourceLabel.visible = false;
+
     this.debug = makeLabel('', 0x7fc4e8, 11, 'normal');
     this.debug.alpha = 0.8;
 
-    this.root.addChild(this.gauge, this.headline, this.subline, this.debug);
+    this.root.addChild(this.gauge, this.headline, this.subline, this.resourceLabel, this.debug);
 
     for (const mark of landmarks) {
       const label = makeLabel(mark.label, 0xffd479, 11);
@@ -433,6 +445,11 @@ export class Hud {
     this.subline.scale.set(s);
     this.subline.x = centreX;
     this.subline.y = this.headline.y + 50 * s;
+    // The resource sits directly under the subline: same block of screen furniture, one line lower, so the two read
+    // as one readout rather than as two unrelated facts in different corners.
+    this.resourceLabel.scale.set(s);
+    this.resourceLabel.x = centreX;
+    this.resourceLabel.y = this.subline.y + 16 * s;
 
     this.debug.scale.set(s * 0.9);
     // Pinned to the column edge, but never so far left that it runs off a narrow desktop window.
@@ -523,7 +540,21 @@ export class Hud {
      * between what the bubble looks like and what it can do is the one thing the marker and the rule must never
      * disagree about.
      */
-    stage: { stage: number; name: string; absorbedInStage: number; neededForNext: number | null; tierBonus: number },
+    stage: {
+      stage: number;
+      name: string;
+      absorbedInStage: number;
+      neededForNext: number | null;
+      tierBonus: number;
+      /**
+       * A second resource, for a bubble type that has one: its label, its readout, and its colour.
+       *
+       * Null for the devour bubble, which has no second meter -- and the null is the honest representation of that
+       * rather than a zero, because "0 rage" and "no rage at all" are different claims and the HUD should not make
+       * the second one.
+       */
+      resource?: { label: string; text: string; colour: number } | null;
+    },
   ): void {
     // Distance still to travel, from the LEVEL's progress rather than the bubble's position. The bubble
     // is born on the seabed with the whole length ahead of it, and it cannot change this number by
@@ -549,6 +580,26 @@ export class Hud {
       : this.seedLabel
         ? `距海面 / TO SURFACE (m)   ·   ${stageText}   ·   ${this.seedLabel}`
         : `距海面 / TO SURFACE (m)   ·   ${stageText}`;
+
+    /**
+     * The second resource gets its OWN line, in its own colour, rather than a slot in the subline.
+     *
+     * The subline was already at the width of a phone before rage existed: adding "怒气 100 失控" to it clipped the
+     * label at BOTH ends, which a screenshot showed and no assertion would have. A line of its own is also the
+     * better answer on its own terms -- it can carry the resource's colour, which is the same colour the bubble is
+     * turning, and it can be empty without leaving a gap in the middle of a sentence.
+     */
+    if (stage.resource) {
+      this.resourceLabel.visible = true;
+      this.resourceLabel.text = `${stage.resource.label} ${stage.resource.text}`;
+      this.resourceLabel.style.fill = stage.resource.colour;
+    } else {
+      this.resourceLabel.visible = false;
+      this.resourceLabel.text = '';
+    }
+    // The subline's own colour is put back every frame: the field is shared with the resource's line only in the
+    // sense that both are HUD text, and a stale fill from a previous type would outlive the type change.
+    this.subline.style.fill = 0x7fc4e8;
 
     const { barX, barTop, barBottom, barW } = this.barGeometry;
     // Reads as a vessel filling up: the water level rises as the level advances, and the surface line is

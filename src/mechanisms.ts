@@ -35,6 +35,46 @@ import rawText from '../config/mechanics.json5?raw';
  * A whole object per stage rather than parallel arrays: changing one stage must not mean counting the index
  * across a dozen lists, and adding a stage must not mean editing all of them.
  */
+/**
+ * One rage stage's colours, and the two numbers that make anger VISIBLE rather than merely enumerated.
+ *
+ * Only what changes with rage lives here; the geometry is shared in `RageLook`. `shake` and `swell` are the two
+ * that carry "this bubble is about to go off" without drawing a face on it -- the design document is explicit that
+ * a bubble with features stops reading as a bubble.
+ */
+export interface RageAppearance {
+  name: string;
+  /** The rage at which this stage takes over. Ordered ascending. */
+  minRage: number;
+  rim: number;
+  glow: number;
+  sheen: number;
+  specular: number;
+  hudColor: number;
+  /** Lateral jitter as a fraction of the lane width. */
+  shake: number;
+  /** Periodic radius swell, as a fraction of the radius. */
+  swell: number;
+}
+
+/** The geometry and opacities the rage stages share. See `RageAppearance` for why the colours are not here. */
+export interface RageLook {
+  radius: number;
+  inner: number;
+  innerAlpha: number;
+  rimAlpha: number;
+  rimWidthRatio: number;
+  glowOuterAlpha: number;
+  glowInnerAlpha: number;
+  glowOuterRadiusRatio: number;
+  glowInnerRadiusRatio: number;
+  innerRing: boolean;
+  innerRingAlpha: number;
+  innerRingWidthRatio: number;
+  sheenAlpha: number;
+  specularAlpha: number;
+}
+
 export interface StageAppearance {
   /** Visual radius multiplier, on top of the radius the volume already gives. Affects the hitbox too. */
   radius: number;
@@ -341,6 +381,19 @@ export interface Mechanisms {
     secondaryTextSize: number;
     buttonStroke: number;
     buttonStrokeAlpha: number;
+    /** The bubble-type selector: its geometry, and the two states a type button can be in. */
+    typeRowHeight: number;
+    typeRowGap: number;
+    typeRowTopGap: number;
+    taglineGap: number;
+    typeTextSize: number;
+    taglineSize: number;
+    typeSelectedFill: number;
+    typeSelectedStroke: number;
+    typeSelectedTextColour: number;
+    typeIdleFill: number;
+    typeIdleStroke: number;
+    typeIdleTextColour: number;
   };
   /**
    * Obstacles: what is in the water that is neither food nor threat, but scenery you have to answer.
@@ -380,6 +433,45 @@ export interface Mechanisms {
     netMesh: number;
     crackWidthRatio: number;
     damagedDarken: number;
+  };
+  /**
+   * The volatile bubble: the second playable type.
+   *
+   * Its own APPEARANCE NAMESPACE, which is the answer to the design document's first open question. The growth
+   * stages own the devour bubble's colour (cyan -> gold -> pink); rage wants blue -> orange -> red -> crimson, and
+   * both cannot have the same canvas. Since a run picks one type (see the main menu), each type carries its own
+   * palette and they never meet.
+   *
+   * `look` holds the geometry the four rage stages share and `appearance` holds only what changes with rage, so
+   * retuning the glow means editing one number rather than four.
+   */
+  angry: {
+    rage: {
+      max: number;
+      /** Rage gained from one non-fatal hit. The design's number: four hits to overload. */
+      perHit: number;
+      decayPerSecond: number;
+      /** How long the player must go untouched before rage starts falling. */
+      decayDelaySeconds: number;
+    };
+    charge: {
+      launchScreenSpeed: number;
+      launchLateralSpeed: number;
+      /** How long after release a contact still counts as a slam. */
+      slamSeconds: number;
+      slamDamageBase: number;
+      slamRageScale: number;
+      rageCostPerHit: number;
+      rageCostPerBreak: number;
+      /** Whether a slam can break what no volume can smash (`obstacles.ramVolume` null). */
+      slamBreaksUnrammable: boolean;
+      defaultAimX: number;
+      defaultAimY: number;
+    };
+    /** One row per rage stage, ordered by `minRage`. */
+    appearance: RageAppearance[];
+    look: RageLook;
+    slamRadiusBonus: number;
   };
   /** Audio levels that are not the player's own volume. */
   audio: {
@@ -750,6 +842,54 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'emergence.fishHardCap', check: (v) => typeof v === 'number' && v >= 1, describe: '1 or more' },
   { path: 'emergence.seekBiggestRangeMeters', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'level.scrollSpeed', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  // --- the volatile bubble. Colours and the appearance rows have their own checks below. ---
+  { path: 'angry.rage.max', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.rage.perHit', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0, or no hit would ever matter' },
+  { path: 'angry.rage.decayPerSecond', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  { path: 'angry.rage.decayDelaySeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  { path: 'angry.charge.launchScreenSpeed', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.charge.launchLateralSpeed', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.charge.slamSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.charge.slamDamageBase', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.charge.slamRageScale', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  { path: 'angry.charge.rageCostPerHit', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  { path: 'angry.charge.rageCostPerBreak', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  { path: 'angry.charge.slamBreaksUnrammable', check: (v) => typeof v === 'boolean', describe: 'true or false' },
+  { path: 'angry.charge.defaultAimX', check: (v) => typeof v === 'number' && v >= -1 && v <= 1, describe: 'a direction between -1 and 1' },
+  { path: 'angry.charge.defaultAimY', check: (v) => typeof v === 'number' && v >= -1 && v <= 1, describe: 'a direction between -1 and 1' },
+  { path: 'angry.slamRadiusBonus', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a fraction between 0 and 3' },
+  { path: 'angry.look.radius', check: (v) => typeof v === 'number' && v > 0 && v <= 4, describe: 'a multiplier above 0 and at most 4' },
+  { path: 'angry.look.innerAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'angry.look.rimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'angry.look.rimWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
+  { path: 'angry.look.glowOuterAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'angry.look.glowInnerAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'angry.look.glowOuterRadiusRatio', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a radius ratio between 1 and 4' },
+  { path: 'angry.look.glowInnerRadiusRatio', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a radius ratio between 1 and 4' },
+  { path: 'angry.look.innerRing', check: (v) => typeof v === 'boolean', describe: 'true or false' },
+  { path: 'angry.look.innerRingAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'angry.look.innerRingWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
+  { path: 'angry.look.sheenAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'angry.look.specularAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  // --- the menu's bubble-type selector ---
+  { path: 'menu.typeRowHeight', check: (v) => typeof v === 'number' && v >= 16 && v <= 100, describe: 'a pixel height between 16 and 100' },
+  { path: 'menu.typeRowGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
+  { path: 'menu.typeRowTopGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 120, describe: 'design pixels between 0 and 120' },
+  { path: 'menu.taglineGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
+  { path: 'menu.typeTextSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 40, describe: 'a font size between 8 and 40' },
+  { path: 'menu.taglineSize', check: (v) => typeof v === 'number' && v >= 6 && v <= 32, describe: 'a font size between 6 and 32' },
+  ...([
+    'typeSelectedFill',
+    'typeSelectedStroke',
+    'typeSelectedTextColour',
+    'typeIdleFill',
+    'typeIdleStroke',
+    'typeIdleTextColour',
+  ] as const).map((key) => ({
+    path: `menu.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
+  })),
 ];
 
 if (parsed === null || typeof parsed !== 'object') fail('the top level must be an object');
@@ -876,6 +1016,70 @@ const APPEARANCE_COLOUR_KEYS = ['inner', 'rim', 'glow', 'sheen', 'specular', 'hu
 });
 
 /**
+ * The rage stages, checked and converted.
+ *
+ * Same shape of check as the growth stages above and for the same reason -- it is the file's other composite value,
+ * so "the appearance is invalid" would leave the owner hunting through four rows of nine keys. The colour keys
+ * differ (no `inner`, because the interior stays near-white at every rage level; see the config's comment), so the
+ * list is its own rather than shared.
+ */
+const RAGE_APPEARANCE_RULES: { key: string; ok: (v: unknown) => boolean; what: string }[] = [
+  { key: 'name', ok: (v) => typeof v === 'string' && v.length > 0, what: 'a non-empty name' },
+  { key: 'minRage', ok: (v) => typeof v === 'number' && v >= 0, what: 'a rage of 0 or more' },
+  { key: 'rim', ok: isColour, what: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { key: 'glow', ok: isColour, what: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { key: 'sheen', ok: isColour, what: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { key: 'specular', ok: isColour, what: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { key: 'hudColor', ok: isColour, what: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { key: 'shake', ok: (v) => typeof v === 'number' && v >= 0 && v <= 0.3, what: 'a fraction between 0 and 0.3' },
+  { key: 'swell', ok: (v) => typeof v === 'number' && v >= 0 && v <= 1, what: 'a fraction between 0 and 1' },
+];
+
+const RAGE_COLOUR_KEYS = ['rim', 'glow', 'sheen', 'specular', 'hudColor'] as const;
+
+(mech.angry.appearance as unknown as Record<string, unknown>[]).forEach((stage, index) => {
+  for (const rule of RAGE_APPEARANCE_RULES) {
+    const value = stage[rule.key];
+    if (value === undefined) fail(`angry.appearance[${index}].${rule.key} is missing. It should be ${rule.what}.`);
+    if (!rule.ok(value)) {
+      fail(`angry.appearance[${index}].${rule.key} is ${JSON.stringify(value)}, but it should be ${rule.what}.`);
+    }
+  }
+  const bag = stage as unknown as Record<string, string | number>;
+  for (const key of RAGE_COLOUR_KEYS) bag[key] = normaliseColour(bag[key]!, `angry.appearance[${index}].${key}`);
+});
+
+{
+  const bag = mech.angry.look as unknown as Record<string, string | number>;
+  bag.inner = normaliseColour(bag.inner!, 'angry.look.inner');
+}
+
+/**
+ * The rage stages must be ordered, start at 0, and stay under the maximum.
+ *
+ * A list out of order would make `rageStageFor` return whichever row happened to be last rather than the highest
+ * threshold reached -- so a player at full rage could be drawn calm, and nothing about that failure would look like
+ * a config error. Starting at 0 matters for the same reason: there has to be something to show at zero rage.
+ */
+{
+  const rows = mech.angry.appearance;
+  if (!rows.length) fail('angry.appearance must have at least one row');
+  if (rows[0]!.minRage !== 0) fail(`angry.appearance[0].minRage is ${rows[0]!.minRage}, but the first row must start at 0`);
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i]!.minRage <= rows[i - 1]!.minRage) {
+      fail(
+        `angry.appearance[${i}].minRage is ${rows[i]!.minRage}, which is not above ` +
+          `angry.appearance[${i - 1}].minRage (${rows[i - 1]!.minRage}); the rows must ascend`,
+      );
+    }
+  }
+  const top = rows[rows.length - 1]!.minRage;
+  if (top > mech.angry.rage.max) {
+    fail(`angry.appearance's last stage starts at ${top}, above angry.rage.max (${mech.angry.rage.max}) -- unreachable`);
+  }
+}
+
+/**
  * Every OTHER colour in the config, converted too.
  *
  * Gathered in one list rather than converted where it is defined, because the failure this prevents is silent:
@@ -921,6 +1125,12 @@ for (const [where, get, set] of [
 {
   const bag = mech.menu as unknown as Record<string, string | number>;
   for (const key of [
+    'typeSelectedFill',
+    'typeSelectedStroke',
+    'typeSelectedTextColour',
+    'typeIdleFill',
+    'typeIdleStroke',
+    'typeIdleTextColour',
     'primaryFill',
     'primaryPressedFill',
     'primaryTextColour',

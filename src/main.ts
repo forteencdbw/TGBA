@@ -11,12 +11,15 @@ import { canEatHazard, hazardMass, massFromEating, volumeTier } from './consumpt
 import { MainMenu } from './menu';
 import { CodexUi } from './codexUi';
 import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
+import { BUBBLE_TYPES, defaultBubbleType, findBubbleType, hasControl, hasVerb, type BubbleType } from './bubbleTypes';
+import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
+import { gainRage, hitRage, initialRageState, rageColor, rageFraction, rageStageName, slamDamage, spendRage, tickRage, type RageState } from './rage';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
 import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { APP_VERSION, buildLabel, GIT_DIRTY, GIT_HASH } from './version';
-import { demote, initialStageState, recordAbsorb, stageAppearance, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
+import { demote, initialStageState, recordAbsorb, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
@@ -160,6 +163,35 @@ class Game {
    *   codex    the bestiary page is open, reached from the menu
    */
   private phase: 'menu' | 'intro' | 'playing' | 'burst' | 'paused' | 'codex' = 'menu';
+  /**
+   * Which bubble the current run is: chosen on the main menu, fixed for the run.
+   *
+   * One type per run is the design's answer to the two palettes wanting the same canvas, and it is also what makes
+   * the control layout belong to the type: `touch.setControls` is called once, when the run starts, and nothing
+   * downstream has to ask which buttons exist. See `src/bubbleTypes.ts`.
+   */
+  private bubbleType: BubbleType = defaultBubbleType();
+  /** Rage, for the volatile bubble. Unused (and always zero) for the devour bubble. */
+  private rage: RageState = initialRageState();
+  /**
+   * The charge verb's state.
+   *
+   * `chargeAim` is the direction the slam will go, captured while the button is held and FROZEN once the player stops
+   * steering -- which is the design's "compress and lock the direction": point, release the stick, let go. A player
+   * who never aims at all still gets a slam, straight up, because a verb that can silently do nothing is worse than
+   * one that goes the obvious way.
+   */
+  private chargeAim = { x: 0, y: 0 };
+  private charging = false;
+  /** Seconds left of the "this contact is a slam" window. Zero means ordinary contact rules. */
+  private slamSeconds = 0;
+  /** How many slams have connected, so a probe can prove the verb did something rather than merely fired. */
+  private slams = 0;
+
+  /** Whether a slam is in its window right now: the charge has been released and the window has not run out. */
+  private get onSlam(): boolean {
+    return this.slamSeconds > 0 && this.bubbleType.look === 'rage';
+  }
   private phaseTimer = INTRO_SECONDS;
   /** The phase to restore when the settings panel closes. */
   private phaseBeforePause: 'intro' | 'playing' | 'burst' = 'playing';
@@ -218,9 +250,16 @@ class Game {
     this.settings.onClose = () => this.closeSettings();
     this.settings.onRestart = () => this.restartLevel();
     this.settings.onExit = () => this.exitToMenu();
-    this.menu.onStart = () => this.enterFromMenu();
+    this.menu.onStart = (typeId) => this.enterFromMenu(typeId);
     this.menu.onCodex = () => this.enterCodex();
     this.codex.onBack = () => this.exitCodex();
+    /**
+     * The menu is handed the types rather than importing them, so "which bubbles exist" has one owner.
+     *
+     * Done at boot and before the first `layout`, because the NUMBER of buttons is part of the layout: a menu that
+     * learned about a third type after laying out would draw two.
+     */
+    this.menu.setTypes(BUBBLE_TYPES);
 
     this.input.attach(window);
 
@@ -482,6 +521,12 @@ class Game {
    * there is nothing to pay for.
    */
   private get suctionUp(): boolean {
+    /**
+     * The type gate is the first thing checked, and it exists because the keyboard does not go through the buttons:
+     * a player who has just switched to the volatile bubble and presses the old keys must not get a suction field
+     * the type does not have. See `hasVerb`.
+     */
+    if (!hasVerb(this.bubbleType, 'suction')) return false;
     return this.input.sucking && !this.compressing;
   }
 
@@ -504,7 +549,7 @@ class Game {
      * their suction field and DOUBLE every hit they take, in exchange for nothing at all. A state that punishes
      * without a subject is just a bug the player cannot see.
      */
-    this.compressing = this.input.compressing && this.stomach.size > 0;
+    this.compressing = hasVerb(this.bubbleType, 'compress') && this.input.compressing && this.stomach.size > 0;
 
     const rate = this.compressing ? mech.digest.compressPerSecond : mech.digest.passivePerSecond;
     const tick = this.stomach.tick(dt, rate);
@@ -628,6 +673,13 @@ class Game {
       this.lastComedyBeat = { what: 'eel', at: this.elapsed };
     }
 
+    /**
+     * The type gate comes BEFORE the consume, and that order is the point: the volatile bubble has no spit verb, so
+     * a pending press must be dropped rather than banked. Consuming it and returning would leave nothing behind
+     * either way -- but checking first means the flag cannot queue up a shot that fires the moment the player
+     * switches bubble, which is the kind of ghost input that is invisible until it happens in a real run.
+     */
+    if (!hasVerb(this.bubbleType, 'spit')) return;
     if (!this.input.consumeSpit()) return;
     if (this.spitCooldown > 0) return;
 
@@ -866,6 +918,37 @@ class Game {
   /** Test hook: the main menu. */
   get menuRef(): MainMenu {
     return this.menu;
+  }
+
+  /**
+   * Test hook: begin a run with a named bubble, the same way the menu does.
+   *
+   * Goes through `enterFromMenu`, so it exercises the real path including `setBubbleType` -- a probe that set the
+   * type directly would not notice a control list that never reached the touch layer, which is the one way this
+   * feature can half-work.
+   */
+  debugStartRunWithType(typeId: string): void {
+    this.enterFromMenu(typeId);
+  }
+
+  /**
+   * Test hook: every bubble type the game offers, in menu order.
+   *
+   * Exposed so a probe can assert the menu is offering exactly these, in this order -- the alternative is a list
+   * written into the test, which would agree with a menu that had stopped agreeing with the game.
+   */
+  debugBubbleTypeIds(): string[] {
+    return BUBBLE_TYPES.map((type) => type.id);
+  }
+
+  /**
+   * Test hook: grant rage, so a probe can reach a stage without arranging four hits.
+   *
+   * `gainRage` rather than assigning, so the safe-time clock is reset exactly as a real hit would reset it.
+   */
+  debugGrantRageForTest(amount: number): number {
+    gainRage(this.rage, amount);
+    return this.rage.rage;
   }
 
   /**
@@ -1353,8 +1436,16 @@ class Game {
     audio.tick(dt);
     audio.setDepth(this.player.depth, DEPTH_TOTAL, this.phase === 'playing');
 
-    this.player.update(this.input, dt, this.lateral);
+    /**
+     * The charge verb, immediately BEFORE the player moves.
+     *
+     * Order matters here and only here: the launch sets an impulse, and `player.update` is what turns an impulse
+     * into movement. Firing it after would spend a frame with the bubble wound up and going nowhere.
+     */
+    this.updateCharge();
+    this.updateRage(dt);
 
+    this.player.update(this.input, dt, this.lateral);
     /**
      * Convert this frame's screen movement into a world position, then clamp back into the screen band.
      *
@@ -1912,14 +2003,37 @@ class Game {
     const contact = this.obstacles.resolvePlayer(
       playerX,
       this.player.y,
-      playerR,
+      // The slam reaches a little further than the bubble is, so a committed attack connects on the frame it was
+      // aimed at rather than one frame of travel later.
+      playerR * (this.onSlam ? 1 + mech.angry.slamRadiusBonus : 1),
       this.player.volume,
       this.invulnerable > 0,
       dt,
+      /**
+       * The slam, while its window is open and only for the type that has the verb.
+       *
+       * `breaksUnrammable` comes from the config rather than from the type descriptor because it is a balance
+       * question about the WALL (does this bubble get to ignore masonry?), not about the bubble's identity.
+       */
+      this.onSlam
+        ? { damage: slamDamage(this.rage.rage), breaksUnrammable: mech.angry.charge.slamBreaksUnrammable }
+        : undefined,
     );
     if (contact.hit?.broke) {
       this.lastComedyBeat = { what: 'crab', at: this.elapsed };
       audio.play('hit');
+    }
+    if (contact.hit) {
+      /**
+       * A slam that connected costs rage, and costs MORE if it broke the thing.
+       *
+       * This is what makes the charge a resource rather than a cooldown: rage is the ammunition, so a player who
+       * spends it all on one wall has nothing left for the next one, and the price of breaking something is the
+       * reason to think about whether it was worth breaking.
+       */
+      const cost = contact.hit.broke ? mech.angry.charge.rageCostPerBreak : mech.angry.charge.rageCostPerHit;
+      if (this.bubbleType.look === 'rage') spendRage(this.rage, cost);
+      if (this.onSlam) this.slams++;
     }
     if (contact.blocked) {
       /**
@@ -2022,7 +2136,16 @@ class Game {
     // popping the bubble.
     if (isPopped(this.player.volume) || this.player.volume <= 0) {
       this.startBurst();
+      return;
     }
+    /**
+     * Rage, from a hit the bubble SURVIVED -- and only from one it survived.
+     *
+     * The design says "damage taken but not burst", and the early return above is what makes that literal: a fatal
+     * hit ends the run, so there is no state left to carry rage in and no way to earn from dying. This one line is
+     * the whole passive-rage rule; everything else about rage is either the clock or the spending.
+     */
+    if (this.bubbleType.look === 'rage') gainRage(this.rage, hitRage());
   }
 
   /** The bubble pops: slow-motion burst, then a brief result card, then a fresh run. */
@@ -2034,6 +2157,74 @@ class Game {
     audio.play('pop');
     this.runBanner.text = `破裂  ·  深度 ${Math.round(this.player.depth)}m  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×`;
     this.runBanner.alpha = 1;
+  }
+
+  /**
+   * The volatile bubble's verb: wind up while the control is held, slam when it is released.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * THE AIM IS CAPTURED, NOT SAMPLED AT RELEASE
+   * ---------------------------------------------------------------------------------------------
+   * The design asks for the direction to LOCK while the bubble compresses. So the aim is written only while the
+   * player is actually steering, and once they let go of the stick the last aim stays -- which makes "push toward the
+   * thing, let the stick centre, release" the natural gesture, and makes a held stick mean "keep adjusting".
+   *
+   * What is deliberately NOT here: a minimum hold time, and a maximum. Letting go after a tenth of a second is a
+   * legal slam, because the power comes from RAGE rather than from how long the button was down -- so there is
+   * nothing to charge up and no reason to stand still. The verb is "aim, then commit", not "wait".
+   */
+  private updateCharge(): void {
+    if (!hasVerb(this.bubbleType, 'charge')) return;
+
+    const held = this.input.charging;
+    if (!this.input.consumeChargeRelease() && held) {
+      // Winding up: the aim follows the stick while the player is pushing, and holds still when they are not.
+      if (this.input.axisX !== 0 || this.input.axisY !== 0) {
+        this.chargeAim = { x: this.input.axisX, y: this.input.axisY };
+      } else if (!this.charging && this.chargeAim.x === 0 && this.chargeAim.y === 0) {
+        // First press with no aim at all: go the configured way (up), so a player who taps cannot waste a slam.
+        this.chargeAim = { x: mech.angry.charge.defaultAimX, y: mech.angry.charge.defaultAimY };
+      }
+      this.charging = true;
+      return;
+    }
+
+    /**
+     * Released: launch.
+     *
+     * `Math.max` rather than assignment on the vertical, so a slam cannot cancel a crab launch the player is already
+     * riding -- the same rule the crab uses when it shoves them.
+     */
+    if (!this.charging) return;
+    this.charging = false;
+    const aim = this.chargeAim;
+    const len = Math.hypot(aim.x, aim.y);
+    const dir = len > 1e-6 ? { x: aim.x / len, y: aim.y / len } : { x: 0, y: 1 };
+    this.player.impulseVy = Math.max(this.player.impulseVy, dir.y * mech.angry.charge.launchScreenSpeed);
+    this.player.impulseVx += dir.x * mech.angry.charge.launchLateralSpeed;
+    this.slamSeconds = Math.max(this.slamSeconds, mech.angry.charge.slamSeconds);
+    /**
+     * The launch cue is the crab's: a heavy, water-laden shove. There is no bespoke sound for the slam yet, and
+     * reusing the closest existing one is honest -- a new sound is the owner's call, not something to invent here.
+     */
+    audio.play('crab');
+  }
+
+  /**
+   * Rage: gain is event-driven (see `takeHit`), and this is the clock.
+   *
+   * Only the decay needs a frame. The devour bubble has no rage at all, and this returning immediately is what keeps
+   * the second resource from costing the first type anything.
+   */
+  private updateRage(dt: number): void {
+    if (this.bubbleType.look !== 'rage') return;
+    if (this.slamSeconds > 0) this.slamSeconds = Math.max(0, this.slamSeconds - dt);
+    /**
+     * "Dangerous behaviour" for the decay delay: being invulnerable means something hit the bubble moments ago, and
+     * being GRIPPED means something is still holding it. Both are the opposite of "left alone for three seconds".
+     */
+    const gripped = this.hazards.hazards.some((h) => h.gripping);
+    tickRage(this.rage, dt, this.invulnerable > 0 || gripped);
   }
 
   private startRun(): void {
@@ -2064,6 +2255,17 @@ class Game {
     this.internalHits = 0;
     this.destroyedMass = 0;
     this.spitClogs = 0;
+    /**
+     * The volatile bubble's run state, reset with everything else.
+     *
+     * `chargeAim` deliberately keeps its old value: a player who died mid-wind-up and restarts should not have to
+     * re-aim before their first slam, and there is nothing a stale direction can be wrong about -- it is overwritten
+     * the moment they push the stick.
+     */
+    this.rage = initialRageState();
+    this.charging = false;
+    this.slamSeconds = 0;
+    this.slams = 0;
     this.obstacles.reset();
     this.field.reset();
     this.hazards.reset();
@@ -2182,10 +2384,30 @@ class Game {
     this.menu.root.visible = true;
   }
 
-  /** Leave the menu and begin a run. */
-  private enterFromMenu(): void {
+  /** Leave the menu and begin a run, as the chosen bubble. */
+  private enterFromMenu(typeId: string): void {
     this.menu.root.visible = false;
+    this.setBubbleType(typeId);
     this.startRun();
+  }
+
+  /**
+   * Choose the bubble for the run.
+   *
+   * Two things happen, and both have to happen before the first frame: the type is recorded, and the touch layer is
+   * told which controls to lay out. Doing the second here rather than every frame is the point of the abstraction --
+   * the control set is fixed for a run, so nothing downstream ever asks which buttons exist.
+   */
+  private setBubbleType(typeId: string): void {
+    this.bubbleType = findBubbleType(typeId) ?? defaultBubbleType();
+    this.touch.setControls(this.bubbleType.controls);
+    this.touch.layout(
+      this.camera.viewport.left,
+      this.camera.viewport.laneWidthPx,
+      this.app.renderer.screen.width,
+      this.app.renderer.screen.height,
+      this.camera.viewport.scale,
+    );
   }
 
   /**
@@ -2266,6 +2488,20 @@ class Game {
         absorbedInStage: this.stage.absorbedInStage,
         neededForNext: this.stage.neededForNext,
         tierBonus: this.tierBonus,
+        /**
+         * The second resource's readout, for the type that has one.
+         *
+         * In the HUD's subline rather than a gauge of its own: rage changes every time the player is hit, which is
+         * often enough that a line of text does not go stale, and the bubble's own colour already carries it in the
+         * water where the player is looking. A dedicated bar is worth building when the burst needs one.
+         */
+        resource: this.bubbleType.resource
+          ? {
+              label: this.bubbleType.resource.label,
+              text: `${Math.round(this.rage.rage)}  ${rageStageName(this.rage.rage)}`,
+              colour: rageColor(this.rage.rage),
+            }
+          : null,
       });
       this.touch.update();
       this.drawPickups();
@@ -2510,13 +2746,24 @@ class Game {
     const radius =
       viewport.laneWidthMeters * stageRadiusFraction(this.stage.stage, this.player.volume) * (0.25 + 0.75 * eased) * burstScale;
 
+    /**
+     * The volatile bubble's two drawing-only cues: a tremor and a breath.
+     *
+     * Applied to the PAINTED position and radius, never to the collision radius -- see `bubbleSwell` for why that
+     * distinction is the honest one rather than a shortcut. Both are zero for the devour bubble, so this costs that
+     * type one multiplication by one.
+     */
+    const look = bubbleLook(this.bubbleType, this.stage.stage, this.rage.rage);
+    const drawnX = this.player.x * viewport.laneWidthMeters + bubbleShake(look, this.elapsed) * viewport.laneWidthMeters;
+    const drawnRadius = radius * bubbleSwell(look, this.elapsed);
+
     // Blink while invulnerable: the single cross-type rule that stops a swarm chain-killing.
     const blink = this.invulnerable > 0 ? 0.45 + 0.55 * Math.abs(Math.sin(this.invulnerable * 22)) : 1;
 
     this.paintBubble(
-      this.player.x * viewport.laneWidthMeters,
+      drawnX,
       this.player.y,
-      radius,
+      drawnRadius,
       burstAlpha * blink,
       /**
        * The bulge, and how hard it is pulsing.
@@ -2676,7 +2923,7 @@ class Game {
      * Size alone cannot say which stage the player is in: volume grows the bubble every time it eats, so a big
      * stage-1 bubble and a small stage-2 bubble would look similar. Colour is discrete, so it can.
      */
-    const look = stageAppearance(this.stage.stage);
+    const look = bubbleLook(this.bubbleType, this.stage.stage, this.rage.rage);
 
     /**
      * The bubble's interior is deliberately MOSTLY TRANSPARENT, and the STAGE COLOUR is carried by the rim and
@@ -3016,6 +3263,27 @@ class Game {
       appearance: StageAppearance;
       radiusFraction: number;
     };
+    /** Which bubble the run is, and therefore which controls and palette are live. */
+    bubbleType: {
+      id: string;
+      name: string;
+      controls: string[];
+      hasSpit: boolean;
+      hasCompress: boolean;
+      hasCharge: boolean;
+    };
+    /** The volatile bubble's resource. Always present; always zero for the devour bubble. */
+    rage: {
+      value: number;
+      fraction: number;
+      safeSeconds: number;
+      charging: boolean;
+      aiming: { x: number; y: number };
+      stageName: string;
+      slamSeconds: number;
+      onSlam: boolean;
+      slams: number;
+    };
     phase: string;
     volume: number;
     hitsSurvived: number;
@@ -3217,20 +3485,52 @@ class Game {
       /** The bubble's growth stage: its speed tier, and how far into the next one it is. */
       stage: {
         stage: this.stage.stage,
+        /**
+         * The name of the current STATE, which is the growth stage for one type and the rage stage for the other.
+         *
+         * `bubbleStateName` rather than `stageName` so the readout cannot disagree with what is drawn: a volatile
+         * bubble at 90 rage reports 失控 even though its growth stage is still 1.
+         */
         name: stageName(this.stage.stage),
         absorbedInStage: this.stage.absorbedInStage,
         neededForNext: this.stage.neededForNext,
         speedMultiplier: this.stage.speedMultiplier,
         /**
-         * The whole appearance this stage paints with.
+         * The whole appearance this frame paints with.
          *
          * The entire object rather than a couple of picked-out colours: a test that wants to check the stages are
          * distinguishable should read the same values the drawing code reads, so it cannot pass while the bubble
          * looks wrong. It is also what a tuner sees at a glance, in the console, for what actually loaded.
          */
-        appearance: stageAppearance(this.stage.stage),
+        appearance: bubbleLook(this.bubbleType, this.stage.stage, this.rage.rage),
         /** The drawn radius as a fraction of the lane, which is also the radius the eating rules use. */
         radiusFraction: stageRadiusFraction(this.stage.stage, this.player.volume),
+      },
+      /**
+       * Which bubble this run is, and the volatile one's resource.
+       *
+       * `controls` is reported so a probe can prove the LAYOUT changed with the type rather than assuming it: the
+       * whole point of the per-type control list is that this array is different, and a test that read the type id
+       * without reading this would pass while both types laid out the same buttons.
+       */
+      bubbleType: {
+        id: this.bubbleType.id,
+        name: this.bubbleType.name,
+        controls: [...this.bubbleType.controls],
+        hasSpit: hasControl(this.bubbleType, 'spit'),
+        hasCompress: hasControl(this.bubbleType, 'compress'),
+        hasCharge: hasControl(this.bubbleType, 'charge'),
+      },
+      rage: {
+        value: +this.rage.rage.toFixed(2),
+        fraction: +rageFraction(this.rage.rage).toFixed(3),
+        safeSeconds: +this.rage.safeSeconds.toFixed(2),
+        charging: this.charging,
+        aiming: { x: +this.chargeAim.x.toFixed(2), y: +this.chargeAim.y.toFixed(2) },
+        stageName: rageStageName(this.rage.rage),
+        slamSeconds: +this.slamSeconds.toFixed(3),
+        onSlam: this.onSlam,
+        slams: this.slams,
       },
       phase: this.phase,
       volume: this.player.volume,

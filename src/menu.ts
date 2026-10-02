@@ -1,16 +1,17 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { LEVEL } from './levels';
 import { mech } from './mechanisms';
+import { BUBBLE_TYPES, defaultBubbleType, type BubbleType } from './bubbleTypes';
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
 import { buildLabel } from './version';
 
 /**
- * The main menu. A deliberate placeholder.
+ * The main menu.
  *
- * It exists so "exit to the main menu" has somewhere to go, and so the shape of the flow -- menu, level, codex,
- * back to menu -- is real rather than a stub that throws. What it does NOT have is level selection, a talent
- * choice, or anything else the final menu will want; those need decisions that have not been made.
+ * It exists so "exit to the main menu" has somewhere to go, and so the shape of the flow -- menu, choose a bubble,
+ * level, codex, back to menu -- is real rather than a stub that throws. What it does NOT have is level selection, a
+ * talent choice, or anything else a final menu will want; those need decisions that have not been made.
  *
  * Like `SettingsUi`, the hit testing is done by hand and the tree is `eventMode = 'none'`. See that module
  * for the reasoning: a control that received no events while reporting correct bounds cost a lot of time
@@ -27,12 +28,22 @@ export class MainMenu {
   private readonly backdrop = mkGraphics();
   private readonly primary = mkGraphics();
   private readonly secondary = mkGraphics();
+  private readonly typeRow = mkGraphics();
   private readonly title = mk('冒泡大作战', 0xeaf9ff, 34);
   private readonly subtitle = mk('BUBBLE BATTLE', 0x8fd4f0, 13);
   private readonly levelLine = mk('', 0xbfe9ff, 15);
+  /**
+   * The bubble-type selector: one button per type, plus the selected type's one-line description.
+   *
+   * "Which bubble am I" is the first decision of a run and the only one that changes the controls, so it sits ABOVE
+   * the start button: pick, then go. The description under it is the type's own `tagline`, because the difference
+   * between the two bubbles is not something a name can carry -- one eats and grows, the other wants to be hit.
+   */
+  private readonly typeLabels: Text[] = [];
+  private readonly tagline = mk('', 0x8fd4f0, mech.menu.taglineSize);
   private readonly primaryLabel = mk('', mech.menu.primaryTextColour, mech.menu.primaryTextSize);
   private readonly secondaryLabel = mk('', mech.menu.secondaryTextColour, mech.menu.secondaryTextSize);
-  private readonly hint = mk('WASD / 方向键移动   ·   触屏用底部摇杆控制方向', 0x7fb6d4, 12);
+  private readonly hint = mk('', 0x7fb6d4, 12);
   /**
    * Which build this is, at the bottom of the menu.
    *
@@ -44,38 +55,69 @@ export class MainMenu {
    */
   private readonly versionLine = mk('', 0x5b7f9c, 11);
 
-  /** Called when the player asks to play. */
-  onStart: () => void = () => {};
+  /**
+   * The types on offer, and which one is selected.
+   *
+   * The list is given to the menu rather than imported by it, so the menu has no opinion about what a bubble type is
+   * -- it draws whatever rows it is handed. That is also what makes `e2e/bubble-types.spec.ts` able to assert the
+   * two agree.
+   */
+  private types: readonly BubbleType[] = BUBBLE_TYPES;
+  private selectedTypeId: string = defaultBubbleType().id;
+
+  /** Called when the player asks to play, with the bubble they chose. */
+  onStart: (typeId: string) => void = () => {};
   /** Called when the player asks for the codex. */
   onCodex: () => void = () => {};
 
   private primaryRect = { x: 0, y: 0, w: 0, h: 0 };
   private secondaryRect = { x: 0, y: 0, w: 0, h: 0 };
+  /** One rectangle per type button, in the same order as `types`. */
+  private typeRects: { x: number; y: number; w: number; h: number }[] = [];
   /**
    * Which control the current press landed on, or null.
    *
    * One field rather than a boolean per button, so a drag that leaves one button and lands on the other cannot end
-   * up firing both -- which two independent flags would allow.
+   * up firing both -- which two independent flags would allow. `type:<id>` names the selector buttons.
    */
-  private pressed: 'start' | 'codex' | null = null;
+  private pressed: 'start' | 'codex' | `type:${string}` | null = null;
   private time = 0;
   /** Scale from the last real layout, so `update` can redraw without a viewport. */
   private scale = 1;
+  /** Set when the selection changes, so the layout can re-place the tagline without a full relayout. */
+  private taglineDirty = true;
 
   constructor() {
     this.root.eventMode = 'none';
-    for (const child of [this.backdrop, this.primary, this.secondary, this.primaryLabel, this.secondaryLabel]) {
+    for (const child of [this.backdrop, this.primary, this.secondary, this.typeRow, this.primaryLabel, this.secondaryLabel]) {
       child.eventMode = 'none';
+    }
+
+    for (const type of this.types) {
+      const label = mk(type.name, mech.menu.typeIdleTextColour, mech.menu.typeTextSize);
+      label.eventMode = 'none';
+      this.typeLabels.push(label);
     }
 
     this.primaryLabel.text = '开始游戏';
     this.secondaryLabel.text = '图鉴';
 
+    /**
+     * Display order is draw order, and the backdrop goes FIRST.
+     *
+     * The type selector was originally added before this call, which put it BEHIND the opaque backdrop: the labels
+     * still showed (they are text, drawn with a different blend path) while the buttons' fills and strokes vanished
+     * -- a screenshot found it, and nothing else would have. Everything that should be visible belongs after
+     * `backdrop`, and the selector and its tagline belong with the rest of the stack.
+     */
     this.root.addChild(
       this.backdrop,
       this.title,
       this.subtitle,
       this.levelLine,
+      this.typeRow,
+      this.tagline,
+      ...this.typeLabels,
       this.primary,
       this.primaryLabel,
       this.secondary,
@@ -127,6 +169,34 @@ export class MainMenu {
     this.primaryRect = { x: cx - w / 2, y: top, w, h };
     // Stacked below the first, so the two share a column and a width -- see the config's note on shared geometry.
     this.secondaryRect = { x: cx - w / 2, y: top + h + cfg.buttonGap * s, w, h };
+
+    /**
+     * The type selector, ABOVE the start button.
+     *
+     * Above rather than below because it is answered before the button it feeds: a player reads the menu top to
+     * bottom, and "which bubble" is the first thing a run decides. The row is as wide as the buttons so the whole
+     * column reads as one stack, and each type gets an equal share of it.
+     */
+    const typeH = cfg.typeRowHeight * s;
+    const typeTop = top - cfg.typeRowGap * s - typeH;
+    const slot = w / Math.max(1, this.types.length);
+    this.typeRects = this.types.map((_, i) => ({ x: this.primaryRect.x + i * slot, y: typeTop, w: slot, h: typeH }));
+    for (const [i, label] of this.typeLabels.entries()) {
+      const rect = this.typeRects[i];
+      if (!rect) continue;
+      label.style.fontSize = cfg.typeTextSize;
+      label.scale.set(s);
+      label.anchor.set(0.5, 0.5);
+      label.x = rect.x + rect.w / 2;
+      label.y = rect.y + rect.h / 2;
+    }
+
+    this.tagline.style.fontSize = cfg.taglineSize;
+    this.tagline.scale.set(s);
+    this.tagline.anchor.set(0.5, 0.5);
+    this.tagline.x = cx;
+    this.tagline.y = typeTop - cfg.taglineGap * s - cfg.taglineSize * s;
+    this.taglineDirty = true;
 
     for (const [rect, label] of [
       [this.primaryRect, this.primaryLabel],
@@ -191,36 +261,161 @@ export class MainMenu {
         alpha: cfg.secondaryStrokeAlpha * (this.pressed === 'codex' ? 1 : 0.8 + pulse * 0.2),
         width: stroke,
       });
+
+    /**
+     * The type selector: the chosen one FILLED, the others outlined.
+     *
+     * The same fill-versus-outline language as the two buttons below, so the menu has one way of saying "this is
+     * current, those are available" rather than two. The hint and the tagline change with the selection, which is
+     * what tells a player who has never seen either bubble what they are about to be.
+     */
+    this.typeRow.clear();
+    const selected = this.selectedType();
+    for (const [i, rect] of this.typeRects.entries()) {
+      const type = this.types[i];
+      if (!type) continue;
+      const isSelected = type.id === this.selectedTypeId;
+      const down = this.pressed === `type:${type.id}`;
+      this.typeRow
+        .roundRect(rect.x + 1 * s, rect.y, rect.w - 2 * s, rect.h, r * 0.7)
+        .fill({
+          color: isSelected ? cfg.typeSelectedFill : down ? cfg.typeIdleStroke : cfg.typeIdleFill,
+          alpha: isSelected ? 1 : 0.9,
+        })
+        .stroke({
+          color: isSelected ? cfg.typeSelectedStroke : cfg.typeIdleStroke,
+          alpha: isSelected ? 0.95 : 0.6,
+          width: stroke,
+        });
+      const label = this.typeLabels[i];
+      if (label) label.style.fill = isSelected ? cfg.typeSelectedTextColour : cfg.typeIdleTextColour;
+    }
+
+    /**
+     * The tagline and the hint both follow the selection, so the choice is informed rather than remembered.
+     *
+     * Written here rather than in `layout` because it changes with a press, and a full relayout per press would be
+     * work for one line of text.
+     */
+    if (this.taglineDirty || this.tagline.text !== selected.tagline) {
+      this.tagline.text = selected.tagline;
+      this.taglineDirty = false;
+    }
+    if (this.hint.text !== selected.hint) this.hint.text = selected.hint;
   }
 
   private inRect(rect: { x: number; y: number; w: number; h: number }, x: number, y: number): boolean {
     return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
   }
 
+  /** The type the player has chosen, falling back to the first if the list was replaced under it. */
+  private selectedType(): BubbleType {
+    return this.types.find((t) => t.id === this.selectedTypeId) ?? this.types[0] ?? defaultBubbleType();
+  }
+
+  /** Test hook and game hook: which bubble the start button would begin a run with. */
+  get selectedTypeIdValue(): string {
+    return this.selectedType().id;
+  }
+
+  /**
+   * Hand the menu the types to offer.
+   *
+   * The game owns the list (`src/bubbleTypes.ts`) and the menu draws whatever it is given, so the two cannot
+   * disagree -- and a probe can hand it a shorter list to check the row re-lays out. Rebuilds the labels, because the
+   * number of buttons is part of the layout.
+   */
+  setTypes(types: readonly BubbleType[]): void {
+    this.types = types;
+    for (const label of this.typeLabels) {
+      this.root.removeChild(label);
+      label.destroy();
+    }
+    this.typeLabels.length = 0;
+    for (const type of types) {
+      const label = mk(type.name, mech.menu.typeIdleTextColour, mech.menu.typeTextSize);
+      label.eventMode = 'none';
+      this.typeLabels.push(label);
+      // Added individually, which puts it above the backdrop because the backdrop is already in the list. A label
+      // that is added but never shown is the same bug the selector itself had.
+      this.root.addChild(label);
+    }
+    if (!types.some((t) => t.id === this.selectedTypeId)) this.selectedTypeId = types[0]?.id ?? '';
+    this.taglineDirty = true;
+  }
+
   handlePointerDown(x: number, y: number): boolean {
     if (this.inRect(this.primaryRect, x, y)) this.pressed = 'start';
     else if (this.inRect(this.secondaryRect, x, y)) this.pressed = 'codex';
-    else this.pressed = null;
+    else {
+      const hit = this.typeRects.findIndex((rect) => this.inRect(rect, x, y));
+      const type = hit >= 0 ? this.types[hit] : undefined;
+      this.pressed = type ? `type:${type.id}` : null;
+    }
     return true;
   }
 
   handlePointerMove(x: number, y: number): boolean {
     if (this.pressed === 'start' && !this.inRect(this.primaryRect, x, y)) this.pressed = null;
     if (this.pressed === 'codex' && !this.inRect(this.secondaryRect, x, y)) this.pressed = null;
+    if (this.pressed?.startsWith('type:')) {
+      const hit = this.typeRects.findIndex((rect) => this.inRect(rect, x, y));
+      const type = hit >= 0 ? this.types[hit] : undefined;
+      // Dragging from one type button onto another must not select either: a drag is a cancel, the same as it is on
+      // the two buttons below. The alternative -- selecting on the way past -- would make a fumbled press change
+      // the run's character.
+      if (!type || `type:${type.id}` !== this.pressed) this.pressed = null;
+    }
     return true;
   }
 
   handlePointerUp(x: number, y: number): boolean {
     const fire = this.pressed;
     this.pressed = null;
-    if (fire === 'start' && this.inRect(this.primaryRect, x, y)) this.onStart();
-    if (fire === 'codex' && this.inRect(this.secondaryRect, x, y)) this.onCodex();
+    if (fire === 'start' && this.inRect(this.primaryRect, x, y)) {
+      this.onStart(this.selectedType().id);
+      return true;
+    }
+    if (fire === 'codex' && this.inRect(this.secondaryRect, x, y)) {
+      this.onCodex();
+      return true;
+    }
+    if (fire?.startsWith('type:')) {
+      const hit = this.typeRects.findIndex((rect) => this.inRect(rect, x, y));
+      const type = hit >= 0 ? this.types[hit] : undefined;
+      if (type) {
+        this.selectedTypeId = type.id;
+        // The tagline and the hint follow, so the menu answers "what did I just pick" immediately.
+        this.draw(this.scale);
+      }
+    }
     return true;
   }
 
-  /** Test hook: both buttons, so a probe presses the real controls. */
-  get geometry(): { button: { x: number; y: number; w: number; h: number }; codex: { x: number; y: number; w: number; h: number } } {
-    return { button: { ...this.primaryRect }, codex: { ...this.secondaryRect } };
+  /**
+   * Test hook: every control, so a probe presses the real ones.
+   *
+   * `types` carries the label as well as the rectangle, so a test can assert that the menu is offering what the
+   * game actually has -- a mismatch there is a bubble nobody can choose.
+   */
+  get geometry(): {
+    button: { x: number; y: number; w: number; h: number };
+    codex: { x: number; y: number; w: number; h: number };
+    types: { id: string; label: string; rect: { x: number; y: number; w: number; h: number } }[];
+    tagline: string;
+    hint: string;
+  } {
+    return {
+      button: { ...this.primaryRect },
+      codex: { ...this.secondaryRect },
+      types: this.types.map((type, i) => ({
+        id: type.id,
+        label: type.name,
+        rect: { ...(this.typeRects[i] ?? { x: 0, y: 0, w: 0, h: 0 }) },
+      })),
+      tagline: this.tagline.text,
+      hint: this.hint.text,
+    };
   }
 
   /**

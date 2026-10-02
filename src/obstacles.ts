@@ -59,6 +59,19 @@ export interface ObstacleHit {
 }
 
 /**
+ * A charge attack arriving at an obstacle: flat damage, and whether it may break what no volume can.
+ *
+ * Deliberately NOT a volume and not a damage-per-frame: what a slam does is the bubble TYPE's business (the
+ * volatile bubble computes it from rage), and this module only has to know that something hit hard and whether
+ * that something is allowed to break a wall.
+ */
+export interface Slam {
+  damage: number;
+  /** Whether this type can break kinds whose `ramVolume` is null. See `angry.charge.slamBreaksUnrammable`. */
+  breaksUnrammable: boolean;
+}
+
+/**
  * The rules that decide an outcome, as free functions rather than methods.
  *
  * Kept out of `ObstacleField` so the numbers can be asserted directly, without constructing a field or running a
@@ -246,7 +259,7 @@ export class ObstacleField {
    *
    *   big enough     ->  the obstacle takes ram damage, and a crate simply ceases to exist
    *   not big enough ->  the player is stopped by it and takes a hit
-   *   soft (a net)   ->  the player is stopped, takes NOTHING, and tears it by pushing
+   *   soft (a net)   ->  the player is dragged, takes NOTHING, and tears it by pushing
    *
    * The "big enough" threshold is a volume, not a size comparison, so it is the same ladder the eating rules use
    * and the player can reason about it the same way. For a wall that ladder simply never arrives, and for a net it
@@ -254,6 +267,11 @@ export class ObstacleField {
    *
    * `dt` is here rather than in the caller because a net's tear IS a rate: the caller knows how much time passed,
    * but only this function knows which obstacle it was passing against.
+   *
+   * `slam` is the fourth answer, and it belongs to one bubble type: a charge that does a flat amount of damage to
+   * whatever it touches, decided by RAGE rather than by volume. See `Slam`. It is passed in rather than computed
+   * here because "how hard does this bubble hit" is the type's business, and this module is the only place that
+   * knows which obstacle was touched.
    *
    * @return the hit if the player broke something, whether they were stopped, whether being stopped HURT, and
    *   whether something is dragging on them this frame.
@@ -265,6 +283,7 @@ export class ObstacleField {
     playerVolume: number,
     invulnerable: boolean,
     dt: number,
+    slam?: Slam,
   ): { hit: ObstacleHit | null; blocked: boolean; hurt: boolean; dragging: boolean } {
     for (const o of this.obstacles) {
       const r = mech.obstacles.radius[o.kind] ?? 0.05;
@@ -272,6 +291,24 @@ export class ObstacleField {
       const dx = o.x - x;
       const dy = o.y - y;
       if (dx * dx + dy * dy > reach * reach) continue;
+
+      /**
+       * A slam, first, because it OVERRIDES the ordinary rules rather than adding to them.
+       *
+       * The volatile bubble's charge is the design's "third answer" to a wall: where the devour bubble must find
+       * ammunition or squeeze through the minimum gap, this one buys passage with rage. So the slam does not ask
+       * whether the kind is rammable -- it asks only whether this type is allowed to break that kind at all
+       * (`breaksUnrammable`), which is the one design decision the document flagged as needing to be made with the
+       * mechanic rather than after it.
+       */
+      if (slam) {
+        const rammable = ramVolumeFor(o.kind) !== null;
+        if (!rammable && !slam.breaksUnrammable) continue;
+        const hit = this.damage(o.id, slam.damage);
+        // A slam never stops the bubble and never hurts it: it is the player's own committed attack, and being
+        // stopped by the thing you just hit would make chaining impossible -- which is the whole feel of the verb.
+        return { hit, blocked: false, hurt: false, dragging: false };
+      }
 
       /**
        * Pushing, for the kinds that are torn rather than smashed.

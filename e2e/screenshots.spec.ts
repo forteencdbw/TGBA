@@ -30,6 +30,75 @@ test.describe('screen captures @screenshots', () => {
     await page.screenshot({ path: testInfo.outputPath('menu.png') });
   });
 
+  /**
+   * The menu with the VOLATILE bubble selected, so the owner can see the selector and what it says.
+   *
+   * The load-bearing part of the picture is the bottom two lines: the tagline and the control hint both change with
+   * the selection, and whether they read well is a judgement only a person can make.
+   */
+  test('the menu with the volatile bubble picked @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            menuRef: { geometry: { types: { id: string; rect: { x: number; y: number; w: number; h: number } }[] } };
+            handlePointerDown: (id: number, x: number, y: number) => void;
+            handlePointerUp: (id: number) => void;
+          };
+        };
+      }).__GB.game;
+      const angry = g.menuRef.geometry.types.find((t) => t.id === 'angry')!;
+      const at = { x: angry.rect.x + angry.rect.w / 2, y: angry.rect.y + angry.rect.h / 2 };
+      g.handlePointerDown(71, at.x, at.y);
+      g.handlePointerUp(71);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: testInfo.outputPath('menu-types.png') });
+  });
+
+  /**
+   * The volatile bubble in the water, at 暴怒 and at 失控.
+   *
+   * Two frames rather than one because the whole point of the rage palette is that the four stages are told apart
+   * at a glance, and "are these two different enough" is exactly the question a screenshot answers and no assertion
+   * can.
+   */
+  for (const [rage, name] of [
+    [60, 'angry-furious'],
+    [100, 'angry-overload'],
+  ] as const) {
+    test(`the volatile bubble at ${rage} rage @screenshots`, async ({ page }, testInfo) => {
+      await boot(page);
+      await page.evaluate(async (amount) => {
+        const g = (window as unknown as {
+          __GB: {
+            game: {
+              debugStartRunWithType: (id: string) => void;
+              debugGrantRageForTest: (amount: number) => number;
+              debugSetSkillForTest?: () => void;
+              obstaclesRef: { obstacles: unknown[] };
+              hazardsRef: { hazards: unknown[] };
+            };
+            player: { volume: number };
+          };
+        }).__GB;
+        const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+        g.game.debugStartRunWithType('angry');
+        // A few frames so the intro is over and the bubble is full size: a screenshot of the birth animation would
+        // show every rage stage as a small dot.
+        for (let i = 0; i < 40; i++) await raf();
+        // A volume a real run can reach (the cap is 10), so the picture is of the bubble as it plays rather than of\n        // a diagnostic curiosity: at volume 36 the thing filled most of the screen.\n        g.player.volume = 8;
+        g.game.debugGrantRageForTest(amount);
+        g.game.hazardsRef.hazards.length = 0;
+        g.game.obstaclesRef.obstacles.length = 0;
+        for (let i = 0; i < 3; i++) await raf();
+      }, rage);
+      await page.screenshot({ path: testInfo.outputPath(`${name}.png`) });
+    });
+  }
+
   test('mid-level, with the stage readout on the HUD @screenshots', async ({ page }, testInfo) => {
     await boot(page);
     await startFromMenu(page);
