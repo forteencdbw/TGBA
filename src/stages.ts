@@ -1,5 +1,7 @@
-import { mech } from './mechanisms';
+import { mech, type StageAppearance } from './mechanisms';
 import { visualRadiusFraction } from './volume';
+
+export type { StageAppearance };
 
 /**
  * Bubble growth stages.
@@ -81,16 +83,30 @@ export function initialStageState(): StageState {
   };
 }
 
-/** The display colour for a stage, falling back to the last one defined. */
-export function stageColor(stage: number): number {
-  const list = mech.stages.color;
-  return list[Math.min(list.length - 1, Math.max(0, stage - 1))] ?? 0xffffff;
+/**
+ * The appearance for a stage.
+ *
+ * A list shorter than the stage count falls back to its LAST entry rather than to a built-in default: a config
+ * that styles two stages and defines four speeds should reuse the second stage's look, not silently switch to
+ * something that was never authored. A missing list entirely is a loader error, so the `undefined` branch is an
+ * unreachable guard rather than the normal path.
+ */
+export function stageAppearance(stage: number): StageAppearance {
+  const list = mech.stages.appearance;
+  const index = Math.min(list.length - 1, Math.max(0, stage - 1));
+  const found = list[index];
+  if (!found) throw new Error(`stages.appearance has no entry for stage ${stage}`);
+  return found;
 }
 
-/** The display name for a stage, falling back to the last one defined. */
+/** The display colour for a stage's HUD label. */
+export function stageColor(stage: number): number {
+  return stageAppearance(stage).hudColor;
+}
+
+/** The display name for a stage, shown on the HUD. */
 export function stageName(stage: number): string {
-  const list = mech.stages.name;
-  return list[Math.min(list.length - 1, Math.max(0, stage - 1))] ?? `阶段 ${stage}`;
+  return stageAppearance(stage).name;
 }
 
 /**
@@ -101,8 +117,7 @@ export function stageName(stage: number): string {
  * the speed difference has to stay playable -- and tying them together would make every speed tweak a visual one.
  */
 export function stageRadiusScale(stage: number): number {
-  const list = mech.stages.radiusScale;
-  return list[Math.min(list.length - 1, Math.max(0, stage - 1))] ?? 1;
+  return stageAppearance(stage).radius;
 }
 
 /**
@@ -116,17 +131,6 @@ export function stageRadiusScale(stage: number): number {
  */
 export function stageRadiusFraction(stage: number, volume: number): number {
   return visualRadiusFraction(volume) * stageRadiusScale(stage);
-}
-
-/** Per-stage colours for the bubble's translucent fill, opaque outline, and wide soft glow. */
-export function stagePalette(stage: number): { body: number; rim: number; halo: number } {
-  const pick = (list: number[], fallback: number): number =>
-    list[Math.min(list.length - 1, Math.max(0, stage - 1))] ?? fallback;
-  return {
-    body: pick(mech.stages.body, 0xcdf6ff),
-    rim: pick(mech.stages.rim, 0xd8fbff),
-    halo: pick(mech.stages.halo, 0x7fe6ff),
-  };
 }
 
 /**

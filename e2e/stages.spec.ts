@@ -118,7 +118,7 @@ test.describe('growth stages', () => {
    * The growth has to be VISIBLE, and this is the requirement stated directly: the bubble changes size with the
    * stage and each stage is a different colour so they can be told apart.
    *
-   * Asserted on the DRAWN radius rather than on the config's `radiusScale`, because a scale that never reaches
+   * Asserted on the DRAWN radius rather than on the config's `radius`, because a value that never reaches the
    * the drawing code would satisfy every config check while changing nothing on screen. Note it is also the
    * radius the eating rules use -- one function, so the bubble is genuinely as big as it looks.
    */
@@ -127,7 +127,10 @@ test.describe('growth stages', () => {
     await startFromMenu(page);
     await waitForPhase(page, 'playing');
 
-    const readings: { stage: number; radiusPx: number; palette: { body: number; rim: number; halo: number }; radiusFraction: number }[] = [];
+    /** What the drawing code actually paints with, read from the same place the drawing code reads it. */
+    type Look = { radius: number; inner: number; rim: number; glow: number; innerRing: boolean; rimWidthRatio: number };
+
+    const readings: { stage: number; radiusPx: number; look: Look; radiusFraction: number }[] = [];
     for (const target of [1, 2, 3]) {
       await absorbUntilStage(page, target);
       // Park it in the middle so the reported screen position is stable between measurements.
@@ -140,19 +143,19 @@ test.describe('growth stages', () => {
       await page.waitForTimeout(120);
       const state = await page.evaluate(() => {
         const g = (window as unknown as {
-          __GB: { game: { diagnostics: { stage: { palette: { body: number; rim: number; halo: number }; radiusFraction: number } }; playerScreenPx: { radiusPx: number } } };
+          __GB: { game: { diagnostics: { stage: { appearance: Look; radiusFraction: number } }; playerScreenPx: { radiusPx: number } } };
         }).__GB.game;
-        return { radiusPx: g.playerScreenPx.radiusPx, palette: g.diagnostics.stage.palette, radiusFraction: g.diagnostics.stage.radiusFraction };
+        return { radiusPx: g.playerScreenPx.radiusPx, look: g.diagnostics.stage.appearance, radiusFraction: g.diagnostics.stage.radiusFraction };
       });
       readings.push({ stage: target, ...state });
     }
 
-    console.log('stage  drawn radius px   lane fraction   body       rim        halo');
+    console.log('stage  drawn radius px   lane fraction   radius x   inner      rim        glow       ring');
     for (const r of readings) {
       const hex = (v: number) => '#' + v.toString(16).padStart(6, '0');
       console.log(
         `  ${r.stage}    ${r.radiusPx.toFixed(1).padStart(14)}   ${r.radiusFraction.toFixed(4).padStart(12)}   ` +
-          `${hex(r.palette.body)}   ${hex(r.palette.rim)}   ${hex(r.palette.halo)}`,
+          `${r.look.radius.toFixed(2).padStart(7)}   ${hex(r.look.inner)}   ${hex(r.look.rim)}   ${hex(r.look.glow)}   ${r.look.innerRing}`,
       );
     }
 
@@ -171,11 +174,28 @@ test.describe('growth stages', () => {
     expect(readings[1]!.radiusFraction / readings[0]!.radiusFraction, 'stage 2 must be visibly bigger').toBeGreaterThan(1.15);
     expect(readings[2]!.radiusFraction / readings[1]!.radiusFraction, 'stage 3 must be visibly bigger').toBeGreaterThan(1.15);
 
-    // COLOUR: every stage must be distinguishable from every other, in all three parts of the palette.
-    const distinct = (values: number[]): boolean => new Set(values).size === values.length;
-    expect(distinct(readings.map((r) => r.palette.body)), 'each stage needs its own body colour').toBe(true);
-    expect(distinct(readings.map((r) => r.palette.rim)), 'each stage needs its own rim colour').toBe(true);
-    expect(distinct(readings.map((r) => r.palette.halo)), 'each stage needs its own halo colour').toBe(true);
+    // The CONFIGURED radius on the bubble must equal the config's own value, so the knob is honoured rather than
+    // shadowed by a default.
+    for (const r of readings) expect(r.look.radius, `stage ${r.stage} radius comes from the config`).toBeGreaterThan(0);
+
+    // COLOUR: every stage must be distinguishable from every other, in each part of the appearance.
+    const distinct = (values: (number | boolean)[]): boolean => new Set(values).size === values.length;
+    expect(distinct(readings.map((r) => r.look.inner)), 'each stage needs its own interior colour').toBe(true);
+    expect(distinct(readings.map((r) => r.look.rim)), 'each stage needs its own rim colour').toBe(true);
+    expect(distinct(readings.map((r) => r.look.glow)), 'each stage needs its own glow colour').toBe(true);
+    /**
+     * The shape cue: a second ring appears from stage 2.
+     *
+     * Asserted as "it CHANGES somewhere in the progression" rather than "all three differ": a boolean has two
+     * values, so three stages cannot all be distinct by it. It separates stage 1 from the later ones; stages 2
+     * and 3 are separated by colour, which is what the rim-distance checks below are for. An assertion that all
+     * three differ would have been impossible to satisfy and would have forced a worse design.
+     *
+     * To distinguish more stages by shape, turn `innerRing` into a COUNT of rings.
+     */
+    expect(new Set(readings.map((r) => r.look.innerRing)).size, 'the inner ring must change across the stages').toBeGreaterThan(1);
+    expect(readings[0]!.look.innerRing, 'stage 1 must NOT have the second ring').toBe(false);
+    expect(readings[2]!.look.innerRing, 'and the top stage must have it').toBe(true);
 
     /**
      * And the colours must be *perceptibly* different, not merely different integers.
@@ -189,7 +209,7 @@ test.describe('growth stages', () => {
       const [br, bg, bb] = channels(b);
       return Math.max(Math.abs(ar - br), Math.abs(ag - bg), Math.abs(ab - bb));
     };
-    const rims = readings.map((r) => r.palette.rim);
+    const rims = readings.map((r) => r.look.rim);
     expect(distance(rims[0]!, rims[1]!), 'stage 1 and 2 rims must be clearly different colours').toBeGreaterThan(40);
     expect(distance(rims[1]!, rims[2]!), 'stage 2 and 3 rims must be clearly different colours').toBeGreaterThan(40);
     expect(distance(rims[0]!, rims[2]!), 'stage 1 and 3 rims must be clearly different colours').toBeGreaterThan(40);

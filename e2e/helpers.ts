@@ -49,8 +49,29 @@ export interface Diagnostics {
     absorbedInStage: number;
     neededForNext: number | null;
     speedMultiplier: number;
-    /** The colours this stage paints the bubble with. */
-    palette: { body: number; rim: number; halo: number };
+    /** The whole appearance this stage paints with: radius multiplier, colours, opacities, stroke widths. */
+    appearance: {
+      radius: number;
+      inner: number;
+      innerAlpha: number;
+      rim: number;
+      rimAlpha: number;
+      rimWidthRatio: number;
+      glow: number;
+      glowOuterAlpha: number;
+      glowInnerAlpha: number;
+      glowOuterRadiusRatio: number;
+      glowInnerRadiusRatio: number;
+      innerRing: boolean;
+      innerRingAlpha: number;
+      innerRingWidthRatio: number;
+      sheen: number;
+      sheenAlpha: number;
+      specular: number;
+      specularAlpha: number;
+      hudColor: number;
+      name: string;
+    };
     /** The drawn radius as a fraction of the lane, which is also the radius the eating rules use. */
     radiusFraction: number;
   };

@@ -9,7 +9,7 @@ import { audio } from './audio';
 import { MainMenu } from './menu';
 import { mech } from './mechanisms';
 import { SettingsUi } from './settings';
-import { demote, initialStageState, recordAbsorb, stageName, stagePalette, stageRadiusFraction, type StageState } from './stages';
+import { demote, initialStageState, recordAbsorb, stageAppearance, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
@@ -1712,34 +1712,31 @@ class Game {
     const squash = 1 + Math.min(speed / 600, 0.16);
 
     /**
-     * The stage's palette, which is the discreet half of "how big am I".
+     * The stage's whole appearance: size multiplier, colours, opacities and stroke widths.
+     *
+     * EVERY number below comes from here, including the alphas and the ratios. That is the point -- a constant
+     * left in this function is not configurable, it only looks that way from outside, and the owner tunes the
+     * look rather than the agent. See `config/mechanics.json5`, `stages.appearance`.
      *
      * Size alone cannot say which stage the player is in: volume grows the bubble every time it eats, so a big
      * stage-1 bubble and a small stage-2 bubble would look similar. Colour is discrete, so it can.
-     *
-     * A whole palette rather than one tint, because the bubble is three different things visually -- a
-     * translucent body, an opaque silhouette rim, and a wide soft glow -- and tinting all three from one value
-     * flattens it into a coloured disc. These are also the parts a colour-blind player can still separate: the
-     * rim is distinguished by brightness and width, not only by hue.
      */
-    const palette = stagePalette(this.stage.stage);
+    const look = stageAppearance(this.stage.stage);
 
     /**
      * The bubble's interior is deliberately MOSTLY TRANSPARENT, and the STAGE COLOUR is carried by the rim and
-     * the halo instead.
+     * the glow instead.
      *
-     * Measured reason: five translucent layers of light colour stack over the interior (two halo passes, the
-     * body, the sheen and the speculars), and stacked past roughly half opacity they average toward white --
-     * which over dark water is a NEUTRAL GREY. The stage hue was being averaged away exactly where the player
+     * Measured reason: five translucent layers of light colour stack over the interior (two glow passes, the
+     * inner wash, the sheen and the speculars), and stacked past roughly half opacity they average toward white
+     * -- which over dark water is a NEUTRAL GREY. The stage hue was being averaged away exactly where the player
      * looks most, and the bubble read as a grey disc with a coloured ring rather than as a coloured bubble.
      *
      * So the interior keeps the water's darkness and the hue lives in the parts that are opaque by nature: the
-     * rim, which is a silhouette, and the halo, which is a glow. Both also carry a SHAPE cue and a BRIGHTNESS
-     * cue, which survive a phone in sunlight where a warm gold and a warm pink are nearly the same colour.
+     * rim, which is a silhouette, and the glow, which is a glow.
      */
-    // Outer soft halo. Wider and stronger at higher stages, so the glow grows with the bubble.
-    g.circle(worldX, worldY, radius * 1.55).fill({ color: palette.halo, alpha: 0.16 * alpha });
-    g.circle(worldX, worldY, radius * 1.18).fill({ color: palette.halo, alpha: 0.22 * alpha });
+    g.circle(worldX, worldY, radius * look.glowOuterRadiusRatio).fill({ color: look.glow, alpha: look.glowOuterAlpha * alpha });
+    g.circle(worldX, worldY, radius * look.glowInnerRadiusRatio).fill({ color: look.glow, alpha: look.glowInnerAlpha * alpha });
 
     // Slowed by a jellyfish: a purple rind around the bubble. Shown ON the player rather than in a
     // status bar, because the penalty is about where the bubble IS -- the player needs to see it
@@ -1750,31 +1747,27 @@ class Game {
       g.circle(worldX, worldY, radius * 1.75).fill({ color: 0xc79bff, alpha: 0.07 * alpha * fade });
     }
 
-    /**
-     * The body: a very translucent wash of the stage colour, then the rim.
-     *
-     * The wash is at 0.12 rather than a solid fill -- see the note above about five layers averaging to grey.
-     * It is there to hint at the hue inside; the RIM is what states it.
-     */
-    g.ellipse(worldX, worldY, radius / squash, radius * squash).fill({ color: palette.body, alpha: 0.12 * alpha });
+    // The body: a very translucent wash of the stage colour, then the rim. The wash hints at the hue inside; the
+    // RIM is what states it.
+    g.ellipse(worldX, worldY, radius / squash, radius * squash).fill({ color: look.inner, alpha: look.innerAlpha * alpha });
     g.ellipse(worldX, worldY, radius / squash, radius * squash).stroke({
-      color: palette.rim,
-      alpha: 0.95 * alpha,
-      width: radius * 0.16,
+      color: look.rim,
+      alpha: look.rimAlpha * alpha,
+      width: radius * look.rimWidthRatio,
     });
 
     /**
-     * A second rim just inside the first, from stage 2.
+     * A second rim just inside the first, when the stage asks for one.
      *
      * A SHAPE cue, not a hue cue: at phone size in daylight a warm gold and a warm pink are close enough to
      * confuse, but one ring versus two is unmistakable, and it reads in peripheral vision while the player is
      * watching a fish rather than the bubble.
      */
-    if (this.stage.stage >= 2) {
+    if (look.innerRing) {
       g.ellipse(worldX, worldY, radius / squash, radius * squash).stroke({
-        color: palette.rim,
-        alpha: 0.5 * alpha,
-        width: radius * 0.055,
+        color: look.rim,
+        alpha: look.innerRingAlpha * alpha,
+        width: radius * look.innerRingWidthRatio,
       });
     }
 
@@ -1782,18 +1775,18 @@ class Game {
     // circles: an earlier version used Graphics.arc for the rim highlight and left a stray line
     // from the bubble to the edge of the water column.
     g.circle(worldX - radius * 0.16, worldY + radius * 0.14, radius * 0.72).fill({
-      color: 0xeafcff,
-      alpha: 0.13 * alpha,
+      color: look.sheen,
+      alpha: look.sheenAlpha * alpha,
     });
 
     // Specular highlights. World y grows upward, so +y is up on screen.
     g.circle(worldX - radius * 0.36, worldY + radius * 0.38, radius * 0.21).fill({
-      color: 0xffffff,
-      alpha: 0.8 * alpha,
+      color: look.specular,
+      alpha: look.specularAlpha * alpha,
     });
     g.circle(worldX + radius * 0.24, worldY - radius * 0.3, radius * 0.1).fill({
-      color: 0xffffff,
-      alpha: 0.4 * alpha,
+      color: look.specular,
+      alpha: look.specularAlpha * 0.5 * alpha,
     });
 
     // Trailing micro-bubbles below the bubble, so it reads as always moving.
@@ -1871,7 +1864,7 @@ class Game {
       absorbedInStage: number;
       neededForNext: number | null;
       speedMultiplier: number;
-      palette: { body: number; rim: number; halo: number };
+      appearance: StageAppearance;
       radiusFraction: number;
     };
     phase: string;
@@ -2003,8 +1996,14 @@ class Game {
         absorbedInStage: this.stage.absorbedInStage,
         neededForNext: this.stage.neededForNext,
         speedMultiplier: this.stage.speedMultiplier,
-        /** The colours this stage paints the bubble with, so a test can check the stages are distinguishable. */
-        palette: stagePalette(this.stage.stage),
+        /**
+         * The whole appearance this stage paints with.
+         *
+         * The entire object rather than a couple of picked-out colours: a test that wants to check the stages are
+         * distinguishable should read the same values the drawing code reads, so it cannot pass while the bubble
+         * looks wrong. It is also what a tuner sees at a glance, in the console, for what actually loaded.
+         */
+        appearance: stageAppearance(this.stage.stage),
         /** The drawn radius as a fraction of the lane, which is also the radius the eating rules use. */
         radiusFraction: stageRadiusFraction(this.stage.stage, this.player.volume),
       },

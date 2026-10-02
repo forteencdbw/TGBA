@@ -26,6 +26,46 @@ import rawText from '../config/mechanics.json5?raw';
  * That is also what makes a save hot-reload: the config is a real module dependency.
  */
 
+/**
+ * One growth stage's appearance, as the config file writes it.
+ *
+ * Colours accept EITHER a JSON5 hex literal (`0x9fe4ff`, a number) OR a `"#rrggbb"` string, since a colour picker
+ * hands you the latter and neither form should be an error. Both become numbers after validation.
+ *
+ * A whole object per stage rather than parallel arrays: changing one stage must not mean counting the index
+ * across a dozen lists, and adding a stage must not mean editing all of them.
+ */
+export interface StageAppearance {
+  /** Visual radius multiplier, on top of the radius the volume already gives. Affects the hitbox too. */
+  radius: number;
+  /** Interior fill, and its opacity. Wants to be near-white; see the config's comment for why. */
+  inner: number;
+  innerAlpha: number;
+  /** The silhouette: the main hue carrier. */
+  rim: number;
+  rimAlpha: number;
+  rimWidthRatio: number;
+  /** The glow. Wants to be bright rather than saturated: it sits over the interior and sets its brightness. */
+  glow: number;
+  glowOuterAlpha: number;
+  glowInnerAlpha: number;
+  glowOuterRadiusRatio: number;
+  glowInnerRadiusRatio: number;
+  /** A second thin ring inside the rim, from stage 2. A SHAPE cue, for telling warm hues apart. */
+  innerRing: boolean;
+  innerRingAlpha: number;
+  innerRingWidthRatio: number;
+  /** The offset highlight and the specular dots. */
+  sheen: number;
+  sheenAlpha: number;
+  specular: number;
+  specularAlpha: number;
+  /** The colour for the HUD's stage label, which sits on a dark HUD rather than in dark water. */
+  hudColor: number;
+  /** The stage's display name. */
+  name: string;
+}
+
 export interface StageConfig {
   /** Movement speed multiplier per stage. Index 0 is stage 1. */
   speedMultiplier: number[];
@@ -37,29 +77,15 @@ export interface StageConfig {
   /** Brief invulnerability when growing, so growing is not instantly punished. */
   growInvulnerableSeconds: number;
   /**
-   * Visual radius multiplier per stage, on top of the radius the volume already gives.
+   * Per-stage appearance.
    *
    * TWO INDEPENDENT VISUAL SIGNALS, deliberately. `volume` grows the bubble CONTINUOUSLY, so size alone cannot
    * distinguish "just reached stage 2" from "stage 2 plus five more collectables". The stage colour is discrete
-   * and answers "which stage am I in"; this answers "how big am I now". Together the player reads both.
-   */
-  radiusScale: number[];
-  /**
-   * Per-stage body fill, rim stroke and outer halo colours.
+   * and answers "which stage am I in"; the radius answers "how big am I now". The player needs both.
    *
-   * A whole palette per stage rather than one tint, because the bubble is procedural geometry: the body is a
-   * translucent fill, the rim is the opaque silhouette and the halo is a wide soft glow. Tinting all three from
-   * a single value flattens the bubble into a coloured disc and loses the water look entirely.
-   *
-   * Each accepts EITHER a JSON5 hex literal (`0x9fe4ff`, a number) OR a `"#rrggbb"` string, since a colour
-   * picker hands you the latter and neither form should be an error. Both become numbers after validation.
+   * Shorter lists fall back to the last entry, so adding a stage without styling it is not an error.
    */
-  body: number[];
-  rim: number[];
-  halo: number[];
-  /** Display colour and name per stage, for the HUD readout. */
-  color: number[];
-  name: string[];
+  appearance: StageAppearance[];
 }
 
 export interface Mechanisms {
@@ -155,6 +181,44 @@ try {
 
 if (parsed === null || typeof parsed !== 'object') fail('the top level must be an object');
 
+/**
+ * Per-key rules for a stage's appearance object.
+ *
+ * One entry per key so a mistake NAMES the key it is about. A single "appearance is invalid" check would leave
+ * the owner hunting through thirty values, and the whole point of a hand-edited config is that a typo is a
+ * message rather than a mystery.
+ */
+const APPEARANCE_RULES: { key: string; what: string; ok: (v: unknown) => boolean }[] = [
+  { key: 'radius', what: 'radius multiplier, above 0.05 and under 8', ok: (v) => typeof v === 'number' && v > 0.05 && v < 8 },
+  // Colours: a JSON5 hex literal is a number, a colour picker gives a "#rrggbb" string. Both are fine.
+  ...(['inner', 'rim', 'glow', 'sheen', 'specular', 'hudColor'] as const).map((key) => ({
+    key,
+    what: 'colour, either 0xrrggbb or "#rrggbb"',
+    ok: (v: unknown) =>
+      (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 0xffffff) ||
+      (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)),
+  })),
+  ...(['innerAlpha', 'rimAlpha', 'glowOuterAlpha', 'glowInnerAlpha', 'innerRingAlpha', 'sheenAlpha', 'specularAlpha'] as const).map(
+    (key) => ({
+      key,
+      what: 'opacity between 0 and 1',
+      ok: (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1,
+    }),
+  ),
+  ...(['rimWidthRatio', 'innerRingWidthRatio'] as const).map((key) => ({
+    key,
+    what: 'stroke width as a fraction of the radius, between 0.01 and 0.5',
+    ok: (v: unknown) => typeof v === 'number' && v >= 0.01 && v <= 0.5,
+  })),
+  ...(['glowOuterRadiusRatio', 'glowInnerRadiusRatio'] as const).map((key) => ({
+    key,
+    what: 'radius as a multiple of the bubble radius, at least 1',
+    ok: (v: unknown) => typeof v === 'number' && v >= 1 && v <= 4,
+  })),
+  { key: 'innerRing', what: 'true or false', ok: (v) => typeof v === 'boolean' },
+  { key: 'name', what: 'the stage name shown on the HUD', ok: (v) => typeof v === 'string' && v.length > 0 },
+];
+
 const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string }[] = [
   { path: 'stages.speedMultiplier', check: (v) => Array.isArray(v) && v.length >= 2 && v.every((n) => typeof n === 'number'), describe: 'an array of at least two numbers' },
   { path: 'stages.minSpeedMultiplier', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a number above 0 and at most 1' },
@@ -162,23 +226,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'stages.absorbToStage3', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'stages.growInvulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   {
-    path: 'stages.radiusScale',
-    check: (v) => Array.isArray(v) && v.length >= 2 && v.every((n) => typeof n === 'number' && n > 0.05 && n < 8),
-    describe: 'an array of at least two positive multipliers, each under 8',
+    path: 'stages.appearance',
+    check: (v) => Array.isArray(v) && v.length >= 2 && v.every((s) => s !== null && typeof s === 'object'),
+    describe: 'an array of at least two stage objects',
   },
-  ...(['body', 'rim', 'halo', 'color'] as const).map((key) => ({
-    path: `stages.${key}`,
-    check: (v: unknown) =>
-      Array.isArray(v) &&
-      v.every(
-        (n) =>
-          // A number from a JSON5 hex literal, or a "#rrggbb" string. Both are accepted; see the interface.
-          (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 0xffffff) ||
-          (typeof n === 'string' && /^#[0-9a-fA-F]{6}$/.test(n)),
-      ),
-    describe: 'an array of colours, each either 0xrrggbb or "#rrggbb"',
-  })),
-  { path: 'stages.name', check: (v) => Array.isArray(v) && v.every((n) => typeof n === 'string'), describe: 'an array of names' },
   { path: 'volume.start', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'volume.max', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'volume.hitCost', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
@@ -227,19 +278,41 @@ for (const rule of REQUIRED) {
 export const mech = parsed as Mechanisms;
 
 /**
- * Normalise every colour array to the numbers Pixi wants, in place.
+ * Check the appearance array key by key, so a mistake names the STAGE and the KEY it is about.
+ *
+ * Kept out of the generic rules above because it is the file's only COMPOSITE value: thirty values across three
+ * stages, where "the appearance is invalid" would leave the owner hunting through all of them. Naming the stage
+ * and the key is the whole reason a hand-edited config beats a constant, and it is what caught the last bug --
+ * a stale `stages.name` rule that pointed straight at the key that had moved.
+ */
+const appearances = mech.stages.appearance as unknown as Record<string, unknown>[];
+appearances.forEach((stage, index) => {
+  for (const rule of APPEARANCE_RULES) {
+    const value = stage[rule.key];
+    if (value === undefined) fail(`stages.appearance[${index}].${rule.key} is missing. It should be ${rule.what}.`);
+    if (!rule.ok(value)) {
+      fail(`stages.appearance[${index}].${rule.key} is ${JSON.stringify(value)}, but it should be ${rule.what}.`);
+    }
+  }
+});
+
+/**
+ * Normalise every colour to the number Pixi wants, in place.
  *
  * Both forms are accepted because JSON5 gives you the choice: `0x9fe4ff` is a plain number, and a `"#rrggbb"`
  * string is what a colour picker gives you. Neither should be a mistake, so both are converted here rather than
  * the file having to know which one the loader prefers.
  */
-for (const key of ['body', 'rim', 'halo', 'color'] as const) {
-  mech.stages[key] = (mech.stages[key] as unknown as (string | number)[]).map((value, index) => {
-    if (typeof value === 'number') return value;
-    const parsedColour = Number.parseInt(value.slice(1), 16);
-    if (!Number.isFinite(parsedColour)) fail(`stages.${key}[${index}] is "${value}", which is not a colour`);
-    return parsedColour;
-  });
+const COLOUR_KEYS = ['inner', 'rim', 'glow', 'sheen', 'specular', 'hudColor'] as const;
+
+for (const stage of mech.stages.appearance as unknown as Record<string, string | number>[]) {
+  for (const key of COLOUR_KEYS) {
+    const value = stage[key];
+    if (typeof value === 'number') continue;
+    const parsedColour = Number.parseInt(String(value).slice(1), 16);
+    if (!Number.isFinite(parsedColour)) fail(`stages.appearance[].${key} is "${value}", which is not a colour`);
+    stage[key] = parsedColour;
+  }
 }
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
