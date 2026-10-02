@@ -92,14 +92,15 @@ export function makeLabel(text: string, colour: number, size: number, weight: 'n
 }
 
 /**
- * Horizontal placement of world-space props, as a FRACTION of the play area width.
+ * How far from the play area's left edge the marine snow starts, as a FRACTION of the lane width.
  *
- * Fractions rather than metres: the play area is sized to the display, so a metre constant would
- * put the ruler in a different place on every screen.
+ * A fraction rather than metres: the play area is sized to the display, so a metre constant would put the
+ * band in a different place on every screen.
+ *
+ * This used to sit beside a set of tick-length constants for a depth ruler on the left edge. The ruler is
+ * gone -- see `WorldLayer` -- and only the snow's left margin needed this.
  */
 const RULER_X_RATIO = 0.008;
-const RULER_TICK_MAJOR_RATIO = 0.014;
-const RULER_TICK_MINOR_RATIO = 0.007;
 
 /**
  * Everything that lives in the water column and moves with the camera: the colour gradient, the
@@ -111,8 +112,6 @@ export class WorldLayer {
 
   /** Background gradient is drawn in SCREEN pixels, behind everything. */
   private readonly gradient = new Graphics();
-  /** Ruler rails and ticks: world space. */
-  private readonly ruler = new Graphics();
   /** Marine snow: world space. */
   private readonly snow = new Graphics();
 
@@ -125,34 +124,15 @@ export class WorldLayer {
   /** Cached canvas size, so a resize also forces a rebuild. See `update`. */
   private lastGradientWidth = -1;
   private lastGradientHeight = -1;
+
   constructor() {
     this.snow.eventMode = 'none';
     this.gradient.eventMode = 'none';
-    this.ruler.eventMode = 'none';
 
-    this.world.addChild(this.ruler, this.snow);
+    this.world.addChild(this.snow);
     this.world.mask = this.maskShape;
 
     this.root.addChild(this.gradient, this.world);
-  }
-
-  /** Ruler geometry depends on the play area width, so it is rebuilt on every layout. */
-  private buildRuler(laneWidth: number): void {
-    const railX = laneWidth * RULER_X_RATIO;
-    const majorLen = laneWidth * RULER_TICK_MAJOR_RATIO;
-    const minorLen = laneWidth * RULER_TICK_MINOR_RATIO;
-    const railW = laneWidth * 0.0018;
-
-    this.ruler.clear();
-    this.ruler.rect(railX, 0, railW, DEPTH_TOTAL).fill({ color: 0x3d7fa8, alpha: 0.3 });
-    // Ticks run inwards from the rail, i.e. toward larger world x.
-    for (let depth = 0; depth <= DEPTH_TOTAL; depth += 10) {
-      const y = DEPTH_TOTAL - depth;
-      const isMajor = depth % 50 === 0;
-      this.ruler
-        .rect(railX, y, isMajor ? majorLen : minorLen, DEPTH_TOTAL * 0.0005)
-        .fill({ color: isMajor ? 0x8fe3ff : 0x5ba6c9, alpha: isMajor ? 0.6 : 0.3 });
-    }
   }
 
   private seedSnow(laneWidth: number): void {
@@ -179,14 +159,15 @@ export class WorldLayer {
     const columnLeft = viewport.left;
     const columnWidth = viewport.laneWidthPx;
 
-    // Invisible mask keeping ruler and snow inside the play area. Drawn in screen pixels, so a
+    // Invisible mask keeping the marine snow inside the play area. Drawn in screen pixels, so a
     // screen-space fill is correct here despite the rest of the class using world metres.
-    // The lane always spans the full canvas width now, so this is a belt-and-braces clip.
+    //
+    // Not belt-and-braces any more: the lane is capped and CENTRED on a wide window, so snow drawn outside
+    // it would be visible in the surrounding water rather than clipped at the canvas edge.
     this.maskShape.clear();
     this.maskShape.rect(columnLeft, -1000, columnWidth, viewport.height + 2000).fill(0xffffff);
 
     // World-space prop sizes are relative to the play area width, so they need rebuilding here.
-    this.buildRuler(viewport.laneWidthMeters);
     this.seedSnow(viewport.laneWidthMeters);
   }
 
