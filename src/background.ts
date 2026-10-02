@@ -1,5 +1,6 @@
 import { Application, Container, FillGradient, Graphics, Text } from 'pixi.js';
 import { LATERAL_DAMPING, VIEW } from './config';
+import { mech } from './mechanisms';
 import { DEPTH_TOTAL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Player } from './player';
@@ -376,6 +377,8 @@ export class Hud {
   private readonly subline: Text;
   /** The second resource's readout, for a bubble type that has one. Hidden otherwise. */
   private readonly resourceLabel: Text;
+  /** The resource's gauge. Own layer, so hiding it cannot erase anything else. */
+  private readonly resourceGauge = new Graphics();
   private readonly gauge = new Graphics();
   private readonly debug: Text;
   private readonly landmarkLabels: Text[] = [];
@@ -387,6 +390,9 @@ export class Hud {
    * `designScale`.
    */
   private hudScale = 1;
+  /** The lane's width and centre in canvas pixels, remembered from layout for the resource gauge. */
+  private laneWidthPx = 0;
+  private laneCentreX = 0;
   private debugTimer = 0;
   /** Which of the three birth types this run rolled. Set by the game after construction. */
   private seedLabel = '';
@@ -415,7 +421,7 @@ export class Hud {
     this.debug = makeLabel('', 0x7fc4e8, 11, 'normal');
     this.debug.alpha = 0.8;
 
-    this.root.addChild(this.gauge, this.headline, this.subline, this.resourceLabel, this.debug);
+    this.root.addChild(this.gauge, this.resourceGauge, this.headline, this.subline, this.resourceLabel, this.debug);
 
     for (const mark of landmarks) {
       const label = makeLabel(mark.label, 0xffd479, 11);
@@ -437,8 +443,16 @@ export class Hud {
     // Remembered for `update`, which draws the gauge in screen pixels and would otherwise have to
     // re-derive it -- and previously reached for the world zoom instead, which is a different number.
     this.hudScale = s;
+    /**
+     * The lane's own geometry, remembered for `update`.
+     *
+     * The resource gauge is sized and centred against the LANE rather than the canvas, and `update` has no viewport
+     * to read it from -- the same reason `hudScale` is remembered above.
+     */
+    this.laneWidthPx = viewport.laneWidthPx;
+    this.laneCentreX = viewport.left + viewport.laneWidthPx / 2;
     const right = viewport.left + viewport.laneWidthPx;
-    const centreX = viewport.left + viewport.laneWidthPx / 2;
+    const centreX = this.laneCentreX;
 
     this.headline.scale.set(s);
     this.headline.x = centreX;
@@ -520,6 +534,56 @@ export class Hud {
    *   scroll, not to the player: the bubble moves freely within the window, so reading either off its
    *   world position made every press of "up" advance the bar AND brighten the whole sea.
    */
+  /**
+   * The rage gauge: a bar under the resource line, filled in the live stage's colour.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY IT IS DRAWN ONLY WHEN THERE IS A RESOURCE
+   * ---------------------------------------------------------------------------------------------
+   * The devour bubble never calls this, and its HUD is exactly what it always was. That is the same rule the whole
+   * type abstraction follows: a second type's furniture must cost the first type nothing.
+   *
+   * The ticks are the STAGE THRESHOLDS, read from the appearance table rather than from a second list -- so moving a
+   * threshold in the config moves the tick with it, and "one more hit and I change colour" is visible without the
+   * player memorising any numbers.
+   */
+  private drawResourceGauge(fraction: number, colour: number): void {
+    const cfg = mech.angry.gauge;
+    const s = this.hudScale;
+    const g = this.resourceGauge;
+    g.clear();
+
+    const w = this.laneWidthPx * cfg.widthRatio;
+    const h = cfg.height * s;
+    const x = this.laneCentreX - w / 2;
+    // Measured from the resource line's own position, so the pieces stay together if the HUD's spacing moves.
+    const y = this.resourceLabel.y + this.resourceLabel.height + cfg.gap * s;
+    const r = cfg.radius * s;
+
+    g.roundRect(x, y, w, h, r).fill({ color: cfg.trackColour, alpha: cfg.trackAlpha });
+    g.roundRect(x, y, w, h, r).stroke({ color: cfg.trackStroke, alpha: cfg.trackStrokeAlpha, width: 1 });
+
+    const filled = Math.min(1, Math.max(0, fraction)) * w;
+    if (filled > 0.5) g.roundRect(x, y, filled, h, r).fill({ color: colour, alpha: cfg.fillAlpha });
+
+    // The stage thresholds, as ticks. Zero is the bar's own start, so it is skipped.
+    for (const row of mech.angry.appearance) {
+      if (row.minRage <= 0) continue;
+      const at = x + Math.min(1, row.minRage / Math.max(1e-6, mech.angry.rage.max)) * w;
+      g.moveTo(at, y).lineTo(at, y + h);
+    }
+    g.stroke({ color: cfg.tickColour, alpha: cfg.tickAlpha, width: cfg.tickWidth * s });
+  }
+
+  /**
+   * Exposed for probes: whether the resource's furniture is on screen.
+   *
+   * Read from the display objects rather than from the payload, so a test asserts what a player can see.
+   */
+  get resourceGaugeVisible(): boolean {
+    return this.resourceLabel.visible;
+  }
+
   update(
     player: Player,
     fps: number,
@@ -553,7 +617,7 @@ export class Hud {
        * rather than a zero, because "0 rage" and "no rage at all" are different claims and the HUD should not make
        * the second one.
        */
-      resource?: { label: string; text: string; colour: number } | null;
+      resource?: { label: string; text: string; colour: number; fraction: number } | null;
     },
   ): void {
     // Distance still to travel, from the LEVEL's progress rather than the bubble's position. The bubble
@@ -593,9 +657,11 @@ export class Hud {
       this.resourceLabel.visible = true;
       this.resourceLabel.text = `${stage.resource.label} ${stage.resource.text}`;
       this.resourceLabel.style.fill = stage.resource.colour;
+      this.drawResourceGauge(stage.resource.fraction, stage.resource.colour);
     } else {
       this.resourceLabel.visible = false;
       this.resourceLabel.text = '';
+      this.resourceGauge.clear();
     }
     // The subline's own colour is put back every frame: the field is shared with the resource's line only in the
     // sense that both are HUD text, and a stale fill from a previous type would outlive the type change.

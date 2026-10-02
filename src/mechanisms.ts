@@ -472,6 +472,34 @@ export interface Mechanisms {
     appearance: RageAppearance[];
     look: RageLook;
     slamRadiusBonus: number;
+    /** The rage burst: a radial spend of the whole gauge. See the config block for the reasoning. */
+    burst: {
+      radiusBaseRatio: number;
+      radiusMaxRatio: number;
+      obstacleDamage: number;
+      /** Push strength for the creatures the wave cannot destroy, in the spit knockback's own units. */
+      pushImpact: number;
+      /** Per hazard kind: what a wave does to it. */
+      hazardMode: Record<string, 'destroy' | 'push'>;
+      waveSeconds: number;
+      waveWidthRatio: number;
+      waveColour: number;
+    };
+    /** The rage gauge on the HUD: a bar, drawn only for a type that has a resource. */
+    gauge: {
+      widthRatio: number;
+      height: number;
+      gap: number;
+      radius: number;
+      trackColour: number;
+      trackAlpha: number;
+      trackStroke: number;
+      trackStrokeAlpha: number;
+      fillAlpha: number;
+      tickColour: number;
+      tickAlpha: number;
+      tickWidth: number;
+    };
   };
   /** Audio levels that are not the player's own volume. */
   audio: {
@@ -858,6 +886,36 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.charge.defaultAimX', check: (v) => typeof v === 'number' && v >= -1 && v <= 1, describe: 'a direction between -1 and 1' },
   { path: 'angry.charge.defaultAimY', check: (v) => typeof v === 'number' && v >= -1 && v <= 1, describe: 'a direction between -1 and 1' },
   { path: 'angry.slamRadiusBonus', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a fraction between 0 and 3' },
+  { path: 'angry.burst.radiusBaseRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction of the lane above 0 and at most 1' },
+  { path: 'angry.burst.radiusMaxRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 2, describe: 'a fraction of the lane above 0 and at most 2' },
+  { path: 'angry.burst.obstacleDamage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.burst.pushImpact', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  {
+    path: 'angry.burst.hazardMode',
+    check: (v) =>
+      typeof v === 'object' &&
+      v !== null &&
+      !Array.isArray(v) &&
+      Object.values(v as Record<string, unknown>).every((x) => x === 'destroy' || x === 'push'),
+    describe: 'an object of hazard kind to "destroy" or "push"',
+  },
+  { path: 'angry.burst.waveSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.burst.waveWidthRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a stroke width ratio above 0 and at most 1' },
+  { path: 'angry.burst.waveColour', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'angry.gauge.widthRatio', check: (v) => typeof v === 'number' && v > 0.05 && v <= 1, describe: 'a fraction of the lane above 0.05 and at most 1' },
+  { path: 'angry.gauge.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 40, describe: 'design pixels between 2 and 40' },
+  { path: 'angry.gauge.gap', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'design pixels between 0 and 40' },
+  { path: 'angry.gauge.radius', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'a corner radius between 0 and 20' },
+  { path: 'angry.gauge.trackAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'angry.gauge.trackStrokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'angry.gauge.fillAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'angry.gauge.tickAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'angry.gauge.tickWidth', check: (v) => typeof v === 'number' && v >= 0 && v <= 6, describe: 'a stroke width between 0 and 6' },
+  ...(['trackColour', 'trackStroke', 'tickColour'] as const).map((key) => ({
+    path: `angry.gauge.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
+  })),
   { path: 'angry.look.radius', check: (v) => typeof v === 'number' && v > 0 && v <= 4, describe: 'a multiplier above 0 and at most 4' },
   { path: 'angry.look.innerAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'angry.look.rimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
@@ -1052,6 +1110,40 @@ const RAGE_COLOUR_KEYS = ['rim', 'glow', 'sheen', 'specular', 'hudColor'] as con
 {
   const bag = mech.angry.look as unknown as Record<string, string | number>;
   bag.inner = normaliseColour(bag.inner!, 'angry.look.inner');
+}
+
+/** The burst's wave colour, converted like every other colour. */
+mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as string | number, 'angry.burst.waveColour');
+
+{
+  const bag = mech.angry.gauge as unknown as Record<string, string | number>;
+  for (const key of ['trackColour', 'trackStroke', 'tickColour']) {
+    bag[key] = normaliseColour(bag[key]!, `angry.gauge.${key}`);
+  }
+}
+
+/**
+ * Every hazard kind must say what a burst does to it.
+ *
+ * The failure this prevents has no symptom at all: a creature missing from `hazardMode` would be quietly immune to
+ * the wave, and "the burst does not clear urchins" would look like a design choice rather than a missing row. The
+ * two-way check also catches a typo'd kind, which is the likelier mistake.
+ *
+ * It runs against the same hazard kind list the consumption tables use, so "what kinds exist" still has one answer
+ * in this file.
+ */
+{
+  const rows = Object.keys(mech.angry.burst.hazardMode).sort();
+  const kinds = Object.keys(mech.consumption.mass).sort();
+  const missing = kinds.filter((k) => !rows.includes(k));
+  const extra = rows.filter((k) => !kinds.includes(k));
+  if (missing.length || extra.length) {
+    fail(
+      'angry.burst.hazardMode must say what a wave does to every hazard kind' +
+        (missing.length ? `; missing: ${missing.join(', ')}` : '') +
+        (extra.length ? `; not a hazard kind: ${extra.join(', ')}` : ''),
+    );
+  }
 }
 
 /**

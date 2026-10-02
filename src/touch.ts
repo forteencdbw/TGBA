@@ -152,13 +152,24 @@ export class TouchControls {
   private chargeHold = 0;
 
   /**
+   * The burst button: the volatile bubble's second verb.
+   *
+   * Bottom LEFT, which is the spit button's slot for the devour bubble -- the same reasoning as the charge button
+   * taking the right: a player who has learned "my two actions are under my two thumbs" keeps that map when they
+   * switch bubbles, and only the shapes inside the buttons change.
+   */
+  private burstButton = { x: 0, y: 0, radius: 0 };
+  /** Drives the burst's expanding flash on its button, 0..1. */
+  private burstFlash = 0;
+
+  /**
    * Which controls this type lays out.
    *
    * THE point of the abstraction: a type that does not name `spit` gets no spit button, and there is no rule
    * anywhere saying "the volatile bubble has no spit" -- the button it would have been simply is not in the list.
    * See `src/bubbleTypes.ts`.
    */
-  private controls: readonly ControlId[] = ['wheel', 'suction', 'spit', 'compress'];
+  private controls: readonly ControlId[] = ['wheel', 'skill', 'suction', 'spit', 'compress'];
 
   private has(control: ControlId): boolean {
     return this.controls.includes(control);
@@ -231,6 +242,17 @@ export class TouchControls {
     if (this.has('spit') && this.isInSpitButton(x, y)) {
       this.input.pressSpit();
       this.spitFlash = 1;
+      this.update();
+      return;
+    }
+
+    /**
+     * The burst fires on PRESS, like the spit and the skill: it is a discrete action with a one-shot cost, so a
+     * release would only add a frame of doubt to a panic button.
+     */
+    if (this.has('burst') && this.isInBurstButton(x, y)) {
+      this.input.pressBurst();
+      this.burstFlash = 1;
       this.update();
       return;
     }
@@ -373,6 +395,52 @@ export class TouchControls {
     return dx * dx + dy * dy <= reach * reach;
   }
 
+  /** The same generosity the spit button gets: hit with a thumb, and near-misses still register. */
+  private isInBurstButton(x: number, y: number): boolean {
+    const dx = x - this.burstButton.x;
+    const dy = y - this.burstButton.y;
+    const reach = this.burstButton.radius * 1.35;
+    return dx * dx + dy * dy <= reach * reach;
+  }
+
+  /**
+   * The burst button: one tap spends the whole rage gauge as a shockwave.
+   *
+   * Drawn as a ring bursting OUTWARD from a small core, which is the third member of the family these buttons
+   * belong to: inward ticks gather (the field), outward spikes wind up (the charge), and this one leaves. The
+   * expanding flash after a press is the only acknowledgement the button can give -- the wave itself happens on the
+   * bubble, in the water, where the player is looking.
+   */
+  private drawBurstButton(): void {
+    const g = this.buttonGfx;
+    const bb = this.burstButton;
+    if (bb.radius <= 0) return;
+
+    const look = mech.angry.appearance[mech.angry.appearance.length - 1]!;
+    this.burstFlash = Math.max(0, this.burstFlash - 0.05);
+    if (this.burstFlash > 0) {
+      const grow = 1.15 + (1 - this.burstFlash) * 0.7;
+      g.circle(bb.x, bb.y, bb.radius * grow).stroke({
+        color: mech.angry.burst.waveColour,
+        alpha: 0.5 * this.burstFlash,
+        width: Math.max(1, 2.4 * this.scale),
+      });
+    }
+
+    g.circle(bb.x, bb.y, bb.radius).fill({ color: 0x2a1418, alpha: 0.72 });
+    g.circle(bb.x, bb.y, bb.radius).stroke({ color: look.rim, alpha: 0.85, width: 2 });
+
+    // Three concentric rings, fading outward: the shape says "this leaves the centre" rather than "this pulls".
+    for (let i = 0; i < 3; i++) {
+      g.circle(bb.x, bb.y, bb.radius * (0.32 + i * 0.24)).stroke({
+        color: mech.angry.burst.waveColour,
+        alpha: 0.7 - i * 0.18,
+        width: Math.max(1, 1.6 * this.scale),
+      });
+    }
+    g.circle(bb.x, bb.y, bb.radius * 0.18).fill({ color: mech.angry.burst.waveColour, alpha: 0.9 });
+  }
+
   /**
    * Turn a touch position into a deflection, and write it to the shared input.
    *
@@ -495,6 +563,8 @@ export class TouchControls {
      * targets a few pixels apart on a phone, for two verbs that are never wanted at once.
      */
     this.chargeButton = { ...this.skillButton };
+    // The burst button mirrors the charge: the spit slot for the type that has no spit.
+    this.burstButton = { ...this.spitButton };
     this.update();
   }
 
@@ -510,6 +580,7 @@ export class TouchControls {
     this.buttonGfx.clear();
     if (this.has('skill')) this.drawSkillButton();
     if (this.has('spit')) this.drawSpitButton();
+    if (this.has('burst')) this.drawBurstButton();
     if (this.has('compress')) this.drawCompressButton();
   }
 
@@ -823,6 +894,11 @@ export class TouchControls {
   /** Charge button geometry, so a probe can hold and release the real control. */
   get chargeGeometry(): { x: number; y: number; radius: number } {
     return { ...this.chargeButton };
+  }
+
+  /** Burst button geometry, so a probe can press the real control. */
+  get burstGeometry(): { x: number; y: number; radius: number } {
+    return { ...this.burstButton };
   }
 
   /** Test hook: which controls this type laid out. */

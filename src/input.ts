@@ -47,6 +47,15 @@ const KEYS = {
    * carry a release edge rather than only a held flag.
    */
   charge: ['Space'],
+  /**
+   * Burst: TAP to spend the whole rage gauge as a shockwave. The volatile bubble's other verb.
+   *
+   * `KeyK` is the spit key for the devour bubble, and the two share it on purpose. The types are mutually exclusive,
+   * the key occupies the same physical slot (the second action under the right hand), and the touch layer already
+   * gives one button two meanings depending on the type -- so a keyboard that did otherwise would be the odd one out.
+   * Which verb a press means is decided by the TYPE, not by the key: see `hasVerb`.
+   */
+  burst: ['KeyK'],
   /** Mute toggle. `KeyM` is the near-universal convention and costs nothing to honour. */
   mute: ['KeyM'],
 } as const;
@@ -124,6 +133,20 @@ export class Input {
 
   get charging(): boolean {
     return this.chargeKeyHeld || this.chargeTouchHeld;
+  }
+
+  /** Signal a burst press from a touch control. */
+  pressBurst(): void {
+    this.burstPressed = true;
+  }
+
+  /** The burst press, consumed once like the skill and the spit. */
+  private burstPressed = false;
+
+  consumeBurst(): boolean {
+    if (!this.burstPressed) return false;
+    this.burstPressed = false;
+    return true;
   }
 
   /** Signal a charge release from a touch control. */
@@ -256,11 +279,21 @@ export class Input {
     const chargeDown = held(KEYS.charge);
     if (this.chargeKeyHeld && !chargeDown) this.chargeReleased = true;
     this.chargeKeyHeld = chargeDown;
+
+    /**
+     * The burst is edge-triggered like the spit, and for the same reason: one press is one shockwave, and a held key
+     * must not turn into a stream of them. It is read by the game only for a type that HAS the verb, so the devour
+     * bubble pressing K gets its spit and nothing else.
+     */
+    const burstDown = held(KEYS.burst);
+    if (burstDown && !this.burstKeyWasDown) this.burstPressed = true;
+    this.burstKeyWasDown = burstDown;
   }
 
   private skillKeyWasDown = false;
   private muteKeyWasDown = false;
   private spitKeyWasDown = false;
+  private burstKeyWasDown = false;
   /** Mute toggle pressed since the last consume. */
   private mutePressed = false;
 

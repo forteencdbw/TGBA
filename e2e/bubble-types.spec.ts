@@ -126,7 +126,7 @@ test.describe('bubble types', () => {
 
     const run = await state(page);
     expect(run.bubbleType.id, 'the run must be the bubble that was chosen').toBe('angry');
-    expect(run.bubbleType.controls, 'and must lay out that type\'s controls').toEqual(['wheel', 'skill', 'charge']);
+    expect(run.bubbleType.controls, 'and must lay out that type\'s controls').toEqual(['wheel', 'skill', 'charge', 'burst']);
     expect(run.bubbleType.hasSpit, 'the volatile bubble has no spit').toBe(false);
     expect(run.bubbleType.hasCompress, 'and no digest').toBe(false);
     expect(run.bubbleType.hasCharge, 'but it does have the charge').toBe(true);
@@ -163,7 +163,7 @@ test.describe('bubble types', () => {
      * proves nothing. What proves the abstraction works is that the type's list does not contain spit or digest --
      * and the drawing and the hit testing both read that list.
      */
-    expect(layout.controlIds).toEqual(['wheel', 'skill', 'charge']);
+    expect(layout.controlIds).toEqual(['wheel', 'skill', 'charge', 'burst']);
     expect(layout.charge.radius, 'the charge button must have a real size to press').toBeGreaterThan(0);
     expect(layout.wheel.radius, 'and the wheel must still be there').toBeGreaterThan(0);
 
@@ -396,6 +396,167 @@ test.describe('bubble types', () => {
      */
     expect(result.hitsAtBreak, 'a slam is the player\'s own attack: it must not cost a hit point').toBe(0);
     expect(result.raged, 'and it must be paid for in rage').toBeLessThan(result.rageBefore);
+  });
+
+  test('the rage burst clears the small creatures, pushes the sharp ones, and spends the whole gauge', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await waitForPhase(page, 'playing');
+
+    const result = await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugSpawnHazardOnPlayer: (kind: string) => void;
+            debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
+            debugGrantRageForTest: (amount: number) => number;
+            touchRef: { burstGeometry: { x: number; y: number } };
+            handlePointerDown: (id: number, x: number, y: number) => void;
+            handlePointerUp: (id: number) => void;
+            diagnostics: {
+              obstacles: { broken: number; active: number; byKind: Record<string, number> };
+              stage: { radiusFraction: number };
+              rage: { value: number; bursts: number; lastBurstKills: number; lastBurstPushes: number; burstRadiusMeters: number; waveAlive: boolean };
+            };
+            hazardsRef: { hazards: { kind: string; x: number; y: number }[] };
+            obstaclesRef: { obstacles: unknown[] };
+            camera: { viewport: { laneWidthMeters: number } };
+          };
+          player: { x: number; y: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      const lane = g.game.camera.viewport.laneWidthMeters;
+      g.player.x = 0.5;
+      g.player.screenY = 0.5;
+      g.player.volume = 6;
+      // An empty field, so the counts belong to the burst: a leftover from an earlier test would be scenery that is
+      // also a measurement.
+      g.game.obstaclesRef.obstacles.length = 0;
+      g.game.hazardsRef.hazards.length = 0;
+      await raf();
+
+      g.game.debugGrantRageForTest(100);
+      const rageBefore = g.game.diagnostics.rage.value;
+
+      /**
+       * Four creatures and two obstacles, all INSIDE the wave and outside arm's reach.
+       *
+       * The offset is not tidiness, it is the difference between a measurement and a meal: the creatures are chosen
+       * to cover both halves of the design's rule (a fish and a jellyfish are clearable, an urchin and an eel are
+       * pushed), and the first version of this spawned them ON the player -- who ate all four inside the single frame
+       * before the burst, leaving the wave nothing to do and the test reporting that it had cleared nothing. The
+       * crate had the same problem in reverse: at volume 6 the player RAMS it (the threshold is 4), so it broke
+       * before the baseline and the wave got no credit.
+       */
+      for (const kind of ['fish', 'jelly', 'urchin', 'eel']) g.game.debugSpawnHazardOnPlayer(kind);
+      /**
+       * Out of arm's reach, measured rather than guessed.
+       *
+       * The bubble is not small -- at volume 6 its radius is 29 metres -- and a creature's own radius adds to that,
+       * so the first offsets tried here were still inside its mouth and it ate the jellyfish, the urchin and the eel
+       * before the wave fired. The margin has to clear the LARGEST creature (a jellyfish reaches 51.5m at this
+       * size), which is why it is a fifth of the lane rather than a hair over the bubble's own edge.
+       */
+      const clearOfMouth = g.game.diagnostics.stage.radiusFraction * lane + lane * 0.2;
+      for (const h of g.game.hazardsRef.hazards) {
+        h.x = g.player.x * lane;
+        h.y = g.player.y + clearOfMouth;
+      }
+      g.game.debugSpawnObstacleOnPlayer('crate', clearOfMouth + lane * 0.14);
+      g.game.debugSpawnObstacleOnPlayer('wall', clearOfMouth + lane * 0.3);
+      await raf();
+
+      const before = {
+        hazards: g.game.hazardsRef.hazards.length,
+        broken: g.game.diagnostics.obstacles.broken,
+        /**
+         * The POSITION, not the hazard.
+         *
+         * Storing the object and reading `before.urchin.y` afterwards reads the same live object the wave just moved,
+         * so the delta was zero however hard it was shoved -- a measurement that agreed with itself.
+         */
+        urchinY: g.game.hazardsRef.hazards.find((h) => h.kind === 'urchin')?.y ?? 0,
+        walls: g.game.diagnostics.obstacles.byKind.wall ?? 0,
+      };
+
+      // The real button.
+      const b = g.game.touchRef.burstGeometry;
+      g.game.handlePointerDown(78, b.x, b.y);
+      g.game.handlePointerUp(78);
+      await raf();
+
+      const after = {
+        hazards: g.game.hazardsRef.hazards.length,
+        kills: g.game.diagnostics.rage.lastBurstKills,
+        pushes: g.game.diagnostics.rage.lastBurstPushes,
+        bursts: g.game.diagnostics.rage.bursts,
+        rage: g.game.diagnostics.rage.value,
+        broken: g.game.diagnostics.obstacles.broken - before.broken,
+        walls: g.game.diagnostics.obstacles.byKind.wall ?? 0,
+        radius: g.game.diagnostics.rage.burstRadiusMeters,
+        waveAlive: g.game.diagnostics.rage.waveAlive,
+      };
+      return {
+        rageBefore,
+        beforeHazards: before.hazards,
+        afterHazards: after.hazards,
+        urchinPushed: Math.abs((g.game.hazardsRef.hazards.find((h) => h.kind === 'urchin')?.y ?? 0) - before.urchinY),
+        ...after,
+        wallsBefore: before.walls,
+      };
+    });
+
+    console.log(`burst: ${JSON.stringify(result)}`);
+    expect(result.bursts, 'pressing the burst button must fire the verb').toBe(1);
+    expect(result.waveAlive, 'and must leave a wave on screen to show how far it reached').toBe(true);
+    expect(result.kills, 'it must clear the small creatures in range').toBeGreaterThanOrEqual(2);
+    expect(result.pushes, 'and push the sharp ones it cannot clear').toBeGreaterThanOrEqual(2);
+    expect(result.afterHazards, 'so the clearable ones are gone and the others are still there').toBeLessThan(result.beforeHazards);
+    expect(result.urchinPushed, 'a pushed creature must actually move').toBeGreaterThan(1);
+    expect(result.broken, 'the wave must shatter the fragile crate').toBeGreaterThan(0);
+    expect(result.walls, 'but leave the wall standing -- opening masonry is the SLAM\'s answer').toBe(result.wallsBefore);
+    expect(result.rage, 'and it costs the WHOLE gauge').toBe(0);
+    expect(result.rageBefore, 'having had something to spend').toBeGreaterThan(0);
+  });
+
+  test('the burst is wider the more rage it spends', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await waitForPhase(page, 'playing');
+
+    /**
+     * The design's one stated scaling rule for the burst: "怒气越高，范围越大".
+     *
+     * Measured at three amounts rather than two, because two points on a line cannot tell a scale from a step. Each is
+     * read from the game's own radius, which is the number the effects are applied with.
+     */
+    const radii = await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugGrantRageForTest: (amount: number) => number;
+            useBurstForTest: () => void;
+            diagnostics: { rage: { burstRadiusMeters: number; value: number } };
+          };
+          mechRef: { angry: { rage: { max: number } } };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+      const out: { rage: number; radius: number }[] = [];
+      for (const amount of [10, 50, 100]) {
+        g.game.debugGrantRageForTest(amount);
+        out.push({ rage: g.game.diagnostics.rage.value, radius: g.game.diagnostics.rage.burstRadiusMeters });
+        g.game.useBurstForTest();
+        await raf();
+      }
+      return out;
+    });
+
+    console.log(`burst radii: ${JSON.stringify(radii)}`);
+    expect(radii[1]!.radius, 'more rage must mean a wider wave').toBeGreaterThan(radii[0]!.radius);
+    expect(radii[2]!.radius, 'and the widest at full').toBeGreaterThan(radii[1]!.radius);
   });
 
   test('the aim locks while winding up, so a released stick still slams where it was pointed', async ({ page }) => {

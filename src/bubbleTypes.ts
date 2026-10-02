@@ -51,7 +51,9 @@ export type ControlId =
   /** Hold to digest. */
   | 'compress'
   /** Hold to wind up, release to slam. The volatile bubble's verb. */
-  | 'charge';
+  | 'charge'
+  /** Tap to spend the whole rage gauge as a shockwave. The volatile bubble's other verb. */
+  | 'burst';
 
 export type BubbleTypeId = 'devour' | 'angry';
 
@@ -103,8 +105,8 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
   {
     id: 'angry',
     name: '暴躁气泡',
-    tagline: '挨打积怒，把怒气撞出去 —— 怒气不看体积',
-    hint: 'WASD / 方向键移动   ·   蓄力：按住右下，松手冲撞   ·   技能：轻点右下',
+    tagline: '挨打积怒，把怒气撞出去 —— 怒气不看体积，一次爆干净',
+    hint: 'WASD / 方向键移动   ·   蓄力：按住右下，松手冲撞   ·   爆破：K / 左下   ·   技能：轻点右下',
     /**
      * No spit, no compress, and no suction field.
      *
@@ -112,7 +114,7 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
      * volatile bubble still eats by touching food -- badly, which is what the design asks for ("poor at precise
      * collecting") -- and its one deliberate verb is the charge.
      */
-    controls: ['wheel', 'skill', 'charge'],
+    controls: ['wheel', 'skill', 'charge', 'burst'],
     look: 'rage',
     resource: { label: '怒气' },
   },
@@ -139,6 +141,6 @@ export function hasControl(type: BubbleType, control: ControlId): boolean {
  * spit from firing a stomach the volatile bubble does not have. The button list alone would leave that hole open,
  * because the keyboard does not go through the buttons.
  */
-export function hasVerb(type: BubbleType, verb: 'suction' | 'spit' | 'compress' | 'charge'): boolean {
+export function hasVerb(type: BubbleType, verb: 'suction' | 'spit' | 'compress' | 'charge' | 'burst'): boolean {
   return type.controls.includes(verb);
 }

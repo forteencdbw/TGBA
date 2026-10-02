@@ -455,6 +455,38 @@ export class HazardField {
   eaten = 0;
 
   private nextId = 1;
+
+  /**
+   * Place one named hazard at a chosen spot, with a REAL id from the same counter the spawner uses.
+   *
+   * Exists for probes, and the id is the point rather than a detail. A probe that built the object itself would have
+   * to invent an id, and "invent" in practice means reusing one -- which is not a cosmetic problem: the field
+   * retires eaten hazards by collecting their IDS into a set, so two hazards sharing an id are two hazards that are
+   * eaten together. A burst test that spawned four creatures and moved them apart reported that the wave had cleared
+   * nothing, because the frame before it the player had swallowed one and the field had removed all four.
+   */
+  spawnForTest(kind: HazardKind, x: number, y: number): Hazard {
+    const hazard: Hazard = {
+      id: this.nextId++,
+      kind,
+      x,
+      y,
+      radiusFraction: KIND_TUNING[kind].radius,
+      phase: 0,
+      seed: 0,
+      baitedUntil: 0,
+      squashed: 0,
+      gripping: false,
+      gripSeconds: 0,
+      fuse: kind === 'bombfish' ? mech.hazards.bombfishFuseSeconds : 0,
+      fired: false,
+      armed: false,
+      fed: 0,
+      digest: 0,
+    };
+    this.hazards.push(hazard);
+    return hazard;
+  }
   private spawnTimer = 0;
 
   reset(): void {

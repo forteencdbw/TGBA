@@ -602,4 +602,68 @@ test.describe('screen captures @screenshots', () => {
       await page.screenshot({ path: testInfo.outputPath(`${name}.png`) });
     });
   }
+
+  /**
+   * The rage burst, caught mid-wave with the gauge emptying.
+   *
+   * The one frame that matters for this verb is the one right after the press: the ring is on its way out, the gauge
+   * has just gone to zero, and the creatures around the bubble are either gone or flying away. The wave lasts about a
+   * third of a second, so the capture has to be aimed at it rather than waited for -- hence the single `raf` after
+   * the press.
+   */
+  test('the rage burst mid-wave @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugStartRunWithType: (id: string) => void;
+            debugGrantRageForTest: (amount: number) => number;
+            debugSpawnHazardOnPlayer: (kind: string) => void;
+            debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
+            useBurstForTest: () => void;
+            hazardsRef: { hazards: { kind: string; x: number; y: number }[] };
+            obstaclesRef: { obstacles: unknown[] };
+            camera: { viewport: { laneWidthMeters: number } };
+          };
+          player: { x: number; y: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+      g.game.debugStartRunWithType('angry');
+      // Past the birth animation: a capture during it would show a bubble a quarter of its size.
+      for (let i = 0; i < 40; i++) await raf();
+
+      const lane = g.game.camera.viewport.laneWidthMeters;
+      g.player.volume = 8;
+      g.player.x = 0.5;
+      g.player.screenY = 0.55;
+      g.game.hazardsRef.hazards.length = 0;
+      g.game.obstaclesRef.obstacles.length = 0;
+      await raf();
+
+      g.game.debugGrantRageForTest(100);
+      /**
+       * A ring of creatures, 90m out.
+       *
+       * Outside the bubble's mouth (at volume 8 it reaches about 35m) so they are still there when the wave fires,
+       * and well inside the wave, which reaches 307m at full rage.
+       */
+      const kinds = ['fish', 'jelly', 'urchin', 'eel', 'bombfish', 'trash'];
+      const out = 90;
+      for (const kind of kinds) g.game.debugSpawnHazardOnPlayer(kind);
+      g.game.hazardsRef.hazards.forEach((h, i) => {
+        const angle = (i / g.game.hazardsRef.hazards.length) * Math.PI * 2 - Math.PI / 2;
+        h.x = g.player.x * lane + Math.cos(angle) * out;
+        h.y = g.player.y + Math.sin(angle) * out;
+      });
+      g.game.debugSpawnObstacleOnPlayer('crate', out + lane * 0.12);
+      await raf();
+
+      g.game.useBurstForTest();
+      // One frame in, so the ring is part-way out rather than a dot at the centre.
+      await raf();
+    });
+    await page.screenshot({ path: testInfo.outputPath('burst.png') });
+  });
 });

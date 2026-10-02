@@ -96,6 +96,14 @@ class Game {
   /** Everything drawn in world metres: collectables, the bubble, and its trailing micro-bubbles. */
   private readonly pickups = new Graphics();
   private readonly bubble = new Graphics();
+  /**
+   * The rage burst's wave, on its own layer UNDER the bubble.
+   *
+   * Its own layer because `paintBubble` clears the bubble's Graphics every frame -- anything drawn into that one
+   * before the call is wiped -- and under the bubble because a shockwave that covered the player would hide the
+   * thing they are steering at the exact moment they are surrounded.
+   */
+  private readonly burstWave = new Graphics();
   private readonly particles = new Graphics();
 
   /**
@@ -188,9 +196,95 @@ class Game {
   /** How many slams have connected, so a probe can prove the verb did something rather than merely fired. */
   private slams = 0;
 
+  /**
+   * The rage burst, and its wave.
+   *
+   * The wave is stored as the radius it reached and how long ago it fired, rather than as an animated object: the
+   * EFFECTS are all applied at the instant of the press, so what is left to draw is an expanding ring that means
+   * "this is how far it reached". Keeping the effects instantaneous and the drawing animated is what makes the verb
+   * testable -- "what did the burst do" has one answer, at one moment, instead of depending on which frame the ring
+   * happened to be passing something.
+   */
+  private burst: { radius: number; seconds: number; kills: number; pushes: number } | null = null;
+  /** Monotonic count of bursts fired, so a probe can prove the press reached the verb. */
+  private bursts = 0;
+
   /** Whether a slam is in its window right now: the charge has been released and the window has not run out. */
   private get onSlam(): boolean {
     return this.slamSeconds > 0 && this.bubbleType.look === 'rage';
+  }
+
+  /**
+   * Spend the whole rage gauge on a shockwave.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHAT IT DOES, AND WHY THE TWO HALVES ARE SPLIT THE WAY THEY ARE
+   * ---------------------------------------------------------------------------------------------
+   * The design asks for three things in one press: clear the small enemies, push away the sharp ones it cannot
+   * destroy, and shatter fragile scenery. Which of the two a CREATURE gets is a config table
+   * (`angry.burst.hazardMode`), because "is this thing clearable" is a property of the creature rather than of the
+   * wave -- and because a creature missing from that table is then a load error rather than a silent immunity.
+   *
+   * The scenery damage is deliberately SMALL (below coral and below a wall): opening a wall with rage is the SLAM's
+   * answer, and a burst that did it too would make the aimed verb pointless. Two verbs, two answers.
+   *
+   * Everything is applied HERE, on the frame of the press. The ring that follows is the drawing of what already
+   * happened -- see `burst`.
+   */
+  private useBurst(): void {
+    if (!hasVerb(this.bubbleType, 'burst')) return;
+    const cfg = mech.angry.burst;
+    const laneWidth = this.camera.viewport.laneWidthMeters;
+
+    const radius = laneWidth * this.burstRadiusRatio();
+    const px = this.player.x * laneWidth;
+    const py = this.player.y;
+
+    let kills = 0;
+    let pushes = 0;
+    const survivors: typeof this.hazards.hazards = [];
+    for (const h of this.hazards.hazards) {
+      const dx = h.x - px;
+      const dy = h.y - py;
+      if (dx * dx + dy * dy > radius * radius) {
+        survivors.push(h);
+        continue;
+      }
+      if (cfg.hazardMode[h.kind] === 'destroy') {
+        kills++;
+        continue;
+      }
+      // Not clearable: shoved away from the centre, with the same arithmetic a grenade uses.
+      this.shoveHazard(h, dx, dy, cfg.pushImpact);
+      pushes++;
+      survivors.push(h);
+    }
+    this.hazards.hazards = survivors;
+
+    for (const o of this.obstacles.obstacles) {
+      const dx = o.x - px;
+      const dy = o.y - py;
+      if (dx * dx + dy * dy <= radius * radius) this.obstacles.damage(o.id, cfg.obstacleDamage);
+    }
+
+    /**
+     * The whole gauge, and nothing held back.
+     *
+     * `spendRage(rage.rage)` rather than assigning zero, so the one place that knows how rage is spent stays the
+     * only place -- and the return value is ignored on purpose: the burst is not a purchase with a price, it is
+     * everything the player has.
+     */
+    spendRage(this.rage, this.rage.rage);
+    this.burst = { radius, seconds: 0, kills, pushes };
+    this.bursts++;
+    audio.play('crab');
+  }
+
+  /** The burst radius for the current rage: linear from the base at zero to the maximum at full. */
+  private burstRadiusRatio(): number {
+    const cfg = mech.angry.burst;
+    const t = rageFraction(this.rage.rage);
+    return cfg.radiusBaseRatio + (cfg.radiusMaxRatio - cfg.radiusBaseRatio) * t;
   }
   private phaseTimer = INTRO_SECONDS;
   /** The phase to restore when the settings panel closes. */
@@ -220,7 +314,7 @@ class Game {
   constructor(readonly app: Application) {
     this.nominalSeconds = nominalAscentSeconds();
 
-    this.scene.world.addChild(this.pickups, this.bubble, this.particles);
+    this.scene.world.addChild(this.pickups, this.burstWave, this.bubble, this.particles);
     // The flash sits directly over the water but UNDER the HUD, so the depth readout stays legible
     // through it -- the player should still be able to see where they got to during the white-out.
     this.flash.visible = false;
@@ -824,23 +918,19 @@ class Game {
   }
 
   /**
-   * Shove one hazard away from a projectile's position.
+   * Shove one hazard away from a point.
    *
-   * Extracted so the direct hit and the blast push things by the SAME arithmetic -- an explosion is not a
-   * different kind of impact, it is the same one applied to everything in range. Two copies of this would let the
-   * grenade's centre shove differently from its fringe, which is not a thing a player could describe but is
-   * exactly the sort of inconsistency that reads as "that felt wrong".
+   * Extracted so the direct hit, the grenade's blast and the rage burst push things by the SAME arithmetic -- an
+   * explosion is not a different kind of impact, it is the same one applied to everything in range. Two copies of
+   * this would let the grenade's centre shove differently from its fringe, which is not a thing a player could
+   * describe but is exactly the sort of inconsistency that reads as "that felt wrong".
    *
-   * @param dx,dy direction from the projectile to the target; only the direction is used.
+   * @param dx,dy direction from the impact to the target; only the direction is used.
+   * @param impact the impact factor, in the same units as `spitImpact` (a crab is 1.6, a jellyfish 0.6).
    */
-  private shoveFromProjectile(
-    p: SpitProjectile,
-    target: { kind: HazardKind; x: number; y: number },
-    dx: number,
-    dy: number,
-  ): void {
+  private shoveHazard(target: { kind: HazardKind; x: number; y: number }, dx: number, dy: number, impact: number): void {
     const mass = Math.max(0.05, hazardMass(target.kind));
-    const shove = (mech.spit.knockbackMeters * spitImpact(p.kind)) / mass;
+    const shove = (mech.spit.knockbackMeters * impact) / mass;
     const length = Math.hypot(dx, dy);
     // Dead centre: pick a direction rather than dividing by zero, and up is the one that means something in a
     // vertical ascent.
@@ -850,6 +940,16 @@ class Game {
     }
     target.x += (dx / length) * shove;
     target.y += (dy / length) * shove;
+  }
+
+  /** Shove one hazard away from a projectile's position. See `shoveHazard`. */
+  private shoveFromProjectile(
+    p: SpitProjectile,
+    target: { kind: HazardKind; x: number; y: number },
+    dx: number,
+    dy: number,
+  ): void {
+    this.shoveHazard(target, dx, dy, spitImpact(p.kind));
   }
 
   /**
@@ -929,6 +1029,17 @@ class Game {
    */
   debugStartRunWithType(typeId: string): void {
     this.enterFromMenu(typeId);
+  }
+
+  /**
+   * Test hook: fire the burst directly, bypassing the button.
+   *
+   * The button is the real path and the spec uses it for the verb's behaviour; this exists for the one measurement
+   * that needs several bursts in a row at chosen rage levels, where reaching for a button each time would be three
+   * presses of ceremony around one number.
+   */
+  useBurstForTest(): void {
+    this.useBurst();
   }
 
   /**
@@ -1112,26 +1223,17 @@ class Game {
    */
   debugSpawnHazardOnPlayer(kind: HazardKind): void {
     const laneWidth = this.camera.viewport.laneWidthMeters;
-    this.hazards.hazards.push({
-      id: -1,
-      kind,
-      x: this.player.x * laneWidth,
-      y: this.player.y,
-      radiusFraction: KIND_TUNING[kind].radius,
-      phase: 0,
-      seed: 0,
-      baitedUntil: 0,
-      squashed: 0,
-      gripping: false,
-      // Already armed with its telegraph spent, so a test exercises the LAUNCH rather than the
-      // arming. The arming itself is asserted by watching a naturally spawned crab.
-      fuse: 0,
-      fired: false,
-      armed: true,
-      fed: 0,
-      digest: 0,
-      gripSeconds: 0,
-    });
+    const hazard = this.hazards.spawnForTest(kind, this.player.x * laneWidth, this.player.y);
+    /**
+     * Already armed with its telegraph spent, so a test exercises the LAUNCH rather than the arming. The arming
+     * itself is asserted by watching a naturally spawned crab.
+     *
+     * `fuse: 0` for EVERY kind, including a bomb fish, because that is what this hook has always done and probes are
+     * built on it -- a spawned bomb fish is here to be swallowed, and its countdown starts in the stomach. Changing
+     * it to the configured fuse would have been a silent behaviour change to every test that uses this.
+     */
+    hazard.fuse = 0;
+    hazard.armed = true;
   }
 
   /** Test hook: the audio module, so a probe can check that the ambience tracks depth. */
@@ -1444,6 +1546,11 @@ class Game {
      */
     this.updateCharge();
     this.updateRage(dt);
+    /**
+     * The burst, read after the charge and before the movement: it is an instant, so where it lands is where the
+     * bubble is on the frame of the press, and reading it here keeps that frame the same one the player saw.
+     */
+    if (this.input.consumeBurst()) this.useBurst();
 
     this.player.update(this.input, dt, this.lateral);
     /**
@@ -2219,6 +2326,11 @@ class Game {
   private updateRage(dt: number): void {
     if (this.bubbleType.look !== 'rage') return;
     if (this.slamSeconds > 0) this.slamSeconds = Math.max(0, this.slamSeconds - dt);
+    // The wave's animation, which is drawing only: its effects were applied on the frame it fired.
+    if (this.burst) {
+      this.burst.seconds += dt;
+      if (this.burst.seconds >= mech.angry.burst.waveSeconds) this.burst = null;
+    }
     /**
      * "Dangerous behaviour" for the decay delay: being invulnerable means something hit the bubble moments ago, and
      * being GRIPPED means something is still holding it. Both are the opposite of "left alone for three seconds".
@@ -2491,15 +2603,17 @@ class Game {
         /**
          * The second resource's readout, for the type that has one.
          *
-         * In the HUD's subline rather than a gauge of its own: rage changes every time the player is hit, which is
-         * often enough that a line of text does not go stale, and the bubble's own colour already carries it in the
-         * water where the player is looking. A dedicated bar is worth building when the burst needs one.
+         * The line AND the bar. It started as the line alone, on the argument that a bar is worth building when there
+         * is something to spend rage on -- and the burst is exactly that: "how much have I got" becomes a question
+         * with a threshold in it ("is that enough to clear this screen?"), which a number answers slowly and a bar
+         * answers at a glance.
          */
         resource: this.bubbleType.resource
           ? {
               label: this.bubbleType.resource.label,
               text: `${Math.round(this.rage.rage)}  ${rageStageName(this.rage.rage)}`,
               colour: rageColor(this.rage.rage),
+              fraction: rageFraction(this.rage.rage),
             }
           : null,
       });
@@ -2757,6 +2871,15 @@ class Game {
     const drawnX = this.player.x * viewport.laneWidthMeters + bubbleShake(look, this.elapsed) * viewport.laneWidthMeters;
     const drawnRadius = radius * bubbleSwell(look, this.elapsed);
 
+    /**
+     * The burst's wave: an expanding ring that means "this is how far it reached".
+     *
+     * Drawn from where the bubble was when it fired -- which is where it still is, since the wave lasts a third of a
+     * second and the ring is measured from the player's own position -- and drawn under the bubble, on its own
+     * layer. The effects all landed on the frame of the press; this is the receipt.
+     */
+    this.drawBurstWave(drawnX, this.player.y, look.rim);
+
     // Blink while invulnerable: the single cross-type rule that stops a swarm chain-killing.
     const blink = this.invulnerable > 0 ? 0.45 + 0.55 * Math.abs(Math.sin(this.invulnerable * 22)) : 1;
 
@@ -2887,6 +3010,28 @@ class Game {
    * Drawn in WORLD METRES. `radius` is already in metres, derived from the lane width.
    * `alpha` carries the invulnerability blink and the pop fade.
    */
+  /** The rage burst's expanding ring. Cleared every frame, drawn only while a wave is alive. */
+  private drawBurstWave(worldX: number, worldY: number, rimColour: number): void {
+    const g = this.burstWave;
+    g.clear();
+    if (!this.burst) return;
+    const cfg = mech.angry.burst;
+    const t = Math.min(1, this.burst.seconds / cfg.waveSeconds);
+    const waveR = this.burst.radius * (0.35 + 0.65 * t);
+    const fade = 1 - t;
+    g.circle(worldX, worldY, waveR).stroke({
+      color: cfg.waveColour,
+      alpha: 0.85 * fade,
+      width: Math.max(1, waveR * cfg.waveWidthRatio),
+    });
+    // A second, thinner ring just behind it, so the wave reads as a wave rather than as a growing circle.
+    g.circle(worldX, worldY, waveR * 0.82).stroke({
+      color: rimColour,
+      alpha: 0.5 * fade,
+      width: Math.max(1, waveR * cfg.waveWidthRatio * 0.5),
+    });
+  }
+
   private paintBubble(
     worldX: number,
     worldY: number,
@@ -3283,6 +3428,12 @@ class Game {
       slamSeconds: number;
       onSlam: boolean;
       slams: number;
+      /** The burst: how many have fired, and what the last one did. */
+      bursts: number;
+      burstRadiusMeters: number;
+      waveAlive: boolean;
+      lastBurstKills: number;
+      lastBurstPushes: number;
     };
     phase: string;
     volume: number;
@@ -3531,6 +3682,12 @@ class Game {
         slamSeconds: +this.slamSeconds.toFixed(3),
         onSlam: this.onSlam,
         slams: this.slams,
+        /** The burst: how many have fired, and what the last one did. */
+        bursts: this.bursts,
+        burstRadiusMeters: +(this.camera.viewport.laneWidthMeters * this.burstRadiusRatio()).toFixed(1),
+        waveAlive: this.burst !== null,
+        lastBurstKills: this.burst?.kills ?? 0,
+        lastBurstPushes: this.burst?.pushes ?? 0,
       },
       phase: this.phase,
       volume: this.player.volume,
