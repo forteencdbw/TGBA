@@ -5,6 +5,28 @@
 设计文档：`.scratch/bubble-ascent/spec.md`（完整设计）
 后续工作：`.scratch/bubble-ascent/plan.md`（做到哪里、还剩什么、刻意没做什么）
 
+## 版本号：这一页跑的是哪个 build
+
+**主菜单底部**和**关卡内左上角调试读数的第一行**都会显示：
+
+```
+v1.0.0 · 51be519 (uncommitted)
+```
+
+- **版本号**唯一来源是 [`package.json`](package.json) 的 `version`。**每次改动都在同一个提交里递增它**
+  （1.0.1、1.0.2……），这条写在 `AGENTS.md` 里。为什么要有版本号：手机上的页面、部署出去的 URL、
+  别人发来的一张截图，都回答不了"我看的是哪一版"。
+- **git hash** 由**构建时**从 git 读出来（见 [vite.config.ts](vite.config.ts) 的 `define`），
+  不是手写的——手写的 hash 就是一个会撒谎的 hash。
+- **`(uncommitted)`** 表示打这个包的时候工作区有未提交改动，也就是：**这页是那个提交再加一些别人复现不出来的编辑**。
+  没有这个标记，hash 会悄悄宣称比它知道的更多，那比什么都不显示更糟。
+
+两个值都**不是运行时读的**：浏览器里没有 git，手机上没有文件系统。它们在你启动 dev server /
+执行 `pnpm build` 的那一刻被**编进包里**（`src/version.ts` 是唯一的出口）。
+
+> ⚠️ **dev 下它是在 Vite 启动时读一次的。** 提交之后显示的 hash 会过期，直到 Vite 重启（改这个文件会触发重启）。
+> 这是**诚实**的：那个浏览器里的页面确实是用旧代码加载的。
+
 ## 改数值看这里
 
 **所有可调的机制数值都在 [`config/mechanics.json5`](config/mechanics.json5)**，每一项都有中文说明。
@@ -319,7 +341,7 @@ Pixi 的绘制调用，所以"气泡动了"没有诚实的 locator。钩子是**
 
 | spec | 覆盖 |
 |---|---|
-| `main-loop` | 菜单→开局；**卷轴独立于玩家**（静止和按着时分别测速率）；两轴匀速；无输入不漂移 |
+| `main-loop` | 菜单→开局；**版本号与 git hash 真的画在菜单和调试读数上**（且与编译进去的一致）；**卷轴独立于玩家**（静止和按着时分别测速率）；两轴匀速；无输入不漂移 |
 | `settings-and-menu` | 齿轮暂停（断言 `scrolled` 不动，不是标志位）；滑块驱动主增益、点轨道也生效；取消/保存恢复；重开回到阶段1；退出到菜单**并停止环境音** |
 | `stages` | 按配置阈值晋升；每级**实测更慢**（稳态速度 + 位移）；**画出的半径与轮廓色**逐级不同 |
 | `wheel` | 摇杆：盘内才算按住、**死区内无输入**、刚出死区是小推力而非跳变、推到底=全速、方向正确、松手回中并滑行停下、**气泡不再跟手**、与技能钮多指并存 |
@@ -336,9 +358,9 @@ Pixi 的绘制调用，所以"气泡动了"没有诚实的 locator。钩子是**
 | 命令 | 作用 |
 |---|---|
 | `pnpm dev` | 开发服务器（HMR，局域网可访问） |
-| `pnpm test` | **Playwright 端到端测试**（55 个用例，phone + desktop 各跑一遍） |
+| `pnpm test` | **Playwright 端到端测试**（56 个用例，phone + desktop 各跑一遍） |
 | `pnpm test:phone` / `test:ui` / `test:report` / `test:shots` | 只跑手机 / 交互模式 / 打开报告 / 只截图 |
-| `pnpm typecheck` | 应用 **和 e2e** 的类型检查 |
+| `pnpm typecheck` | 应用、e2e **和构建配置**的类型检查（三个 tsconfig：`tsconfig.json` / `tsconfig.e2e.json` / `tsconfig.node.json`） |
 | `pnpm build` | 类型检查 + 生产构建到 `dist/` |
 | `node scripts/verify-dist.mjs` | **验证打包产物真的能跑**（静态服务 `dist/` 于子目录下 + headless 启动） |
 | `node scripts/probe-layout.mjs <url> <w> <h> <out.png>` | 截一张图并打印布局数字（**人看**，不断言） |
@@ -420,8 +442,13 @@ Compress-Archive -Path dist\* -DestinationPath release\bubble-battle.zip
 **source map 默认不发。** 它们曾占产物的 2.9 MB / 3.0 MB，而浏览器只在打开 devtools 时才下载。
 需要读压缩后的堆栈时，把 `vite.config.ts` 里的 `sourcemap` 临时改成 `true` 再构建。
 
-> 这里**故意不做环境变量开关**：读环境变量要用 `process`，而本项目 tsconfig 是浏览器向的、没有 Node 类型，
-> 于是 `pnpm build`（会类型检查这个 config）会**直接失败**。这个坑踩过一次。
+> 以前这里写着"**故意不做环境变量开关**：读环境变量要用 `process`，而本项目 tsconfig 是浏览器向的、没有
+> Node 类型，于是 `pnpm build` 会直接失败"。**那个理由现在不成立了**：`vite.config.ts` 已经搬到自己的
+> [`tsconfig.node.json`](tsconfig.node.json)（它要在构建时读 `package.json` 和 git，本来就需要 Node 类型），
+> 而游戏的 tsconfig 仍然只有 `vite/client`——所以 `src/` 里出现 `process` 或 `fs` 依旧是类型错误。
+> 两条都保留：配置有 Node 类型，游戏没有。
+>
+> 开关本身仍然不做：一个只有构建机才能翻的开关，就是一个永远不会被翻的开关。
 
 ### 关于验证（约定）
 

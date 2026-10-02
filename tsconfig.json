@@ -27,5 +27,8 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "vite.config.ts"]
+  // NOTE: `vite.config.ts` is deliberately NOT here. It runs in Node, not in a browser, and it needs Node's types
+  // to read `package.json` and ask git for the commit hash -- which this config has none of, on purpose. It has its
+  // own project in `tsconfig.node.json`, and `pnpm typecheck` runs both.
+  "include": ["src"]
 }

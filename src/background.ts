@@ -367,6 +367,8 @@ export interface Landmark {
  * Fixed HUD, in screen pixels: the "metres to surface" headline, the depth gauge on the right
  * edge, the prototype landmark markers, and a live tuning readout.
  */
+import { buildLabel } from './version';
+
 export class Hud {
   readonly root = new Container();
 
@@ -485,6 +487,16 @@ export class Hud {
   }
 
   /**
+   * The debug readout, exactly as the player reads it.
+   *
+   * Same reasoning as the headline: the build line is only useful if it is really on the screen, and a test that
+   * asked the version module directly would pass while the readout showed nothing.
+   */
+  get debugText(): string {
+    return this.debug.text;
+  }
+
+  /**
    * `Hud.update`: the readouts, and the water's colour.
    *
    * @param scrolled how far the LEVEL has travelled, in metres. Progress and depth both belong to the
@@ -566,6 +578,13 @@ export class Hud {
 
     if (++this.debugTimer % 10 === 0) {
       this.debug.text = [
+        /**
+         * The build, first, because it is the line that answers "am I looking at the code I think I am".
+         *
+         * First rather than last on purpose: this readout is 9 monospace lines on a phone screen and the bottom of
+         * it is the part that gets cropped out of a screenshot -- which is exactly when somebody needs to read it.
+         */
+        `build   ${buildLabel()}`,
         `fps     ${fps.toFixed(0)}`,
         `depth   ${player.depth.toFixed(1)} m`,
         // The player's own motion, on both axes, and the SCREEN fraction the vertical is expressed in:

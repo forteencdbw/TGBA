@@ -6,8 +6,8 @@ These are standing instructions from the project owner. They override the defaul
 
 ### Do NOT run the full regression suite unless explicitly asked
 
-`pnpm test` runs the whole Playwright suite across both projects and takes about 6 minutes. **Do not run it on
-your own initiative** — not before a commit, not "to be safe", not after a change that looks risky.
+`pnpm test` runs the whole Playwright suite across both projects. **Do not run it on your own initiative** — not
+before a commit, not "to be safe", not after a change that looks risky.
 
 What to do instead:
 
@@ -17,8 +17,26 @@ What to do instead:
 - A targeted measurement or a screenshot is usually worth more than a broad run.
 - Save the full suite for when the owner asks for it, or for a release.
 
+**"Only the specs your change touches" is not a loophole for running most of them.** A broad run of six or eight
+spec files is the full suite wearing a hat, and the six-minute tax comes back the same way. If a change looks like
+it needs that much coverage, that is a reason to **say so and ask**, not a licence to decide alone. Two or three
+targeted files is the normal shape of a change; more than that means the change was too wide, or the question is
+worth a sentence to the owner first.
+
 The suite is not slow because it is thorough; it is slow because it drives a real-time simulation serially. A
 6-minute tax on every edit is a tax on how much gets edited.
+
+### Bump the version on every change
+
+`version` in `package.json` is the single source. It is drawn on the main menu and on the first line of the level's
+debug readout as `v<version> · <git hash>`, with ` (uncommitted)` when the working tree was dirty at build time —
+see `src/version.ts` and the `define` block in `vite.config.ts`.
+
+- **Increment it in the same commit as the change.** Patch (`1.0.1`, `1.0.2`, …) for an ordinary change; minor or
+  major when the owner says so.
+- Do not hand-edit a git hash anywhere: it is read from git at build time, and a hand-maintained hash is a hash
+  that lies. In dev it reflects the commit at server start, so it goes stale until Vite restarts — which is the
+  honest reading of "the page in this browser was loaded from older code".
 
 ### Build only the MINIMUM styling; the owner tunes the specifics
 

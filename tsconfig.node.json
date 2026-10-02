@@ -1,0 +1,35 @@
+{
+  /**
+   * The BUILD config's own typecheck, separate from the game's.
+   *
+   * `vite.config.ts` is the one file here that runs in Node rather than in a browser: it reads `package.json` and
+   * shells out to git so the build can stamp the version and the commit hash into the bundle. That needs Node's
+   * types, and the game's tsconfig deliberately does not have them -- its `types` is `["vite/client"]` alone, so
+   * that a stray `process` or `fs` in `src/` is a type error rather than a runtime surprise on a phone.
+   *
+   * Hence two projects instead of one. `vite.config.ts` was in the game's `include` before this, which is exactly
+   * why reading `process.env` used to fail the build: the file was being checked as if it were browser code.
+   * See the sourcemap note in `vite.config.ts` for the bug that produced that conclusion.
+   */
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "types": ["node"],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["vite.config.ts"]
+}

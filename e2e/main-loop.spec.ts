@@ -26,6 +26,55 @@ test.describe('the main loop', () => {
     await expectNoErrors(errors);
   });
 
+  test('the build is on the menu and in the level readout, and matches what was compiled in', async ({ page }) => {
+    await boot(page);
+
+    const shown = await page.evaluate(() => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            diagnostics: { build: { version: string; hash: string; dirty: boolean; label: string } };
+            menuRef: { versionText: string };
+          };
+        };
+      }).__GB.game;
+      return { compiled: g.diagnostics.build, menu: g.menuRef.versionText };
+    });
+
+    /**
+     * The MENU's own text, not the module it came from.
+     *
+     * A test that read `buildLabel()` would pass while the menu drew nothing at all, which is the only way this
+     * feature can actually fail: the values are compile-time constants, so nothing can go wrong between them and a
+     * string except the drawing.
+     */
+    expect(shown.menu, 'the menu must show the build').toBe(shown.compiled.label);
+    expect(shown.menu, 'and the label must name the version').toContain(shown.compiled.version);
+    expect(shown.menu, 'and the commit it was built from').toContain(shown.compiled.hash);
+    // A version that is not a version -- an unsubstituted `1.0.0`-shaped placeholder would sail through the two
+    // assertions above, so the shape is checked as well.
+    expect(shown.compiled.version, 'the version must look like a version').toMatch(/^\d+\.\d+\.\d+$/);
+
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+
+    /**
+     * And the same line in the level's debug readout.
+     *
+     * It is the readout a screenshot usually contains, so it is the one that gets read back to you when something
+     * looks wrong on somebody else's device.
+     */
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () => (window as unknown as { __GB: { game: { hudRef: { debugText: string } } } }).__GB.game.hudRef.debugText,
+          ),
+        { message: 'the debug readout should name the build', timeout: 5000 },
+      )
+      .toContain(shown.compiled.label);
+  });
+
   test('the world scrolls on its own, and the player does NOT carry it', async ({ page }) => {
     await boot(page);
     await startFromMenu(page);

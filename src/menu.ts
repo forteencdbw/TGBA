@@ -2,6 +2,7 @@ import { Container, Graphics, Text } from 'pixi.js';
 import { LEVEL } from './levels';
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
+import { buildLabel } from './version';
 
 /**
  * The main menu. A deliberate placeholder.
@@ -29,6 +30,16 @@ export class MainMenu {
   private readonly levelLine = mk('', 0xbfe9ff, 15);
   private readonly buttonLabel = mk('开始游戏', 0x08131f, 18);
   private readonly hint = mk('WASD / 方向键移动   ·   触屏用底部摇杆控制方向', 0x7fb6d4, 12);
+  /**
+   * Which build this is, at the bottom of the menu.
+   *
+   * On the MENU rather than only in the in-level debug readout, because the menu is what you see when you open a URL
+   * to check whether a deploy worked -- and "did my change actually reach this device" is the question that screen
+   * exists to answer. It is also the only screen that is legible in a screenshot somebody sends you.
+   *
+   * Dim and at the very bottom: it is reference, not information the player needs while deciding to press play.
+   */
+  private readonly versionLine = mk('', 0x5b7f9c, 11);
 
   /** Called when the player asks to play. */
   onStart: () => void = () => {};
@@ -43,7 +54,16 @@ export class MainMenu {
     this.root.eventMode = 'none';
     for (const child of [this.backdrop, this.button, this.buttonLabel]) child.eventMode = 'none';
 
-    this.root.addChild(this.backdrop, this.title, this.subtitle, this.levelLine, this.button, this.buttonLabel, this.hint);
+    this.root.addChild(
+      this.backdrop,
+      this.title,
+      this.subtitle,
+      this.levelLine,
+      this.button,
+      this.buttonLabel,
+      this.hint,
+      this.versionLine,
+    );
   }
 
   layout(viewport: Viewport): void {
@@ -86,6 +106,13 @@ export class MainMenu {
     this.hint.anchor.set(0.5, 0.5);
     this.hint.x = cx;
     this.hint.y = viewport.height * 0.55 + h + 34 * s;
+
+    this.versionLine.scale.set(s);
+    this.versionLine.anchor.set(0.5, 1);
+    this.versionLine.text = buildLabel();
+    this.versionLine.x = cx;
+    // Pinned to the bottom edge rather than to the button, so a long build label cannot collide with the hint.
+    this.versionLine.y = viewport.height - 14 * s;
 
     this.draw(s);
   }
@@ -131,6 +158,16 @@ export class MainMenu {
   /** Test hook: the start button's rectangle. */
   get geometry(): { button: { x: number; y: number; w: number; h: number } } {
     return { button: { ...this.buttonRect } };
+  }
+
+  /**
+   * Test hook: the build label as drawn.
+   *
+   * Exposed as the STRING rather than as the version and hash separately, so a test asserts what a person reads on
+   * the screen -- which is the only thing about this that can be wrong in a way that matters.
+   */
+  get versionText(): string {
+    return this.versionLine.text;
   }
 }
 

@@ -13,6 +13,7 @@ import { mech } from './mechanisms';
 import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
+import { APP_VERSION, buildLabel, GIT_DIRTY, GIT_HASH } from './version';
 import { demote, initialStageState, recordAbsorb, stageAppearance, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
 import { EntityField, type Bubble } from './entities';
@@ -2716,6 +2717,14 @@ class Game {
 
   /** Diagnostics for automated smoke checks. */
   get diagnostics(): {
+    /**
+     * The build this page is running.
+     *
+     * Reported here as well as drawn on the menu and in the debug readout, so a probe can assert that what is on
+     * screen is what was compiled in -- rather than reading the version module, which would pass while the drawing
+     * showed nothing.
+     */
+    build: { version: string; hash: string; dirty: boolean; label: string };
     frames: number;
     elapsed: number;
     intro: number;
@@ -2880,6 +2889,7 @@ class Game {
     report: { fps: number; lastDeltaMs: number; frames: number; bubbles: number; specks: number; hazards: number };
   } {
     return {
+      build: { version: APP_VERSION, hash: GIT_HASH, dirty: GIT_DIRTY, label: buildLabel() },
       frames: this.frameCount,
       elapsed: this.elapsed,
       intro: this.phaseTimer,

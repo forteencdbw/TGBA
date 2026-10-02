@@ -29,6 +29,8 @@ import { expect, type Page } from '@playwright/test';
 
 /** The slice of `window.__GB.game.diagnostics` the tests read. */
 export interface Diagnostics {
+  /** The build this page is running: version from `package.json`, hash from git at build time. */
+  build: { version: string; hash: string; dirty: boolean; label: string };
   frames: number;
   elapsed: number;
   phase: 'menu' | 'intro' | 'playing' | 'burst' | 'paused';
