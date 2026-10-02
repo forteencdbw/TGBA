@@ -204,6 +204,12 @@ class Game {
     this.scrolled = 0;
     this.camera.setScroll(0);
     this.player.syncToCamera(this.camera.y, this.camera.viewport.visibleDepthMeters);
+    /**
+     * The game starts on the MENU, where `step` returns before it reaches `audio.setDepth` -- so the ambience
+     * would never be told to stay quiet. A no-op on a cold boot because there is no AudioContext yet, but it
+     * is the state this phase requires, and it stops the menu depending on that accident.
+     */
+    audio.silenceAmbience();
     this.layout();
 
     // Expose the tuning object so feel can be dialled in live from the browser console.
@@ -1403,6 +1409,13 @@ class Game {
     this.settings.setOpen(false);
     this.phase = 'menu';
     this.touch.releaseAll();
+    /**
+     * Stop the ambience explicitly.
+     *
+     * `step` returns before it reaches `audio.setDepth` while on the menu, so nothing else would ever tell the
+     * bed to stop -- it kept playing over the menu at the level it had when the player quit.
+     */
+    audio.silenceAmbience();
     this.menu.root.visible = true;
   }
 

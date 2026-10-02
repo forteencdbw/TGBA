@@ -122,6 +122,25 @@ export class GameAudio {
   }
 
   /**
+   * Silence the continuous ambience without touching the master gain or the player's volume.
+   *
+   * Needed because the ambience is driven from the game's per-frame step, and THE STEP DOES NOT RUN in every
+   * phase: on the menu it returns immediately, so nothing was left to tell the bed to stop and it kept playing
+   * over the main menu at whatever level it last had.
+   *
+   * Distinct from muting. One-shots still work and the volume is untouched: this means "there is no water
+   * here", not "be quiet".
+   */
+  silenceAmbience(): void {
+    if (!this.ctx || !this.ambientGain || !this.noiseGain) return;
+    const now = this.ctx.currentTime;
+    this.ambientGain.gain.setTargetAtTime(0, now, 0.25);
+    this.noiseGain.gain.setTargetAtTime(0, now, 0.25);
+    this.requested.ambient = 0;
+    this.requested.noise = 0;
+  }
+
+  /**
    * The player's volume, 0..1.
    *
    * Applied through the master gain, so ONE number scales the ambience and every one-shot together -- which

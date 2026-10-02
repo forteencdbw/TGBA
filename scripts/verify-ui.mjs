@@ -136,7 +136,15 @@ try {
            sliderValue: +g.settingsRef.sliderValue.toFixed(3),
            masterGain: +g.audioRef.debugLevels().master.toFixed(4),
            volume: +g.audioRef.getVolume().toFixed(3),
-           menuVisible: g.menuRef.root.visible
+           menuVisible: g.menuRef.root.visible,
+           /**
+            * The requested ambience level, not the ramping one.
+            *
+            * debugLevels reports the TARGET, which is the decision; the audio thread lags behind it by design.
+            * Asserting on the live gain would make this a test of setTargetAtTime's time constant.
+            */
+           ambience: +g.audioRef.debugLevels().ambient.toFixed(4),
+           noise: +g.audioRef.debugLevels().noise.toFixed(4)
          };
        };
        const steps = {};
@@ -233,7 +241,18 @@ try {
        steps.restart = { before: beforeRestart, after: snap() };
 
        // --- Exit: the main menu comes back and the level stops ---
-       await frames(40);
+       /**
+        * Exit from PLAYING, not from the intro.
+        *
+        * The first version of this exited right after a restart, so it left during the BIRTH INTRO, where the
+        * ambience is silent anyway -- and the assertion then passed without ever exercising the bug. The bug is
+        * about leaving while the water is audible, so the run is given time to actually get going first.
+        */
+       for (let i = 0; i < 300 && !(g.diagnostics.phase === 'playing' && g.audioRef.debugLevels().ambient > 0.05); i++) {
+         await raf();
+       }
+       await frames(20);
+       steps.beforeExit = snap();
        await tap(geo.gear.x, geo.gear.y);
        await frames(4);
        const exitBtn = geo.buttons.exit;
@@ -279,6 +298,7 @@ try {
   fmt('after SAVE', s.afterSave);
   fmt('restart: before', s.restart.before);
   fmt('restart: after', s.restart.after);
+  fmt('about to exit', s.beforeExit);
   fmt('after EXIT', s.afterExit);
   fmt('start from menu', s.afterRestartFromMenu);
 
@@ -312,6 +332,17 @@ try {
     // Restart puts the level back to its start.
     restartBeginsAFreshRun: s.restart.after.scroll < s.restart.before.scroll && s.restart.after.phase !== 'paused',
     exitReachesTheMenu: s.afterExit.phase === 'menu' && s.afterExit.menuVisible === true,
+    /**
+     * THE REPORTED BUG: the ambience kept playing over the main menu.
+     *
+     * `step` returns before it reaches `audio.setDepth` while on the menu, so nothing was left to stop the bed.
+     * The "before" half is required: with the ambience already at zero the assertion would pass on a build that
+     * never started it, which is not the same thing as stopping it.
+     */
+    exitingStopsTheAmbience:
+      s.beforeExit.ambience > 0.05 && s.afterExit.ambience === 0 && s.afterExit.noise === 0,
+    // And it must NOT be a mute: the player's volume is untouched, so starting again is audible.
+    exitingDoesNotChangeTheVolume: Math.abs(s.afterExit.masterGain - s.beforeExit.masterGain) < 0.02,
     returningFromTheMenuWorks: s.afterRestartFromMenu.phase !== 'menu' && s.afterRestartFromMenu.menuVisible === false,
     noExceptions: cdp.errors.length === 0,
   };
