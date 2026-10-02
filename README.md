@@ -29,24 +29,53 @@
 
 ```bash
 pnpm install
+pnpm test:install   # 一次性：下载 Chromium（约 115 MB，只装这一个）
 pnpm dev            # http://localhost:5173，同时暴露在局域网，手机可直接打开
 ```
 
-## 命令
+## 测试
+
+**端到端测试用 Playwright**，在 `e2e/`：
+
+```bash
+pnpm test                # 全部（phone + desktop 两个 project）
+pnpm test:phone          # 只跑手机尺寸，迭代时用这个
+pnpm test:ui             # 交互式：时间旅行、逐帧看、重跑单个用例
+pnpm test:report         # 打开上一次的 HTML 报告
+pnpm test:shots          # 只截图（不算测试，看画面用），输出在 test-results/
+```
+
+**为什么是 Playwright。** 之前 `scripts/` 里的探针每一支都靠裸 CDP 驱动浏览器：手动 spawn Chrome、
+轮询 `/json/list` 拿 websocket、手写 promise 客户端、再 `Runtime.evaluate` 字符串。**每个文件重复约 130
+行脚手架，而那些探针的绝大多数 bug 就住在那层脚手架里**——读了游戏已改名的字段、抄了实现而没调用它、
+`until` 辅助函数返回了上一轮的采样。
+
+Playwright 把这一切换成 `page.evaluate(() => ...)`：页面里的真函数调用、自动等待的 locator、trace 查看
+器、`--ui` 模式、失败重试和失败自动截图。**脚手架成本归零，断言终于可以只关心游戏本身。**
+
+游戏自己的测试钩子 `window.__GB` 仍然是正确的接缝——canvas 里没有 DOM 可查，水面、气泡、危险物都是
+Pixi 的绘制调用，所以"气泡动了"没有诚实的 locator。钩子是**刻意的**：它暴露卷轴、玩家的屏幕比例、危险物
+列表和音频图，好让测试断言**事实**而不是事实的替身。
+
+只有两样东西走真实输入，因为那才是被测对象：**菜单的开始按钮**和**设置面板的控件**——它们由游戏自己做
+命中判定，所以点歪了就是失败，而不是悄悄通过。
 
 | 命令 | 作用 |
 |---|---|
 | `pnpm dev` | 开发服务器（HMR，局域网可访问） |
-| `pnpm typecheck` | TypeScript 类型检查 |
+| `pnpm test` | **Playwright 端到端测试**（phone + desktop，30 个用例） |
+| `pnpm test:phone` / `test:ui` / `test:report` / `test:shots` | 只跑手机 / 交互模式 / 打开报告 / 只截图 |
+| `pnpm typecheck` | 应用 **和 e2e** 的类型检查 |
 | `pnpm build` | 类型检查 + 生产构建到 `dist/` |
-| `node scripts/verify-ui.mjs` | 主菜单 / 设置面板 / 暂停的流程验证（含"退出后环境音停止"） |
-| `node scripts/verify-mechanics.mjs` | 配置是否真的被读取，以及成长阶段是否真的让气泡变慢（测**位移**） |
 | `node scripts/verify-dist.mjs` | **验证打包产物真的能跑**（静态服务 `dist/` 于子目录下 + headless 启动） |
 | `node scripts/probe-layout.mjs <url> <w> <h> <out.png>` | 截一张图并打印布局数字（**人看**，不断言） |
-| `node scripts/measure-pixels.mjs` | 解 CDP 截图读真实像素（验证布局用，见下） |
+| `node scripts/measure-pixels.mjs` | 解截图读真实像素（验证布局/HUD 用，见下） |
 | `node scripts/performance.mjs <url> <w> <h>` | 帧时百分位（软件光栅化，不能代表真机，但能测**变化**） |
 | `pwsh -File scripts/dev-server.ps1 status\|start\|stop` | 脱离会话的 dev server 管理 |
 | `pwsh -File scripts/install-pwsh-path.ps1` | 重建 `pwsh` 的稳定 PATH 入口（PowerShell 升级后重跑） |
+
+`scripts/` 里剩下的都是**诊断工具，不断言任何东西**——当"为什么和预期不一样"时用它们，而不是当回归测试用。
+`verify-dist.mjs` 是例外，它断言打包产物能跑，因为"构建成功"和"构建出来的东西能玩"是两件事。
 
 ## 发布流程
 

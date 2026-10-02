@@ -35,3 +35,9 @@ commit-msg.tmp
 COMMIT_MSG.tmp
 MSG.tmp
 msg.txt
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
