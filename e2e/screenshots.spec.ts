@@ -272,4 +272,58 @@ test.describe('screen captures @screenshots', () => {
     });
     await page.screenshot({ path: testInfo.outputPath('overloaded.png') });
   });
+
+  /**
+   * A crate and a coral, side by side, with a projectile in flight at them.
+   *
+   * The two kinds have to be told apart at a glance -- one is worth shooting and one is worth avoiding -- and that
+   * is a judgement about a picture. The shot is in frame so the interaction the obstacles exist for is visible.
+   */
+  test('a crate, a coral, and a shot at them @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugSetSteadyCruise: () => void;
+            debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
+            debugSpawnHazardOnPlayer: (kind: string) => void;
+            touchRef: { spitGeometry: { x: number; y: number } };
+            handlePointerDown: (id: number, x: number, y: number) => void;
+            handlePointerUp: (id: number) => void;
+            camera: { viewport: { laneWidthMeters: number } };
+          };
+          player: { x: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      g.player.volume = 8;
+      g.game.debugSetSteadyCruise();
+      g.player.x = 0.5;
+      g.player.screenY = 0.42;
+      const lane = g.game.camera.viewport.laneWidthMeters;
+
+      // A crate above, a coral to the side, and ammunition to fire at the crate.
+      g.game.debugSpawnObstacleOnPlayer('crate', lane * 0.55);
+      g.game.debugSpawnObstacleOnPlayer('coral', lane * 0.55);
+      // Offset the coral laterally, since both spawned on the player's column.
+      for (const o of (window as unknown as { __GB: { game: { obstaclesRef: { obstacles: { kind: string; x: number; y: number }[] } } } }).__GB.game
+        .obstaclesRef.obstacles) {
+        if (o.kind === 'coral') o.x = g.player.x * lane + lane * 0.26;
+      }
+
+      g.game.debugSpawnHazardOnPlayer('crab');
+      await raf();
+      await raf();
+      const b = g.game.touchRef.spitGeometry;
+      g.game.handlePointerDown(93, b.x, b.y);
+      g.game.handlePointerUp(93);
+      // Part-way to the crate, so both the shot and its trail are in frame.
+      for (let i = 0; i < 4; i++) await raf();
+    });
+    await page.screenshot({ path: testInfo.outputPath('obstacles.png') });
+  });
 });

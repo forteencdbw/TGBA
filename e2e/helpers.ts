@@ -91,6 +91,19 @@ export interface Diagnostics {
   /** The suction field: whether it is held, how far it reaches, and what it costs in speed. */
   suction: { held: boolean; radiusFraction: number; moveFactor: number };
   /**
+   * The obstacles: crates to smash and coral to squeeze past.
+   *
+   * `minGap` is the config's passability guarantee, so a test can assert it against the authored level rather
+   * than against whatever happens to be on screen.
+   */
+  obstacles: {
+    active: number;
+    byKind: Record<string, number>;
+    broken: number;
+    ramThreshold: number;
+    minGap: number;
+  };
+  /**
    * The stomach and what is in flight.
    *
    * `contents` is the ORDER, not just the count: spitting takes the oldest.

@@ -3,6 +3,7 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeL
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, TIMELINE, type Level, type LevelEntry } from './levels';
 import { HazardField, KIND_TUNING, hazardTuning, paintHazards, type HazardKind } from './hazards';
+import { ObstacleField, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
 import { audio } from './audio';
@@ -396,6 +397,8 @@ class Game {
    * run's ammunition.
    */
   private readonly stomach = new Stomach();
+  /** Crates to smash and coral to squeeze past: the target for spitting and for being small. */
+  private readonly obstacles = new ObstacleField();
   private readonly projectiles: SpitProjectile[] = [];
   /** Seconds until the next spit is allowed. */
   private spitCooldown = 0;
@@ -484,7 +487,22 @@ class Game {
       p.y += p.vy * dt;
 
       let spent = false;
+
+      /**
+       * Obstacles first, then hazards.
+       *
+       * Order matters and is not arbitrary: an obstacle is the thing a projectile is FOR, so a crate in front of
+       * a fish should stop the shot. Hitting the fish through the crate would make the scenery a lie.
+       */
+      const obstacleHit = this.obstacles.hitByProjectile(p.x, p.y, hitRadius, spitImpact(p.kind));
+      if (obstacleHit) {
+        this.spitHits++;
+        if (obstacleHit.broke) audio.play('hit');
+        spent = true;
+      }
+
       for (const h of this.hazards.hazards) {
+        if (spent) break;
         const hr = laneWidth * h.radiusFraction;
         const dx = h.x - p.x;
         const dy = h.y - p.y;
@@ -539,6 +557,17 @@ class Game {
    */
   suctionReachForTest(): number {
     return this.camera.viewport.laneWidthMeters * suctionRadiusFraction(this.player.volume) * this.suctionRadiusFactor;
+  }
+
+  /**
+   * Test hook: drop an obstacle on the player, or `ahead` metres above them.
+   *
+   * An offset rather than always-at-the-player because the two interactions need different setups: a ram test
+   * wants the collision to resolve immediately, and a projectile test needs something to shoot AT.
+   */
+  debugSpawnObstacleOnPlayer(kind: ObstacleKind, ahead = 0): void {
+    const laneWidth = this.camera.viewport.laneWidthMeters;
+    this.obstacles.spawn(kind, this.player.x * laneWidth, this.player.y + ahead);
   }
 
   /**
@@ -1007,6 +1036,7 @@ class Game {
      */
     this.updateSpit(dt, viewport.laneWidthMeters);
     this.updateProjectiles(dt, viewport.laneWidthMeters, min, max);
+    this.obstacles.update(dt, min, max);
 
     this.elapsed += dt;
     // The ambience follows the depth every frame: it IS the progress readout. See src/audio.ts.
@@ -1111,6 +1141,10 @@ class Game {
         // decide the player's next twenty seconds before they had even seen the pickup.
         id: null,
       };
+      return;
+    }
+    if (entry.kind === 'crate' || entry.kind === 'coral') {
+      this.obstacles.spawn(entry.kind, entry.x * laneWidth, worldY);
       return;
     }
     const hazard = this.makeHazard(entry.kind, entry.x * laneWidth, worldY);
@@ -1544,6 +1578,31 @@ class Game {
     const playerR = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
     let eaten = 0;
 
+    /**
+     * Obstacles first, so the bubble cannot eat through a crate.
+     *
+     * A crate is scenery: food behind it is behind it. Letting the collectable pass resolve while the player is
+     * stuck on a crate would mean the scenery does not exist as far as the reward is concerned, which is worse
+     * than not having scenery at all.
+     *
+     * Two outcomes, and which one happens is the mechanic: big enough and the crate is smashed, too small and the
+     * player is STOPPED by it and takes a hit. A player with nothing to spend on a detour has to go through, and
+     * going through is what the growth is for.
+     */
+    const contact = this.obstacles.resolvePlayer(playerX, this.player.y, playerR, this.player.volume, this.invulnerable > 0);
+    if (contact.hit?.broke) {
+      this.lastComedyBeat = { what: 'crab', at: this.elapsed };
+      audio.play('hit');
+    }
+    if (contact.blocked) {
+      this.takeHit();
+      // Pushed back down the screen, out of the obstacle, so one crate cannot cost several hits.
+      this.player.impulseVy = -Math.max(this.player.impulseVy, 0.25);
+    }
+    if (contact.hit || contact.blocked) {
+      this.invulnerable = Math.max(this.invulnerable, mech.obstacles.collideInvulnerableSeconds);
+    }
+
     for (let i = this.field.bubbles.length - 1; i >= 0; i--) {
       const b = this.field.bubbles[i];
       if (!b) continue;
@@ -1635,6 +1694,7 @@ class Game {
     this.projectiles.length = 0;
     this.spitCooldown = 0;
     this.spitHits = 0;
+    this.obstacles.reset();
     this.field.reset();
     this.hazards.reset();
     /**
@@ -1907,6 +1967,14 @@ class Game {
     // source of truth on purpose: a marker that promised food while the collision delivered a hit would be the
     // worst bug this feature could have, because it would punish the player for trusting what they saw.
     paintHazards(g, this.hazards, laneWidth, this.elapsed, (kind) => canEatHazard(kind, this.player.volume));
+
+    /**
+     * Obstacles, UNDER the hazards.
+     *
+     * They are scenery: a fish swimming in front of a crate has to stay visible, because the fish is what will
+     * hurt you. The crate only matters when you are about to hit it.
+     */
+    paintObstacles(g, this.obstacles, laneWidth);
 
     /**
      * The suction field, drawn UNDER everything else in the water.
@@ -2257,6 +2325,19 @@ class Game {
     /** The suction field: whether it is held, how far it reaches, and what it costs in speed. */
     suction: { held: boolean; radiusFraction: number; moveFactor: number };
     /**
+     * The obstacles: crates to smash and coral to squeeze past.
+     *
+     * `rows` is the authored structure, not the live one, so a test can assert the passability guarantee against
+     * the level rather than against whatever happens to be on screen.
+     */
+    obstacles: {
+      active: number;
+      byKind: Record<string, number>;
+      broken: number;
+      ramThreshold: number;
+      minGap: number;
+    };
+    /**
      * The stomach and what is in flight.
      *
      * `contents` is the ORDER, not just the count: spitting takes the oldest, so a test asserting "it fires what it
@@ -2410,6 +2491,17 @@ class Game {
         fuseRemaining: this.stomach.fuseRemaining,
         fuseFraction: this.stomach.fuseFraction,
         bulge: stomachBulge(this.stomach.size),
+      },
+      /** The obstacles, so a probe reads the state rather than inferring it from what is on screen. */
+      obstacles: {
+        active: this.obstacles.count,
+        byKind: this.obstacles.obstacles.reduce<Record<string, number>>((acc, o) => {
+          acc[o.kind] = (acc[o.kind] ?? 0) + 1;
+          return acc;
+        }, {}),
+        broken: this.obstacles.broken,
+        ramThreshold: mech.obstacles.ramVolumeThreshold,
+        minGap: mech.obstacles.minGapFraction,
       },
       /** Fractional damage accumulated from a trash bag, so the drain can be observed directly. */
       trashDrain: +this.trashDrain.toFixed(3),
@@ -2586,6 +2678,11 @@ class Game {
   debugForceHit(): void {
     this.invulnerable = 0;
     this.takeHit();
+  }
+
+  /** Test hook: the obstacle field, so a probe can inspect or place individual obstacles. */
+  get obstaclesRef(): ObstacleField {
+    return this.obstacles;
   }
 
   /** Test hook: the collectable field, so a probe can inspect individual bubbles. */

@@ -7,6 +7,9 @@
  * art assets, and a sampled water loop would be the one thing in the game that could not be re-tuned
  * by changing a number. Every parameter below is a filter cutoff or a rate.
  *
+ * "No BGM" means no composed music track: the bed IS the soundtrack, and `audio.musicVolume` in the config
+ * sets its level against the one-shot effects.
+ *
  * ---------------------------------------------------------------------------------------------
  * THE PROGRESS FEEDBACK IS THE POINT
  * ---------------------------------------------------------------------------------------------
@@ -28,12 +31,20 @@
  */
 
 /** Events worth a sound. Kept small: a game this busy needs few, distinct cues, not many. */
+import { mech } from './mechanisms';
+
 export type SoundEvent = 'absorb' | 'hit' | 'pop' | 'surface' | 'skill' | 'slow' | 'crab' | 'fart';
 
 export class GameAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private ambientGain: GainNode | null = null;
+  /**
+   * The background music's own level, separate from the player's master volume.
+   *
+   * See `build()` for why it is a node rather than a multiplier on the master.
+   */
+  private musicGain: GainNode | null = null;
   private filter: BiquadFilterNode | null = null;
   /** Noise source feeding the ambient bed, plus its own gain so the bed can be modulated. */
   private noise: AudioBufferSourceNode | null = null;
@@ -67,7 +78,6 @@ export class GameAudio {
    * target.
    */
   private requested = { cutoff: 260, ambient: 0, noise: 0.5, master: 1 };
-
   /** The last few `setDepth` calls, for probes. See `setDepth`. */
   readonly depthTrace: { depth: number; audible: boolean }[] = [];
 
@@ -197,7 +207,23 @@ export class GameAudio {
 
     this.ambientGain = ctx.createGain();
     this.ambientGain.gain.value = 0.0; // faded in by `setDepth`
-    this.ambientGain.connect(this.filter);
+
+    /**
+     * The background music's own level, on a node of its own.
+     *
+     * Between the ambience and the filter rather than folded into the master gain, for two reasons. The master
+     * carries the PLAYER's volume, so scaling it would drag the one-shots down with the music -- they are effects,
+     * and nobody asked for them to be quieter. And a slider reading 100% should mean "as loud as this game goes",
+     * so the relative level of the bed against the effects belongs in the config rather than baked into the
+     * player's setting.
+     *
+     * Only the bed passes through here. `play()` connects one-shots straight to the master, so this node cannot
+     * affect them.
+     */
+    this.musicGain = ctx.createGain();
+    this.musicGain.gain.value = mech.audio.musicVolume;
+    this.musicGain.connect(this.filter);
+    this.ambientGain.connect(this.musicGain);
 
     // Two seconds of white noise, looped. Long enough that the loop point is not audible.
     const frames = Math.floor(ctx.sampleRate * 2);
@@ -226,6 +252,26 @@ export class GameAudio {
     this.lfo.connect(this.lfoGain);
     this.lfoGain.connect(this.noiseGain.gain);
     this.lfo.start();
+  }
+
+  /**
+   * The background music's level relative to the one-shot effects.
+   *
+   * A multiplier on the bed's own gain node, so the player's volume slider still spans the full range and 100%
+   * still means "as loud as this game goes". Changing this number changes the MUSIC, not the effects and not the
+   * player's setting.
+   */
+  getMusicVolume(): number {
+    return mech.audio.musicVolume;
+  }
+
+  /** Set the background music's level, live. */
+  setMusicVolume(value: number): void {
+    const clamped = Math.max(0, Math.min(1, value));
+    mech.audio.musicVolume = clamped;
+    if (this.musicGain && this.ctx) {
+      this.musicGain.gain.setTargetAtTime(clamped, this.ctx.currentTime, 0.05);
+    }
   }
 
   /**
@@ -333,9 +379,11 @@ export class GameAudio {
    * Audio is the one subsystem a screenshot cannot check, and the design's brief for it is that the
    * ambience tracks depth -- so "did it react to depth" has to be readable from outside.
    */
-  debugLevels(): { cutoff: number; ambient: number; noise: number; master: number } {
+  debugLevels(): { cutoff: number; ambient: number; noise: number; master: number; music: number } {
     // The REQUESTED values, not `parameter.value`: see `requested`.
-    return { ...this.requested };
+    // `music` is the bed's own level, which is NOT part of the master and so has to be reported separately --
+    // a test checking "the music got quieter" cannot see it in the master at all.
+    return { ...this.requested, music: mech.audio.musicVolume };
   }
 
   /** A short tone with an exponential frequency sweep and a percussive envelope. */

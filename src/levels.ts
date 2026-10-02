@@ -1,4 +1,5 @@
 import { mech } from './mechanisms';
+import { rowGapIsPassable } from './obstacles';
 
 /**
  * Levels, in the arcade vertical-scroller form.
@@ -31,7 +32,10 @@ import { mech } from './mechanisms';
  * shows.
  */
 
-/** One thing to place, and how far into the level it appears. */export interface LevelEntry {
+/**
+ * One thing to place, and how far into the level it appears.
+ */
+export interface LevelEntry {
   /** Metres of scroll at which this enters. */
   at: number;
   /**
@@ -44,9 +48,10 @@ import { mech } from './mechanisms';
   /**
    * Which kind of thing to place.
    *
-   * Collectables are `bubble`; everything else names a hazard kind, plus `skill` for a skill pickup.
+   * Collectables are `bubble`, hazards name their kind, `skill` is a pickup, and `crate` / `coral` are the
+   * destructible and the solid obstacles.
    */
-  kind: 'bubble' | 'fish' | 'jelly' | 'trash' | 'crab' | 'skill';
+  kind: 'bubble' | 'fish' | 'jelly' | 'trash' | 'crab' | 'skill' | 'crate' | 'coral';
   /**
    * Size for a collectable, as a multiple of the player's radius at full size. Ignored otherwise.
    *
@@ -139,6 +144,49 @@ export const place = {
     }
     return out;
   },
+
+  /**
+   * A row of obstacles with a GAP left in it, which is the only legal way to place them.
+   *
+   * Deliberately not a general `line`: a row that could seal the lane would make being small MANDATORY at that
+   * point rather than a choice, and "should I be big here" would stop being a question. `assertLevelSane` checks
+   * the result against the config's minimum, so a hand-written row cannot quietly close the lane.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * HOW THE GAP IS CARVED, AND WHY IT TOOK A SECOND ATTEMPT
+   * ---------------------------------------------------------------------------------------------
+   * The first version spaced blocks evenly and DELETED any that landed near the gap centre. That leaves blocks
+   * sitting wherever the even spacing happened to put them, which is not far enough from the gap: at four blocks
+   * the neighbours landed at 0.37 and 0.63, and the space between them worked out to 0.11 against a required
+   * 0.17. The level refused to load, and the assertion named the row -- which is exactly what it is for.
+   *
+   * So the gap is CARVED FIRST: it is widened to the width the passability rule actually needs, and blocks are
+   * then placed only in the two strips that remain. The gap is therefore a guarantee rather than a request, and
+   * the guarantee is derived from the same config the assertion reads.
+   *
+   * @param gapAt where the gap sits, as a fraction of the play area.
+   * @param gapWidth the gap the designer WANTS. Widened automatically if the rule needs more room than this.
+   */
+  barrier: (at: number, kind: LevelEntry['kind'], count: number, gapAt = 0.5, gapWidth = 0.24): LevelEntry[] => {
+    const radius = mech.obstacles.radius[kind] ?? 0.05;
+    // The clearance a gap needs: the lane margin at each side plus the rule's minimum.
+    const required = radius * 2 + mech.obstacles.minGapFraction;
+    const half = Math.max(gapWidth, required) / 2;
+    const gapLo = gapAt - half;
+    const gapHi = gapAt + half;
+
+    const out: LevelEntry[] = [];
+    const from = 0.1;
+    const to = 0.9;
+    for (let i = 0; i < count; i++) {
+      const t = count <= 1 ? 0.5 : i / (count - 1);
+      const x = from + t * (to - from);
+      // A hair of tolerance, because the assertion measures with `>` and an exactly-equal gap must pass.
+      if (x > gapLo - 1e-6 && x < gapHi + 1e-6) continue;
+      out.push({ at, x, kind });
+    }
+    return out;
+  },
 };
 
 /** Deterministic weave, so a level looks the same every time it is played. */
@@ -177,12 +225,30 @@ export const LEVELS: readonly Level[] = [
       place.one(140, 'jelly', 0.5),
       place.one(200, 'skill', 0.3),
 
+      /**
+       * --- 340m: the first crates, as a lesson. ---
+       *
+       * Early, few, and with a WIDE gap, because they are teaching something: a crate can be got past two ways,
+       * and the player needs one cheap encounter to notice that ramming works before it matters. Passing them is
+       * never in doubt here -- only HOW is, which is the question the mechanic exists to raise.
+       */
+      ...place.barrier(340, 'crate', 3, 0.5, 0.34),
+
       // --- 250-550m: the first real swarm, plus a crab as an opportunity. ---
       ...place.spread(260, 200, 12, 'bubble', weave(0.3), sizes([0.35, 0.55, 0.4, 0.7])),
       ...place.line(380, 'fish', 4),
       place.one(430, 'crab', 0.62),
       ...place.line(500, 'jelly', 2),
       place.one(540, 'skill', 0.7),
+
+      /**
+       * --- The first crates, at 340m. ---
+       *
+       * Placed EARLY and alone, because they are teaching something: a crate is scenery that can be got past two
+       * ways, and the player needs one cheap encounter to notice that ramming works before it matters. Two
+       * blocks with a wide gap, so passing them is never in doubt -- only HOW is.
+       */
+      ...place.barrier(340, 'crate', 3, 0.5, 0.34),
 
       // --- 550-900m: tighter, with trash to punish greed. ---
       ...place.spread(560, 240, 14, 'bubble', weave(0.34), sizes([0.3, 0.6, 0.45])),
@@ -192,6 +258,18 @@ export const LEVELS: readonly Level[] = [
       ...place.column(800, 60, 3, 'jelly', 0.72),
       ...place.line(880, 'fish', 6, 0.1, 0.9),
       place.one(920, 'skill', 0.25),
+
+      /**
+       * --- 830m and 1030m: the first CORAL, which is the opposite lesson. ---
+       *
+       * A crate rewards being big; coral rewards being SMALL. These entrances are tight enough to matter and wide
+       * enough to survive being fat -- so the first coral teaches "this one I go around" rather than killing
+       * anyone who had been enjoying the growth curve.
+       */
+      ...place.barrier(830, 'coral', 4, 0.3, 0.22),
+      ...place.barrier(1030, 'coral', 4, 0.72, 0.22),
+      // A crate row right after the coral, so the two answers sit next to each other and the contrast is legible.
+      ...place.barrier(1070, 'crate', 4, 0.5, 0.26),
 
       // --- 900-1260m: the bubble tide. Looks like a reward, and it is -- which is the trap, since a
       // bigger player is noticed from further away and the endgame scales with size. ---
@@ -208,6 +286,15 @@ export const LEVELS: readonly Level[] = [
       ...place.line(1400, 'trash', 2, 0.25, 0.75),
       ...place.line(1440, 'fish', 6, 0.12, 0.88),
       place.one(1470, 'crab', 0.5),
+      /**
+       * --- 1410m: the final squeeze, and the design's "极限瘦身" moment. ---
+       *
+       * The tightest gap in the level, right before the surface, and coral rather than crates -- so it cannot be
+       * solved by having grown. Everything the player has swallowed is exactly what is in their way here, and the
+       * spit button is the answer. Placed AFTER the last swarm so a player who arrives fat has the room to deal
+       * with it rather than being punished mid-fight.
+       */
+      ...place.barrier(1410, 'coral', 5, 0.5, 0.19),
       // The last stretch is deliberately sparse: the surface should feel earned, and a level that ends
       // mid-onslaught gives the player no moment to notice they have won.
       ...place.spread(1470, 30, 4, 'bubble', weave(0.2), sizes([0.4])),
@@ -226,7 +313,13 @@ export const LEVELS: readonly Level[] = [
  */
 export const PLAY_AREA_ASPECT = 1.9;
 
-/** Fail loudly at startup rather than shipping a level that cannot be played. */
+/**
+ * Fail loudly at startup rather than shipping a level that cannot be played.
+ *
+ * The obstacle check is the important one, and it is not about tidiness: a row of obstacles that SEALS the lane
+ * would make being small mandatory at that point rather than a choice, and "should I be big here" would stop
+ * being a question. Rows are authored by hand, so the rule needs enforcing rather than remembering.
+ */
 export function assertLevelSane(level: Level): void {
   const problems: string[] = [];
   if (!(level.scrollLength > 0)) problems.push('scrollLength must be positive');
@@ -239,6 +332,30 @@ export function assertLevelSane(level: Level): void {
   if (beyond.length) problems.push(`${beyond.length} entries outside the level's length`);
   const badX = level.entries.filter((e) => e.x < 0 || e.x > 1);
   if (badX.length) problems.push(`${badX.length} entries outside the play area`);
+
+  /**
+   * Every row of obstacles must leave a gap the smallest player can fit through.
+   *
+   * Rows are grouped by their `at` value, which is how `place.barrier` authors them: one distance, several blocks.
+   * Two rows a metre apart are treated as separate, which is correct -- a player passes them at different times.
+   */
+  const required = mech.obstacles.minGapFraction;
+  const rows = new Map<number, { x: number; radius: number }[]>();
+  for (const entry of level.entries) {
+    if (entry.kind !== 'crate' && entry.kind !== 'coral') continue;
+    const radius = mech.obstacles.radius[entry.kind] ?? 0.05;
+    const row = rows.get(entry.at) ?? [];
+    row.push({ x: entry.x, radius });
+    rows.set(entry.at, row);
+  }
+  for (const [at, row] of rows) {
+    if (!rowGapIsPassable(row)) {
+      problems.push(
+        `obstacle row at ${at}m leaves no gap of ${required} or more; it would seal the lane and make being small mandatory`,
+      );
+    }
+  }
+
   if (problems.length) throw new Error(`Level "${level.id}" is unusable: ${problems.join('; ')}`);
 }
 
