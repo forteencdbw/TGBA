@@ -1,4 +1,4 @@
-﻿import { SPAWN_X_RATIO, tuning } from './config';
+import { SPAWN_X_RATIO, tuning } from './config';
 import { DEPTH_TOTAL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Input } from './input';
@@ -169,6 +169,16 @@ export class Player {
   /** Fraction of a hit's shrink ignored, 0..1. Set by the silt talent. */
   shrinkResistance = 0;
 
+  /**
+   * Movement multiplier from the current growth stage, 0..1.
+   *
+   * Set by the game from `src/stages.ts`, and applied to BOTH axes and to TOUCH as well as the keyboard. That
+   * last part is deliberate: applying it only to keyboard speed would make the stage system invisible to anyone
+   * playing on a phone, which is the shipping target -- and "bigger is slower" is the entire tension of the
+   * design, so it has to be felt on the device that matters.
+   */
+  stageSpeedMultiplier = 1;
+
   /** Seconds left of an active skill effect, and which one. */
   skillRemaining = 0;
   skillId: string | null = null;
@@ -217,7 +227,13 @@ export class Player {
       }
     }
 
-    const steer = Math.max(0, this.steerScale);
+    /**
+     * One multiplier for everything that follows, folding in the growth stage.
+     *
+     * The stage applies to the KEYBOARD speed and to the TOUCH easing, because the design's tension -- bigger
+     * means slower -- has to be felt on the device the game ships to, and that device steers by dragging.
+     */
+    const steer = Math.max(0, this.steerScale) * Math.max(0, this.stageSpeedMultiplier);
     this.debugSteerMultiplier = steer;
 
     if (input.dragTargetX !== null) {
@@ -244,7 +260,7 @@ export class Player {
       // the horizontal uses so the two axes feel identical. `verticalSpeedScale` converts between a
       // window height and a lane width, which are different lengths in metres but should take the same
       // time to cross.
-      const verticalSpeed = lateral.keyboardSpeed * tuning.verticalSpeedScale;
+      const verticalSpeed = lateral.keyboardSpeed * tuning.verticalSpeedScale * steer;
       this.vy = input.axisY * verticalSpeed * this.slowMultiplier;
       this.screenY += this.vy * dt;
     }

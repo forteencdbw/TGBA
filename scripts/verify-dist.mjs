@@ -143,8 +143,26 @@ try {
   }
   if (!booted) throw new Error('the built game never exposed __GB -- check the console errors above');
 
+  /**
+   * The game BOOTS INTO THE MENU, so reaching gameplay means pressing start.
+   *
+   * This used to wait for `playing` on its own, which was right until the menu was added -- and then the wait
+   * timed out while the built game was sitting there perfectly healthy, one tap from running. The assertion
+   * that the bundle works has to exercise the path a player takes.
+   */
+  await send('Runtime.evaluate', {
+    expression: `(() => {
+      const g = window.__GB.game;
+      const b = g.menuRef.geometry.button;
+      g.handlePointerDown(900, b.x + b.w / 2, b.y + b.h / 2);
+      g.handlePointerUp(900);
+      return 'started';
+    })()`,
+    returnByValue: true,
+  });
+
   let phase = null;
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 90; i++) {
     const r = await send('Runtime.evaluate', { expression: 'window.__GB.game.diagnostics.phase', returnByValue: true });
     phase = r.result.value;
     if (phase === 'playing') break;

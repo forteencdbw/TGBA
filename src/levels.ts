@@ -1,3 +1,5 @@
+import { mech } from './mechanisms';
+
 /**
  * Levels, in the arcade vertical-scroller form.
  *
@@ -29,8 +31,7 @@
  * shows.
  */
 
-/** One thing to place, and how far into the level it appears. */
-export interface LevelEntry {
+/** One thing to place, and how far into the level it appears. */export interface LevelEntry {
   /** Metres of scroll at which this enters. */
   at: number;
   /**
@@ -159,10 +160,11 @@ export const LEVELS: readonly Level[] = [
     name: '开阔水域',
     scrollLength: 1500,
     /**
-     * 25 m/s. Chosen so the level lasts ~60s, and so one screenful of water passes in ~7.6s -- which is
-     * the number that actually describes how fast it LOOKS.
+     * From `config/mechanics.json` (`level.scrollSpeed`). THE pacing dial: it sets how fast the world looks
+     * and how long the level lasts (`scrollLength / scrollSpeed` seconds), and it is fully decoupled from the
+     * controls, so retuning the pace never changes how the bubble handles.
      */
-    scrollSpeed: 25,
+    scrollSpeed: mech.level.scrollSpeed,
     playerLeadLimit: 130,
     landmarks: [
       { depth: 960, label: '鱼群' },

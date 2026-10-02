@@ -7,7 +7,9 @@ import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TA
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
 import { audio } from './audio';
 import { MainMenu } from './menu';
+import { mech } from './mechanisms';
 import { SettingsUi } from './settings';
+import { demote, initialStageState, recordAbsorb, stageName, type StageState } from './stages';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
@@ -132,6 +134,13 @@ class Game {
   private phaseTimer = INTRO_SECONDS;
   /** The phase to restore when the settings panel closes. */
   private phaseBeforePause: 'intro' | 'playing' | 'burst' = 'playing';
+  /**
+   * The bubble's growth stage: which speed tier it is in, and how far into the next one.
+   *
+   * Per-run state, reset with everything else in `startRun`. Its `speedMultiplier` is pushed into the player
+   * whenever it changes, rather than the player reading it, so `Player` stays unaware of the stage system.
+   */
+  private stage: StageState = initialStageState();
   /** Seconds of invulnerability remaining after a hit. */
   private invulnerable = 0;
   /** Sticky counters for probes and for the result card. */
@@ -221,6 +230,13 @@ class Game {
       scene: this.scene,
       hud: this.hud,
       game: this,
+      /**
+       * The mechanics config, so a probe can compare what the game loaded against the file it came from.
+       *
+       * Exposed rather than imported by the probe: the probe runs in the page, and the point of the check is
+       * that the RUNNING build's values match the hand-edited file.
+       */
+      mechRef: mech,
       /**
        * The layout functions, so a probe can check how the game is framed at any canvas size without
        * resizing anything. A compatibility bug across screen sizes is exactly the kind that only shows
@@ -358,6 +374,19 @@ class Game {
   /** Test hook: the settings panel, so a probe can read its geometry and drive its real controls. */
   get settingsRef(): SettingsUi {
     return this.settings;
+  }
+
+  /**
+   * Test hook: drop one growth stage.
+   *
+   * Nothing in the game demotes the player -- the design has not decided whether damage should cost a stage --
+   * so this exists purely so a probe can measure each stage's handling without absorbing its way up and back
+   * down. It goes through `demote`, the same function real demotion would use, so the state stays consistent.
+   */
+  demoteStageForTest(): number {
+    demote(this.stage);
+    this.player.stageSpeedMultiplier = this.stage.speedMultiplier;
+    return this.stage.stage;
   }
 
   /** Test hook: the main menu. */
@@ -1260,6 +1289,22 @@ class Game {
         // itself without any UI.
         this.player.volume = growByAbsorbing(this.player.volume, b.volume);
         this.stats.absorbed++;
+        /**
+         * Count toward the next growth stage, and react if that promoted the bubble.
+         *
+         * The promotion is the caller's to handle: `recordAbsorb` only knows the numbers. Growing is the moment
+         * the player becomes slower, so it gets a brief invulnerability and a cue -- without the grace period,
+         * getting bigger would immediately mean taking a hit, which reads as the game punishing the player for
+         * doing well.
+         */
+        if (recordAbsorb(this.stage)) {
+          this.player.stageSpeedMultiplier = this.stage.speedMultiplier;
+          this.invulnerable = Math.max(this.invulnerable, mech.stages.growInvulnerableSeconds);
+          this.runBanner.text = `${stageName(this.stage.stage)}  ·  ${this.stage.stage} 阶段  ·  速度 ×${this.stage.speedMultiplier.toFixed(2)}`;
+          this.runBanner.alpha = 1;
+          this.bannerSeen = true;
+          audio.play('skill');
+        }
         eaten++;
         audio.play('absorb', Math.min(1, bubbleR / Math.max(1e-6, playerR)));
         this.field.bubbles.splice(i, 1);
@@ -1305,6 +1350,14 @@ class Game {
 
   private startRun(): void {
     this.player.reset();
+    /**
+     * Back to stage 1, and push its speed into the player.
+     *
+     * `player.reset()` clears `stageSpeedMultiplier` to 1, which happens to match stage 1 -- but relying on
+     * that coincidence would break the moment the config's first multiplier is not 1.
+     */
+    this.stage = initialStageState();
+    this.player.stageSpeedMultiplier = this.stage.speedMultiplier;
     this.field.reset();
     this.hazards.reset();
     /**
@@ -1478,7 +1531,12 @@ class Game {
     this.flash.visible = this.flash.visible && !inMenu;
 
     if (!inMenu) {
-      this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled);
+      this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled, {
+        stage: this.stage.stage,
+        name: stageName(this.stage.stage),
+        absorbedInStage: this.stage.absorbedInStage,
+        neededForNext: this.stage.neededForNext,
+      });
       this.touch.update();
       this.drawPickups();
       this.drawBubble();
@@ -1751,6 +1809,7 @@ class Game {
     /** A skill lying in the water. `id` is null until collected, since it is rolled at pickup. */
     skillPickup: { id: string | null; y: number } | null;
     activeSkill: { id: string; remaining: number } | null;
+    stage: { stage: number; name: string; absorbedInStage: number; neededForNext: number | null; speedMultiplier: number };
     phase: string;
     volume: number;
     hitsSurvived: number;
@@ -1873,6 +1932,14 @@ class Game {
       ending: { surfaced: this.surfaced, splash: +this.splash.toFixed(3), bestClimbed: Math.round(this.bestClimbed), bestVolume: +this.bestVolume.toFixed(2) },
       skillPickup: this.skillPickup ? { id: this.skillPickup.id, y: +this.skillPickup.y.toFixed(1) } : null,      /** Active effect timers, so a skill that lasts can be observed while it runs. */
       activeSkill: this.player.skillId ? { id: this.player.skillId, remaining: +this.player.skillRemaining.toFixed(2) } : null,
+      /** The bubble's growth stage: its speed tier, and how far into the next one it is. */
+      stage: {
+        stage: this.stage.stage,
+        name: stageName(this.stage.stage),
+        absorbedInStage: this.stage.absorbedInStage,
+        neededForNext: this.stage.neededForNext,
+        speedMultiplier: this.stage.speedMultiplier,
+      },
       phase: this.phase,
       volume: this.player.volume,
       hitsSurvived: hitsSurvived(this.player.volume),

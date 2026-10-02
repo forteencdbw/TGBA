@@ -24,8 +24,8 @@ export class MainMenu {
    */
   private readonly backdrop = mkGraphics();
   private readonly button = mkGraphics();
-  private readonly title = mk('气泡的伟大冒险', 0xeaf9ff, 30);
-  private readonly subtitle = mk('THE GREAT BUBBLE ADVENTURE', 0x8fd4f0, 13);
+  private readonly title = mk('冒泡大作战', 0xeaf9ff, 34);
+  private readonly subtitle = mk('BUBBLE BATTLE', 0x8fd4f0, 13);
   private readonly levelLine = mk('', 0xbfe9ff, 15);
   private readonly buttonLabel = mk('开始游戏', 0x08131f, 18);
   private readonly hint = mk('WASD / 方向键移动   ·   触屏拖动跟随手指', 0x7fb6d4, 12);

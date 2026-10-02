@@ -1,8 +1,22 @@
-# 气泡的伟大冒险 / The Great Bubble Adventure
+# 冒泡大作战 / Bubble Battle
 
 一个关于「涌现」的 GameJam 项目。9:16 竖屏、手机优先、浏览器直接玩。
 
 设计文档：`.scratch/bubble-ascent/spec.md`
+
+## 改数值看这里
+
+**所有可调的机制数值都在 [`config/mechanics.json`](config/mechanics.json)**，每一项都有中文说明。
+改完存盘即可，页面会自动重载（Vite HMR），不需要重新构建。
+
+- JSON 语法，但允许写 `//` 注释和最后一项的尾逗号
+- 颜色写成 `"#rrggbb"` 字符串（JSON 没有 `0x` 字面量）
+- **数值写错会在浏览器控制台报错并指出是哪一项**，不会静默退回默认值——一个悄悄失效的配置
+  文件比没有配置文件更糟
+- 运行时的 `window.__GB.tuning` 和它是**同一个对象**，所以控制台里改和改文件是一回事
+
+`src/mechanisms.ts` 负责读取与校验，`src/config.ts` 只保留**不是数值旋钮**的东西（设计分辨率、
+世界投影、标定契约），因为那些改起来会牵动代码而不只是平衡。
 
 ## 跑起来
 
@@ -18,6 +32,8 @@ pnpm dev            # http://localhost:5173，同时暴露在局域网，手机�
 | `pnpm dev` | 开发服务器（HMR，局域网可访问） |
 | `pnpm typecheck` | TypeScript 类型检查 |
 | `pnpm build` | 类型检查 + 生产构建到 `dist/` |
+| `node scripts/verify-ui.mjs` | 主菜单 / 设置面板 / 暂停的流程验证（含"退出后环境音停止"） |
+| `node scripts/verify-mechanics.mjs` | 配置是否真的被读取，以及成长阶段是否真的让气泡变慢（测**位移**） |
 | `node scripts/verify-dist.mjs` | **验证打包产物真的能跑**（静态服务 `dist/` 于子目录下 + headless 启动） |
 | `node scripts/probe-layout.mjs <url> <w> <h> <out.png>` | 截一张图并打印布局数字（**人看**，不断言） |
 | `node scripts/measure-pixels.mjs` | 解 CDP 截图读真实像素（验证布局用，见下） |
@@ -35,7 +51,7 @@ node scripts/verify-dist.mjs            # 必做：确认打包产物能跑
 然后打包上传：
 
 ```powershell
-Compress-Archive -Path dist\* -DestinationPath release\the-great-bubble-adventure.zip
+Compress-Archive -Path dist\* -DestinationPath release\bubble-battle.zip
 ```
 
 **产物**：10 个文件 / **590 kB**（主包 gzip 后 101 kB），打成 zip **175 kB**。

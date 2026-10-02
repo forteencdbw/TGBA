@@ -498,6 +498,14 @@ export class Hud {
     elapsed: number,
     lateral: LateralAuthority,
     scrolled: number,
+    /**
+     * The growth stage, and how far into the next one.
+     *
+     * In the subline rather than the headline: the headline is the one number a player reads at a glance, and
+     * the stage is a slower-changing fact. The progress toward the next stage is the part that matters,
+     * because it is what makes "should I eat one more" a decision.
+     */
+    stage: { stage: number; name: string; absorbedInStage: number; neededForNext: number | null },
   ): void {
     // Distance still to travel, from the LEVEL's progress rather than the bubble's position. The bubble
     // is born on the seabed with the whole length ahead of it, and it cannot change this number by
@@ -507,11 +515,21 @@ export class Hud {
     // The talent and the skill share the subline: they are both "what am I this run", and the screen
     // has no room for a third line. The skill comes first because it is the one that changes.
     const tags = [this.skillLabel, this.talentLabel].filter(Boolean).join('   ·   ');
+    /**
+     * The stage readout: which tier, and how many more collectables to the next one.
+     *
+     * At the top stage it shows the name alone rather than a fake "complete" bar -- there is nothing left to
+     * earn, and the interesting information becomes the fact that the bubble is now at its slowest.
+     */
+    const stageText =
+      stage.neededForNext === null
+        ? `${stage.name} ${stage.stage}阶 满`
+        : `${stage.name} ${stage.stage}阶 ${stage.absorbedInStage}/${stage.neededForNext}`;
     this.subline.text = tags
-      ? `距海面 / TO SURFACE (m)   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
+      ? `距海面 / TO SURFACE (m)   ·   ${stageText}   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
       : this.seedLabel
-        ? `距海面 / TO SURFACE (m)   ·   ${this.seedLabel}`
-        : `距海面 / TO SURFACE (m)`;
+        ? `距海面 / TO SURFACE (m)   ·   ${stageText}   ·   ${this.seedLabel}`
+        : `距海面 / TO SURFACE (m)   ·   ${stageText}`;
 
     const { barX, barTop, barBottom, barW } = this.barGeometry;
     // Reads as a vessel filling up: the water level rises as the level advances, and the surface line is

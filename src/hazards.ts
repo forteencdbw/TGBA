@@ -19,7 +19,7 @@
  */
 
 import { Graphics } from 'pixi.js';
-import { tuning } from './config';
+import { mech, tuning } from './config';
 
 export type HazardKind = 'fish' | 'jelly' | 'trash' | 'crab';
 
@@ -87,6 +87,13 @@ export interface Hazard {
 }
 
 /** Tunables for D3. Kept together because they are only meaningful as a set. */
+/**
+ * Hazard behaviour.
+ *
+ * Values marked "(config)" come from `config/mechanics.json` and are the ones worth hand-tuning. The rest are
+ * internal shape constants -- how wide a fish's bite is, how fast it turns -- where a hand-edit would be
+ * guesswork rather than tuning. They live here so the file that uses them is also the file that documents them.
+ */
 export const hazardTuning = {
   /** Hazards on a screenful at the start, and the ceiling as the run goes on. */
   minActive: 2,
@@ -99,9 +106,9 @@ export const hazardTuning = {
   /**
    * Chance a fish gives up the chase for a bait bubble it crosses.
    *
-   * Well under half: this is a comedy beat that shows up occasionally, not the usual outcome. If a
-   * chase usually ends with the fish wandering off, the swarm stops being a threat and the joke has
-   * eaten the mechanic.
+   * Well under half: this is a comedy beat that shows up occasionally, not the usual outcome. If a chase
+   * usually ends with the fish wandering off, the swarm stops being a threat and the joke has eaten the
+   * mechanic.
    */
   fishBaitChance: 0.25,
   fishBaitSeconds: 1.6,
@@ -110,77 +117,73 @@ export const hazardTuning = {
   /** Trash falls slower than the water and grabs on contact. */
   trashSpeedFactor: 0.12,
   /**
-   * Drain while a trash bag is attached, in hit-points per second.
+   * Drain while a trash bag is attached, in hit-points per second. (config)
    *
-   * Set so a FULL grip (see `trashMinGripSeconds`) deals one hit. These two are a pair and must be
-   * tuned together: the drain is the trash bag's actual verb, and an earlier combination of a 0.5s
-   * grip with 1/6 per second could only ever accumulate 0.08 of a hit, so the drain was
-   * mathematically incapable of landing and the whole mechanic was inert at this game's speed.
+   * Set so a FULL grip (`trashMinGripSeconds`) deals exactly one hit. These two are a PAIR and must be tuned
+   * together: an earlier combination of a 0.5s grip with 1/6 per second could only ever accumulate 0.08 of a
+   * hit, so the drain was mathematically incapable of landing and the whole mechanic was inert.
    */
-  trashDrainPerSecond: 1 / 1.4,
+  trashDrainPerSecond: mech.hazards.trashDrainPerSecond,
   trashStruggleRelease: 0.55,
   /**
-   * Minimum seconds a trash bag holds on before struggling can tear it free.
+   * Minimum seconds a trash bag holds on before struggling can tear it free. (config)
    *
-   * Doubles as the drain window, which is why it is relatively long. A player who is accelerating
-   * counts as "struggling" and at this game's speed that is most of the time, so the grip needs a
-   * floor to be felt at all -- with none it lasted a single frame.
+   * Doubles as the drain window, which is why it is relatively long. "Struggling" is any deliberate movement
+   * input, and a player who is dodging qualifies most of the time, so the grip needs a floor or it lasts a
+   * single frame and is never felt.
    */
-  trashMinGripSeconds: 1.4,
-  /** Crab telegraph, then launch. The telegraph is the whole point: it is fair. */
+  trashMinGripSeconds: mech.hazards.trashMinGripSeconds,
   /**
-   * The telegraph fires when the player comes within this many metres above the crab.
+   * The crab's telegraph fires when the player comes within this many metres above it. (config)
    *
-   * Generous on purpose: it has to be visible while the player still has time to decide, and the
-   * crab is the one hazard whose effect is arguably GOOD (it launches you upward), so the player
-   * wants enough warning to aim at it.
+   * Generous on purpose: it has to be visible while the player still has time to decide, and the crab is the
+   * one hazard whose effect is arguably GOOD, so the player wants enough warning to aim at it.
    */
-  crabArmDistanceMeters: 55,
-  crabFuseSeconds: 1.2,
-  crabLaunchMps: tuning.hazardCrabLaunchMps,
+  crabArmDistanceMeters: mech.hazards.crabArmDistanceMeters,
+  crabFuseSeconds: mech.hazards.crabFuseSeconds,
+  crabLaunchMps: mech.hazards.crabLaunchMps,
   crabApexSeconds: 1.1,
 
   // --- Emergence (D5) -----------------------------------------------------
   /**
-   * Collectables a fish must swallow before it splits in two.
+   * Collectables a fish must swallow before it splits in two. (config)
    *
-   * Three, not one. At one, any fish that crosses a bubble doubles, and the population explodes from
-   * ambient food alone -- the swarm would grow whether or not the player did anything, which removes
-   * the causality the whole design rests on ("I got bigger, so the world got worse"). At three, the
-   * split is a consequence of a LOT of food appearing, which in practice means the player's own
-   * talent backlash or a bait bubble.
+   * Three, not one. At one, any fish that crosses a bubble doubles, and the population explodes from ambient
+   * food alone -- the swarm would grow whether or not the player did anything, which removes the causality the
+   * whole design rests on ("I got bigger, so the world got worse"). At three, a split is a consequence of a LOT
+   * of food appearing, which in practice means the player's own talent backlash or a bait bubble.
    */
-  fishFeedToSplit: 3,
+  fishFeedToSplit: mech.emergence.fishFeedToSplit,
   /** Seconds a fish spends digesting between meals. */
   fishDigestSeconds: 0.9,
   /**
-   * The fish's base perception radius in metres, before the player's size is factored in.
+   * The fish's base perception radius in metres, before the player's size is factored in. (config)
    *
-   * This is rule 2 of the emergence engine: perception GROWS WITH THE PLAYER'S VOLUME. It is what
-   * gives "getting bigger is dangerous" a number instead of a feeling.
+   * Rule 2 of the emergence engine: perception GROWS WITH THE PLAYER'S VOLUME. It is what gives "getting bigger
+   * is dangerous" a number instead of a feeling.
    */
-  fishPerceptionBaseMeters: 150,
-  /** Extra perception per unit of player volume above 1. */
-  fishPerceptionPerVolume: 90,
+  fishPerceptionBaseMeters: mech.emergence.fishPerceptionBaseMeters,
+  /** Extra perception per unit of player volume above 1. (config) */
+  fishPerceptionPerVolume: mech.emergence.fishPerceptionPerVolume,
   /**
-   * HARD CAP on fish.
+   * HARD CAP on fish. (config)
    *
-   * Exponential growth will brick a phone, so the population is capped and, past the cap, behaviour
-   * changes rather than more entities being created. The guard is not an optimisation: without it the
-   * design's own centrepiece is a crash.
+   * Exponential growth will brick a phone, so the population is capped and, past the cap, behaviour changes
+   * rather than more entities being created. The guard is not an optimisation: without it the design's own
+   * centrepiece is a crash.
    */
-  fishHardCap: 44,
+  fishHardCap: mech.emergence.fishHardCap,
   /**
    * Radius in metres a fish will snap up a collectable from.
    *
-   * Notably LARGER than the fish itself: this is meant to read as the swarm hoovering up the food the
-   * player was going to eat, which is the pressure that makes a bait bubble backfire.
+   * Notably LARGER than the fish itself: this is meant to read as the swarm hoovering up the food the player
+   * was going to eat, which is the pressure that makes a bait bubble backfire.
    */
   fishBiteMeters: 34,
-  /** How far a jellyfish or trash bag will drift toward the biggest nearby collectable. */
-  seekBiggestRangeMeters: 190,
+  /** How far a jellyfish or trash bag will drift toward the biggest nearby collectable. (config) */
+  seekBiggestRangeMeters: mech.emergence.seekBiggestRangeMeters,
   seekBiggestPullPerSecond: 0.35,
-} as const;
+};
 
 /** Per-kind presentation and collision size, as a fraction of the lane width. */
 const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; spin: number }> = {
