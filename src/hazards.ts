@@ -312,16 +312,6 @@ export class HazardField {
    */
   autoSpawn = false;
 
-  /**
-   * True once the level's scroll has finished.
-   *
-   * Needed because a hazard can be stranded: it sits in the cull band above the view, the scroll has
-   * stopped, so nothing will ever move it again. Measured at the end of a full level, exactly one hazard
-   * was stranded and the level could never finish. Once the level is over, anything still above the
-   * player can never be met, so it is discarded rather than left blocking the ending.
-   */
-  levelOver = false;
-
   update(dt: number, ctx: HazardContext): HazardEffect[] {
     const effects: HazardEffect[] = [];
     ctx.eatenBubbleIds = [];
@@ -429,11 +419,7 @@ export class HazardField {
 
     // Retire what has left the working area, plus a trash bag that has been torn open.
     this.hazards = this.hazards.filter((h) => {
-      let inside = h.y > ctx.min - 80 && h.y < ctx.max + 120;
-      // Once the level is over, anything above the top of the view is unreachable for good: the scroll
-      // has stopped, so it will never descend into reach. Discarding it here is what lets the ending
-      // condition be "the water is clear" without that condition being able to hang.
-      if (this.levelOver && h.y > ctx.max) inside = false;
+      const inside = h.y > ctx.min - 80 && h.y < ctx.max + 120;
       // `fired` is reused per kind: for trash it means "torn open", for a crab "already launched".
       // Neither should linger.
       const spent = h.fired && (h.kind === 'trash' || h.kind === 'crab');

@@ -112,6 +112,14 @@ export class WorldLayer {
 
   /** Background gradient is drawn in SCREEN pixels, behind everything. */
   private readonly gradient = new Graphics();
+  /**
+   * The darkened water outside the play area, drawn over the gradient.
+   *
+   * Screen pixels, and separate from the gradient because it is redrawn every frame rather than cached: its
+   * geometry depends on the lane's position and width, and caching it alongside the gradient's colours
+   * would tie two unrelated invalidation conditions together.
+   */
+  private readonly margins = new Graphics();
   /** Marine snow: world space. */
   private readonly snow = new Graphics();
 
@@ -128,11 +136,14 @@ export class WorldLayer {
   constructor() {
     this.snow.eventMode = 'none';
     this.gradient.eventMode = 'none';
+    this.margins.eventMode = 'none';
 
     this.world.addChild(this.snow);
     this.world.mask = this.maskShape;
 
-    this.root.addChild(this.gradient, this.world);
+    // Margin shading goes AFTER the gradient but BEFORE the world, so the water's colour is dimmed while
+    // the marine snow stays inside the lane it belongs to.
+    this.root.addChild(this.gradient, this.margins, this.world);
   }
 
   private seedSnow(laneWidth: number): void {
@@ -228,6 +239,26 @@ export class WorldLayer {
       this.gradient.rect(0, 0, viewport.width, viewport.height).fill(gradient);
     }
 
+    /**
+     * Dim the water OUTSIDE the play area, so the lane reads as a channel rather than the whole window
+     * being the game.
+     *
+     * A vertical gradient band either side, NOT a shape with a feathered point: the first attempt tapered
+     * the band to a point at mid-height, which drew a visible trapezoid outline -- it read as a decal stuck
+     * on top of the water rather than as the water being darker further from the lane.
+     *
+     * Screen space, rebuilt every frame because it depends on the lane's position.
+     */
+    this.margins.clear();
+    const marginWidth = viewport.left;
+    if (marginWidth > 1) {
+      const rightEdge = viewport.left + viewport.laneWidthPx;
+      // Left band: opaque at the canvas edge, fading to clear where the lane begins.
+      paintMargin(this.margins, 0, marginWidth, viewport.height, false);
+      // Right band, mirrored so both fade INWARD.
+      paintMargin(this.margins, rightEdge, viewport.width - rightEdge, viewport.height, true);
+    }
+
     // --- Marine snow (world space) ----------------------------------------
     // Graphics keeps its path until `clear()`, so this is mandatory: without it the circles
     // accumulate frame after frame and the snow smears outward into stray strokes.
@@ -259,6 +290,30 @@ function toCss(colour: number): string {
  */
 export function waterColourForTest(worldY: number, depth: number): number {
   return waterColour(worldY, depth);
+}
+
+/**
+ * Paint one margin band: darkened water that fades to clear toward the play area.
+ *
+ * @param mirrored when true the fade runs right-to-left, for the band on the far side of the lane.
+ *
+ * The gradient's colour stops carry the alpha, which is the only way Pixi expresses a fade in a fill -- two
+ * opaque stops would simply be a rectangle.
+ */
+function paintMargin(g: Graphics, x: number, width: number, height: number, mirrored: boolean): void {
+  if (width <= 0.5) return;
+  const dark = 'rgba(1,6,15,0.85)';
+  const clear = 'rgba(1,6,15,0)';
+  const gradient = new FillGradient({
+    start: { x: mirrored ? 1 : 0, y: 0 },
+    end: { x: mirrored ? 0 : 1, y: 0 },
+    colorStops: [
+      { offset: 0, color: dark },
+      { offset: 1, color: clear },
+    ],
+    textureSpace: 'local',
+  });
+  g.rect(x, 0, width, height).fill({ fill: gradient, alpha: 1 });
 }
 
 /**

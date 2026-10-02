@@ -81,7 +81,15 @@ class Game {
   /** Entries emitted from the timeline so far, for diagnostics. */
   private timelineEmitted = 0;
   /** Last few evaluations of the end condition, for probes. See `step`. */
-  private readonly endTrace: { scrolled: number; hazardCount: number; phase: string }[] = [];
+  private readonly endTrace: {
+    scrolled: number;
+    hazards: number;
+    bubbles: number;
+    pickup: number;
+    emitted: number;
+    total: number;
+    phase: string;
+  }[] = [];
   /**
    * Where recent timeline entries appeared, and where the view was at the time.
    *
@@ -272,7 +280,15 @@ class Game {
   }
 
   /** Test hook: the last few evaluations of the end condition, so a failure is diagnosable. */
-  get endTraceRef(): readonly { scrolled: number; hazardCount: number; phase: string }[] {
+  get endTraceRef(): readonly {
+    scrolled: number;
+    hazards: number;
+    bubbles: number;
+    pickup: number;
+    emitted: number;
+    total: number;
+    phase: string;
+  }[] {
     return this.endTrace;
   }
 
@@ -617,17 +633,6 @@ class Game {
       this.player.syncToCamera(this.camera.y, viewport.visibleDepthMeters);
     }
 
-    /**
-     * Tell both fields whether the level's scroll is finished.
-     *
-     * They use it to discard anything stranded above the view: with the scroll stopped, a hazard up there
-     * can never descend into reach, so leaving it would make "the water is clear" a condition that can
-     * never be satisfied -- which is exactly the hang that was reported.
-     */
-    const levelOver = this.scrolled >= LEVEL.scrollLength;
-    this.hazards.levelOver = levelOver;
-    this.field.levelOver = levelOver;
-
     this.field.update(dt, viewport.laneWidthMeters, min, max, this.player.volume, LEVEL.scrollSpeed);
 
     switch (this.phase) {
@@ -660,15 +665,17 @@ class Game {
     this.player.update(this.input, dt, this.lateral);
 
     /**
-     * Re-derive the world position after the player moved within the screen.
+     * Convert this frame's screen movement into a world position, then clamp back into the screen band.
      *
-     * The clamp that used to live here -- keeping the player within a lead limit of the scroll -- is
-     * gone, and its absence is the point. It existed to stop a player outrunning the current by holding
-     * up, which was only possible because the camera followed them. Now the camera does not care where
-     * the player is: they are bounded by the SCREEN instead, in `Player.update`, and cannot affect
-     * progress at all.
+     * The clamp is separate from the sync, and that matters: a sync that also re-read `screenY` would undo
+     * this frame's movement, which it did -- the bubble refused to move on screen at all.
+     *
+     * The lead-limit clamp that used to live here is gone, and its absence is the point. It existed to stop
+     * a player outrunning the current by holding up, which was only possible because the camera followed
+     * them. The camera now ignores the player entirely.
      */
     this.player.syncToCamera(this.camera.y, viewport.visibleDepthMeters);
+    this.player.clampToScreen(this.camera.y, viewport.visibleDepthMeters);
 
     // Hazards move AFTER the player, so a hazard's contact test uses the position the player is
     // actually at this frame rather than the one it started from.
@@ -685,33 +692,32 @@ class Game {
     if (this.input.consumeSkill()) this.useSkill();
 
     /**
-     * The level ends when the scroll is done AND everything it placed has left the water behind.
+     * The level ends when the SCROLL is done. That is the whole condition.
      *
-     * "The water is clear" was the earlier rule, and it HANGS. Measured at the end of a full level:
-     * `scroll=1500, emitted=135/135, hazards=1, phase=playing` forever. The stranded hazard was sitting
-     * in the cull band above the view, and the scroll had stopped, so nothing would ever move it again --
-     * a hazard the player cannot see and cannot reach, blocking the ending indefinitely.
+     * It used to also require every hazard, collectable and skill pickup to be gone, and that was a
+     * mistake on two counts. It was slow -- measured, a run reached the end of its scroll at 61.6s and then
+     * sat for another 3.8 seconds waiting for the last stragglers to drain out of the water, which reads as
+     * the game having frozen at 0. And it was fragile: any entity that could not leave the water would hold
+     * the level open forever, which needed a second rule to discard stranded items, which needed a third to
+     * keep it honest.
      *
-     * "Everything has passed below the view" is the rule that cannot hang: either something is still
-     * coming, or it is behind the player for good. The count check keeps it honest, so items still queued
-     * in the timeline cannot end the level early.
+     * The scroll is a level's own progress, so when it finishes the level is over. Nothing else needs to be
+     * true.
      */
-    if (
-      this.scrolled >= LEVEL.scrollLength &&
-      this.timelineEmitted >= TIMELINE.length &&
-      this.hazards.hazards.length === 0 &&
-      this.field.bubbles.length === 0 &&
-      this.skillPickup === null
-    ) {
+    if (this.scrolled >= LEVEL.scrollLength) {
       this.reachSurface();
     }
 
     // Trace the end condition, so a probe can see WHY a level failed to end rather than only that it
-    // did. A win condition with two clauses is exactly the kind of thing that reports "still playing"
+    // did. A win condition with five clauses is exactly the kind of thing that reports "still playing"
     // for several possible reasons.
     this.endTrace.push({
       scrolled: +this.scrolled.toFixed(1),
-      hazardCount: this.hazards.hazards.length,
+      hazards: this.hazards.hazards.length,
+      bubbles: this.field.bubbles.length,
+      pickup: this.skillPickup ? 1 : 0,
+      emitted: this.timelineEmitted,
+      total: TIMELINE.length,
       phase: this.phase,
     });
     if (this.endTrace.length > 8) this.endTrace.shift();

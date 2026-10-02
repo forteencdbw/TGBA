@@ -254,21 +254,13 @@ export class EntityField {
   /** Drop anything that has left the working area. */
   private recycle(min: number, max: number): void {
     const span = max - min;
-    this.bubbles = this.bubbles.filter((b) => {
-      let inside =
+    this.bubbles = this.bubbles.filter(
+      (b) =>
         b.y > min - span * EntityField.CULL_BELOW_FRACTION &&
-        b.y < max + span * EntityField.CULL_ABOVE_FRACTION;
-      // Once the level is over, anything above the view can never be reached: the scroll has stopped, so
-      // it will not descend. Discarded for the same reason as a stranded hazard -- otherwise "the water is
-      // clear" is a condition that can never be satisfied.
-      if (this.levelOver && b.y > max) inside = false;
-      return inside;
-    });
+        b.y < max + span * EntityField.CULL_ABOVE_FRACTION,
+    );
     this.specks = this.specks.filter((s) => s.y > min - span * 0.05 && s.y < max + span * 0.05);
   }
-
-  /** True once the level's scroll has finished. See the cull in `recycle`. */
-  levelOver = false;
 
   private topUpSpecks(laneWidth: number, min: number, max: number): void {
     const speckMargin = 4;

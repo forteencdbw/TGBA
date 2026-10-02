@@ -107,12 +107,32 @@ export class Player {
   }
 
   /**
-   * Recompute the world position from the camera.
+   * Derive the world position from the camera and the current `screenY`.
    *
-   * The only place `y` is written from position, which is what keeps the two coordinate systems from
-   * drifting apart.
+   * Called BOTH before and after `update`: before, so the camera's scroll is reflected in the world
+   * position the hazards are tested against; after, so the movement `update` just applied is converted
+   * into world space.
    */
   syncToCamera(cameraY: number, visibleDepthMeters: number): void {
+    this.y = this.worldYFor(cameraY, visibleDepthMeters);
+  }
+
+  /**
+   * Pull `screenY` back into its legal band, and re-derive `y`.
+   *
+   * SEPARATE from `syncToCamera` on purpose, and the separation is a bug fix. Folding it in made
+   * `syncToCamera` non-idempotent: it re-read `screenY` from `y`, so calling it at the end of a frame --
+   * which the game does, to convert movement into world space -- undid that frame's movement entirely. The
+   * bubble simply refused to move on screen.
+   *
+   * This runs only after everything that can displace the bubble, which is where the clamp belongs: a
+   * launch impulse is applied on top of the player's own input, so it can push past the band without the
+   * input ever being illegal.
+   */
+  clampToScreen(cameraY: number, visibleDepthMeters: number): void {
+    if (visibleDepthMeters <= 0) return;
+    const fromY = (this.y - cameraY) / visibleDepthMeters + 0.5;
+    this.screenY = Math.min(Math.max(fromY, Player.SCREEN_Y_MIN), Player.SCREEN_Y_MAX);
     this.y = this.worldYFor(cameraY, visibleDepthMeters);
   }
 
