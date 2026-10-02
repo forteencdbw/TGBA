@@ -242,6 +242,71 @@ try {
   );
   console.log(`\nheld "up" 2.5s -> screenY ${bounds.top}; then "down" 3.5s -> ${bounds.bottom}  (bounds 0.12..0.94)`);
 
+  // ------------------------------------------------------------ the progress readout
+  /**
+   * The reported bug: "the progress bar still changes when I move up and down".
+   *
+   * The bar and the headline were read off the PLAYER's world position, which now includes their screen
+   * offset -- so steering moved the level's progress. Both must follow the SCROLL and nothing else.
+   */
+  const readout = await evalJson(
+    `(async function () {
+       const g = window.__GB.game;
+       const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+       g.debugSetSteadyCruise();
+       g.player.screenY = 0.5;
+       for (let i = 0; i < 4; i++) await raf();
+       const before = { headline: g.hudRef.headlineText, depth: g.player.depth, screenY: g.player.screenY };
+       // Shove the bubble to the very top of the window WITHOUT touching the scroll.
+       g.player.screenY = 0.94;
+       for (let i = 0; i < 4; i++) await raf();
+       const after = { headline: g.hudRef.headlineText, depth: g.player.depth, screenY: g.player.screenY };
+       g.player.screenY = 0.5;
+       return JSON.stringify({ before, after });
+     })()`,
+    true,
+  );
+  console.log(
+    `\nprogress readout with the bubble moved to the top of the window:\n  headline "${readout.before.headline}" -> "${readout.after.headline}"   (world depth ${readout.before.depth.toFixed(0)} -> ${readout.after.depth.toFixed(0)})`,
+  );
+
+  // ------------------------------------------------------------ spawn position
+  /**
+   * The other reported bug: "enemies and bubbles spawn in the middle of the screen".
+   *
+   * Checked against the view the game itself reports at the moment of placement, which is the only way
+   * to tell "entered from above" from "appeared in the middle".
+   */
+  const spawn = await evalJson(
+    `(async function () {
+       const g = window.__GB.game;
+       const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+       // Finish the current run and wait for a fresh one, because startRun clears the spawn log and
+       // the timeline restarts from zero. Sampling before the new run reaches its first entry reads an
+       // empty log, which looks identical to "nothing spawned" -- a false failure.
+       g.debugSkipToLevelEnd();
+       const t0 = performance.now();
+       while (g.diagnostics.phase !== 'burst' && performance.now() - t0 < 8000) await raf();
+       const t1 = performance.now();
+       while (g.diagnostics.phase !== 'playing' && performance.now() - t1 < 15000) await raf();
+       // The level's first entry is at 30m, so wait for actual placements rather than for a duration.
+       const t2 = performance.now();
+       while (g.spawnLogRef.length < 3 && performance.now() - t2 < 8000) await raf();
+       return JSON.stringify({ log: g.spawnLogRef, scrolled: +g.diagnostics.level.scrolled.toFixed(1) });
+     })()`,
+    true,
+  );
+  const spawns = spawn.log;
+  const allAboveTheView = spawns.length > 0 && spawns.every((s) => s.worldY >= s.visibleTop - 1);
+  const noneInsideTheView = spawns.every((s) => s.worldY > s.visibleTop - 1);
+  console.log('\nspawn positions over ' + spawns.length + ' entries at scroll ' + spawn.scrolled + 'm (worldY vs visibleTop):');
+  for (const s of spawns.slice(0, 5)) {
+    console.log(
+      '  ' + s.kind.padEnd(8) + ' worldY=' + String(s.worldY).padStart(8) +
+      '  visibleTop=' + String(s.visibleTop).padStart(8) + '  visibleBottom=' + s.visibleBottom,
+    );
+  }
+
   // ------------------------------------------------------------ restart
   /**
    * The earlier regression: "start the game and it suddenly becomes 130m, then ends."
@@ -299,6 +364,17 @@ try {
     touchMovesUp: drag.dScreenY > 0.05,
     // The bubble stays inside the window it moves in.
     staysWithinTheScreen: bounds.top <= 0.941 && bounds.bottom >= 0.119 && bounds.top > bounds.bottom,
+    /**
+     * The progress readout must follow the SCROLL, not the bubble.
+     *
+     * Both halves: the headline must survive the bubble being shoved to the top of the window, and the
+     * world depth must actually have changed, or the test would pass on a frozen HUD.
+     */
+    readoutIgnoresTheBubblesScreenPosition:
+      Math.abs(Number(readout.after.headline) - Number(readout.before.headline)) <= 12 &&
+      Math.abs(readout.after.depth - readout.before.depth) > 20,
+    /** Content enters from ABOVE the view rather than appearing inside it. */
+    contentSpawnsAboveTheView: allAboveTheView && noneInsideTheView,
     // The reported restart regression, as separate facts so a failure says which part broke.
     restartResetsTheScroll: restart.scroll < 60,
     restartShowsTheFullDistance: Number(restart.headline) > 1200,

@@ -379,10 +379,24 @@ export class Hud {
     return this.headline.text;
   }
 
-  update(player: Player, fps: number, nominalSeconds: number, elapsed: number, lateral: LateralAuthority): void {
-    // The headline is the distance still to travel, NOT the distance travelled: the bubble is
-    // born on the seabed, so it starts at DEPTH_TOTAL metres away.
-    this.headline.text = `${Math.max(0, Math.round(player.depth))}`;
+  /**
+   * @param scrolled how far the LEVEL has travelled, in metres. Progress belongs to the scroll, not to
+   *   the player: the bubble moves freely within the window, so reading progress off its world position
+   *   made every press of "up" advance the bar.
+   */
+  update(
+    player: Player,
+    fps: number,
+    nominalSeconds: number,
+    elapsed: number,
+    lateral: LateralAuthority,
+    scrolled: number,
+  ): void {
+    // Distance still to travel, from the LEVEL's progress rather than the bubble's position. The bubble
+    // is born on the seabed with the whole length ahead of it, and it cannot change this number by
+    // steering -- which is exactly the point.
+    const remaining = Math.max(0, DEPTH_TOTAL - scrolled);
+    this.headline.text = `${Math.round(remaining)}`;
     // The talent and the skill share the subline: they are both "what am I this run", and the screen
     // has no room for a third line. The skill comes first because it is the one that changes.
     const tags = [this.skillLabel, this.talentLabel].filter(Boolean).join('   ·   ');
@@ -390,13 +404,13 @@ export class Hud {
       ? `距海面 / TO SURFACE (m)   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
       : this.seedLabel
         ? `距海面 / TO SURFACE (m)   ·   ${this.seedLabel}`
-        : '距海面 / TO SURFACE (m)';
+        : `距海面 / TO SURFACE (m)`;
 
     const { barX, barTop, barBottom, barW } = this.barGeometry;
-    // Reads as a vessel filling up: the water level rises with the bubble, and the surface line
-    // is the cursor. Empty at the seabed, full at the surface.
-    const progress = Math.min(Math.max(player.depth / DEPTH_TOTAL, 0), 1);
-    const rise = 1 - progress;
+    // Reads as a vessel filling up: the water level rises as the level advances, and the surface line is
+    // the cursor. Empty at the seabed, full at the surface.
+    const travelled = Math.min(Math.max(scrolled / DEPTH_TOTAL, 0), 1);
+    const rise = travelled;
     const s = this.headline.scale.x;
 
     const g = this.gauge;

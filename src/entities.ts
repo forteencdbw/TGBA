@@ -117,20 +117,26 @@ export class EntityField {
   /**
    * Place whatever the level's timeline calls for as the camera passes it.
    *
-   * This replaces the old "keep a population topped up" model. A level is now AUTHORED: the entries
-   * say what exists and where, so nothing appears that the designer did not ask for. The cursor only
-   * moves forwards, so an entry is emitted exactly once however the frame rate behaves.
+   * This replaces the old "keep a population topped up" model. A level is now AUTHORED: the entries say
+   * what exists and where, so nothing appears that the designer did not ask for. The cursor only moves
+   * forwards, so an entry is emitted exactly once however the frame rate behaves.
    *
    * @param scrollMetres how far the camera has travelled from the seabed
+   * @param spawnWorldY the world y a new entry appears at. Pass the TOP of the visible range, not the
+   *   camera's own position.
+   *
+   *   The distinction is the whole difference between content descending into view and content appearing
+   *   mid-screen. `entry.at` says WHEN an entry happens, and the camera's position is the middle of the
+   *   screen, so placing at the camera's y made everything materialise in the centre -- which reads as
+   *   spawning rather than as a current the player is swimming against. The caller owns this because only
+   *   the camera knows how tall the window is.
    */
-  placeTimeline(timeline: readonly LevelEntry[], scrollMetres: number): void {
+  placeTimeline(timeline: readonly LevelEntry[], scrollMetres: number, spawnWorldY: number): void {
     while (this.timelineCursor < timeline.length) {
       const entry = timeline[this.timelineCursor];
       if (!entry || entry.at > scrollMetres) break;
       this.timelineCursor++;
-      // Placed at its own distance, so it enters from the top of the screen and travels down with the
-      // scroll rather than appearing in place.
-      this.pending.push({ entry, worldY: entry.at });
+      this.pending.push({ entry, worldY: spawnWorldY });
     }
   }
 

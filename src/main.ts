@@ -82,6 +82,13 @@ class Game {
   private timelineEmitted = 0;
   /** Last few evaluations of the end condition, for probes. See `step`. */
   private readonly endTrace: { scrolled: number; hazardCount: number; phase: string }[] = [];
+  /**
+   * Where recent timeline entries appeared, and where the view was at the time.
+   *
+   * Exists because "enemies spawn in the middle of the screen" cannot be checked from a screenshot and
+   * is a single comparison between two numbers.
+   */
+  private readonly spawnLog: { kind: string; worldY: number; visibleTop: number; visibleBottom: number }[] = [];
 
   private seedLabel: string = SEEDS[0];
   private elapsed = 0;
@@ -263,6 +270,11 @@ class Game {
     return this.endTrace;
   }
 
+  /** Test hook: where recent timeline entries appeared relative to the view. */
+  get spawnLogRef(): readonly { kind: string; worldY: number; visibleTop: number; visibleBottom: number }[] {
+    return this.spawnLog;
+  }
+
   /**
    * Test hook: jump the scroll to the end of the level and clear the water.
    *
@@ -273,7 +285,7 @@ class Game {
   debugSkipToLevelEnd(): void {
     this.scrolled = LEVEL.scrollLength;
     this.timelineEmitted = TIMELINE.length;
-    this.field.placeTimeline(TIMELINE, this.scrolled);
+    this.field.placeTimeline(TIMELINE, this.scrolled, this.camera.visibleWorldRange(0).max);
     this.field.takePending();
     this.hazards.hazards = [];
     // Move the CAMERA, not the player: the scroll is the level's position, and the player's world
@@ -568,7 +580,15 @@ class Game {
       this.camera.setScroll(this.scrolled);
       this.player.syncToCamera(this.camera.y, viewport.visibleDepthMeters);
       if (this.phase === 'playing') {
-        this.field.placeTimeline(TIMELINE, this.scrolled);
+        /**
+         * Spawn at the TOP of the visible range, so content descends into view.
+         *
+         * Not at `this.scrolled`, which is the MIDDLE of the screen. Placing there made every enemy and
+         * bubble materialise in the centre, which reads as spawning rather than as a current the player
+         * is swimming against -- and gave the player no time to react, since the thing appeared at the
+         * distance they were about to occupy.
+         */
+        this.field.placeTimeline(TIMELINE, this.scrolled, this.camera.visibleWorldRange(0).max);
         for (const placed of this.field.takePending()) {
           this.emitTimelineEntry(placed.entry, placed.worldY, viewport.laneWidthMeters);
           this.timelineEmitted++;
@@ -655,14 +675,23 @@ class Game {
   /**
    * Place one timeline entry.
    *
-   * The timeline is the level, so this is where a level's content becomes live objects. Entries are
-   * placed at their own distance, which means they enter from the top of the screen and travel down with
-   * the scroll rather than appearing in place.
+   * The timeline is the level, so this is where a level's content becomes live objects. Entries appear at
+   * the TOP of the visible range and travel down with the scroll, rather than materialising at the
+   * player's distance.
    *
    * Collectables go into the shared field; hazards and skills are owned by the game, so the field hands
    * them over rather than building them.
    */
   private emitTimelineEntry(entry: LevelEntry, worldY: number, laneWidth: number): void {
+    // Recorded so a probe can prove content ENTERS from above the view rather than appearing on screen.
+    // A "spawns in the middle" bug is invisible in a screenshot and obvious in these two numbers.
+    this.spawnLog.push({
+      kind: entry.kind,
+      worldY: +worldY.toFixed(1),
+      visibleTop: +this.camera.visibleWorldRange(0).max.toFixed(1),
+      visibleBottom: +this.camera.visibleWorldRange(0).min.toFixed(1),
+    });
+    if (this.spawnLog.length > 12) this.spawnLog.shift();
     if (entry.kind === 'bubble') {
       this.field.bubbles.push(this.field.bubbleFromEntry({ ...entry, at: worldY }, laneWidth, visualRadiusFraction(this.player.volume)));
       return;
@@ -1128,6 +1157,7 @@ class Game {
     this.scrolled = 0;
     this.timelineEmitted = 0;
     this.endTrace.length = 0;
+    this.spawnLog.length = 0;
     this.trashDrain = 0;
     this.comedyBeats = 0;
     this.lastComedyBeat = null;
@@ -1209,7 +1239,7 @@ class Game {
 
   private render(dt: number): void {
     this.scene.update(this.camera, this.player, dt);
-    this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral);
+    this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled);
     this.touch.update();
 
     this.drawPickups();
