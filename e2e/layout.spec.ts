@@ -77,17 +77,48 @@ test.describe('layout holds at any canvas size', () => {
             game: {
               canvasSize: { width: number; height: number };
               settingsRef: { geometry: { gear: { x: number; y: number; radius: number } } };
-              touchRef: { skillGeometry: { x: number; y: number; radius: number } };
+              touchRef: {
+                skillGeometry: { x: number; y: number; radius: number };
+                spitGeometry: { x: number; y: number; radius: number };
+                compressGeometry: { x: number; y: number; radius: number };
+              };
             };
           };
         }).__GB.game;
-        return { canvas: g.canvasSize, gear: g.settingsRef.geometry.gear, skill: g.touchRef.skillGeometry };
+        return {
+          canvas: g.canvasSize,
+          gear: g.settingsRef.geometry.gear,
+          controls: {
+            skill: g.touchRef.skillGeometry,
+            spit: g.touchRef.spitGeometry,
+            compress: g.touchRef.compressGeometry,
+          },
+        };
       });
 
       const label = `${size.width}x${size.height}`;
       expect(geo.gear.x - geo.gear.radius, `${label}: the gear must be inside the canvas`).toBeGreaterThanOrEqual(0);
       expect(geo.gear.x + geo.gear.radius, `${label}: the gear must not hang off the right edge`).toBeLessThanOrEqual(geo.canvas.width + 1);
       expect(geo.gear.y - geo.gear.radius, `${label}: the gear must be below the top edge`).toBeGreaterThanOrEqual(0);
+
+      /**
+       * Every thumb control, which is what this test's NAME has always promised.
+       *
+       * It only ever checked the gear, and the gap is exactly the kind of thing that goes unnoticed: the compress
+       * button is stacked ABOVE the spit button, which is the first control whose position depends on another
+       * control's size -- so on a narrow lane a fixed pixel gap could have pushed it off the top of the reachable
+       * area, or dropped it on top of the wheel.
+       */
+      for (const [name, c] of Object.entries(geo.controls)) {
+        expect(c.x - c.radius, `${label}: the ${name} button must be inside the left edge`).toBeGreaterThanOrEqual(0);
+        expect(c.x + c.radius, `${label}: the ${name} button must not hang off the right edge`).toBeLessThanOrEqual(geo.canvas.width + 1);
+        expect(c.y - c.radius, `${label}: the ${name} button must be below the top edge`).toBeGreaterThanOrEqual(0);
+        expect(c.y + c.radius, `${label}: the ${name} button must be above the bottom edge`).toBeLessThanOrEqual(geo.canvas.height + 1);
+      }
+
+      // And the two left-hand controls must not sit on top of each other: a thumb aiming for one would hit both.
+      const gap = geo.controls.spit.y - geo.controls.compress.y - geo.controls.spit.radius - geo.controls.compress.radius;
+      expect(gap, `${label}: the compress and spit buttons must not overlap`).toBeGreaterThan(0);
     }
   });
 

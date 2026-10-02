@@ -8,6 +8,16 @@ function suctionFieldColor(): number {
 }
 
 /**
+ * How much smaller the compress button is than the spit button.
+ *
+ * Sized by SHAPE rather than by position, because the two are the same kind of verb and sit in the same column:
+ * the bigger one is the reflex (spit), the smaller one is the considered action (digest), and the sizes say which
+ * a thumb should find without looking. Kept here rather than in the config for the same reason the other button
+ * geometry is: it is one number describing a relationship between two controls, not a value anyone tunes alone.
+ */
+const COMPRESS_BUTTON_SCALE = 0.8;
+
+/**
  * The on-screen thumb wheel: a virtual analog stick at the bottom of the lane.
  *
  * ---------------------------------------------------------------------------------------------
@@ -66,6 +76,14 @@ export class TouchControls {
    * has room for one.
    */
   private suctionPointer: number | null = null;
+  /**
+   * The pointer holding the compress button, or null.
+   *
+   * A state rather than an edge, because digesting lasts as long as the thumb is down and costs the player both
+   * their suction field and their hit points while it does. Tracked so that a second finger cannot release a
+   * compression the first is still holding, the same reason the suction pointer exists.
+   */
+  private compressPointer: number | null = null;
   /** Knob offset from the pad centre, in canvas pixels, already clamped to the radius. */
   private knobX = 0;
   private knobY = 0;
@@ -83,6 +101,18 @@ export class TouchControls {
   private skillFlash = 0;
   /** Drives the press pulse on the spit button. */
   private spitFlash = 0;
+
+  /**
+   * The compression pulse's phase, in radians.
+   *
+   * Read from the WALL CLOCK rather than from a game clock, and that is deliberate: this drives one decorative
+   * ring around a button, it must keep moving even while the game is paused behind the settings panel, and
+   * threading the game's own elapsed time through every call site of `update()` -- which the pointer handlers
+   * also make -- would be plumbing for a sine wave. Nothing is asserted about it and nothing depends on it.
+   */
+  private get compressPulse(): number {
+    return (performance.now() / 1000) * mech.digest.pulseHz * Math.PI * 2;
+  }
   /**
    * The spit button's geometry, in the bottom-LEFT corner.
    *
@@ -90,6 +120,18 @@ export class TouchControls {
    * to the wheel for a right-handed player to reach across, and far enough that a wheel drag never starts on it.
    */
   private spitButton = { x: 0, y: 0, radius: 0 };
+  /**
+   * The compress button, stacked directly ABOVE the spit button.
+   *
+   * Above rather than beside, because the two are the same kind of verb -- both act on the stomach -- and because
+   * the left column is the only place with room. Deliberately the smaller of the two: spitting is the reflex and
+   * compressing is the considered action, so the sizes say which one a thumb should find without looking.
+   *
+   * They have to be SEPARATE controls, unlike suction and the skill, which share one because they are never
+   * wanted at once. Spitting and digesting are a choice between two things the player wants for different
+   * reasons, so a control where one happens on the way to the other is not a choice at all.
+   */
+  private compressButton = { x: 0, y: 0, radius: 0 };
 
   constructor(private readonly input: Input) {
     this.root.eventMode = 'none';
@@ -142,6 +184,21 @@ export class TouchControls {
     }
 
     /**
+     * The compress button holds a STATE, so it is claimed and released like the suction button.
+     *
+     * Nothing fires on the press: compressing is not an event, it is a commitment, and the only thing the press
+     * does is start the thumb's claim on it.
+     */
+    if (this.isInCompressButton(x, y)) {
+      if (this.compressPointer === null) {
+        this.compressPointer = pointerId;
+        this.input.setCompressHeld(true);
+      }
+      this.update();
+      return;
+    }
+
+    /**
      * The wheel claims a touch that starts ON the pad, and ignores one that starts elsewhere.
      *
      * Not "the whole screen is a stick": a touch in the water has to be free for the skill button and for the
@@ -173,6 +230,13 @@ export class TouchControls {
       this.input.suctionHeld = false;
       this.update();
     }
+    // Lifting off the compress button ends the digestion. Same reasoning as the field: it costs the player both
+    // suction and health, so it has to stop the instant the thumb does.
+    if (this.compressPointer === pointerId) {
+      this.compressPointer = null;
+      this.input.setCompressHeld(false);
+      this.update();
+    }
     if (this.wheelPointer !== pointerId) return;
     // Recentre. The knob is a stick, not a place: unlike a drag, releasing must not leave the bubble heading
     // for wherever the thumb happened to stop.
@@ -190,6 +254,7 @@ export class TouchControls {
   releaseAll(): void {
     this.wheelPointer = null;
     this.suctionPointer = null;
+    this.compressPointer = null;
     this.knobX = 0;
     this.knobY = 0;
     this.deflection = 0;
@@ -197,6 +262,7 @@ export class TouchControls {
     this.input.wheelY = 0;
     this.input.wheelHeld = false;
     this.input.suctionHeld = false;
+    this.input.setCompressHeld(false);
     this.update();
   }
 
@@ -227,6 +293,15 @@ export class TouchControls {
     const dx = x - this.spitButton.x;
     const dy = y - this.spitButton.y;
     const reach = this.spitButton.radius * 1.35;
+    return dx * dx + dy * dy <= reach * reach;
+  }
+
+  /** Slightly tighter than the other two: the compress button sits above the spit button, and a generous reach
+   *  would let a thumb aiming for one land on the other. */
+  private isInCompressButton(x: number, y: number): boolean {
+    const dx = x - this.compressButton.x;
+    const dy = y - this.compressButton.y;
+    const reach = this.compressButton.radius * 1.2;
     return dx * dx + dy * dy <= reach * reach;
   }
 
@@ -324,6 +399,19 @@ export class TouchControls {
       y: canvasHeight - buttonRadius - 22 * scale,
       radius: buttonRadius,
     };
+    /**
+     * The compress button stacks above the spit button.
+     *
+     * `compressScale` shrinks it, so the left column reads as one reflex action (spit) with a second, more
+     * deliberate one above it (compress). The gap is proportional to the button rather than fixed, so the two
+     * cannot overlap on a narrow lane.
+     */
+    const compressRadius = buttonRadius * COMPRESS_BUTTON_SCALE;
+    this.compressButton = {
+      x: this.spitButton.x,
+      y: this.spitButton.y - buttonRadius - compressRadius - 10 * scale,
+      radius: compressRadius,
+    };
     this.update();
   }
 
@@ -332,6 +420,55 @@ export class TouchControls {
     this.drawWheel();
     this.drawSkillButton();
     this.drawSpitButton();
+    this.drawCompressButton();
+  }
+
+  /**
+   * The compress button: hold to digest.
+   *
+   * A separate control from the spit button rather than its hold half, and the reason is the design rather than
+   * the ergonomics: spitting and digesting are the two things a player CHOOSES BETWEEN, and a control that spits
+   * on the way into digesting is not a choice. It would also make a lone item impossible to digest, since the
+   * press would have fired it before the hold began.
+   *
+   * Drawn with INWARD ticks around a shrinking core, which is the same language the bubble's own rim uses while
+   * compressing -- so "I am squeezing the contents down" reads the same on the control and on the thing being
+   * squeezed. Gold would have said "spit"; this says "press", and it is the smaller of the two because spitting
+   * is the reflex and digesting is the considered action.
+   */
+  private drawCompressButton(): void {
+    const g = this.buttonGfx;
+    const cb = this.compressButton;
+    if (cb.radius <= 0) return;
+
+    const compressing = this.compressPointer !== null;
+    const accent = mech.digest.rimColor;
+
+    if (compressing) {
+      const pulse = 0.5 + 0.5 * Math.sin(this.compressPulse);
+      g.circle(cb.x, cb.y, cb.radius * (1.3 + 0.14 * pulse)).fill({ color: accent, alpha: 0.12 + 0.14 * pulse });
+      g.circle(cb.x, cb.y, cb.radius * (1.3 + 0.14 * pulse)).stroke({
+        color: accent,
+        alpha: 0.8,
+        width: Math.max(1, 2 * this.scale),
+      });
+    }
+
+    g.circle(cb.x, cb.y, cb.radius).fill({ color: compressing ? 0x18342c : 0x1b2a24, alpha: 0.66 });
+    g.circle(cb.x, cb.y, cb.radius).stroke({ color: accent, alpha: compressing ? 0.95 : 0.5, width: 2 });
+
+    // Four inward ticks, so the shape reads as a squeeze rather than as a direction or a launch.
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const outer = cb.radius * 0.8;
+      const inner = cb.radius * (compressing ? 0.34 : 0.52);
+      g.moveTo(cb.x + Math.cos(a) * outer, cb.y + Math.sin(a) * outer);
+      g.lineTo(cb.x + Math.cos(a) * inner, cb.y + Math.sin(a) * inner);
+    }
+    g.stroke({ color: accent, alpha: compressing ? 0.95 : 0.6, width: Math.max(1, 1.8 * this.scale) });
+
+    // The core shrinks while compressing, which is the whole verb in one shape.
+    g.circle(cb.x, cb.y, cb.radius * (compressing ? 0.14 : 0.22)).fill({ color: 0xd8fff0, alpha: 0.85 });
   }
 
   /**
@@ -342,7 +479,7 @@ export class TouchControls {
    * rather than requiring the player to remember which side is which.
    *
    * The count of items inside is not shown here: that belongs on the bubble, where the capacity it represents
-   * actually is. This button only has to say "I am the way things leave".
+   * actually is, and where the bulge already says it.
    */
   private drawSpitButton(): void {
     const g = this.buttonGfx;
@@ -357,7 +494,7 @@ export class TouchControls {
     g.circle(sb.x, sb.y, sb.radius).fill({ color: 0x2a2418, alpha: 0.72 });
     g.circle(sb.x, sb.y, sb.radius).stroke({ color: 0xffd479, alpha: 0.85, width: 2 });
 
-    // Three outward ticks, so the button reads as a launch rather than a direction.
+    // Three outward ticks, so the button reads as a launch rather than as a direction.
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
       const inner = sb.radius * 0.34;
@@ -516,6 +653,10 @@ export class TouchControls {
     hasSkill: boolean;
     /** Whether the suction field is being held. */
     sucking: boolean;
+    /** Whether the stomach is being compressed, from either device. */
+    compressing: boolean;
+    /** The pointer holding the compress button, or null. Proves the hold is owned by one finger. */
+    compressPointer: number | null;
   } {
     return {
       held: this.wheelPointer !== null,
@@ -529,6 +670,8 @@ export class TouchControls {
       knobY: this.knobY,
       hasSkill: this.hasSkill,
       sucking: this.input.suctionHeld,
+      compressing: this.input.compressing,
+      compressPointer: this.compressPointer,
     };
   }
 
@@ -545,6 +688,11 @@ export class TouchControls {
   /** Spit button geometry, so a probe can press the real control instead of guessing. */
   get spitGeometry(): { x: number; y: number; radius: number } {
     return { ...this.spitButton };
+  }
+
+  /** Compress button geometry, so a probe can hold the real control instead of guessing. */
+  get compressGeometry(): { x: number; y: number; radius: number } {
+    return { ...this.compressButton };
   }
 
   /** Named layers, exposed so a test can inspect them. */

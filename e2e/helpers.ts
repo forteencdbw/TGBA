@@ -118,7 +118,24 @@ export interface Diagnostics {
     overloaded: boolean;
     fuseRemaining: number | null;
     fuseFraction: number;
+    /** The bulge in item EQUIVALENTS, so a half-digested item counts for the half that is left. */
     bulge: number;
+  };
+  /**
+   * Digestion, and the eating rank it buys.
+   *
+   * `energy` is reported alongside `tierBonus` rather than only the rank, because "how far into the next rank"
+   * is what a test needs in order to check the conversion is going at the configured rate.
+   */
+  digest: {
+    energy: number;
+    tierBonus: number;
+    tier: number;
+    compressing: boolean;
+    progress: number;
+    completed: number;
+    drained: number;
+    contents: { kind: string; mass: number; digest: number }[];
   };
   /** Which skill is in the slot and how many uses are left, or null. */
   skill: { id: string; uses: number } | null;

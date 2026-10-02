@@ -238,11 +238,26 @@ test.describe('spitting', () => {
           const target = g.game.hazardsRef.hazards[g.game.hazardsRef.hazards.length - 1] as { x: number; y: number; kind: string } | undefined;
           if (!target) return fail('no target spawnable');
           /**
-           * Placed FAR up the screen, beyond the suction radius, so the field cannot drag it and the shot has to
+           * Placed far up the screen, beyond the suction radius, so the field cannot drag it and the shot has to
            * cross a real distance. Also far enough that the crab never arms against the player.
+           *
+           * ---------------------------------------------------------------------------------------------
+           * WHY 0.55 LANE WIDTHS AND NOT 0.9
+           * ---------------------------------------------------------------------------------------------
+           * 0.9 put the target OUTSIDE THE LEVEL'S BAND, and this test failed on desktop for it while passing on
+           * the phone. Measured on a 1280x800 window: the lane is the full 361 m, the visible depth 320.9 m, so
+           * the camera's band tops out 183 m above the player and the projectile is recycled at that plus its 60 m
+           * margin -- 243 m. A target 325 m up was never reachable, by a shot whose own range is
+           * `speedPerSecond x decaySeconds = 0.88` lane widths, nor by anything else: the projectile was culled
+           * 87 m short of it, every run, and the trace read `the shot never landed`.
+           *
+           * The phone project has a taller band and got away with it, which is exactly the kind of difference
+           * between two viewports that a distance expressed in metres should not be exposed to. 0.55 lane widths
+           * is inside the band on both, outside the suction radius of even a maximum-size bubble (0.5), and still
+           * a real crossing for a projectile to make.
            */
           target.x = g.player.x * lane;
-          target.y = g.player.y + lane * 0.9;
+          target.y = g.player.y + lane * 0.55;
 
           const b = g.game.touchRef.spitGeometry;
           const hitsBefore = g.game.diagnostics.spit.hits;

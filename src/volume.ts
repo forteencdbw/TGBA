@@ -63,6 +63,28 @@ export function shrinkFromHit(volume: number, resistance = 0): number {
 }
 
 /**
+ * Volume after digesting `mass` of stomach contents away.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THIS IS NOT JUST A SUBTRACTION
+ * ---------------------------------------------------------------------------------------------
+ * Digestion is the only way a player can spend their OWN health, which makes it the only mechanic in the game
+ * that a player can use to kill themselves. A plain subtraction would let a nearly-dead bubble pop itself by
+ * pressing compress -- a death with no enemy, no warning and nothing to answer, in a game whose other
+ * self-inflicted death (ignoring the over-eating fuse) at least gives five seconds of alarm.
+ *
+ * So the drain FLOORS AT ONE HIT POINT: digesting can take you to the brink and no further. The mass that could
+ * not leave is written off, because there is nothing to refund it to and the alternative -- an item that stalls
+ * half-digested forever -- buys a rounding error at the price of a stuck state.
+ *
+ * The floor never RAISES the volume either: a bubble already below one hit point keeps what it has.
+ */
+export function drainByDigesting(volume: number, mass: number): number {
+  const floor = Math.min(tuning.hitPointVolume, volume);
+  return Math.max(floor, volume - Math.max(0, mass));
+}
+
+/**
  * Visual radius as a fraction of the play area width. Kept here next to the growth curve so the
  * drawn size and the mechanical size cannot drift apart.
  */

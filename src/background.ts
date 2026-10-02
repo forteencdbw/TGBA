@@ -499,13 +499,19 @@ export class Hud {
     lateral: LateralAuthority,
     scrolled: number,
     /**
-     * The growth stage, and how far into the next one.
+     * The growth stage, how far into the next one, and the eating rank digestion has bought.
      *
      * In the subline rather than the headline: the headline is the one number a player reads at a glance, and
      * the stage is a slower-changing fact. The progress toward the next stage is the part that matters,
      * because it is what makes "should I eat one more" a decision.
+     *
+     * `tierBonus` is shown only when it is non-zero, because it is zero for most of a run: a permanent "+0" would
+     * spend subline space on a fact the player has not earned. Once it exists it has to be visible, though -- it
+     * changes what the bubble can eat while the volume number says otherwise, and an invisible discrepancy
+     * between what the bubble looks like and what it can do is the one thing the marker and the rule must never
+     * disagree about.
      */
-    stage: { stage: number; name: string; absorbedInStage: number; neededForNext: number | null },
+    stage: { stage: number; name: string; absorbedInStage: number; neededForNext: number | null; tierBonus: number },
   ): void {
     // Distance still to travel, from the LEVEL's progress rather than the bubble's position. The bubble
     // is born on the seabed with the whole length ahead of it, and it cannot change this number by
@@ -522,9 +528,10 @@ export class Hud {
      * earn, and the interesting information becomes the fact that the bubble is now at its slowest.
      */
     const stageText =
-      stage.neededForNext === null
+      (stage.neededForNext === null
         ? `${stage.name} ${stage.stage}阶 满`
-        : `${stage.name} ${stage.stage}阶 ${stage.absorbedInStage}/${stage.neededForNext}`;
+        : `${stage.name} ${stage.stage}阶 ${stage.absorbedInStage}/${stage.neededForNext}`) +
+      (stage.tierBonus > 0 ? `  吞阶+${stage.tierBonus}` : '');
     this.subline.text = tags
       ? `距海面 / TO SURFACE (m)   ·   ${stageText}   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
       : this.seedLabel

@@ -199,6 +199,31 @@ export interface Mechanisms {
     glowAlpha: number;
     glowRadiusRatio: number;
   };
+  /**
+   * Digesting the stomach's contents: the third way out of a full stomach.
+   *
+   * Spitting is instant and yields ammunition; digesting is slow and yields RANK; ignoring it bursts the bubble.
+   * There is deliberately no "how much does digesting shrink me" value here -- an item records the volume it
+   * added when it was swallowed, and digesting pays that back in proportion to progress. See `src/spit.ts`.
+   */
+  digest: {
+    /** Fraction of the oldest item digested per second while the compress control is NOT held. */
+    passivePerSecond: number;
+    /** Fraction per second while it IS held. Must be fast enough to defuse a full stomach before the fuse runs out. */
+    compressPerSecond: number;
+    /** Growth energy per unit of digested mass. Below 1 means digesting loses something. */
+    energyPerMass: number;
+    /** Growth energy that buys one tier of eating rank. */
+    energyPerTier: number;
+    /** Ceiling on the rank digestion can buy, so volume stays the gate it was designed to be. */
+    maxTierBonus: number;
+    /** EXTRA hit points a hit costs while digesting. 1 doubles the damage taken. */
+    extraHitPoints: number;
+    /** The rim pulse while compressing: its frequency, how deep it oscillates, and the colour it swaps the rim to. */
+    pulseHz: number;
+    pulseDepth: number;
+    rimColor: number;
+  };
   /** Destructible obstacles: crates to smash and coral to squeeze past. */
   obstacles: {
     health: Record<string, number>;
@@ -425,6 +450,15 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'spit.trailWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a ratio between 0 and 1' },
   { path: 'spit.glowAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'spit.glowRadiusRatio', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a radius multiple of at least 1' },
+  { path: 'digest.passivePerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 5, describe: 'a fraction per second between 0 and 5; 0 means "only while compressing"' },
+  { path: 'digest.compressPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 10, describe: 'a fraction per second above 0 and at most 10' },
+  { path: 'digest.energyPerMass', check: (v) => typeof v === 'number' && v >= 0 && v <= 5, describe: 'a number between 0 and 5' },
+  { path: 'digest.energyPerTier', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'digest.maxTierBonus', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10, describe: 'a whole number of tiers between 0 and 10' },
+  { path: 'digest.extraHitPoints', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10, describe: 'a whole number of extra hit points between 0 and 10' },
+  { path: 'digest.pulseHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
+  { path: 'digest.pulseDepth', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
+  { path: 'digest.rimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'audio.musicVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity-like level between 0 and 1' },
   { path: 'obstacles.health', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to hit points' },
   { path: 'obstacles.radius', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to a radius fraction' },
@@ -552,6 +586,7 @@ for (const [where, get, set] of [
   ['consumption.marker.edibleColor', () => mech.consumption.marker.edibleColor, (v: number) => (mech.consumption.marker.edibleColor = v)],
   ['suction.fieldColor', () => mech.suction.fieldColor, (v: number) => (mech.suction.fieldColor = v)],
   ['spit.rimColor', () => mech.spit.rimColor, (v: number) => (mech.spit.rimColor = v)],
+  ['digest.rimColor', () => mech.digest.rimColor, (v: number) => (mech.digest.rimColor = v)],
   ['obstacles.crateColor', () => mech.obstacles.crateColor, (v: number) => (mech.obstacles.crateColor = v)],
   ['obstacles.crateRimColor', () => mech.obstacles.crateRimColor, (v: number) => (mech.obstacles.crateRimColor = v)],
   ['obstacles.coralColor', () => mech.obstacles.coralColor, (v: number) => (mech.obstacles.coralColor = v)],

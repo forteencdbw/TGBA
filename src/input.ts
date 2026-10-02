@@ -21,6 +21,23 @@ const KEYS = {
    * game has one obvious button.
    */
   skill: ['KeyJ', 'Enter'],
+  /**
+   * Spit: TAP to fire the oldest thing in the stomach. One press, one projectile.
+   *
+   * `KeyK` continues the J/K/L cluster under the right hand, so the three verbs sit together and none of them
+   * needs the left hand to leave WASD.
+   */
+  spit: ['KeyK'],
+  /**
+   * Compress: HOLD to digest. Deliberately its OWN key rather than the hold half of the spit key.
+   *
+   * The two verbs are a CHOICE -- spit for ammunition, digest for rank -- and a control where spitting happens on
+   * the way in to digesting is not a choice, it is a tax on one of the options. It would also make a lone item
+   * impossible to digest at all, since the press would have fired it before the hold began. Two verbs that are
+   * never wanted at once can share a control (which is why suction and the skill do); two verbs the player picks
+   * BETWEEN cannot.
+   */
+  compress: ['KeyL'],
   /** Mute toggle. `KeyM` is the near-universal convention and costs nothing to honour. */
   mute: ['KeyM'],
 } as const;
@@ -62,6 +79,26 @@ export class Input {
    * would empty the whole stomach in three frames.
    */
   private spitPressed = false;
+
+  /**
+   * HOLDING the compress control makes the stomach digest fast, and the bubble pay for it.
+   *
+   * HELD rather than edge-triggered, for the same reason as suction: it is a STATE with a price
+   * (`moveSpeedFactor` for one, no suction and double damage for the other), and making it a toggle would remove
+   * the commitment that makes choosing when to do it interesting.
+   *
+   * Two producers, one answer, the same shape as the movement axes. They are kept apart rather than sharing one
+   * field because both are written from different places -- the keyboard once per `update`, the touch layer
+   * whenever a finger lands or lifts -- and a shared field would let whichever ran last win. A player holding the
+   * key while a thumb is on the button is compressing, and nothing should be able to say otherwise.
+   */
+  private compressKeyHeld = false;
+  private compressTouchHeld = false;
+
+  /** Whether the player is asking to compress the stomach right now. */
+  get compressing(): boolean {
+    return this.compressKeyHeld || this.compressTouchHeld;
+  }
 
   /**
    * Whether any deliberate movement input is present: a key held, or the wheel pushed past its dead zone.
@@ -145,10 +182,25 @@ export class Input {
     const muteDown = held(KEYS.mute);
     if (muteDown && !this.muteKeyWasDown) this.mutePressed = true;
     this.muteKeyWasDown = muteDown;
+
+    /**
+     * Spit and compress: one is edge-triggered, the other is a state, and they are separate keys because they are
+     * separate CHOICES. See `KEYS.compress`.
+     *
+     * Edge-detected here rather than in the event handler, for the same reason as the skill: the key repeat rate
+     * must not turn a held key into a stream of shots. The hold is written unconditionally, so releasing the key
+     * stops the compression on the very next frame.
+     */
+    const spitDown = held(KEYS.spit);
+    if (spitDown && !this.spitKeyWasDown) this.spitPressed = true;
+    this.spitKeyWasDown = spitDown;
+
+    this.compressKeyHeld = held(KEYS.compress);
   }
 
   private skillKeyWasDown = false;
   private muteKeyWasDown = false;
+  private spitKeyWasDown = false;
   /** Mute toggle pressed since the last consume. */
   private mutePressed = false;
 
@@ -167,6 +219,16 @@ export class Input {
   /** Signal a spit press from a touch control. */
   pressSpit(): void {
     this.spitPressed = true;
+  }
+
+  /**
+   * Signal the compress state from a touch control: the on-screen compress button held down.
+   *
+   * A setter rather than a public field so the touch layer cannot accidentally clear the keyboard's half of the
+   * answer -- `compressing` is a property of the player, not of one device.
+   */
+  setCompressHeld(held: boolean): void {
+    this.compressTouchHeld = held;
   }
 
   /**
@@ -196,6 +258,11 @@ export class Input {
     // The suction field goes too: it is a deliberate input, and a measurement that wanted a passive player would
     // otherwise still have hazards being dragged around.
     this.suctionHeld = false;
+    // ...and so does the compression, which is the other deliberate input that changes what a measurement means:
+    // a digesting bubble takes double damage and cannot gather, so a probe that left it on would be measuring a
+    // bubble in a state it did not ask for.
+    this.compressTouchHeld = false;
+    this.compressKeyHeld = false;
   }
 
   /**

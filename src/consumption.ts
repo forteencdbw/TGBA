@@ -79,9 +79,24 @@ export function edibleAtTier(kind: HazardKind): number {
  * The single place the rule lives, so the collision resolution and the outline marker cannot disagree about it.
  * A marker that said "edible" while the collision said "damage" would be the worst possible bug in this feature,
  * because the player would be punished for trusting the game.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THERE IS A SECOND TERM
+ * ---------------------------------------------------------------------------------------------
+ * `tierBonus` is what DIGESTION buys: rank that does not come from size. It is deliberately a separate argument
+ * rather than a fudge on the volume, because the two are different things -- a small bubble with rank can eat a
+ * crab, and it must still LOOK small, still fit through the same gaps, and still have the health its volume says
+ * it has. Folding the bonus into the volume would silently inflate all three.
+ *
+ * Note the shape of the trade this creates: mass leaves the bubble (smaller, harder to hit, fits through gaps)
+ * while the rank it bought stays. That is 极限瘦身 with a payoff, and it is what makes digestion worth its cost
+ * rather than just being a slower spit.
+ *
+ * The ceiling is applied where the bonus is COMPUTED (`tierBonusFor`), not here: this function answers the
+ * question, it does not police where the answer came from.
  */
-export function canEatHazard(kind: HazardKind, volume: number): boolean {
-  return volumeTier(volume) >= edibleAtTier(kind);
+export function canEatHazard(kind: HazardKind, volume: number, tierBonus = 0): boolean {
+  return volumeTier(volume) + Math.max(0, tierBonus) >= edibleAtTier(kind);
 }
 
 /** The mass gained by eating a hazard of this kind, after the digestion loss. */
