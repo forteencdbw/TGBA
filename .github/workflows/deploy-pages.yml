@@ -1,0 +1,87 @@
+# Publishes the game to GitHub Pages on every push to main.
+#
+# WHY THIS EXISTS
+# ---------------
+# GitHub Pages was configured as "Deploy from a branch: gh-pages". That setting only
+# republishes when the *gh-pages* branch moves -- it does not notice commits to main, and
+# `dist/` is gitignored, so nothing on GitHub's side ever builds it. The site therefore used
+# to lag behind main until somebody remembered to run a build-and-push by hand.
+#
+# CONSEQUENCE, STATED PLAINLY
+# ---------------------------
+# The published site is now always exactly the tip of main, including work in progress. That
+# is deliberate: the goal is that a repo change is visible on the site, and a half-finished
+# build is an acceptable price. Do not add a quality gate here without meaning to make the
+# site stoppable by a broken test file.
+#
+# WHY IT PUSHES A BRANCH INSTEAD OF USING actions/deploy-pages
+# -----------------------------------------------------------
+# The official Pages flow (upload-pages-artifact + deploy-pages) requires switching the
+# repository's Pages setting to "GitHub Actions". Pushing to gh-pages keeps the existing
+# setting valid and keeps main's history free of build output, which is why `dist/` is
+# gitignored in the first place.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # So a deploy can be re-run from the Actions tab without inventing a commit.
+  workflow_dispatch:
+
+# Pushing the gh-pages branch needs write access to repository contents.
+permissions:
+  contents: write
+
+# A newer push supersedes an in-flight deploy: the site should end up at the newest main,
+# never at whichever run happened to finish last.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the version this repo's lockfile was written with, so CI resolves the
+      # exact dependency graph that works locally. package.json has no `packageManager`
+      # field, so this pin is the only thing that decides the pnpm version.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+
+      - uses: actions/setup-node@v4
+        with:
+          # Quoted so YAML hands setup-node a string rather than the number 24.
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Deliberately `vite build` rather than `pnpm build`.
+      #
+      # `pnpm build` is `tsc --noEmit && tsc --noEmit -p tsconfig.e2e.json && vite build`, so it
+      # also typechecks e2e/ -- meaning one unused variable in a spec file under active
+      # development would stop the site from updating at all. Vite transpiles without
+      # typechecking, so a type error still deploys, which is the intended trade.
+      - name: Build
+        run: pnpm exec vite build
+
+      - name: Publish dist/ to the gh-pages branch
+        run: |
+          set -euo pipefail
+          cd dist
+          # Stops GitHub's Jekyll pass from silently dropping any built asset.
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -q -m "Publish ${GITHUB_SHA::7}"
+          # Force: gh-pages is generated output, not history worth preserving.
+          git push --quiet --force \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" \
+            gh-pages
