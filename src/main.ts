@@ -9,6 +9,8 @@ import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId
 import { audio } from './audio';
 import { canEatHazard, hazardMass, massFromEating, volumeTier } from './consumption';
 import { MainMenu } from './menu';
+import { CodexUi } from './codexUi';
+import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
 import { mech } from './mechanisms';
 import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
@@ -66,6 +68,14 @@ class Game {
   private readonly settings = new SettingsUi();
   /** The main menu, shown before a run and after exiting to it. */
   private readonly menu = new MainMenu();
+  /**
+   * The codex page.
+   *
+   * Its own screen rather than a panel over the menu, for the same reason the menu is its own screen: it is a place
+   * the player goes, not an interruption of the water. Its layout is re-run by `layout()` on resize and it draws
+   * nothing per frame -- see `CodexUi`.
+   */
+  private readonly codex = new CodexUi();
 
   /** Everything drawn in world metres: collectables, the bubble, and its trailing micro-bubbles. */
   private readonly pickups = new Graphics();
@@ -134,8 +144,9 @@ class Game {
    *   playing  the level
    *   burst    the slow-motion pop after the bubble is destroyed, or the held beat at the surface
    *   paused   the settings panel is open; the whole simulation is frozen
+   *   codex    the bestiary page is open, reached from the menu
    */
-  private phase: 'menu' | 'intro' | 'playing' | 'burst' | 'paused' = 'menu';
+  private phase: 'menu' | 'intro' | 'playing' | 'burst' | 'paused' | 'codex' = 'menu';
   private phaseTimer = INTRO_SECONDS;
   /** The phase to restore when the settings panel closes. */
   private phaseBeforePause: 'intro' | 'playing' | 'burst' = 'playing';
@@ -184,7 +195,7 @@ class Game {
      * Order matters here rather than being incidental: the settings panel has to cover the HUD and the water,
      * and the menu has to cover the settings gear while it is showing.
      */
-    this.app.stage.addChild(this.settings.root, this.menu.root);
+    this.app.stage.addChild(this.settings.root, this.menu.root, this.codex.root);
     this.settings.setVolume(audio.getVolume());
     this.settings.setOpen(false);
     // The game opens on the menu, so the gear must not be showing behind it.
@@ -195,6 +206,8 @@ class Game {
     this.settings.onRestart = () => this.restartLevel();
     this.settings.onExit = () => this.exitToMenu();
     this.menu.onStart = () => this.enterFromMenu();
+    this.menu.onCodex = () => this.enterCodex();
+    this.codex.onBack = () => this.exitCodex();
 
     this.input.attach(window);
 
@@ -309,6 +322,12 @@ class Game {
       this.menu.handlePointerDown(x, y);
       return;
     }
+    // The codex swallows every press while it is open: it is a full screen, and a tap in its margin landing in the
+    // water would steer a bubble nobody can see.
+    if (this.phase === 'codex') {
+      this.codex.handlePointerDown(x, y);
+      return;
+    }
     if (this.settings.handlePointerDown(pointerId, x, y)) return;
     if (this.phase === 'paused') return;
     this.touch.onPointerDown(pointerId, x, y);
@@ -319,6 +338,10 @@ class Game {
     this.pointerPositions.set(pointerId, { x, y });
     if (this.phase === 'menu') {
       this.menu.handlePointerMove(x, y);
+      return;
+    }
+    if (this.phase === 'codex') {
+      // Nothing on the codex page tracks a drag, so a move is simply not the water's business either.
       return;
     }
     if (this.settings.handlePointerMove(pointerId, x, y)) return;
@@ -335,6 +358,8 @@ class Game {
       this.menu.handlePointerUp(at.x, at.y);
       return;
     }
+    // The codex fires on press, so a release has nothing left to do -- but it must still not reach the water.
+    if (this.phase === 'codex') return;
     if (this.settings.handlePointerUp(pointerId, at.x, at.y)) return;
     if (this.phase === 'paused') return;
     this.touch.onPointerUp(pointerId);
@@ -786,6 +811,22 @@ class Game {
   }
 
   /**
+   * Test hook: the codex page, so a probe can read its state and press its real controls.
+   *
+   * The page is opened through `enterCodex`, the same path the menu button takes, rather than by setting the phase
+   * from outside: a probe that forced the phase would not notice a menu button that was never wired up, which is the
+   * one way this feature can fail to be reachable.
+   */
+  get codexRef(): CodexUi {
+    return this.codex;
+  }
+
+  /** Test hook: open the codex as the menu button does. */
+  debugOpenCodexForTest(): void {
+    this.enterCodex();
+  }
+
+  /**
    * Test hook: drop an obstacle on the player, or `ahead` metres above them.
    *
    * An offset rather than always-at-the-player because the two interactions need different setups: a ram test
@@ -1123,6 +1164,7 @@ class Game {
     this.touch.layout(viewport.left, viewport.laneWidthPx, screenW, screenH, viewport.scale);
     this.settings.layout(viewport);
     this.menu.layout(viewport);
+    this.codex.layout(viewport);
 
     this.finishBanner.scale.set(viewport.scale);
     this.finishBanner.x = screenW / 2;
@@ -1180,9 +1222,10 @@ class Game {
      * not the hazard timers, not the invulnerability window. A pause that only stopped the drawing would let a
      * trash bag finish draining the player while they read the menu.
      *
-     * The menu is the same idea for the opposite reason: there is no level to simulate yet.
+     * The menu is the same idea for the opposite reason: there is no level to simulate yet. The codex joins them:
+     * it is reached from the menu, so the level behind it is either not started or already over.
      */
-    if (this.phase === 'paused' || this.phase === 'menu') return;
+    if (this.phase === 'paused' || this.phase === 'menu' || this.phase === 'codex') return;
 
     if (this.invulnerable > 0) this.invulnerable = Math.max(0, this.invulnerable - dt);
 
@@ -2050,7 +2093,9 @@ class Game {
    * this runs from the tap -- so it is not called from the pointer handler directly.
    */
   private openSettings(): void {
-    if (this.phase === 'paused' || this.phase === 'menu') return;
+    // The codex is excluded with the menu: it is a full-screen page reached FROM the menu, so there is no run to
+    // pause behind it and its gear would be a button onto itself.
+    if (this.phase === 'paused' || this.phase === 'menu' || this.phase === 'codex') return;
     this.phaseBeforePause = this.phase;
     this.phase = 'paused';
     // Any finger that was steering is forgotten, or releasing it later would resume a drag the player has
@@ -2099,6 +2144,24 @@ class Game {
     this.startRun();
   }
 
+  /**
+   * Open the codex from the menu.
+   *
+   * Deliberately NOT reachable mid-run: the codex is reference, and a page of reading is not something a player
+   * should be able to open while a fuse is burning. The pause panel is where "I need to look something up" belongs,
+   * and it already freezes the simulation.
+   */
+  private enterCodex(): void {
+    this.phase = 'codex';
+    this.codex.show();
+  }
+
+  /** Leave the codex, back to the menu. */
+  private exitCodex(): void {
+    this.phase = 'menu';
+    this.menu.root.visible = true;
+  }
+
   private reachSurface(): void {
     this.phase = 'burst';
     // Longer than a death: the surface is a reward, not a failure, and the design asks for a beat of
@@ -2138,20 +2201,21 @@ class Game {
     this.scene.update(this.camera, this.player, dt, this.scrolled);
 
     /**
-     * The HUD and the water are hidden on the menu.
+     * The HUD and the water are hidden on the menu AND on the codex page.
      *
-     * The menu draws an opaque backdrop, so leaving them visible underneath would only cost fill rate -- but
-     * the HUD also reports a live depth for a level that is not running, which is worse than wasteful.
+     * Both draw an opaque backdrop, so leaving them visible underneath would only cost fill rate -- but the HUD also
+     * reports a live depth for a level that is not running, which is worse than wasteful.
      */
+    const fullScreenPage = this.phase === 'menu' || this.phase === 'codex';
     const inMenu = this.phase === 'menu';
-    this.hud.root.visible = !inMenu;
-    this.scene.root.visible = !inMenu;
-    // The water controls hide on the menu and behind the settings panel. The touch layer decides for itself
+    this.hud.root.visible = !fullScreenPage;
+    this.scene.root.visible = !fullScreenPage;
+    // The water controls hide on those pages and behind the settings panel. The touch layer decides for itself
     // whether the skill button is drawn; this only decides whether the layer exists at all.
-    this.touch.root.visible = !inMenu && !this.settings.isOpen;
-    this.flash.visible = this.flash.visible && !inMenu;
+    this.touch.root.visible = !fullScreenPage && !this.settings.isOpen;
+    this.flash.visible = this.flash.visible && !fullScreenPage;
 
-    if (!inMenu) {
+    if (!fullScreenPage) {
       this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled, {
         stage: this.stage.stage,
         name: stageName(this.stage.stage),
@@ -2164,11 +2228,13 @@ class Game {
       this.drawBubble();
     }
 
-    // The gear must not be reachable while the menu is up, and the panel goes with it.
-    this.settings.root.visible = !inMenu;
+    // The gear must not be reachable while a full-screen page is up, and the panel goes with it.
+    this.settings.root.visible = !fullScreenPage;
     this.settings.update();
     this.menu.root.visible = inMenu;
     if (inMenu) this.menu.update(dt);
+    // The codex draws nothing per frame: a tab press, a page turn and a resize each schedule their own redraw.
+    this.codex.root.visible = this.phase === 'codex';
     // Both banners decay in render; `step` only seeds their alpha, because a transient message
     // that is set and faded in the same frame would never be visible.
     const decay = dt * 0.6;
@@ -2725,6 +2791,33 @@ class Game {
      * showed nothing.
      */
     build: { version: string; hash: string; dirty: boolean; label: string };
+    /**
+     * The codex page: whether it is open, and what it is showing.
+     *
+     * `entries` is the count PER CATEGORY as the game's own data reports it, which is what a probe needs to assert
+     * that every creature, skill and talent has somewhere to be read about.
+     */
+    codex: {
+      open: boolean;
+      category: string;
+      page: number;
+      pages: number;
+      total: number;
+      visible: readonly string[];
+      entries: Record<string, number>;
+      /** Every entry id the page has, so a probe can check coverage against the game's own lists below. */
+      entryIds: readonly string[];
+      /**
+       * What the GAME actually has, from the modules that define it.
+       *
+       * Read from `KIND_TUNING`, `SKILLS` and `TALENTS` rather than from the codex, which is the whole point: a
+       * creature added to the game but not to the codex shows up as a difference between these and `entryIds`, and
+       * that is a failing test rather than a page nobody notices is out of date.
+       */
+      gameHazards: readonly string[];
+      gameSkills: readonly string[];
+      gameTalents: readonly string[];
+    };
     frames: number;
     elapsed: number;
     intro: number;
@@ -2890,6 +2983,19 @@ class Game {
   } {
     return {
       build: { version: APP_VERSION, hash: GIT_HASH, dirty: GIT_DIRTY, label: buildLabel() },
+      codex: {
+        open: this.phase === 'codex',
+        category: this.codex.state.category,
+        page: this.codex.state.page,
+        pages: this.codex.state.pages,
+        total: this.codex.state.total,
+        visible: this.codex.state.visible,
+        entries: Object.fromEntries(CODEX_CATEGORIES.map((c) => [c.id, entriesFor(c.id).length])),
+        entryIds: codexEntries().map((e) => e.id),
+        gameHazards: Object.keys(KIND_TUNING),
+        gameSkills: SKILLS.map((s) => s.id),
+        gameTalents: TALENTS.map((t) => t.id),
+      },
       frames: this.frameCount,
       elapsed: this.elapsed,
       intro: this.phaseTimer,

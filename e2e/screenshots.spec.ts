@@ -448,4 +448,41 @@ test.describe('screen captures @screenshots', () => {
     });
     await page.screenshot({ path: testInfo.outputPath('stomach.png') });
   });
+
+  /**
+   * The codex, on two tabs.
+   *
+   * Two rather than one because the tabs differ in shape: the enemy tab is the only one that pages, so it is the one
+   * where a card grid can run out of room, and the skill tab is the one with the widest mix of fact lines. Between
+   * them they cover the layouts a card has to survive.
+   */
+  for (const [tab, name] of [
+    ['enemy', 'codex-enemies'],
+    ['skill', 'codex-skills'],
+  ] as const) {
+    test(`the codex, on the ${tab} tab @screenshots`, async ({ page }, testInfo) => {
+      await boot(page);
+      await page.evaluate(async (which) => {
+        const g = (window as unknown as {
+          __GB: {
+            game: {
+              debugOpenCodexForTest: () => void;
+              codexRef: { show: (c: string) => void; geometry: { tabs: { id: string; rect: { x: number; y: number; w: number; h: number } }[] } };
+              handlePointerDown: (id: number, x: number, y: number) => void;
+              handlePointerUp: (id: number) => void;
+            };
+          };
+        }).__GB.game;
+        g.debugOpenCodexForTest();
+        // Through the page's own tab button, so the capture is of the state a press produces rather than of a state
+        // forced from outside.
+        const t = g.codexRef.geometry.tabs.find((x) => x.id === which)!;
+        g.handlePointerDown(71, t.rect.x + t.rect.w / 2, t.rect.y + t.rect.h / 2);
+        g.handlePointerUp(71);
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      }, tab);
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: testInfo.outputPath(`${name}.png`) });
+    });
+  }
 });

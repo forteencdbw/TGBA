@@ -693,6 +693,132 @@
   },
 
   // ---------------------------------------------------------------------------------------------
+  // 图鉴页（主菜单进入）
+  // ---------------------------------------------------------------------------------------------
+  //
+  // 一页一页的卡片：敌人、环境、气泡自己、技能、天赋。**卡片里的数字不是写死的**——质量、档位、耐久、
+  // 技能次数这些都从下面那些段里读出来（`src/codex.ts` 只提供文案），所以改了数值图鉴就会跟着变，
+  // 而不是变成一份没人维护的旧说明书。
+  //
+  // 下面这些全是**排版**：单位是设计像素，会乘上 HUD 的设计缩放（`designScale`），所以在手机和桌面上
+  // 比例一致。想改观感就改这里，不用碰代码。
+  "codex": {
+    // 卡片网格：列 × 行 = 一页几张。每页固定这么多，放不下就翻页（页脚有页码）。
+    "columns": 2,
+    "rows": 3,
+
+    // 页面四边的留白、卡片之间的间隙。
+    "margin": 16,
+    "gap": 8,
+
+    // 页头（标题 + 页签 + 页码）占的高度，以及页脚（翻页/返回按钮）占的高度。
+    "headerHeight": 104,
+    "footerHeight": 46,
+
+    // 标题。
+    "titleSize": 22,
+    "titleY": 18,
+    "titleColour": 0xeaf9ff,
+
+    // 分类页签一行：高度、间距、文字大小，以及选中/未选中的底色与文字色。
+    "tabHeight": 26,
+    "tabGap": 4,
+    "tabTextSize": 12,
+    "tabFill": 0x0d2233,
+    "tabStroke": 0x2f5f86,
+    "tabTextColour": 0x7fb6d4,
+    "activeTabFill": 0x1d3f5c,
+    "activeTabStroke": 0x9fe4ff,
+    "activeTabTextColour": 0xeaf9ff,
+
+    // 页码那一行。
+    "pageTextSize": 10,
+    "pageTextColour": 0x6fa8c8,
+
+    // 卡片本体：圆角、底色、边线。
+    "cardRadius": 8,
+    "cardFill": 0x0a1c2e,
+    "cardFillAlpha": 0.92,
+    "cardStroke": 0x2f5f86,
+    "cardStrokeAlpha": 0.65,
+    "cardPad": 10,
+
+    // 卡片里图标的边长（正方形区域），以及它离卡片左上角的距离。
+    "iconSize": 46,
+
+    // 卡片文字：名字、一句话、以及"事实"行的标签与值。
+    "nameSize": 15,
+    "nameColour": 0xeaf9ff,
+    "taglineSize": 10,
+    "taglineColour": 0x9fc7de,
+    "factSize": 9,
+    "factLeading": 13,
+    // 「事实」的标签列宽度（设计像素）：值从这一列之后开始，所以数值在卡片上成列对齐。
+    "factLabelWidth": 46,
+    "factLabelColour": 0x6fa8c8,
+    "factValueColour": 0xd8fbff,
+    "noteSize": 9,
+    "noteColour": 0x7fb6d4,
+    "noteLeading": 12,
+    // 要点行前面那个「·」的缩进（设计像素）。它是一颗**独立的文字对象**而不是拼在句首的字符：
+    // 拼进去就等于在句子里放了一个空格，而 Pixi 的换行以空格分词——整句中文会被当成一个"词"，
+    // 于是它换到下一行、只留下一个孤零零的「·」在上面。
+    "noteBulletIndent": 11,
+
+    // 页脚按钮：大小、底色、边线、文字。
+    "buttonHeight": 30,
+    "buttonPad": 14,
+    "buttonRadius": 7,
+    "buttonFill": 0x123048,
+    "buttonStroke": 0x3d7fa8,
+    "buttonTextColour": 0xd8fbff,
+    "buttonTextSize": 12,
+
+    // 没有自己配色可用时，图标用的颜色：收集物（泡泡）、技能掉落物、天赋。
+    // 有配色的实体一律用它们自己的（危险物用 hazards、障碍用 obstacles、吸附用 suction、压缩用 digest）。
+    "collectableColour": 0xaef2ff,
+    "skillColour": 0xe8d6ff,
+    "talentColour": 0xffcf6b
+  },
+
+  // ---------------------------------------------------------------------------------------------
+  // 主菜单的按钮
+  // ---------------------------------------------------------------------------------------------
+  //
+  // 两个入口：开始游戏、图鉴。它们**共用同一套几何**（宽/高/圆角/间距），因为两个按钮错开尺寸会让菜单看起来
+  // 没对齐；想分别调就把几何也拆成两套，但先别。
+  //
+  // 「图鉴」用的是**描边式**而不是填充式：它是次要入口，一眼看上去主次就该分得开，不必读文字。
+  "menu": {
+    // 按钮宽度是泳道宽度的比例，但有像素上限——宽窗口下泳道是 900px，按钮不该跟着长到 630px。
+    "buttonWidthRatio": 0.7,
+    "buttonMaxWidth": 280,
+    "buttonHeight": 52,
+    "buttonRadius": 12,
+
+    // 两个按钮之间的纵向间距。
+    "buttonGap": 14,
+
+    // 「开始游戏」：填充色、按下时的填充色、文字色与字号。文字用深色，因为底是亮的。
+    "primaryFill": 0x6fe3ff,
+    "primaryPressedFill": 0x8fe3ff,
+    "primaryTextColour": 0x08131f,
+    "primaryTextSize": 18,
+
+    // 「图鉴」：底色、按下时的底色、描边与它的不透明度、文字色与字号。
+    "secondaryFill": 0x0d2233,
+    "secondaryPressedFill": 0x1d3f5c,
+    "secondaryStroke": 0x9fe4ff,
+    "secondaryStrokeAlpha": 0.75,
+    "secondaryTextColour": 0xd8fbff,
+    "secondaryTextSize": 15,
+
+    // 「开始游戏」那一圈的描边，以及它的透明度。
+    "buttonStroke": 0xd8fbff,
+    "buttonStrokeAlpha": 0.8
+  },
+
+  // ---------------------------------------------------------------------------------------------
   // 可破坏障碍（木箱与珊瑚）
   // ---------------------------------------------------------------------------------------------
   //

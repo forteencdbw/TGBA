@@ -33,7 +33,7 @@ export interface Diagnostics {
   build: { version: string; hash: string; dirty: boolean; label: string };
   frames: number;
   elapsed: number;
-  phase: 'menu' | 'intro' | 'playing' | 'burst' | 'paused';
+  phase: 'menu' | 'codex' | 'intro' | 'playing' | 'burst' | 'paused';
   volume: number;
   bubbles: number;
   gameSeconds: number;

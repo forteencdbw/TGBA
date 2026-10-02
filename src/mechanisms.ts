@@ -259,6 +259,89 @@ export interface Mechanisms {
     fuseBlinkHz: number;
     fusePanicSeconds: number;
   };
+  /**
+   * The codex page: a paged card list reached from the main menu.
+   *
+   * Only LAYOUT and colour here. Every number ON a card is read from the section it belongs to, so the page cannot
+   * describe a game that no longer exists -- see `src/codex.ts`.
+   */
+  codex: {
+    columns: number;
+    rows: number;
+    margin: number;
+    gap: number;
+    headerHeight: number;
+    footerHeight: number;
+    titleSize: number;
+    titleY: number;
+    titleColour: number;
+    tabHeight: number;
+    tabGap: number;
+    tabTextSize: number;
+    tabFill: number;
+    tabStroke: number;
+    tabTextColour: number;
+    activeTabFill: number;
+    activeTabStroke: number;
+    activeTabTextColour: number;
+    pageTextSize: number;
+    pageTextColour: number;
+    cardRadius: number;
+    cardFill: number;
+    cardFillAlpha: number;
+    cardStroke: number;
+    cardStrokeAlpha: number;
+    cardPad: number;
+    iconSize: number;
+    nameSize: number;
+    nameColour: number;
+    taglineSize: number;
+    taglineColour: number;
+    factSize: number;
+    factLeading: number;
+    factLabelWidth: number;
+    factLabelColour: number;
+    factValueColour: number;
+    noteSize: number;
+    noteColour: number;
+    noteLeading: number;
+    noteBulletIndent: number;
+    buttonHeight: number;
+    buttonPad: number;
+    buttonRadius: number;
+    buttonFill: number;
+    buttonStroke: number;
+    buttonTextColour: number;
+    buttonTextSize: number;
+    collectableColour: number;
+    skillColour: number;
+    talentColour: number;
+  };
+  /**
+   * The main menu's two buttons.
+   *
+   * Geometry is SHARED between them on purpose: two buttons at slightly different sizes read as a menu that is out
+   * of alignment rather than as a hierarchy, and the hierarchy is already carried by fill versus outline.
+   */
+  menu: {
+    buttonWidthRatio: number;
+    buttonMaxWidth: number;
+    buttonHeight: number;
+    buttonRadius: number;
+    buttonGap: number;
+    primaryFill: number;
+    primaryPressedFill: number;
+    primaryTextColour: number;
+    primaryTextSize: number;
+    secondaryFill: number;
+    secondaryPressedFill: number;
+    secondaryStroke: number;
+    secondaryStrokeAlpha: number;
+    secondaryTextColour: number;
+    secondaryTextSize: number;
+    buttonStroke: number;
+    buttonStrokeAlpha: number;
+  };
   /** Destructible obstacles: crates to smash and coral to squeeze past. */
   obstacles: {
     health: Record<string, number>;
@@ -386,6 +469,37 @@ const APPEARANCE_RULES: { key: string; what: string; ok: (v: unknown) => boolean
   { key: 'name', what: 'the stage name shown on the HUD', ok: (v) => typeof v === 'string' && v.length > 0 },
 ];
 
+/**
+ * The codex page's colours, as one list.
+ *
+ * Twenty-one keys, and every one of them has to be validated AND normalised. Two hand-written lists that have to
+ * agree is exactly how `marker.edibleColor` once ended up validated but never converted -- writing `"#rrggbb"`
+ * would then have handed Pixi a string, with nothing to see but a wrong-looking page. One list, used for both.
+ */
+const CODEX_COLOURS = [
+  'titleColour',
+  'tabFill',
+  'tabStroke',
+  'tabTextColour',
+  'activeTabFill',
+  'activeTabStroke',
+  'activeTabTextColour',
+  'pageTextColour',
+  'cardFill',
+  'cardStroke',
+  'nameColour',
+  'taglineColour',
+  'factLabelColour',
+  'factValueColour',
+  'noteColour',
+  'buttonFill',
+  'buttonStroke',
+  'buttonTextColour',
+  'collectableColour',
+  'skillColour',
+  'talentColour',
+] as const;
+
 const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string }[] = [
   { path: 'stages.speedMultiplier', check: (v) => Array.isArray(v) && v.length >= 2 && v.every((n) => typeof n === 'number'), describe: 'an array of at least two numbers' },
   { path: 'stages.minSpeedMultiplier', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a number above 0 and at most 1' },
@@ -510,6 +624,63 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'stomach.markerMinSpreadRadians', check: (v) => typeof v === 'number' && v > 0 && v < 6.28, describe: 'an angle in radians, above 0 and below a full turn' },
   { path: 'stomach.fuseBlinkHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
   { path: 'stomach.fusePanicSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
+  { path: 'codex.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 4, describe: 'a whole number of columns between 1 and 4' },
+  { path: 'codex.rows', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 6, describe: 'a whole number of rows between 1 and 6' },
+  { path: 'codex.margin', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
+  { path: 'codex.gap', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'design pixels between 0 and 40' },
+  { path: 'codex.headerHeight', check: (v) => typeof v === 'number' && v >= 40 && v <= 300, describe: 'design pixels between 40 and 300' },
+  { path: 'codex.footerHeight', check: (v) => typeof v === 'number' && v >= 20 && v <= 200, describe: 'design pixels between 20 and 200' },
+  { path: 'codex.titleSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 48, describe: 'a font size between 8 and 48' },
+  { path: 'codex.titleY', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
+  { path: 'codex.tabHeight', check: (v) => typeof v === 'number' && v >= 10 && v <= 80, describe: 'design pixels between 10 and 80' },
+  { path: 'codex.tabGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 24, describe: 'design pixels between 0 and 24' },
+  { path: 'codex.tabTextSize', check: (v) => typeof v === 'number' && v >= 6 && v <= 32, describe: 'a font size between 6 and 32' },
+  { path: 'codex.pageTextSize', check: (v) => typeof v === 'number' && v >= 6 && v <= 32, describe: 'a font size between 6 and 32' },
+  { path: 'codex.cardRadius', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'a corner radius between 0 and 40' },
+  { path: 'codex.cardFillAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'codex.cardStrokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'codex.cardPad', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'design pixels between 0 and 40' },
+  { path: 'codex.iconSize', check: (v) => typeof v === 'number' && v >= 12 && v <= 120, describe: 'design pixels between 12 and 120' },
+  { path: 'codex.nameSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 40, describe: 'a font size between 8 and 40' },
+  { path: 'codex.taglineSize', check: (v) => typeof v === 'number' && v >= 6 && v <= 32, describe: 'a font size between 6 and 32' },
+  { path: 'codex.factSize', check: (v) => typeof v === 'number' && v >= 5 && v <= 32, describe: 'a font size between 5 and 32' },
+  { path: 'codex.factLeading', check: (v) => typeof v === 'number' && v >= 6 && v <= 40, describe: 'line spacing between 6 and 40' },
+  { path: 'codex.factLabelWidth', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
+  { path: 'codex.noteSize', check: (v) => typeof v === 'number' && v >= 5 && v <= 32, describe: 'a font size between 5 and 32' },
+  { path: 'codex.noteLeading', check: (v) => typeof v === 'number' && v >= 6 && v <= 40, describe: 'line spacing between 6 and 40' },
+  { path: 'codex.noteBulletIndent', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'design pixels between 0 and 60' },
+  { path: 'codex.buttonHeight', check: (v) => typeof v === 'number' && v >= 12 && v <= 90, describe: 'design pixels between 12 and 90' },
+  { path: 'codex.buttonPad', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
+  { path: 'codex.buttonRadius', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'a corner radius between 0 and 40' },
+  { path: 'codex.buttonTextSize', check: (v) => typeof v === 'number' && v >= 6 && v <= 32, describe: 'a font size between 6 and 32' },
+  ...CODEX_COLOURS.map((key) => ({
+    path: `codex.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
+  })),
+  { path: 'menu.buttonWidthRatio', check: (v) => typeof v === 'number' && v > 0.1 && v < 1, describe: 'a fraction of the lane width, above 0.1 and below 1' },
+  { path: 'menu.buttonMaxWidth', check: (v) => typeof v === 'number' && v >= 60 && v <= 600, describe: 'a pixel width between 60 and 600' },
+  { path: 'menu.buttonHeight', check: (v) => typeof v === 'number' && v >= 20 && v <= 120, describe: 'a pixel height between 20 and 120' },
+  { path: 'menu.buttonRadius', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'a corner radius between 0 and 60' },
+  { path: 'menu.buttonGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
+  { path: 'menu.primaryTextSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 48, describe: 'a font size between 8 and 48' },
+  { path: 'menu.secondaryTextSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 48, describe: 'a font size between 8 and 48' },
+  { path: 'menu.secondaryStrokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'menu.buttonStrokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  ...[
+    'primaryFill',
+    'primaryPressedFill',
+    'primaryTextColour',
+    'secondaryFill',
+    'secondaryPressedFill',
+    'secondaryStroke',
+    'secondaryTextColour',
+    'buttonStroke',
+  ].map((key) => ({
+    path: `menu.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
+  })),
   { path: 'audio.musicVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity-like level between 0 and 1' },
   { path: 'obstacles.health', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to hit points' },
   { path: 'obstacles.radius', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to a radius fraction' },
@@ -644,6 +815,40 @@ for (const [where, get, set] of [
   ['obstacles.coralRimColor', () => mech.obstacles.coralRimColor, (v: number) => (mech.obstacles.coralRimColor = v)],
 ] as const) {
   set(normaliseColour(get() as string | number, where));
+}
+
+/**
+ * The codex page's colours, converted from the same list the validation uses.
+ *
+ * A loop over the key list rather than twenty-one more tuple entries, so a new colour in that block cannot be
+ * validated without also being converted.
+ */
+{
+  const bag = mech.codex as unknown as Record<string, string | number>;
+  for (const key of CODEX_COLOURS) bag[key] = normaliseColour(bag[key]!, `codex.${key}`);
+}
+
+/**
+ * The menu's colours, converted too.
+ *
+ * A second list rather than an entry in the shared one above, because these live under a different block and the
+ * tuple in that loop carries a getter and a setter per colour -- eight more of those would be eight more chances to
+ * copy one wrong. Same shape as the codex loop, and the same guarantee: a colour validated is a colour converted.
+ */
+{
+  const bag = mech.menu as unknown as Record<string, string | number>;
+  for (const key of [
+    'primaryFill',
+    'primaryPressedFill',
+    'primaryTextColour',
+    'secondaryFill',
+    'secondaryPressedFill',
+    'secondaryStroke',
+    'secondaryTextColour',
+    'buttonStroke',
+  ]) {
+    bag[key] = normaliseColour(bag[key]!, `menu.${key}`);
+  }
 }
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
