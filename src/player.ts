@@ -179,6 +179,15 @@ export class Player {
    */
   stageSpeedMultiplier = 1;
 
+  /**
+   * Movement multiplier while the suction field is up, 0..1.
+   *
+   * The price of gathering, and the reason the mechanic needs a decision rather than a reflex: while the field is
+   * held the bubble is nearly unable to dodge, so "when do I vacuum" is a real question. Set by the game from
+   * `src/suction.ts`; kept as a plain field so `Player` needs no knowledge of the suction system.
+   */
+  suctionMoveFactor = 1;
+
   /** Seconds left of an active skill effect, and which one. */
   skillRemaining = 0;
   skillId: string | null = null;
@@ -228,12 +237,16 @@ export class Player {
     }
 
     /**
-     * One multiplier for everything that follows, folding in the growth stage.
+     * One multiplier for everything that follows, folding in the growth stage and the suction field.
      *
      * The stage applies to EVERY steering source -- the keyboard and the touch wheel alike -- because the
      * design's tension is that bigger means slower, and that has to be felt on the device the game ships to.
+     *
+     * `suctionMoveFactor` is the gathering cost, applied to the same product rather than to a separate branch, so
+     * there is one number describing "how fast can I move right now" and no way for a new penalty to miss a path.
      */
-    const steer = Math.max(0, this.steerScale) * Math.max(0, this.stageSpeedMultiplier);
+    const steer =
+      Math.max(0, this.steerScale) * Math.max(0, this.stageSpeedMultiplier) * Math.max(0, this.suctionMoveFactor);
     this.debugSteerMultiplier = steer;
 
     /**

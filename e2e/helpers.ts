@@ -88,6 +88,8 @@ export interface Diagnostics {
   slow: { remaining: number; factor: number; impulseVy: number };
   ending: { surfaced: boolean; splash: number; bestClimbed: number };
   audio: { muted: boolean; running: boolean };
+  /** The suction field: whether it is held, how far it reaches, and what it costs in speed. */
+  suction: { held: boolean; radiusFraction: number; moveFactor: number };
   /** Which skill is in the slot and how many uses are left, or null. */
   skill: { id: string; uses: number } | null;
   /** How many skills have been used this run. */

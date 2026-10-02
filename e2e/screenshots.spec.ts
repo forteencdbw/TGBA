@@ -136,4 +136,58 @@ test.describe('screen captures @screenshots', () => {
     });
     await page.screenshot({ path: testInfo.outputPath('wheel-pushed.png') });
   });
+
+  /**
+   * The suction field, held open with a few things inside it.
+   *
+   * The field's whole job is to make "I am gathering right now" unmistakable in peripheral vision while the player
+   * watches a fish, and that is a judgement about a picture rather than about a value in a config.
+   */
+  test('the suction field, held open @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugSetSteadyCruise: () => void;
+            spawnBubbleOnPlayer: (r: number) => void;
+            handlePointerDown: (id: number, x: number, y: number) => void;
+            touchRef: { skillGeometry: { x: number; y: number } };
+            camera: { viewport: { laneWidthMeters: number } };
+            diagnostics: { suction: { radiusFraction: number } };
+            fieldRef: { bubbles: { x: number; y: number }[] };
+          };
+          player: { x: number; y: number; volume: number; screenY: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      // A grown bubble, so the field is wide enough to see, and a few collectables inside it.
+      g.player.volume = 3;
+      g.game.debugSetSteadyCruise();
+      g.player.x = 0.5;
+      g.player.screenY = 0.5;
+      const lane = g.game.camera.viewport.laneWidthMeters;
+      const reach = g.game.diagnostics.suction.radiusFraction;
+      for (const [dx, dy] of [
+        [-0.7, 0.5],
+        [0.75, -0.35],
+        [0.2, 0.8],
+      ] as const) {
+        g.game.spawnBubbleOnPlayer(0.7);
+        const list = g.game.fieldRef.bubbles;
+        const b = list[list.length - 1]!;
+        b.x = g.player.x * lane + lane * reach * dx;
+        b.y = g.player.y + lane * reach * dy;
+      }
+
+      const button = g.game.touchRef.skillGeometry;
+      g.game.handlePointerDown(91, button.x, button.y);
+      // Long enough for the inward rings to animate out and for the button to show its held state.
+      for (let i = 0; i < 25; i++) await raf();
+    });
+    await page.screenshot({ path: testInfo.outputPath('suction.png') });
+  });
 });

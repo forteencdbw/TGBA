@@ -20,6 +20,8 @@
 
 import { Graphics } from 'pixi.js';
 import { mech, tuning } from './config';
+import { hazardMass } from './consumption';
+import { pullSpeedFraction, suctionRadiusFraction } from './suction';
 export type HazardKind = 'fish' | 'jelly' | 'trash' | 'crab';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
@@ -246,6 +248,14 @@ export interface HazardContext {
    */
   canEat: (kind: HazardKind) => boolean;
   /**
+   * The suction field, or null when it is not up.
+   *
+   * Hazards are pulled by it exactly like collectables, and that is deliberate: a field that spared the dangerous
+   * things would remove the entire risk of using it. Dragging a crab you cannot eat toward yourself has to be
+   * possible, or "when do I hold this" is not a decision.
+   */
+  suction: { x: number; y: number } | null;
+  /**
    * The collectables, so fish can eat them and jellies can seek the biggest one.
    *
    * Passed in rather than owned: hazards do not manage the bubble field, but two of the emergence
@@ -350,6 +360,12 @@ export class HazardField {
         }
       }
     }
+
+    /**
+     * The suction pull runs BEFORE the per-kind motion, so a hazard's own behaviour starts from where the field
+     * moved it. A fish that is being dragged in still swims; it just swims from closer.
+     */
+    if (ctx.suction) this.applySuction(dt, ctx);
 
     for (const h of this.hazards) {
       this.advance(h, dt, ctx);
@@ -473,6 +489,46 @@ export class HazardField {
     });
 
     return effects;
+  }
+
+  /**
+   * Pull hazards toward the player.
+   *
+   * The same shape as the collectable pull, and for the same reason: `x`/`y` are this module's to move, and a
+   * pull written into a velocity would be re-derived by the per-kind motion on the same frame.
+   *
+   * A hazard's mass comes from the consumption table, so "how hard is this to drag" is the same fact as "how
+   * much is it worth" -- one number per creature rather than two that can disagree.
+   */
+  private applySuction(dt: number, ctx: HazardContext): void {
+    const at = ctx.suction;
+    if (!at) return;
+    const radius = ctx.laneWidth * suctionRadiusFraction(ctx.playerVolume);
+    if (radius <= 0) return;
+    const radiusSq = radius * radius;
+
+    for (const h of this.hazards) {
+      const dx = at.x - h.x;
+      const dy = at.y - h.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > radiusSq || distSq < 1e-6) continue;
+
+      const dist = Math.sqrt(distSq);
+      /**
+       * A crab mid-telegraph and a trash bag that is already gripping are exempt.
+       *
+       * Both are in the middle of doing something the player has already committed to or been warned about;
+       * dragging them around would make the crab's arm-and-fire sequence unreadable and could yank a bag off the
+       * player it just latched onto, which is the one moment the bag's own mechanic is supposed to resolve.
+       */
+      if (h.kind === 'trash' && h.gripping) continue;
+      if (h.kind === 'crab' && h.armed) continue;
+
+      const speed = ctx.laneWidth * pullSpeedFraction(hazardMass(h.kind), ctx.playerVolume);
+      const step = Math.min(speed * dt, dist);
+      h.x += (dx / dist) * step;
+      h.y += (dy / dist) * step;
+    }
   }
 
   /**

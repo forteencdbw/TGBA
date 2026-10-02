@@ -46,6 +46,16 @@ export class Input {
   wheelHeld = false;
 
   /**
+   * True while the suction button is held.
+   *
+   * HELD rather than edge-triggered, unlike the skill. A skill is a discrete action, so one press is one use; the
+   * suction field is a STATE that exists while the thumb is down, and `moveSpeedFactor` is the price of it. An
+   * edge trigger would make it a toggle, which is a different mechanic: it would remove the commitment, and the
+   * commitment is what makes choosing when to gather interesting.
+   */
+  suctionHeld = false;
+
+  /**
    * Whether any deliberate movement input is present: a key held, or the wheel pushed past its dead zone.
    *
    * Exposed because several systems ask "is the player actively steering" rather than "where are they going" --
@@ -55,6 +65,18 @@ export class Input {
    */
   get steering(): boolean {
     return this.axisX !== 0 || this.axisY !== 0;
+  }
+
+  /**
+   * Whether the player is gathering.
+   *
+   * Separate from `steering` on purpose: holding the suction button IS a deliberate action, and the trash bag
+   * tears off when the player struggles, so counting suction as a struggle would let a player escape a grab by
+   * gathering. That is a real interaction, but it belongs in the design rather than in the meaning of a shared
+   * flag.
+   */
+  get sucking(): boolean {
+    return this.suctionHeld;
   }
   /**
    * Touch: the on-screen skill button was pressed this frame.
@@ -147,6 +169,9 @@ export class Input {
     this.wheelHeld = false;
     this.axisX = 0;
     this.axisY = 0;
+    // The suction field goes too: it is a deliberate input, and a measurement that wanted a passive player would
+    // otherwise still have hazards being dragged around.
+    this.suctionHeld = false;
   }
 
   /**

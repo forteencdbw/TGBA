@@ -159,6 +159,22 @@ export interface Mechanisms {
       showBlocked: boolean;
     };
   };
+  /** Long-press suction: pulling light things toward the bubble. */
+  suction: {
+    radiusRatio: number;
+    radiusPerVolume: number;
+    maxRadiusRatio: number;
+    pullPerSecond: number;
+    heavyRatio: number;
+    heavyFloor: number;
+    /** How much of the player's movement speed survives while sucking. */
+    moveSpeedFactor: number;
+    fieldColor: number;
+    fieldAlpha: number;
+    fieldWidthRatio: number;
+    tetherAlpha: number;
+    tetherWidthRatio: number;
+  };
   emergence: {
     fishPerceptionBaseMeters: number;
     fishPerceptionPerVolume: number;
@@ -325,6 +341,18 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'consumption.marker.edibleAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'consumption.marker.blockedAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'consumption.marker.showBlocked', check: (v) => typeof v === 'boolean', describe: 'true or false' },
+  { path: 'suction.radiusRatio', check: (v) => typeof v === 'number' && v > 0.02 && v < 1, describe: 'a fraction of the lane width, above 0.02 and below 1' },
+  { path: 'suction.radiusPerVolume', check: (v) => typeof v === 'number' && v >= 0, describe: 'a non-negative fraction of the lane width' },
+  { path: 'suction.maxRadiusRatio', check: (v) => typeof v === 'number' && v > 0.02 && v <= 1.5, describe: 'a fraction of the lane width, above 0.02 and at most 1.5' },
+  { path: 'suction.pullPerSecond', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'suction.heavyRatio', check: (v) => typeof v === 'number' && v > 1, describe: 'a ratio above 1' },
+  { path: 'suction.heavyFloor', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
+  { path: 'suction.moveSpeedFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction above 0 and at most 1' },
+  { path: 'suction.fieldColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'suction.fieldAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'suction.fieldWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
+  { path: 'suction.tetherAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'suction.tetherWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
   { path: 'emergence.fishPerceptionBaseMeters', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'emergence.fishPerceptionPerVolume', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'emergence.fishFeedToSplit', check: (v) => typeof v === 'number' && v >= 2, describe: '2 or more, or nothing would ever split' },
@@ -404,16 +432,40 @@ appearances.forEach((stage, index) => {
  * string is what a colour picker gives you. Neither should be a mistake, so both are converted here rather than
  * the file having to know which one the loader prefers.
  */
-const COLOUR_KEYS = ['inner', 'rim', 'glow', 'sheen', 'specular', 'hudColor'] as const;
+/**
+ * Normalise a colour to the number Pixi wants.
+ *
+ * Both forms are accepted because JSON5 gives you the choice: `0x9fe4ff` is a plain number, and a `"#rrggbb"`
+ * string is what a colour picker gives you. Neither should be a mistake, so both are converted here rather than
+ * the file having to know which one the loader prefers.
+ */
+function normaliseColour(value: string | number, where: string): number {
+  if (typeof value === 'number') return value;
+  const parsed = Number.parseInt(value.slice(1), 16);
+  if (!Number.isFinite(parsed)) fail(`${where} is "${value}", which is not a colour`);
+  return parsed;
+}
 
-for (const stage of mech.stages.appearance as unknown as Record<string, string | number>[]) {
-  for (const key of COLOUR_KEYS) {
-    const value = stage[key];
-    if (typeof value === 'number') continue;
-    const parsedColour = Number.parseInt(String(value).slice(1), 16);
-    if (!Number.isFinite(parsedColour)) fail(`stages.appearance[].${key} is "${value}", which is not a colour`);
-    stage[key] = parsedColour;
+const APPEARANCE_COLOUR_KEYS = ['inner', 'rim', 'glow', 'sheen', 'specular', 'hudColor'] as const;
+
+(mech.stages.appearance as unknown as Record<string, string | number>[]).forEach((stage, index) => {
+  for (const key of APPEARANCE_COLOUR_KEYS) {
+    stage[key] = normaliseColour(stage[key]!, `stages.appearance[${index}].${key}`);
   }
+});
+
+/**
+ * Every OTHER colour in the config, converted too.
+ *
+ * Gathered in one list rather than converted where it is defined, because the failure this prevents is silent:
+ * `marker.edibleColor` was VALIDATED as a colour but never converted, so writing it as a `"#rrggbb"` string
+ * would have handed Pixi a string. A shared list makes a new colour hard to forget.
+ */
+for (const [where, get, set] of [
+  ['consumption.marker.edibleColor', () => mech.consumption.marker.edibleColor, (v: number) => (mech.consumption.marker.edibleColor = v)],
+  ['suction.fieldColor', () => mech.suction.fieldColor, (v: number) => (mech.suction.fieldColor = v)],
+] as const) {
+  set(normaliseColour(get() as string | number, where));
 }
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */

@@ -9,6 +9,7 @@ import { audio } from './audio';
 import { canEatHazard, massFromEating } from './consumption';
 import { MainMenu } from './menu';
 import { mech } from './mechanisms';
+import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { SettingsUi } from './settings';
 import { demote, initialStageState, recordAbsorb, stageAppearance, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
@@ -795,7 +796,20 @@ class Game {
       this.player.syncToCamera(this.camera.y, viewport.visibleDepthMeters);
     }
 
-    this.field.update(dt, viewport.laneWidthMeters, min, max, this.player.volume, LEVEL.scrollSpeed);
+    /**
+     * Where the suction field is centred, or null when it is not held.
+     *
+     * Computed once here and passed to BOTH fields, so a hazard and a collectable at the same distance are pulled
+     * identically. Two independently-derived centres would drift and the field would look off-centre.
+     *
+     * `x * laneWidth` and `player.y` are the same two numbers the hazard context already uses for contact, so the
+     * pull and the collision agree on where the bubble is by construction.
+     */
+    const suctionAt = this.input.sucking ? { x: this.player.x * viewport.laneWidthMeters, y: this.player.y } : null;
+    // The gathering cost, pushed into the player each frame because it lasts exactly as long as the input does.
+    this.player.suctionMoveFactor = suctionAt ? suctionMoveFactor() : 1;
+
+    this.field.update(dt, viewport.laneWidthMeters, min, max, this.player.volume, LEVEL.scrollSpeed, suctionAt);
 
     switch (this.phase) {
       case 'intro': {
@@ -971,6 +985,15 @@ class Game {
    * a probe drive hazards without a player.
    */
   private resolveHazards(dt: number, min: number, max: number, laneWidth: number): void {
+    /**
+     * The suction field, recomputed rather than passed down.
+     *
+     * Cheap (two multiplications) and it keeps this method callable on its own, which matters because probes
+     * drive hazards through it. If the two disagreed about where the field is centred, the pull and the collision
+     * would be pulling toward different points.
+     */
+    const suctionAt = this.input.sucking ? { x: this.player.x * laneWidth, y: this.player.y } : null;
+
     // The bubble field is handed in so the emergence rules can act on it: fish eat collectables and
     // split, and the seeking hazards go after the biggest one. Anything eaten is removed here, by the
     // owner of the field, rather than by the hazard module reaching into it.
@@ -998,6 +1021,13 @@ class Game {
        * on contact.
        */
       canEat: (kind: HazardKind) => canEatHazard(kind, this.player.volume),
+      /**
+       * The suction field, or null when it is not held.
+       *
+       * The SAME player position is handed to both fields, so a hazard and a collectable at the same distance are
+       * pulled identically. Two independently-derived centres would drift and the field would look off-centre.
+       */
+      suction: suctionAt,
       bubbles: this.field.bubbles,
       eatenBubbleIds: [] as number[],
       splitCount: 0,
@@ -1679,6 +1709,36 @@ class Game {
     // worst bug this feature could have, because it would punish the player for trusting what they saw.
     paintHazards(g, this.hazards, laneWidth, this.elapsed, (kind) => canEatHazard(kind, this.player.volume));
 
+    /**
+     * The suction field, drawn UNDER everything else in the water.
+     *
+     * Under, because it is an area rather than an object: drawing it over the collectables would obscure the
+     * things it is about to drag in, which is the opposite of what a gathering mechanic needs. Two rings that
+     * contract toward the bubble, animated rather than static, so the direction of the pull is legible even when
+     * nothing is currently in range to demonstrate it.
+     */
+    if (this.input.sucking) {
+      const cx = this.player.x * laneWidth;
+      const cy = this.player.y;
+      const reach = laneWidth * suctionRadiusFraction(this.player.volume);
+      g.circle(cx, cy, reach).fill({ color: mech.suction.fieldColor, alpha: mech.suction.fieldAlpha * 0.35 });
+      g.circle(cx, cy, reach).stroke({
+        color: mech.suction.fieldColor,
+        alpha: mech.suction.fieldAlpha,
+        width: Math.max(1, laneWidth * mech.suction.fieldWidthRatio),
+      });
+      // Inward-travelling rings: each one starts at the rim and converges, which reads as flow.
+      for (let i = 0; i < 2; i++) {
+        const t = ((this.elapsed * 0.9 + i * 0.5) % 1 + 1) % 1;
+        const r = reach * (1 - t * 0.75);
+        g.circle(cx, cy, r).stroke({
+          color: mech.suction.fieldColor,
+          alpha: mech.suction.fieldAlpha * 0.8 * t,
+          width: Math.max(1, laneWidth * mech.suction.fieldWidthRatio * 0.6),
+        });
+      }
+    }
+
     // The decoy bait bubble, while it lasts. Drawn like a bright collectable, because that is what it
     // is imitating -- the fish are supposed to fall for it.
     if (this.decoy && this.decoy.until > this.elapsed) {
@@ -1877,6 +1937,8 @@ class Game {
       eaten: number;
     };
     slow: { remaining: number; factor: number; impulseVy: number };
+    /** The suction field: whether it is held, how far it reaches, and what it costs in speed. */
+    suction: { held: boolean; radiusFraction: number; moveFactor: number };
     trashDrain: number;
     maxGripSeconds: number;
     talent: {
@@ -1990,6 +2052,17 @@ class Game {
          * answer whether it was eaten or simply drifted off screen.
          */
         eaten: this.hazards.eaten,
+      },
+      /**
+       * The suction field, so a probe can assert the pull and the cost without inferring them from motion.
+       *
+       * `radiusFraction` is the config-derived reach, and `moveFactor` is what the player's speed is currently
+       * multiplied by -- the two halves of the mechanic, each stated rather than implied.
+       */
+      suction: {
+        held: this.input.sucking,
+        radiusFraction: suctionRadiusFraction(this.player.volume),
+        moveFactor: this.player.suctionMoveFactor,
       },
       /** Fractional damage accumulated from a trash bag, so the drain can be observed directly. */
       trashDrain: +this.trashDrain.toFixed(3),

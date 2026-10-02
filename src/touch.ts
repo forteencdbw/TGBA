@@ -2,6 +2,11 @@ import { Container, Graphics } from 'pixi.js';
 import { mech } from './config';
 import type { Input } from './input';
 
+/** The field's accent colour, read from the config each frame so a live edit is visible immediately. */
+function suctionFieldColor(): number {
+  return mech.suction.fieldColor;
+}
+
 /**
  * The on-screen thumb wheel: a virtual analog stick at the bottom of the lane.
  *
@@ -53,6 +58,14 @@ export class TouchControls {
 
   /** The pointer currently on the wheel, or null. Only one thumb drives it. */
   private wheelPointer: number | null = null;
+  /**
+   * The pointer holding the suction button, or null.
+   *
+   * The suction field is always available, unlike the skill, so this button is always drawn -- which also gives
+   * the skill somewhere to live: tapping the same button fires it. One control rather than two, in a corner that
+   * has room for one.
+   */
+  private suctionPointer: number | null = null;
   /** Knob offset from the pad centre, in canvas pixels, already clamped to the radius. */
   private knobX = 0;
   private knobY = 0;
@@ -86,11 +99,25 @@ export class TouchControls {
    * pointer cannot disturb an active control.
    */
   onPointerDown(pointerId: number, x: number, y: number): void {
-    // The skill button fires on PRESS: it is a discrete action, and requiring a release would make it feel
-    // unresponsive under a thumb that lingers.
-    if (this.hasSkill && this.isInSkillButton(x, y)) {
+    /**
+     * The suction button fires the skill on PRESS and holds the field while down.
+     *
+     * Both, on one control. A skill is a discrete action so a press is enough; the field is a state, so the
+     * button also sets `suctionHeld` and the release clears it. Splitting them into two buttons would put two
+     * thumb targets in the same corner of a phone screen for no gain -- they are never wanted simultaneously.
+     */
+    if (this.isInSkillButton(x, y)) {
       this.input.pressSkill();
       this.skillFlash = 1;
+      /**
+       * Only one pointer owns the field. A second finger landing on the button must not be able to release a
+       * field the first is still holding, which it would if `onPointerUp` cleared the flag unconditionally.
+       */
+      if (this.suctionPointer === null) {
+        this.suctionPointer = pointerId;
+        this.input.suctionHeld = true;
+      }
+      this.update();
       return;
     }
 
@@ -119,6 +146,13 @@ export class TouchControls {
   }
 
   onPointerUp(pointerId: number): void {
+    // Releasing the suction button ends the field. Checked before the wheel so a stray release cannot leave the
+    // field on, which would drain the player's speed with no way to stop it.
+    if (this.suctionPointer === pointerId) {
+      this.suctionPointer = null;
+      this.input.suctionHeld = false;
+      this.update();
+    }
     if (this.wheelPointer !== pointerId) return;
     // Recentre. The knob is a stick, not a place: unlike a drag, releasing must not leave the bubble heading
     // for wherever the thumb happened to stop.
@@ -135,12 +169,14 @@ export class TouchControls {
   /** Forget every pointer, e.g. after a layout change or on leaving the level. */
   releaseAll(): void {
     this.wheelPointer = null;
+    this.suctionPointer = null;
     this.knobX = 0;
     this.knobY = 0;
     this.deflection = 0;
     this.input.wheelX = 0;
     this.input.wheelY = 0;
     this.input.wheelHeld = false;
+    this.input.suctionHeld = false;
     this.update();
   }
 
@@ -317,20 +353,65 @@ export class TouchControls {
     });
   }
 
+  /**
+   * The suction button, which doubles as the skill button.
+   *
+   * ALWAYS drawn, because the suction field is always available -- and that is a change from when this was the
+   * skill button and hid itself when the slot was empty. A control that appears and disappears is one the player
+   * has to re-find; this one is a permanent verb.
+   *
+   * The two meanings are told apart by shape rather than by a label: the ring is the field (hold to gather), and
+   * the star inside it is the skill (tap to spend). Holding shows the ring lighting up, so the state is visible
+   * without a hint line.
+   */
   private drawSkillButton(): void {
     const g = this.buttonGfx;
     g.clear();
-    if (!this.hasSkill) return;
 
     const sb = this.skillButton;
+    const sucking = this.suctionPointer !== null;
     this.skillFlash = Math.max(0, this.skillFlash - 0.05);
+
+    // The press pulse, for the skill's edge trigger.
     if (this.skillFlash > 0) {
       g.circle(sb.x, sb.y, sb.radius * (1.2 + this.skillFlash * 0.3)).fill({ color: 0xc79bff, alpha: 0.3 * this.skillFlash });
     }
-    g.circle(sb.x, sb.y, sb.radius).fill({ color: 0x1d2a44, alpha: 0.7 });
-    g.circle(sb.x, sb.y, sb.radius).stroke({ color: 0xc79bff, alpha: 0.85, width: 2 });
 
-    // A four-point star, so the button reads as "a thing you spend" rather than as a direction.
+    /**
+     * The field ring: a second circle that appears only while gathering, growing slightly outward.
+     *
+     * The same visual language as the wave drawing -- a ring around the bubble means "the field is up" -- so the
+     * button and the effect read as one thing rather than as two unrelated cues.
+     */
+    if (sucking) {
+      g.circle(sb.x, sb.y, sb.radius * 1.45).fill({ color: suctionFieldColor(), alpha: 0.18 });
+      g.circle(sb.x, sb.y, sb.radius * 1.45).stroke({ color: suctionFieldColor(), alpha: 0.8, width: Math.max(1, 2 * this.scale) });
+    }
+
+    g.circle(sb.x, sb.y, sb.radius).fill({ color: sucking ? 0x1b3f57 : 0x1d2a44, alpha: 0.75 });
+    g.circle(sb.x, sb.y, sb.radius).stroke({
+      color: sucking ? suctionFieldColor() : 0xc79bff,
+      alpha: this.hasSkill || sucking ? 0.9 : 0.45,
+      width: 2,
+    });
+
+    // The gathered-field motif: three inward ticks, so the button reads as a pull rather than a direction.
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+      const outer = sb.radius * 0.86;
+      const inner = sb.radius * 0.62;
+      g.moveTo(sb.x + Math.cos(a) * outer, sb.y + Math.sin(a) * outer);
+      g.lineTo(sb.x + Math.cos(a) * inner, sb.y + Math.sin(a) * inner);
+    }
+    g.stroke({ color: suctionFieldColor(), alpha: sucking ? 0.95 : 0.5, width: Math.max(1, 1.6 * this.scale) });
+
+    /**
+     * The star, only when a skill is actually carried.
+     *
+     * Its absence is the information: the ring is always there, so a player looking at the button can tell
+     * whether they have something to spend without checking a HUD line.
+     */
+    if (!this.hasSkill) return;
     const r = sb.radius;
     g.moveTo(sb.x, sb.y - r * 0.5)
       .lineTo(sb.x + r * 0.16, sb.y - r * 0.16)
@@ -362,6 +443,8 @@ export class TouchControls {
     knobX: number;
     knobY: number;
     hasSkill: boolean;
+    /** Whether the suction field is being held. */
+    sucking: boolean;
   } {
     return {
       held: this.wheelPointer !== null,
@@ -374,6 +457,7 @@ export class TouchControls {
       knobX: this.knobX,
       knobY: this.knobY,
       hasSkill: this.hasSkill,
+      sucking: this.input.suctionHeld,
     };
   }
 

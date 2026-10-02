@@ -1,5 +1,6 @@
-﻿import { tuning } from './config';
+import { tuning } from './config';
 import type { LevelEntry } from './levels';
+import { pullSpeedFraction, suctionRadiusFraction } from './suction';
 import { bubbleRelativeFallRatio, bubbleVolumeFromRadius } from './volume';
 
 /**
@@ -176,6 +177,9 @@ export class EntityField {
    * @param playerVolume the player's current volume, used to solve each bubble's rise speed.
    * @param scrollSpeed the camera's travel in m/s. Collectables are measured against this, because it
    *   is what makes the world move now that the player no longer rises on their own.
+   * @param suction where the player is and whether the field is up, or null when it is not. Applied BEFORE the
+   *   motion solve so a pulled bubble covers the whole frame's distance, and so the solve's own velocity stays
+   *   the bubble's own -- a pull written into `vy` would be re-derived away on the next frame.
    */
   update(
     dt: number,
@@ -184,13 +188,49 @@ export class EntityField {
     max: number,
     playerVolume: number,
     scrollSpeed: number,
+    suction: { x: number; y: number } | null = null,
   ): void {
     this.scrollSpeed = Math.max(0.001, scrollSpeed);
     this.playerVolume = playerVolume;
+    if (suction) this.applySuction(dt, laneWidth, suction.x, suction.y, playerVolume);
     this.advance(dt);
     this.advanceParallax(dt, this.scrollSpeed);
     this.recycle(min, max);
     this.topUpSpecks(laneWidth, min, max);
+  }
+
+  /**
+   * Pull collectables toward the player.
+   *
+   * Displacement rather than force: `x`/`y` are owned by this module, and writing a pull into a velocity would be
+   * overwritten by `advance`'s per-frame solve. Moving the position directly also means the pull is exactly
+   * "metres per second toward the player", which is a number the config can state and a test can measure.
+   *
+   * The radius is in LANE WIDTHS, matching how every other spawn and size is expressed, so the field does not
+   * need to know about the camera.
+   */
+  private applySuction(dt: number, laneWidth: number, playerX: number, playerY: number, playerVolume: number): void {
+    const radius = laneWidth * suctionRadiusFraction(playerVolume);
+    if (radius <= 0) return;
+    const radiusSq = radius * radius;
+
+    for (const b of this.bubbles) {
+      const dx = playerX - b.x;
+      const dy = playerY - b.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > radiusSq) continue;
+      // Skip the one the player is already touching: the absorb path owns that, and pulling it would fight it.
+      if (distSq < 1e-6) continue;
+
+      const dist = Math.sqrt(distSq);
+      // A collectable's mechanical size IS its mass, which is what makes big ones harder to drag.
+      const speed = laneWidth * pullSpeedFraction(b.volume, playerVolume);
+      // Never overshoot the player in one step: a bubble dragged past them and out the other side reads as the
+      // field pushing rather than pulling.
+      const step = Math.min(speed * dt, dist);
+      b.x += (dx / dist) * step;
+      b.y += (dy / dist) * step;
+    }
   }
 
   /** Player volume the bubble speeds are currently solved against. */
