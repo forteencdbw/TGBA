@@ -1,4 +1,5 @@
 import { mech } from './mechanisms';
+import { visualRadiusFraction } from './volume';
 
 /**
  * Bubble growth stages.
@@ -90,6 +91,42 @@ export function stageColor(stage: number): number {
 export function stageName(stage: number): string {
   const list = mech.stages.name;
   return list[Math.min(list.length - 1, Math.max(0, stage - 1))] ?? `阶段 ${stage}`;
+}
+
+/**
+ * Visual radius multiplier for a stage, on top of whatever the volume already gives.
+ *
+ * Separate from `speedMultiplier` on purpose, even though both are indexed by the same stage: SPEED is balance
+ * and SIZE is readability. They want different curves -- the size difference has to be obvious at a glance while
+ * the speed difference has to stay playable -- and tying them together would make every speed tweak a visual one.
+ */
+export function stageRadiusScale(stage: number): number {
+  const list = mech.stages.radiusScale;
+  return list[Math.min(list.length - 1, Math.max(0, stage - 1))] ?? 1;
+}
+
+/**
+ * The bubble's drawn radius as a fraction of the lane width, for a given stage and volume.
+ *
+ * This is THE function the drawing code and the collision code must agree on, which is why it lives here rather
+ * than inside either of them: a bubble drawn larger than it collides would let a player believe they are safe
+ * when they are not. The radius comes from the volume and the stage's scale multiplies it, and BOTH the visual
+ * radius and the gameplay radius go through here -- so the bubble really is as big as it looks, in the eating
+ * rules too, not merely on screen.
+ */
+export function stageRadiusFraction(stage: number, volume: number): number {
+  return visualRadiusFraction(volume) * stageRadiusScale(stage);
+}
+
+/** Per-stage colours for the bubble's translucent fill, opaque outline, and wide soft glow. */
+export function stagePalette(stage: number): { body: number; rim: number; halo: number } {
+  const pick = (list: number[], fallback: number): number =>
+    list[Math.min(list.length - 1, Math.max(0, stage - 1))] ?? fallback;
+  return {
+    body: pick(mech.stages.body, 0xcdf6ff),
+    rim: pick(mech.stages.rim, 0xd8fbff),
+    halo: pick(mech.stages.halo, 0x7fe6ff),
+  };
 }
 
 /**

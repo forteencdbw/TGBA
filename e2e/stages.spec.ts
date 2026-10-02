@@ -1,61 +1,15 @@
 import { expect, test } from '@playwright/test';
-import { boot, diagnostics, mechanics, player, startFromMenu, waitForPhase } from './helpers';
+import { absorbUntilStage, boot, diagnostics, mechanics, player, startFromMenu, waitForPhase } from './helpers';
 
 /**
  * Growth stages: the bubble gets bigger, and BIGGER IS SLOWER.
  *
  * That rule is the whole tension of the design -- the more you eat, the harder it is to dodge -- so it has to
- * be true of the bubble's actual movement, not merely of a number in a config. The last assertion here measures
+ * be true of the bubble's actual movement, not merely of a number in a config. The movement test measures
  * DISPLACEMENT for exactly that reason: a multiplier that never reaches the movement code would pass every
- * other check in this file.
+ * other check in this file. The appearance test measures the DRAWN radius for the same reason.
  */
 test.describe('growth stages', () => {
-  /**
-   * Drive the bubble to a target stage by absorbing, inside ONE page evaluation.
-   *
-   * The first version spawned a single bubble per `expect.poll` tick and relied on Playwright's retry cadence
-   * to keep the game stepping. That is a timing guess: the poll interval and the frame loop are unrelated, so
-   * the run could sit for a full poll interval with nothing spawned and the stage never moved. A
-   * `requestAnimationFrame` loop inside the page is the direct expression of "keep feeding it until the stage
-   * changes", and it stops the moment it has what it came for.
-   */
-  const absorbUntilStage = async (page: import('@playwright/test').Page, target: number): Promise<void> => {
-    const reached = await page.evaluate(
-      async (want) => {
-        const g = (window as unknown as {
-          __GB: {
-            game: {
-              diagnostics: { stage: { stage: number }; stats: { absorbed: number } };
-              spawnBubbleOnPlayer: (r: number) => void;
-              demoteStageForTest: () => number;
-            };
-          };
-        }).__GB.game;
-        const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
-
-        // Come DOWN to the target if a previous step overshot, using the game's own demote path so the state
-        // stays consistent rather than being written by hand.
-        let guard = 0;
-        while (g.diagnostics.stage.stage > want && guard++ < 20) {
-          g.demoteStageForTest();
-          await raf();
-        }
-        // Then feed it until it promotes. ONE bubble per frame, and wait a frame after each so the absorb is
-        // processed before the next one is spawned -- spawning faster than the game consumes them piles bubbles
-        // on the player and the count stops being meaningful.
-        guard = 0;
-        while (g.diagnostics.stage.stage < want && guard++ < 600) {
-          g.spawnBubbleOnPlayer(0.4);
-          await raf();
-        }
-        return { stage: g.diagnostics.stage.stage, absorbed: g.diagnostics.stats.absorbed };
-      },
-      target,
-    );
-
-    expect(reached.stage, `the bubble should reach stage ${target}`).toBe(target);
-  };
-
   test('starts at stage 1 and promotes at the configured thresholds', async ({ page }) => {
     await boot(page);
     await startFromMenu(page);
@@ -158,5 +112,86 @@ test.describe('growth stages', () => {
     expect(dx2 / dx1).toBeLessThan(0.95);
     expect(dx3 / dx2).toBeGreaterThan(0.6);
     expect(dx3 / dx2).toBeLessThan(0.95);
+  });
+
+  /**
+   * The growth has to be VISIBLE, and this is the requirement stated directly: the bubble changes size with the
+   * stage and each stage is a different colour so they can be told apart.
+   *
+   * Asserted on the DRAWN radius rather than on the config's `radiusScale`, because a scale that never reaches
+   * the drawing code would satisfy every config check while changing nothing on screen. Note it is also the
+   * radius the eating rules use -- one function, so the bubble is genuinely as big as it looks.
+   */
+  test('each stage draws a bigger bubble in a different colour', async ({ page }) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+
+    const readings: { stage: number; radiusPx: number; palette: { body: number; rim: number; halo: number }; radiusFraction: number }[] = [];
+    for (const target of [1, 2, 3]) {
+      await absorbUntilStage(page, target);
+      // Park it in the middle so the reported screen position is stable between measurements.
+      await page.evaluate(() => {
+        const g = (window as unknown as { __GB: { game: { debugSetSteadyCruise: () => void }; player: { x: number; screenY: number } } }).__GB.game;
+        g.debugSetSteadyCruise();
+        (window as unknown as { __GB: { player: { x: number; screenY: number } } }).__GB.player.x = 0.5;
+        (window as unknown as { __GB: { player: { x: number; screenY: number } } }).__GB.player.screenY = 0.45;
+      });
+      await page.waitForTimeout(120);
+      const state = await page.evaluate(() => {
+        const g = (window as unknown as {
+          __GB: { game: { diagnostics: { stage: { palette: { body: number; rim: number; halo: number }; radiusFraction: number } }; playerScreenPx: { radiusPx: number } } };
+        }).__GB.game;
+        return { radiusPx: g.playerScreenPx.radiusPx, palette: g.diagnostics.stage.palette, radiusFraction: g.diagnostics.stage.radiusFraction };
+      });
+      readings.push({ stage: target, ...state });
+    }
+
+    console.log('stage  drawn radius px   lane fraction   body       rim        halo');
+    for (const r of readings) {
+      const hex = (v: number) => '#' + v.toString(16).padStart(6, '0');
+      console.log(
+        `  ${r.stage}    ${r.radiusPx.toFixed(1).padStart(14)}   ${r.radiusFraction.toFixed(4).padStart(12)}   ` +
+          `${hex(r.palette.body)}   ${hex(r.palette.rim)}   ${hex(r.palette.halo)}`,
+      );
+    }
+
+    // SIZE: strictly bigger each stage.
+    expect(readings[0]!.radiusPx).toBeGreaterThan(0);
+    expect(readings[1]!.radiusPx, 'stage 2 must draw a bigger bubble than stage 1').toBeGreaterThan(readings[0]!.radiusPx);
+    expect(readings[2]!.radiusPx, 'stage 3 must draw a bigger bubble than stage 2').toBeGreaterThan(readings[1]!.radiusPx);
+
+    /**
+     * And the growth must clear a REAL margin, not merely be monotonic.
+     *
+     * The configured scales are 1.00 / 1.32 / 1.72, but the volume also rises while absorbing to reach a stage,
+     * so the measured ratio is larger than the configured one and cannot be compared to it directly. What
+     * matters is that a player can see the change: a 10% growth is technically "bigger" and invisible.
+     */
+    expect(readings[1]!.radiusFraction / readings[0]!.radiusFraction, 'stage 2 must be visibly bigger').toBeGreaterThan(1.15);
+    expect(readings[2]!.radiusFraction / readings[1]!.radiusFraction, 'stage 3 must be visibly bigger').toBeGreaterThan(1.15);
+
+    // COLOUR: every stage must be distinguishable from every other, in all three parts of the palette.
+    const distinct = (values: number[]): boolean => new Set(values).size === values.length;
+    expect(distinct(readings.map((r) => r.palette.body)), 'each stage needs its own body colour').toBe(true);
+    expect(distinct(readings.map((r) => r.palette.rim)), 'each stage needs its own rim colour').toBe(true);
+    expect(distinct(readings.map((r) => r.palette.halo)), 'each stage needs its own halo colour').toBe(true);
+
+    /**
+     * And the colours must be *perceptibly* different, not merely different integers.
+     *
+     * A one-step change in a colour channel satisfies "different" and is invisible. The rim carries most of the
+     * hue, so the check is on that: the stages must differ by a clear margin in at least one channel.
+     */
+    const channels = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
+    const distance = (a: number, b: number) => {
+      const [ar, ag, ab] = channels(a);
+      const [br, bg, bb] = channels(b);
+      return Math.max(Math.abs(ar - br), Math.abs(ag - bg), Math.abs(ab - bb));
+    };
+    const rims = readings.map((r) => r.palette.rim);
+    expect(distance(rims[0]!, rims[1]!), 'stage 1 and 2 rims must be clearly different colours').toBeGreaterThan(40);
+    expect(distance(rims[1]!, rims[2]!), 'stage 2 and 3 rims must be clearly different colours').toBeGreaterThan(40);
+    expect(distance(rims[0]!, rims[2]!), 'stage 1 and 3 rims must be clearly different colours').toBeGreaterThan(40);
   });
 });

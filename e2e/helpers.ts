@@ -49,6 +49,10 @@ export interface Diagnostics {
     absorbedInStage: number;
     neededForNext: number | null;
     speedMultiplier: number;
+    /** The colours this stage paints the bubble with. */
+    palette: { body: number; rim: number; halo: number };
+    /** The drawn radius as a fraction of the lane, which is also the radius the eating rules use. */
+    radiusFraction: number;
   };
   hazards: { active: number; byKind: Record<string, number>; comedyBeats: number };
   emergence: { fishCount: number; perceptionRadiusMeters: number };
@@ -211,4 +215,51 @@ export function watchForErrors(page: Page): string[] {
 /** A convenience assertion used by several tests. */
 export async function expectNoErrors(errors: string[]): Promise<void> {
   expect(errors, 'the page reported errors').toEqual([]);
+}
+
+/**
+ * Drive the bubble to a target growth stage by absorbing, then stop.
+ *
+ * Inside ONE page evaluation, using a `requestAnimationFrame` loop. The first version spawned a single bubble
+ * per `expect.poll` tick and relied on Playwright's retry cadence to keep the game stepping -- a timing guess,
+ * since the poll interval and the frame loop are unrelated, so the run could sit for a poll interval with
+ * nothing spawned and the stage would never move. A rAF loop is the direct expression of "keep feeding it until
+ * it promotes", and it stops the moment it has what it came for.
+ *
+ * Comes DOWN to the target too, through the game's own demote path, so a test can walk the stages in any order
+ * rather than only upward.
+ */
+export async function absorbUntilStage(page: Page, target: number): Promise<void> {
+  const reached = await page.evaluate(
+    async (want) => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            diagnostics: { stage: { stage: number }; stats: { absorbed: number } };
+            spawnBubbleOnPlayer: (r: number) => void;
+            demoteStageForTest: () => number;
+          };
+        };
+      }).__GB.game;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      let guard = 0;
+      while (g.diagnostics.stage.stage > want && guard++ < 20) {
+        g.demoteStageForTest();
+        await raf();
+      }
+      // ONE bubble per frame, waiting a frame after each so the absorb is processed before the next spawn --
+      // spawning faster than the game consumes them piles bubbles on the player and the count stops meaning
+      // anything.
+      guard = 0;
+      while (g.diagnostics.stage.stage < want && guard++ < 600) {
+        g.spawnBubbleOnPlayer(0.4);
+        await raf();
+      }
+      return { stage: g.diagnostics.stage.stage, absorbed: g.diagnostics.stats.absorbed };
+    },
+    target,
+  );
+
+  expect(reached.stage, `the bubble should reach stage ${target}`).toBe(target);
 }

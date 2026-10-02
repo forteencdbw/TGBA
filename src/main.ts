@@ -9,14 +9,14 @@ import { audio } from './audio';
 import { MainMenu } from './menu';
 import { mech } from './mechanisms';
 import { SettingsUi } from './settings';
-import { demote, initialStageState, recordAbsorb, stageName, type StageState } from './stages';
+import { demote, initialStageState, recordAbsorb, stageName, stagePalette, stageRadiusFraction, type StageState } from './stages';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
 import { calibrateLateral, type LateralAuthority } from './lateral';
 import { Player } from './player';
 import { TouchControls } from './touch';
-import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius, growByAbsorbing, hitsSurvived, isPopped, shrinkFromHit, visualRadiusFraction } from './volume';
+import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius, growByAbsorbing, hitsSurvived, isPopped, shrinkFromHit } from './volume';
 
 /**
  * Depths where the emergence events fire (design round 4). On D1 they only prove the depth scale
@@ -392,6 +392,25 @@ class Game {
   /** Test hook: the main menu. */
   get menuRef(): MainMenu {
     return this.menu;
+  }
+
+  /**
+   * Test hook: where the player's bubble is drawn, in CANVAS pixels.
+   *
+   * Exists because reading a screenshot means having to find the bubble in it, and guessing the mapping from
+   * `screenY` to a pixel row gets it wrong -- the first attempt sampled the water and reported its colour as
+   * the bubble's. The drawing code already knows this conversion, so it reports it rather than a test
+   * reproducing it and disagreeing.
+   */
+  get playerScreenPx(): { x: number; y: number; radiusPx: number } {
+    const band = this.scene.world;
+    const viewport = this.camera.viewport;
+    const radius = viewport.laneWidthMeters * stageRadiusFraction(this.stage.stage, this.player.volume);
+    return {
+      x: band.x + (this.player.x * viewport.laneWidthMeters * band.scale.x),
+      y: band.y + this.player.y * band.scale.y,
+      radiusPx: radius * band.scale.x,
+    };
   }
 
   /** Test hook: the last few evaluations of the end condition, so a failure is diagnosable. */
@@ -880,7 +899,7 @@ class Game {
     });
     if (this.spawnLog.length > 12) this.spawnLog.shift();
     if (entry.kind === 'bubble') {
-      this.field.bubbles.push(this.field.bubbleFromEntry({ ...entry, at: worldY }, laneWidth, visualRadiusFraction(this.player.volume)));
+      this.field.bubbles.push(this.field.bubbleFromEntry({ ...entry, at: worldY }, laneWidth, stageRadiusFraction(this.stage.stage, this.player.volume)));
       return;
     }
     if (entry.kind === 'skill') {
@@ -927,7 +946,7 @@ class Game {
 
     const dx = pickup.x - this.player.x * laneWidth;
     const dy = pickup.y - this.player.y;
-    const reach = laneWidth * (visualRadiusFraction(this.player.volume) + 0.05);
+    const reach = laneWidth * (stageRadiusFraction(this.stage.stage, this.player.volume) + 0.05);
     if (dx * dx + dy * dy <= reach * reach) {
       // Rolled on COLLECTION. Deciding at placement would commit the player's next twenty seconds
       // before they had even seen the pickup, and would make the level author's choice of WHERE into a
@@ -955,7 +974,7 @@ class Game {
       laneWidth,
       playerX: this.player.x * laneWidth,
       playerY: this.player.y,
-      playerRadiusFraction: visualRadiusFraction(this.player.volume),
+      playerRadiusFraction: stageRadiusFraction(this.stage.stage, this.player.volume),
       // The level's scroll, not the player's speed: hazards approach because the WORLD moves now.
       descentSpeed: LEVEL.scrollSpeed,
       elapsed: this.elapsed,
@@ -1269,7 +1288,7 @@ class Game {
   private resolveContacts(): void {
     const laneWidth = this.camera.viewport.laneWidthMeters;
     const playerX = this.player.x * laneWidth;
-    const playerR = laneWidth * visualRadiusFraction(this.player.volume);
+    const playerR = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
     let eaten = 0;
 
     for (let i = this.field.bubbles.length - 1; i >= 0; i--) {
@@ -1599,7 +1618,7 @@ class Game {
       const drift = Math.sin(b.phase) * r * b.wobble;
       const x = b.x + drift;
       // Bigger bubbles are brighter; anything bigger than the player reads as a threat.
-      const playerR = laneWidth * visualRadiusFraction(this.player.volume);
+      const playerR = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
       const edible = playerR >= r * 0.92;
       const tint = edible ? 0xaef2ff : 0xffd479;
       // Edible ones read as soft watery beads; the inedible minority gets a hard rim and a warmer
@@ -1673,7 +1692,7 @@ class Game {
     const burstAlpha = this.phase === 'burst' ? Math.max(0, 1 - burstT * 1.15) : 1;
 
     const radius =
-      viewport.laneWidthMeters * visualRadiusFraction(this.player.volume) * (0.25 + 0.75 * eased) * burstScale;
+      viewport.laneWidthMeters * stageRadiusFraction(this.stage.stage, this.player.volume) * (0.25 + 0.75 * eased) * burstScale;
 
     // Blink while invulnerable: the single cross-type rule that stops a swarm chain-killing.
     const blink = this.invulnerable > 0 ? 0.45 + 0.55 * Math.abs(Math.sin(this.invulnerable * 22)) : 1;
@@ -1701,9 +1720,35 @@ class Game {
     const speed = Math.hypot(this.player.vx * 100, this.player.vy);
     const squash = 1 + Math.min(speed / 600, 0.16);
 
-    // Outer soft halo.
-    g.circle(worldX, worldY, radius * 1.55).fill({ color: 0x7fe6ff, alpha: 0.1 * alpha });
-    g.circle(worldX, worldY, radius * 1.18).fill({ color: 0xaef2ff, alpha: 0.16 * alpha });
+    /**
+     * The stage's palette, which is the discreet half of "how big am I".
+     *
+     * Size alone cannot say which stage the player is in: volume grows the bubble every time it eats, so a big
+     * stage-1 bubble and a small stage-2 bubble would look similar. Colour is discrete, so it can.
+     *
+     * A whole palette rather than one tint, because the bubble is three different things visually -- a
+     * translucent body, an opaque silhouette rim, and a wide soft glow -- and tinting all three from one value
+     * flattens it into a coloured disc. These are also the parts a colour-blind player can still separate: the
+     * rim is distinguished by brightness and width, not only by hue.
+     */
+    const palette = stagePalette(this.stage.stage);
+
+    /**
+     * The bubble's interior is deliberately MOSTLY TRANSPARENT, and the STAGE COLOUR is carried by the rim and
+     * the halo instead.
+     *
+     * Measured reason: five translucent layers of light colour stack over the interior (two halo passes, the
+     * body, the sheen and the speculars), and stacked past roughly half opacity they average toward white --
+     * which over dark water is a NEUTRAL GREY. The stage hue was being averaged away exactly where the player
+     * looks most, and the bubble read as a grey disc with a coloured ring rather than as a coloured bubble.
+     *
+     * So the interior keeps the water's darkness and the hue lives in the parts that are opaque by nature: the
+     * rim, which is a silhouette, and the halo, which is a glow. Both also carry a SHAPE cue and a BRIGHTNESS
+     * cue, which survive a phone in sunlight where a warm gold and a warm pink are nearly the same colour.
+     */
+    // Outer soft halo. Wider and stronger at higher stages, so the glow grows with the bubble.
+    g.circle(worldX, worldY, radius * 1.55).fill({ color: palette.halo, alpha: 0.16 * alpha });
+    g.circle(worldX, worldY, radius * 1.18).fill({ color: palette.halo, alpha: 0.22 * alpha });
 
     // Slowed by a jellyfish: a purple rind around the bubble. Shown ON the player rather than in a
     // status bar, because the penalty is about where the bubble IS -- the player needs to see it
@@ -1714,13 +1759,33 @@ class Game {
       g.circle(worldX, worldY, radius * 1.75).fill({ color: 0xc79bff, alpha: 0.07 * alpha * fade });
     }
 
-    // Body: an ellipse stretched along the direction of travel.
-    g.ellipse(worldX, worldY, radius / squash, radius * squash).fill({ color: 0xcdf6ff, alpha: 0.22 * alpha });
+    /**
+     * The body: a very translucent wash of the stage colour, then the rim.
+     *
+     * The wash is at 0.12 rather than a solid fill -- see the note above about five layers averaging to grey.
+     * It is there to hint at the hue inside; the RIM is what states it.
+     */
+    g.ellipse(worldX, worldY, radius / squash, radius * squash).fill({ color: palette.body, alpha: 0.12 * alpha });
     g.ellipse(worldX, worldY, radius / squash, radius * squash).stroke({
-      color: 0xd8fbff,
-      alpha: 0.85 * alpha,
-      width: radius * 0.085,
+      color: palette.rim,
+      alpha: 0.95 * alpha,
+      width: radius * 0.16,
     });
+
+    /**
+     * A second rim just inside the first, from stage 2.
+     *
+     * A SHAPE cue, not a hue cue: at phone size in daylight a warm gold and a warm pink are close enough to
+     * confuse, but one ring versus two is unmistakable, and it reads in peripheral vision while the player is
+     * watching a fish rather than the bubble.
+     */
+    if (this.stage.stage >= 2) {
+      g.ellipse(worldX, worldY, radius / squash, radius * squash).stroke({
+        color: palette.rim,
+        alpha: 0.5 * alpha,
+        width: radius * 0.055,
+      });
+    }
 
     // Inner sheen, offset toward the light (up and to the left). Deliberately built from plain
     // circles: an earlier version used Graphics.arc for the rim highlight and left a stray line
@@ -1809,7 +1874,15 @@ class Game {
     /** A skill lying in the water. `id` is null until collected, since it is rolled at pickup. */
     skillPickup: { id: string | null; y: number } | null;
     activeSkill: { id: string; remaining: number } | null;
-    stage: { stage: number; name: string; absorbedInStage: number; neededForNext: number | null; speedMultiplier: number };
+    stage: {
+      stage: number;
+      name: string;
+      absorbedInStage: number;
+      neededForNext: number | null;
+      speedMultiplier: number;
+      palette: { body: number; rim: number; halo: number };
+      radiusFraction: number;
+    };
     phase: string;
     volume: number;
     hitsSurvived: number;
@@ -1939,6 +2012,10 @@ class Game {
         absorbedInStage: this.stage.absorbedInStage,
         neededForNext: this.stage.neededForNext,
         speedMultiplier: this.stage.speedMultiplier,
+        /** The colours this stage paints the bubble with, so a test can check the stages are distinguishable. */
+        palette: stagePalette(this.stage.stage),
+        /** The drawn radius as a fraction of the lane, which is also the radius the eating rules use. */
+        radiusFraction: stageRadiusFraction(this.stage.stage, this.player.volume),
       },
       phase: this.phase,
       volume: this.player.volume,
@@ -1988,7 +2065,7 @@ class Game {
    */
   spawnBubbleOnPlayer(sizeRatio: number): void {
     const laneWidth = this.camera.viewport.laneWidthMeters;
-    const playerRadius = laneWidth * visualRadiusFraction(this.player.volume);
+    const playerRadius = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
     const radius = (playerRadius * sizeRatio) / laneWidth;
     this.field.addTestBubble({
       x: this.player.x * laneWidth,
@@ -2020,7 +2097,7 @@ class Game {
    */
   spawnFallingBubbleOnPlayer(sizeRatio: number): void {
     const laneWidth = this.camera.viewport.laneWidthMeters;
-    const playerRadius = laneWidth * visualRadiusFraction(this.player.volume);
+    const playerRadius = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
     const radius = (playerRadius * sizeRatio) / laneWidth;
     const volume = bubbleVolumeFromRadius(radius);
     const ascent = this.player.vy > 0 ? this.player.vy : 1.7;
@@ -2152,7 +2229,7 @@ class Game {
       nearestBubbleFallMps: nearest ? +nearest.vy.toFixed(3) : null,
       /** Tracked bubble diagnostics: size, its own rise rate, and the resulting screen motion. */
       trackedBubbleSizeRatio: tracked
-        ? +(tracked.radius / Math.max(1e-6, visualRadiusFraction(this.player.volume))).toFixed(3)
+        ? +(tracked.radius / Math.max(1e-6, stageRadiusFraction(this.stage.stage, this.player.volume))).toFixed(3)
         : null,
       trackedBubbleRiseRatio: tracked ? +bubbleRiseRatio(tracked.volume, this.player.volume).toFixed(3) : null,
       trackedBubbleRelativeFallMps: tracked ? +tracked.vy.toFixed(3) : null,
@@ -2185,7 +2262,7 @@ class Game {
        */
       collectables: this.field.bubbles
         .map((b) => ({
-          sizeRatio: +(b.radius / Math.max(1e-6, visualRadiusFraction(this.player.volume))).toFixed(3),
+          sizeRatio: +(b.radius / Math.max(1e-6, stageRadiusFraction(this.stage.stage, this.player.volume))).toFixed(3),
           wobble: +b.wobble.toFixed(3),
           relativeFallMps: +b.vy.toFixed(3),
           screenSpeedPxPerS: +(b.vy * cam.viewport.scale).toFixed(1),

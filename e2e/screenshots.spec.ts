@@ -59,21 +59,48 @@ test.describe('screen captures @screenshots', () => {
     await page.screenshot({ path: testInfo.outputPath('settings.png') });
   });
 
-  test('stage 3, the slow one', async ({ page }, testInfo) => {
-    await boot(page);
-    await startFromMenu(page);
-    await waitForPhase(page, 'playing');
-    await page.evaluate(async () => {
-      const g = (window as unknown as {
-        __GB: { game: { diagnostics: { stage: { stage: number } }; spawnBubbleOnPlayer: (r: number) => void } };
-      }).__GB.game;
-      let guard = 0;
-      while (g.diagnostics.stage.stage < 3 && guard++ < 600) {
-        g.spawnBubbleOnPlayer(0.4);
-        await new Promise<void>((r) => requestAnimationFrame(() => r()));
-      }
+  /**
+   * One capture per stage, parked in the same place, so the three can be compared.
+   *
+   * This is the picture that answers "are the stages distinguishable", and comparing them is the whole point -- a
+   * single stage in isolation says nothing about whether a player could tell it from the next one. The bubble is
+   * parked at a fixed lane position, so the only differences between the three frames are the ones the stage
+   * controls.
+   */
+  for (const stage of [1, 2, 3]) {
+    test(`growth stage ${stage}, parked for comparison @screenshots`, async ({ page }, testInfo) => {
+      await boot(page);
+      await startFromMenu(page);
+      await waitForPhase(page, 'playing');
+      await page.evaluate(async (want) => {
+        const g = (window as unknown as {
+          __GB: {
+            game: {
+              diagnostics: { stage: { stage: number } };
+              spawnBubbleOnPlayer: (r: number) => void;
+              demoteStageForTest: () => number;
+              debugSetSteadyCruise: () => void;
+            };
+            player: { x: number; screenY: number };
+          };
+        }).__GB;
+        const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+        let guard = 0;
+        while (g.game.diagnostics.stage.stage > want && guard++ < 20) {
+          g.game.demoteStageForTest();
+          await raf();
+        }
+        guard = 0;
+        while (g.game.diagnostics.stage.stage < want && guard++ < 600) {
+          g.game.spawnBubbleOnPlayer(0.4);
+          await raf();
+        }
+        g.game.debugSetSteadyCruise();
+        g.player.x = 0.5;
+        g.player.screenY = 0.45;
+      }, stage);
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: testInfo.outputPath(`stage-${stage}.png`) });
     });
-    await page.waitForTimeout(500);
-    await page.screenshot({ path: testInfo.outputPath('stage-3.png') });
-  });
+  }
 });

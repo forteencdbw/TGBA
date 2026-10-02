@@ -37,14 +37,30 @@ export interface StageConfig {
   /** Brief invulnerability when growing, so growing is not instantly punished. */
   growInvulnerableSeconds: number;
   /**
-   * Display colour and name per stage.
+   * Visual radius multiplier per stage, on top of the radius the volume already gives.
    *
-   * `color` accepts EITHER a JSON5 hex literal (`0x9fe4ff`, which is a number) OR a `"#rrggbb"` string. Both
-   * end up as numbers here; see the conversion after validation. The strings are what the shipping file uses,
-   * because they are what a colour picker hands you, but a number is not an error.
+   * TWO INDEPENDENT VISUAL SIGNALS, deliberately. `volume` grows the bubble CONTINUOUSLY, so size alone cannot
+   * distinguish "just reached stage 2" from "stage 2 plus five more collectables". The stage colour is discrete
+   * and answers "which stage am I in"; this answers "how big am I now". Together the player reads both.
    */
+  radiusScale: number[];
+  /**
+   * Per-stage body fill, rim stroke and outer halo colours.
+   *
+   * A whole palette per stage rather than one tint, because the bubble is procedural geometry: the body is a
+   * translucent fill, the rim is the opaque silhouette and the halo is a wide soft glow. Tinting all three from
+   * a single value flattens the bubble into a coloured disc and loses the water look entirely.
+   *
+   * Each accepts EITHER a JSON5 hex literal (`0x9fe4ff`, a number) OR a `"#rrggbb"` string, since a colour
+   * picker hands you the latter and neither form should be an error. Both become numbers after validation.
+   */
+  body: number[];
+  rim: number[];
+  halo: number[];
+  /** Display colour and name per stage, for the HUD readout. */
   color: number[];
-  name: string[];}
+  name: string[];
+}
 
 export interface Mechanisms {
   stages: StageConfig;
@@ -132,8 +148,13 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'stages.absorbToStage3', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'stages.growInvulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   {
-    path: 'stages.color',
-    check: (v) =>
+    path: 'stages.radiusScale',
+    check: (v) => Array.isArray(v) && v.length >= 2 && v.every((n) => typeof n === 'number' && n > 0.05 && n < 8),
+    describe: 'an array of at least two positive multipliers, each under 8',
+  },
+  ...(['body', 'rim', 'halo', 'color'] as const).map((key) => ({
+    path: `stages.${key}`,
+    check: (v: unknown) =>
       Array.isArray(v) &&
       v.every(
         (n) =>
@@ -142,7 +163,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
           (typeof n === 'string' && /^#[0-9a-fA-F]{6}$/.test(n)),
       ),
     describe: 'an array of colours, each either 0xrrggbb or "#rrggbb"',
-  },
+  })),
   { path: 'stages.name', check: (v) => Array.isArray(v) && v.every((n) => typeof n === 'string'), describe: 'an array of names' },
   { path: 'volume.start', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'volume.max', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
@@ -187,18 +208,20 @@ for (const rule of REQUIRED) {
 export const mech = parsed as Mechanisms;
 
 /**
- * Normalise colours to the numbers Pixi wants, in place.
+ * Normalise every colour array to the numbers Pixi wants, in place.
  *
  * Both forms are accepted because JSON5 gives you the choice: `0x9fe4ff` is a plain number, and a `"#rrggbb"`
- * string is what a colour picker gives you. Neither should be a mistake, so both are converted here rather
- * than the file having to know which one the loader prefers.
+ * string is what a colour picker gives you. Neither should be a mistake, so both are converted here rather than
+ * the file having to know which one the loader prefers.
  */
-mech.stages.color = (mech.stages.color as unknown as (string | number)[]).map((value, index) => {
-  if (typeof value === 'number') return value;
-  const parsedColour = Number.parseInt(value.slice(1), 16);
-  if (!Number.isFinite(parsedColour)) fail(`stages.color[${index}] is "${value}", which is not a colour`);
-  return parsedColour;
-});
+for (const key of ['body', 'rim', 'halo', 'color'] as const) {
+  mech.stages[key] = (mech.stages[key] as unknown as (string | number)[]).map((value, index) => {
+    if (typeof value === 'number') return value;
+    const parsedColour = Number.parseInt(value.slice(1), 16);
+    if (!Number.isFinite(parsedColour)) fail(`stages.${key}[${index}] is "${value}", which is not a colour`);
+    return parsedColour;
+  });
+}
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
