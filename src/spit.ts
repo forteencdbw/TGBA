@@ -1,5 +1,5 @@
 import { mech } from './mechanisms';
-import type { HazardKind } from './hazards';
+import { KIND_TUNING, NO_STOMACH_EFFECT, type HazardKind, type StomachEffect } from './hazards';
 
 /**
  * The stomach: what you swallowed is your ammunition, and your next rank.
@@ -58,6 +58,21 @@ export interface StomachItem {
   mass: number;
   /** How far through digestion, 0..1. The volume drain and the growth energy both follow this one number. */
   digest: number;
+  /**
+   * What it does from inside, captured when it was swallowed.
+   *
+   * Stored as DATA rather than looked up per frame, so this class never has to know that urchins or bomb fish
+   * exist: it applies the generic rules ("this many hit points per second", "this long until it goes off") and
+   * `src/hazards.ts` decides which creature those numbers belong to. See `StomachEffect`.
+   */
+  effect: StomachEffect;
+  /**
+   * Seconds left on its internal fuse, or 0 for something that does not have one.
+   *
+   * Per ITEM, which is the whole reason the stomach grew per-item state: two bomb fish swallowed a second apart
+   * are two separate countdowns, and a single stomach-wide timer could not say when the first one goes off.
+   */
+  fuse: number;
 }
 
 /**
@@ -81,8 +96,26 @@ export interface StomachTick {
    * farm rank for free.
    */
   drained: number;
+  /**
+   * Volume destroyed inside by a detonation this frame.
+   *
+   * Kept apart from `drained` because it buys NOTHING: digested mass pays for eating rank, and mass blown up in
+   * your own stomach is simply gone. Folding the two together would quietly turn a bomb fish into a way to convert
+   * food into rank without paying for it.
+   */
+  destroyed: number;
+  /**
+   * Internal harm this frame, in hit points, as a fraction.
+   *
+   * Fractional because both sources are continuous: an urchin bleeds you per second. A detonation adds whole hit
+   * points to the same figure, which the caller's accumulator turns into hits the same way -- one channel rather
+   * than two, so a frame that both bleeds and explodes cannot apply one and drop the other.
+   */
+  damage: number;
   /** Items that finished digesting this frame, or null when none did. Allocated only on the interesting frame. */
   completed: StomachItem[] | null;
+  /** Items that went off inside this frame, so the caller can make it loud. */
+  detonations: StomachItem[] | null;
 }
 
 /** A projectile in flight. */
@@ -205,9 +238,24 @@ export class Stomach {
     return Math.max(0, this.items.length - (oldest ? oldest.digest : 0));
   }
 
-  /** Everything inside, with its mass and progress, for probes. */
-  get detail(): readonly { kind: HazardKind; mass: number; digest: number }[] {
-    return this.items.map((i) => ({ kind: i.kind, mass: i.mass, digest: i.digest }));
+  /** Everything inside, with its mass, progress and fuse, for probes and for the rim markers. */
+  get detail(): readonly { kind: HazardKind; mass: number; digest: number; fuse: number }[] {
+    return this.items.map((i) => ({ kind: i.kind, mass: i.mass, digest: i.digest, fuse: i.fuse }));
+  }
+
+  /**
+   * The shortest internal fuse, or null when nothing inside is counting down.
+   *
+   * Exposed because it is what the player has to act on, and because a probe asserting "the fuse is burning" should
+   * read the fact rather than infer it from a drawing.
+   */
+  get shortestFuse(): number | null {
+    let best: number | null = null;
+    for (const item of this.items) {
+      if (item.effect.fuseSeconds <= 0) continue;
+      best = best === null ? item.fuse : Math.min(best, item.fuse);
+    }
+    return best;
   }
 
   /**
@@ -216,13 +264,22 @@ export class Stomach {
    * @param mass the volume this swallow ADDED to the bubble. Passed in rather than looked up, because only the
    *   caller knows the real figure: `growByAbsorbing` clamps at the volume ceiling, so an item swallowed at the
    *   cap added nothing and must give nothing back.
+   * @param effect what it will do from inside. Defaults to nothing, which is right for most of the food chain.
    * @return false when the stomach is full, so the caller can leave the hazard in the world instead of silently
    *   destroying it. Swallowing something and having it vanish with no effect would be the worst possible
    *   response to a full stomach.
    */
-  swallow(kind: HazardKind, mass: number): boolean {
+  swallow(kind: HazardKind, mass: number, effect: StomachEffect = NO_STOMACH_EFFECT): boolean {
     if (this.full) return false;
-    this.items.push({ kind, age: 0, mass: Math.max(0, mass), digest: 0 });
+    /**
+     * The fuse starts NOW, not when the creature spawned.
+     *
+     * It is a fuse on being EATEN -- the thing is thrashing around inside you -- so a bomb fish that has been
+     * drifting down the screen for twenty seconds arrives with its full time, exactly as a crab's launch fuse
+     * arms on proximity rather than on spawn. Starting it earlier would make the countdown depend on how long the
+     * player took to reach the creature, which is not something they can see or plan around.
+     */
+    this.items.push({ kind, age: 0, mass: Math.max(0, mass), digest: 0, effect, fuse: effect.fuseSeconds });
     if (this.full && this.fuseTotal > 0) this.fuse = this.fuseTotal;
     return true;
   }
@@ -252,7 +309,39 @@ export class Stomach {
     for (const item of this.items) item.age += dt;
 
     let drained = 0;
+    let destroyed = 0;
+    let damage = 0;
     let completed: StomachItem[] | null = null;
+    let detonations: StomachItem[] | null = null;
+
+    /**
+     * EVERYTHING inside acts, not just the oldest item -- and it acts BEFORE the digestion below.
+     *
+     * That ordering matters for one frame's worth of honesty: an item that goes off must not also be digested on
+     * the same tick, or the player would be paid for the mouthful that just exploded. Iterated backwards because
+     * detonating items are removed here.
+     */
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      const item = this.items[i]!;
+      damage += item.effect.damagePerSecond * dt;
+      if (item.effect.fuseSeconds <= 0) continue;
+      item.fuse -= dt;
+      if (item.fuse > 0) continue;
+
+      this.items.splice(i, 1);
+      (detonations ??= []).push(item);
+      /**
+       * The blast destroys what is left of it, and that mass buys NOTHING.
+       *
+       * The alternative -- leaving the volume in the bubble because "it was already eaten" -- would make the bomb's
+       * cost purely the hit, and it would leave the ledger saying a bubble contains mass that was just blown up.
+       * Reported as `destroyed` rather than `drained` precisely so the caller cannot pay growth energy for it.
+       */
+      destroyed += item.mass * (1 - item.digest);
+      damage += item.effect.detonationHitPoints;
+      this.releaseFuseIfThereIsRoom();
+    }
+
     /**
      * A BUDGET of item-fractions, not a rate applied to each item.
      *
@@ -260,6 +349,9 @@ export class Stomach {
      * the configured rate exactly rather than "one item per frame at most". At the shipped numbers a frame never
      * has budget for more than one item, but a config with a fast `compressPerSecond` and a capacity of ten would
      * otherwise digest at the frame rate instead of at the rate the owner typed.
+     *
+     * Reading `items[0]` fresh each pass is what makes this correct after a detonation removed the very item that
+     * was being digested: the budget simply continues on whatever is now at the front.
      */
     let budget = Math.max(0, digestPerSecond) * dt;
     let guard = 0;
@@ -281,9 +373,9 @@ export class Stomach {
     // still lights the fuse, so the rule cannot be bypassed by an edit. Checked AFTER digestion, so an item that
     // finished this frame really does buy the player the whole window back instead of one frame of it.
     if (this.full && this.fuse === null && this.fuseTotal > 0) this.fuse = this.fuseTotal;
-    if (this.fuse === null) return { burst: false, drained, completed };
+    if (this.fuse === null) return { burst: false, drained, destroyed, damage, completed, detonations };
     this.fuse -= dt;
-    return { burst: this.fuse <= 0, drained, completed };
+    return { burst: this.fuse <= 0, drained, destroyed, damage, completed, detonations };
   }
 
   /**
@@ -313,22 +405,38 @@ export function spitDirection(steerX: number, steerY: number): { x: number; y: n
   return { x: steerX / length, y: steerY / length };
 }
 
-/** A projectile's drawn radius, as a fraction of the lane width. */
+/**
+ * A projectile's drawn radius, as a fraction of the lane width.
+ *
+ * Read from `KIND_TUNING` rather than kept as its own list: a spat item is drawn in the shape and size of the
+ * hazard it was, so a second table here is a second answer to "how big is a crab" -- and the two would drift the
+ * first time a creature was resized, which is a bug nobody would think to look for.
+ */
 export function spitRadiusFraction(kind: HazardKind): number {
-  // Sized like the hazard it came from, so a spat crab still looks like a crab rather than a generic pellet.
-  const perKind: Record<string, number> = { fish: 0.035, jelly: 0.062, trash: 0.05, crab: 0.045 };
-  return perKind[kind] ?? 0.045;
+  return KIND_TUNING[kind].radius;
 }
 
 /**
  * How hard a projectile shoves what it hits, as a multiplier on the base knockback.
  *
  * Per kind, because "the item keeps its own properties" is the point: the same shot should feel different
- * depending on what was swallowed. A crab is a battering ram, a jellyfish is a wet slap.
+ * depending on what was swallowed. A crab is a battering ram, a jellyfish is a wet slap, an urchin is a spike.
+ *
+ * A TOTAL record rather than a lookup with a fallback, so adding a creature without deciding what it hits like is
+ * a compile error instead of a silent default -- the same shape as `KIND_TUNING`.
  */
 export function spitImpact(kind: HazardKind): number {
-  const perKind: Record<string, number> = { fish: 0.8, jelly: 0.6, trash: 0.9, crab: 1.6 };
-  return perKind[kind] ?? 1;
+  const perKind: Record<HazardKind, number> = {
+    fish: 0.8,
+    jelly: 0.6,
+    trash: 0.9,
+    crab: 1.6,
+    // Spiny: hard for its weight, and the reason an urchin is worth the bleeding.
+    urchin: 1.2,
+    // Heavy and blunt, on top of the blast it carries when it lands.
+    bombfish: 1.3,
+  };
+  return perKind[kind];
 }
 
 /**

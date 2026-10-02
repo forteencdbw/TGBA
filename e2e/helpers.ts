@@ -135,7 +135,23 @@ export interface Diagnostics {
     progress: number;
     completed: number;
     drained: number;
-    contents: { kind: string; mass: number; digest: number }[];
+  };
+  /**
+   * What is in the stomach and what it is doing from inside.
+   *
+   * The per-item list lives here rather than under `digest`: the contents stopped being only about digesting the
+   * moment they started acting on their own.
+   *
+   * `internalHits` is what makes "the urchin is hurting me" assertable rather than inferred: a volume that fell
+   * over a window in which nothing else touched the player is also what eating, digesting and being shot at look
+   * like, so the fact is reported.
+   */
+  stomach: {
+    contents: { kind: string; mass: number; digest: number; fuse: number }[];
+    shortestFuse: number | null;
+    partialDamage: number;
+    internalHits: number;
+    destroyed: number;
   };
   /** Which skill is in the slot and how many uses are left, or null. */
   skill: { id: string; uses: number } | null;

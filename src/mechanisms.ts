@@ -133,6 +133,17 @@ export interface Mechanisms {
     crabFuseSeconds: number;
     trashDrainPerSecond: number;
     trashMinGripSeconds: number;
+    /**
+     * Negative food: edible, but it keeps acting once it is inside.
+     *
+     * These are the risk decisions the design wants -- without them swallowing is a pure gain and the player never
+     * has to think about whether a thing is worth eating. Both creatures are also ordinary hazards below their
+     * tier, which follows from the reversal rule rather than being a second rule.
+     */
+    urchinDrainPerSecond: number;
+    bombfishFuseSeconds: number;
+    bombfishDetonationHitPoints: number;
+    bombfishBlastRadiusRatio: number;
     invulnerableSeconds: number;
   };
   /** Consuming hazards: the food-chain reversal. */
@@ -223,6 +234,20 @@ export interface Mechanisms {
     pulseHz: number;
     pulseDepth: number;
     rimColor: number;
+  };
+  /**
+   * Marking what is in the stomach, on the bubble's rim.
+   *
+   * Once the contents keep acting from inside, "what is in there" stops being trivia and becomes information the
+   * player has to have: a fuse burning where they cannot see it is an ambush rather than a decision.
+   */
+  stomach: {
+    markerRadiusRatio: number;
+    markerOrbitRatio: number;
+    markerAlpha: number;
+    markerMinSpreadRadians: number;
+    fuseBlinkHz: number;
+    fusePanicSeconds: number;
   };
   /** Destructible obstacles: crates to smash and coral to squeeze past. */
   obstacles: {
@@ -389,6 +414,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.crabFuseSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.trashDrainPerSecond', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.trashMinGripSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'hazards.urchinDrainPerSecond', check: (v) => typeof v === 'number' && v >= 0, describe: 'hit points per second, 0 or more; 0 makes the urchin harmless once swallowed' },
+  { path: 'hazards.bombfishFuseSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'seconds, 0 or more; 0 makes a swallowed bomb fish inert' },
+  { path: 'hazards.bombfishDetonationHitPoints', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of hit points, 0 or more' },
+  { path: 'hazards.bombfishBlastRadiusRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1.5, describe: 'a fraction of the lane width between 0 and 1.5; 0 makes its ammunition an ordinary pellet' },
   { path: 'hazards.invulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   /**
    * Consumption. The two per-kind tables are checked for PRESENCE of every hazard kind rather than for any
@@ -459,6 +488,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'digest.pulseHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
   { path: 'digest.pulseDepth', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
   { path: 'digest.rimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'stomach.markerRadiusRatio', check: (v) => typeof v === 'number' && v > 0.02 && v < 0.6, describe: 'a fraction of the bubble radius, above 0.02 and below 0.6' },
+  { path: 'stomach.markerOrbitRatio', check: (v) => typeof v === 'number' && v >= 0.3 && v <= 1.5, describe: 'a multiple of the bubble radius between 0.3 and 1.5' },
+  { path: 'stomach.markerAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'stomach.markerMinSpreadRadians', check: (v) => typeof v === 'number' && v > 0 && v < 6.28, describe: 'an angle in radians, above 0 and below a full turn' },
+  { path: 'stomach.fuseBlinkHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
+  { path: 'stomach.fusePanicSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
   { path: 'audio.musicVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity-like level between 0 and 1' },
   { path: 'obstacles.health', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to hit points' },
   { path: 'obstacles.radius', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to a radius fraction' },
@@ -472,8 +507,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'obstacles.crateRimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'obstacles.coralColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'obstacles.coralRimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  { path: 'obstacles.crackWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.5, describe: 'a stroke width ratio between 0 and 0.5' },
-  { path: 'obstacles.damagedDarken', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
+  { path: 'obstacles.crackWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.5, describe: 'a stroke width ratio between 0 and 0.5' },  { path: 'obstacles.damagedDarken', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
   { path: 'emergence.fishPerceptionBaseMeters', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'emergence.fishPerceptionPerVolume', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'emergence.fishFeedToSplit', check: (v) => typeof v === 'number' && v >= 2, describe: '2 or more, or nothing would ever split' },

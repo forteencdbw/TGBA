@@ -5,10 +5,12 @@
  * player's state in a way the others do not. Four creatures that all just dealt damage would be one
  * mechanic drawn four times; the point is that being caught by each one feels different.
  *
- *   fish     CHASES and swarms  -> contact damage, and it follows you
- *   jelly    SLOWS              -> a movement penalty with a timer
- *   trash    GRABS and drags    -> an ongoing drain you have to struggle out of
- *   crab     LAUNCHES           -> fires you upward along a telegraphed arc
+ *   fish      CHASES and swarms  -> contact damage, and it follows you
+ *   jelly     SLOWS              -> a movement penalty with a timer
+ *   trash     GRABS and drags    -> an ongoing drain you have to struggle out of
+ *   crab      LAUNCHES           -> fires you upward along a telegraphed arc
+ *   urchin    KEEPS HURTING      -> edible, and then bleeds you from inside until it is gone
+ *   bombfish  COUNTS DOWN        -> edible, and then it is a grenade with a lit fuse in your stomach
  *
  * Everything is procedurally drawn from geometry, so colours carry the information instead of any
  * tutorial text: purple is a jellyfish, brown is a trash bag, and so on.
@@ -22,7 +24,7 @@ import { Graphics } from 'pixi.js';
 import { mech, tuning } from './config';
 import { hazardMass } from './consumption';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
-export type HazardKind = 'fish' | 'jelly' | 'trash' | 'crab';
+export type HazardKind = 'fish' | 'jelly' | 'trash' | 'crab' | 'urchin' | 'bombfish';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
@@ -194,17 +196,95 @@ export const hazardTuning = {
 };
 
 /**
+ * What a swallowed hazard does from INSIDE, as data.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THIS IS DATA RATHER THAN CODE IN THE STOMACH
+ * ---------------------------------------------------------------------------------------------
+ * `src/spit.ts` owns the stomach, and it must not know that urchins exist -- the same split as everywhere else in
+ * this project (the hazard field decides what happened, the game decides what it means). So the stomach applies
+ * generic rules -- "this many hit points per second", "this many seconds until it goes off" -- and WHICH creature
+ * does which is a property of the creature, declared here beside everything else about it.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THIS CLASS OF HAZARD EXISTS AT ALL
+ * ---------------------------------------------------------------------------------------------
+ * Without it, swallowing is a pure gain: mass, plus ammunition. It is never a question. These two make it one, and
+ * the question has a real answer either way -- spit it out fast (and get a weapon for it), or digest it before it
+ * finishes what it is doing (which costs double damage taken while compressing, so against an urchin that is a
+ * genuinely bad idea and against a bomb it is a race).
+ *
+ * Both are also ordinary hazards BELOW their tier, which is not a second rule: the reversal is a two-sided
+ * judgement, so "it hurts you until you are big enough" is what every other creature already does.
+ */
+export interface StomachEffect {
+  /** Hit points per second it costs while it is inside. Fractional, accumulated by the caller. */
+  damagePerSecond: number;
+  /** Seconds until it goes off inside, or 0 for something that does not. */
+  fuseSeconds: number;
+  /** Hit points its detonation costs. */
+  detonationHitPoints: number;
+}
+
+/** Swallowing most things costs nothing after the fact. */
+export const NO_STOMACH_EFFECT: StomachEffect = { damagePerSecond: 0, fuseSeconds: 0, detonationHitPoints: 0 };
+
+/**
+ * What this kind does once it is inside.
+ *
+ * A `switch` rather than a table keyed by kind, deliberately: the values are read LIVE from the config, and a
+ * table built at module load would freeze whatever the file said at boot -- which is exactly the bug the over-eating
+ * fuse documents at length, and it would break the runtime editing that every tuning workflow here depends on.
+ */
+export function stomachEffect(kind: HazardKind): StomachEffect {
+  switch (kind) {
+    case 'urchin':
+      return { damagePerSecond: mech.hazards.urchinDrainPerSecond, fuseSeconds: 0, detonationHitPoints: 0 };
+    case 'bombfish':
+      return {
+        damagePerSecond: 0,
+        fuseSeconds: mech.hazards.bombfishFuseSeconds,
+        detonationHitPoints: mech.hazards.bombfishDetonationHitPoints,
+      };
+    default:
+      return NO_STOMACH_EFFECT;
+  }
+}
+
+/**
+ * How wide this kind's ammunition blasts when it lands, as a fraction of the lane width.
+ *
+ * Zero means "an ordinary pellet that shoves one thing". The bomb fish is the only explosive round, and that is the
+ * whole reason to swallow one on purpose: you are trading a lit fuse for a grenade.
+ */
+export function blastRadiusFraction(kind: HazardKind): number {
+  return kind === 'bombfish' ? mech.hazards.bombfishBlastRadiusRatio : 0;
+}
+
+/**
  * Per-kind presentation and collision size, as a fraction of the lane width.
  *
  * EXPORTED because a spat projectile is drawn in the shape and colour of the hazard it was, and copying the four
  * colours into the projectile code would let the two drift -- a fish that changes colour when thrown is a bug
  * nobody would think to look for. One source for "what a fish looks like".
+ *
+ * It is also the radius the collision uses, so a creature is exactly as big as it is drawn -- and it is the ONE
+ * place this lives: there used to be a second copy of these numbers in `main.ts` for the spawn hooks, which meant
+ * a new creature could be edible at one size and painted at another.
  */
 export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; spin: number }> = {
   fish: { radius: 0.035, colour: 0x9ad7ff, spin: 0 },
   jelly: { radius: 0.062, colour: 0xc79bff, spin: 0 },
   trash: { radius: 0.05, colour: 0xb08a5a, spin: 0.6 },
   crab: { radius: 0.045, colour: 0xff9b6b, spin: 0 },
+  /**
+   * Dark and mineral, against the pale blue of a fish: the urchin is a hard thing, not a soft one.
+   *
+   * Its SIZE and its needles are what say "do not touch", because those read at a distance where colour does not.
+   */
+  urchin: { radius: 0.052, colour: 0x3d4a7a, spin: 0.2 },
+  /** Deep red, well away from the crab's orange, with a stubby body: round and heavy rather than sleek. */
+  bombfish: { radius: 0.048, colour: 0xd94a3f, spin: 0 },
 };
 
 export interface HazardContext {
@@ -469,6 +549,23 @@ export class HazardField {
           h.fired = true;
           break;
         }
+        /**
+         * The two negative foods, below their tier.
+         *
+         * Plain contact damage, exactly like a fish, and that is deliberate rather than lazy: the reversal is a
+         * two-sided judgement, so a creature that is food above its tier has to be a threat below it or "when can I
+         * eat this" stops being the same question for every kind. Their SIDE EFFECT is what is new, and it only
+         * happens once they are inside -- which is also the only place it could be interesting, because a hazard
+         * that hurts you from outside is a fifth thing to dodge rather than a decision.
+         */
+        case 'urchin':
+        case 'bombfish': {
+          if (ctx.invulnerable) break;
+          effects.push({ kind: h.kind, damage: 1, broke: false });
+          // Bounce it away so one cannot immediately re-hit, as a fish does.
+          h.y -= r * 2;
+          break;
+        }
       }
     }
 
@@ -639,7 +736,7 @@ export class HazardField {
   }
 
   private spawn(ctx: HazardContext): Hazard {
-    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab'];
+    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
@@ -745,6 +842,30 @@ export class HazardField {
           h.fuse = hazardTuning.crabFuseSeconds;
         }
         if (h.armed) h.fuse = Math.max(0, h.fuse - dt);
+        break;
+      }
+      case 'urchin': {
+        /**
+         * Inert and heavy. It does not chase, does not flee and barely drifts, so it is a fixed hazard you have to
+         * steer around or choose to run into -- which is the point: it is a DECISION, and a decision needs a
+         * stationary option. A hunter would take the choice away and make it a reflex.
+         *
+         * It sinks faster than a crab, so it clears the water instead of accumulating into a wall of spines.
+         */
+        h.y -= base * 0.26 * dt;
+        h.x += Math.sin(h.phase * 0.8 + h.seed) * 2.5 * dt;
+        break;
+      }
+      case 'bombfish': {
+        /**
+         * Swims down at a steady pace with a lazy weave, and notably does NOT come for the player.
+         *
+         * A temptation has to be avoidable: if it hunted, the choice would be made for the player and the side
+         * effect would land as a punishment rather than as a price. The weave is there so it takes a little
+         * steering to line one up when you decide you want it.
+         */
+        h.y -= base * 0.34 * dt;
+        h.x += Math.sin(h.phase * 1.1 + h.seed) * 5 * dt;
         break;
       }
     }
@@ -878,6 +999,52 @@ export function paintHazards(
               .stroke({ color: KIND_TUNING.crab.colour, alpha: 0.75, width: Math.max(1, r * 0.13) });
           }
         }
+        break;
+      }
+      case 'urchin': {
+        /**
+         * A dark ball of needles, rotating slowly.
+         *
+         * SHAPE is the whole message: at the size this reads on a phone, a ball with spikes is unmistakable against
+         * every other silhouette in the game, and the eye picks it up before any colour does. Which is what a
+         * hazard the player must DECIDE about needs -- being surprised by an urchin is not a decision.
+         *
+         * The needles are the same colour at full opacity over a dimmer body rather than a second colour, so the
+         * one entry in KIND_TUNING still describes the whole creature.
+         */
+        const spin = h.phase * 0.35 + h.seed;
+        g.circle(x, y, r * 0.92).fill({ color: KIND_TUNING.urchin.colour, alpha: 0.55 });
+        const needles = 11;
+        for (let i = 0; i < needles; i++) {
+          const a = (i / needles) * Math.PI * 2 + spin;
+          g.moveTo(x + Math.cos(a) * r * 0.7, y + Math.sin(a) * r * 0.7)
+            .lineTo(x + Math.cos(a) * r * 1.55, y + Math.sin(a) * r * 1.55)
+            .stroke({ color: KIND_TUNING.urchin.colour, alpha: 0.95, width: Math.max(1, r * 0.16) });
+        }
+        g.circle(x, y, r * 0.95).stroke({ color: KIND_TUNING.urchin.colour, alpha: 1, width: Math.max(1, r * 0.2) });
+        break;
+      }
+      case 'bombfish': {
+        /**
+         * A round, heavy fish with a stub of fuse, which is the whole joke: it looks like a bomb.
+         *
+         * The fuse is NOT drawn burning here, because while it is loose there is no fuse -- it starts when the
+         * player swallows it, and the countdown is shown on the player's own bubble (see `Game.drawStomach`).
+         * Drawing a spark on a drifting bomb fish would promise a timer that is not running.
+         */
+        g.ellipse(x, y, r * 1.25, r * 1.1).fill({ color: KIND_TUNING.bombfish.colour, alpha: 0.9 });
+        // A stubby tail, so it still reads as a fish rather than as a ball.
+        g.moveTo(x - r * 1.1, y)
+          .lineTo(x - r * 2.1, y - r * 0.55)
+          .lineTo(x - r * 2.1, y + r * 0.55)
+          .closePath()
+          .fill({ color: KIND_TUNING.bombfish.colour, alpha: 0.65 });
+        // The fuse: a short stub off the top, in a dull cord colour, with the cap it will be lit from.
+        g.moveTo(x, y + r * 1.0)
+          .lineTo(x + r * 0.25, y + r * 1.75)
+          .stroke({ color: 0x8a7a5c, alpha: 0.9, width: Math.max(1, r * 0.16) });
+        g.circle(x + r * 0.25, y + r * 1.85, r * 0.16).fill({ color: 0xe8d9b0, alpha: 0.9 });
+        g.circle(x + r * 0.75, y + r * 0.1, r * 0.18).fill({ color: 0x08131f, alpha: 0.9 });
         break;
       }
     }

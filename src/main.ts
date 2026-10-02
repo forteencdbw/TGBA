@@ -2,7 +2,7 @@ import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest, type Landmark } from './background';
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, TIMELINE, type Level, type LevelEntry } from './levels';
-import { HazardField, KIND_TUNING, hazardTuning, paintHazards, type HazardKind } from './hazards';
+import { blastRadiusFraction, HazardField, KIND_TUNING, hazardTuning, paintHazards, stomachEffect, type HazardKind } from './hazards';
 import { ObstacleField, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
@@ -533,6 +533,50 @@ class Game {
       audio.play('absorb', 0.5);
     }
 
+    /**
+     * What the contents did to the player from INSIDE.
+     *
+     * ---------------------------------------------------------------------------------------------
+     * WHY THE MASS A BOMB DESTROYS BUYS NO RANK
+     * ---------------------------------------------------------------------------------------------
+     * `destroyed` is applied through the same non-lethal drain as digestion but WITHOUT any growth energy, and
+     * that separation is the whole reason the stomach reports two figures instead of one. Digested mass pays; mass
+     * blown up in your own stomach is simply gone. Folding them together would turn a bomb fish into a way to
+     * convert food into rank without paying for it, which is exactly backwards from what the creature is for.
+     */
+    if (tick.destroyed > 0) {
+      const before = this.player.volume;
+      this.player.volume = drainByDigesting(this.player.volume, tick.destroyed);
+      this.destroyedMass += before - this.player.volume;
+    }
+
+    /**
+     * Internal harm, accumulated into whole hit points.
+     *
+     * Fractional per second, turned into hits by an accumulator, because that is the only way a continuous drain
+     * can be frame-rate independent: applying it as whole hits per frame would make an urchin lethal at 120fps and
+     * harmless at 30. The same shape as the trash bag's grip, which is the other continuous damage in the game.
+     */
+    if (tick.damage > 0) {
+      this.stomachDrain += tick.damage;
+      while (this.stomachDrain >= 1) {
+        this.stomachDrain -= 1;
+        this.internalHits++;
+        this.takeHit();
+        // A hit can end the run; nothing after this point may assume there is still a bubble.
+        if (this.phase !== 'playing') return;
+      }
+    }
+
+    if (tick.detonations) {
+      this.lastComedyBeat = { what: tick.detonations[0]!.kind, at: this.elapsed };
+      audio.play('hit');
+      audio.play('pop');
+      this.runBanner.text = `胃里炸了  ·  ${tick.detonations.length} 颗  ·  炸弹鱼不能留`;
+      this.runBanner.alpha = 1;
+      this.bannerSeen = true;
+    }
+
     if (!this.input.consumeSpit()) return;
     if (this.spitCooldown > 0) return;
 
@@ -631,13 +675,30 @@ class Game {
          * hazards have no health to take -- nothing else in this game kills them with numbers, and inventing hit
          * points for them inside one mechanic would be a new system hiding in this one.
          */
-        const mass = Math.max(0.05, hazardMass(h.kind));
-        const shove = (mech.spit.knockbackMeters * spitImpact(p.kind)) / mass;
-        const length = Math.hypot(dx, dy) || 1;
-        h.x += (dx / length) * shove;
-        h.y += (dy / length) * shove;
+        this.shoveFromProjectile(p, h, dx, dy);
         this.spitHits++;
         audio.play('hit');
+
+        /**
+         * An explosive round keeps going off after the first thing it touches.
+         *
+         * That is the whole reason to swallow a bomb fish, so this is the payoff half of the creature rather than
+         * an extra: the fuse in your stomach buys you a grenade, and a grenade that only pushed one thing would be
+         * an ordinary pellet with a countdown attached to it.
+         */
+        const blast = laneWidth * blastRadiusFraction(p.kind);
+        if (blast > 0) {
+          for (const other of this.hazards.hazards) {
+            if (other === h) continue;
+            const ox = other.x - p.x;
+            const oy = other.y - p.y;
+            if (ox * ox + oy * oy > blast * blast) continue;
+            // Pushed AWAY from the blast centre, which is what makes it read as an explosion rather than as a
+            // second projectile arriving.
+            this.shoveFromProjectile(p, other, ox, oy);
+          }
+          audio.play('crab');
+        }
         spent = true;
         break;
       }
@@ -648,6 +709,35 @@ class Game {
         this.projectiles.splice(i, 1);
       }
     }
+  }
+
+  /**
+   * Shove one hazard away from a projectile's position.
+   *
+   * Extracted so the direct hit and the blast push things by the SAME arithmetic -- an explosion is not a
+   * different kind of impact, it is the same one applied to everything in range. Two copies of this would let the
+   * grenade's centre shove differently from its fringe, which is not a thing a player could describe but is
+   * exactly the sort of inconsistency that reads as "that felt wrong".
+   *
+   * @param dx,dy direction from the projectile to the target; only the direction is used.
+   */
+  private shoveFromProjectile(
+    p: SpitProjectile,
+    target: { kind: HazardKind; x: number; y: number },
+    dx: number,
+    dy: number,
+  ): void {
+    const mass = Math.max(0.05, hazardMass(target.kind));
+    const shove = (mech.spit.knockbackMeters * spitImpact(p.kind)) / mass;
+    const length = Math.hypot(dx, dy);
+    // Dead centre: pick a direction rather than dividing by zero, and up is the one that means something in a
+    // vertical ascent.
+    if (length < 1e-3) {
+      target.y += shove;
+      return;
+    }
+    target.x += (dx / length) * shove;
+    target.y += (dy / length) * shove;
   }
 
   /**
@@ -789,6 +879,24 @@ class Game {
 
   /** Fractional damage accumulated from a trash bag's drain, so it costs whole hits over time. */
   private trashDrain = 0;
+  /**
+   * Fractional internal damage accumulated from what is in the stomach.
+   *
+   * Its own accumulator rather than sharing the trash bag's, because the two are different sources that can be
+   * live at once and a shared one would let a 0.6 from an urchin and a 0.6 from a bag add up to a hit neither of
+   * them earned.
+   */
+  private stomachDrain = 0;
+  /**
+   * Hit points the stomach's contents have taken from the player this run.
+   *
+   * Monotonic, like the other counters, because the evidence that an urchin is doing anything is a volume that
+   * fell over a window in which nothing else was touching the player -- and "the volume is lower than before" is
+   * also what eating, digesting and being shot at all look like.
+   */
+  private internalHits = 0;
+  /** Volume destroyed inside by detonations this run, which buys no rank. Monotonic, for probes. */
+  private destroyedMass = 0;
   /** Count of comedy beats this run, and the most recent one, for the HUD and probes. */
   private comedyBeats = 0;
   private lastComedyBeat: { what: HazardKind; at: number } | null = null;
@@ -848,7 +956,7 @@ class Game {
       kind,
       x: this.player.x * laneWidth,
       y: this.player.y,
-      radiusFraction: { fish: 0.035, jelly: 0.062, trash: 0.05, crab: 0.045 }[kind],
+      radiusFraction: KIND_TUNING[kind].radius,
       phase: 0,
       seed: 0,
       baitedUntil: 0,
@@ -890,6 +998,9 @@ class Game {
     this.player.impulseVy = 0;
     this.invulnerable = 0;
     this.trashDrain = 0;
+    this.stomachDrain = 0;
+    this.internalHits = 0;
+    this.destroyedMass = 0;
     this.comedyBeats = 0;
     this.lastComedyBeat = null;
     this.hazards.reset();
@@ -1405,7 +1516,7 @@ class Game {
          * The hazard module already checked `canSwallow`, so this cannot fail -- but a `false` is handled rather
          * than ignored, because the two checks living in different files is exactly the kind of thing that drifts.
          */
-        this.stomach.swallow(e.kind, this.player.volume - beforeEating);
+        this.stomach.swallow(e.kind, this.player.volume - beforeEating, stomachEffect(e.kind));
         audio.play('pop');
         continue;
       }
@@ -1664,7 +1775,7 @@ class Game {
    * pressure, which is the opposite of what a scripted beat wants.
    */
   private makeHazard(kind: HazardKind, x: number, y: number) {
-    const radiusFraction = { fish: 0.035, jelly: 0.062, trash: 0.05, crab: 0.045 }[kind];
+    const radiusFraction = KIND_TUNING[kind].radius;
     return {
       id: -Math.floor(Math.random() * 1e9),
       kind,
@@ -1838,6 +1949,8 @@ class Game {
     this.compressing = false;
     this.digested = 0;
     this.digestedMass = 0;
+    this.internalHits = 0;
+    this.destroyedMass = 0;
     this.obstacles.reset();
     this.field.reset();
     this.hazards.reset();
@@ -1856,6 +1969,7 @@ class Game {
     this.endTrace.length = 0;
     this.spawnLog.length = 0;
     this.trashDrain = 0;
+    this.stomachDrain = 0;
     this.comedyBeats = 0;
     this.lastComedyBeat = null;
     // Skills and talents are per-run state: carrying a skill across a death would make the restart
@@ -2181,6 +2295,31 @@ class Game {
         g.rect(p.x - r, p.y - r, r * 2, r * 2).fill({ color: 0x6d5232, alpha: 0.8 });
       } else if (p.kind === 'crab') {
         g.ellipse(p.x, p.y, r * 1.2, r * 0.8).fill({ color: KIND_TUNING.crab.colour, alpha: 0.85 });
+      } else if (p.kind === 'urchin') {
+        // A spinning spiked ball: the same silhouette it had in the water, so a thrown urchin is legible as the
+        // thing that was bleeding you a moment ago.
+        const spin = p.age * 9;
+        g.circle(p.x, p.y, r * 0.9).fill({ color: KIND_TUNING.urchin.colour, alpha: 0.6 });
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 + spin;
+          g.moveTo(p.x + Math.cos(a) * r * 0.7, p.y + Math.sin(a) * r * 0.7)
+            .lineTo(p.x + Math.cos(a) * r * 1.5, p.y + Math.sin(a) * r * 1.5);
+        }
+        g.stroke({ color: KIND_TUNING.urchin.colour, alpha: 0.95, width: r * 0.18 });
+      } else if (p.kind === 'bombfish') {
+        /**
+         * A round body with a burning fuse, and here the fuse IS drawn lit.
+         *
+         * Deliberately the opposite of the loose creature, which shows no spark: while it is inside you the
+         * countdown is the danger, and once it is in the air the countdown no longer matters -- what matters is
+         * that the thing in flight is a bomb about to go off, so it reads as one.
+         */
+        g.ellipse(p.x, p.y, r * 1.25, r * 1.1).fill({ color: KIND_TUNING.bombfish.colour, alpha: 0.9 });
+        const spark = 0.5 + 0.5 * Math.sin(p.age * 26);
+        g.moveTo(p.x, p.y + r * 1.0)
+          .lineTo(p.x + r * 0.25, p.y + r * 1.7)
+          .stroke({ color: 0x8a7a5c, alpha: 0.9, width: r * 0.16 });
+        g.circle(p.x + r * 0.25, p.y + r * 1.8, r * (0.18 + 0.12 * spark)).fill({ color: 0xffe066, alpha: 0.9 });
       } else {
         g.ellipse(p.x, p.y, r * 1.5, r * 0.75).fill({ color: KIND_TUNING.fish.colour, alpha: 0.85 });
       }
@@ -2260,7 +2399,68 @@ class Game {
     );
   }
 
-  /** The bulge's pulse rate, in radians per second, rising as the over-eating fuse burns down. */
+  /**
+   * What is in the stomach, as a ring of dots on the bubble's rim.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THIS EXISTS NOW, WHEN IT WAS DELIBERATELY DEFERRED BEFORE
+   * ---------------------------------------------------------------------------------------------
+   * `plan.md` lists "气泡内部显示具体物品" as a thing chosen NOT to do, on the grounds that per-item state did not
+   * exist yet so there was nothing meaningful to draw. It exists now, and the reason has changed from decoration
+   * to necessity: from this milestone the contents keep ACTING from inside. An urchin bleeds the player and a bomb
+   * fish is counting down, and a countdown the player cannot see is not a decision, it is an ambush.
+   *
+   * On the RIM rather than inside the bubble: the interior already stacks four translucent layers (two glow
+   * passes, the sheen, the speculars) and anything drawn in there is averaged into mush -- the lesson the stage
+   * colours were fixed by. The rim is clean, and it is where the player is already looking.
+   *
+   * And on the BUBBLE rather than in a HUD list, for the reason the over-eating chapter settled: a penalty about
+   * the bubble has to be visible without moving your eyes off the thing you are steering.
+   */
+  private drawStomach(g: Graphics, worldX: number, worldY: number, radius: number, alpha: number): void {
+    const items = this.stomach.detail;
+    if (!items.length) return;
+
+    const look = mech.stomach;
+    const markerR = radius * look.markerRadiusRatio;
+    /**
+     * Spread so a full stomach does not read as a smudge.
+     *
+     * The floor matters for a config with a larger capacity than this one: without it, twenty items would be
+     * placed 0.31 radians apart and merge into a continuous bright ring, which says "something is in there" and
+     * not "there are twenty things in there".
+     */
+    const spread = Math.max(look.markerMinSpreadRadians, (Math.PI * 2) / items.length);
+
+    for (const [i, item] of items.entries()) {
+      // Starting at the top and going clockwise, so the OLDEST item is always in the same place -- it is the one
+      // that gets spat or digested first, so it is the one worth being able to find without counting.
+      const angle = -Math.PI / 2 + i * spread;
+      const x = worldX + Math.cos(angle) * radius * look.markerOrbitRatio;
+      const y = worldY + Math.sin(angle) * radius * look.markerOrbitRatio;
+
+      /**
+       * A fuse about to run out blinks, and only that one does.
+       *
+       * This is the bomb fish's entire warning. Blinking the marker rather than adding a bar or a number is what
+       * makes it answerable at a glance WHICH one is about to go off, which is the only question the player has
+       * time to ask.
+       */
+      const panic = item.fuse > 0 && item.fuse <= look.fusePanicSeconds;
+      const blink = panic ? 0.35 + 0.65 * Math.abs(Math.sin(this.elapsed * look.fuseBlinkHz * Math.PI)) : 1;
+
+      g.circle(x, y, markerR).fill({
+        color: KIND_TUNING[item.kind].colour,
+        alpha: look.markerAlpha * alpha * blink,
+      });
+      // A dark hairline so a pale marker is still legible against a pale bubble interior.
+      g.circle(x, y, markerR).stroke({ color: 0x08131f, alpha: 0.45 * alpha * blink, width: Math.max(1, markerR * 0.3) });
+    }
+  }
+
+  /**
+   * The bulge's pulse rate, in radians per second, rising as the over-eating fuse burns down.
+   */
   private overloadPulse(): { phase: number; strength: number } {
     const fraction = this.stomach.fuseFraction;
     const panic = fraction <= mech.spit.panicBelowFraction;
@@ -2440,6 +2640,8 @@ class Game {
       alpha: look.specularAlpha * 0.5 * alpha,
     });
 
+    this.drawStomach(g, worldX, worldY, radius, alpha);
+
     // Trailing micro-bubbles below the bubble, so it reads as always moving.
     for (let i = 0; i < 3; i++) {
       const phase = this.elapsed * (0.9 + i * 0.23) + i * 2.1;
@@ -2539,8 +2741,27 @@ class Game {
       /** Items digested this run, and the volume digestion has taken out of the bubble. Monotonic, for probes. */
       completed: number;
       drained: number;
-      /** Everything inside, with its mass and progress, oldest first. */
-      contents: readonly { kind: HazardKind; mass: number; digest: number }[];
+    };
+    /**
+     * What is in the stomach and what it is doing from inside.
+     *
+     * The per-item list lives HERE rather than under `digest`, because it stopped being only about digesting the
+     * moment the contents started acting on their own: the same list answers "what is in there", "how far along is
+     * the oldest one" and "which fuse is about to run out". Two copies of it would be two answers to one question.
+     *
+     * `internalHits` is the counter that makes "the urchin is hurting me" assertable: a volume that fell over a
+     * window in which nothing else touched the player is also what eating, digesting and being shot at look like,
+     * so the fact is reported rather than inferred.
+     */
+    stomach: {
+      contents: readonly { kind: HazardKind; mass: number; digest: number; fuse: number }[];
+      shortestFuse: number | null;
+      /** Internal damage accumulated but not yet charged as a whole hit point. */
+      partialDamage: number;
+      /** Hit points the contents have taken this run. Monotonic. */
+      internalHits: number;
+      /** Volume destroyed inside by a detonation this run, which buys no rank. Monotonic. */
+      destroyed: number;
     };
     trashDrain: number;
     maxGripSeconds: number;
@@ -2688,7 +2909,14 @@ class Game {
         progress: this.stomach.digestProgress,
         completed: this.digested,
         drained: this.digestedMass,
+      },
+      /** What is in the stomach, and what it is doing from inside. */
+      stomach: {
         contents: this.stomach.detail,
+        shortestFuse: this.stomach.shortestFuse,
+        partialDamage: +this.stomachDrain.toFixed(4),
+        internalHits: this.internalHits,
+        destroyed: +this.destroyedMass.toFixed(4),
       },
       /** The obstacles, so a probe reads the state rather than inferring it from what is on screen. */
       obstacles: {
@@ -2906,13 +3134,14 @@ class Game {
   /**
    * Test hook: swallow a hazard the way being touched by one would, WITHOUT having to make contact.
    *
-   * Goes through the same two steps the collision path does -- grow by the mass, then hand the item the volume it
-   * actually added -- so a probe measuring the ledger (eat adds, digest and spit subtract) is measuring the real
-   * arithmetic rather than a hook that happens to agree with it today.
+   * Goes through the same steps the collision path does -- grow by the mass, hand the item the volume it actually
+   * added, and capture what it does from inside -- so a probe measuring the ledger or an internal effect is
+   * measuring the real arithmetic rather than a hook that happens to agree with it today.
    *
    * Needed because the alternative is to park the player at volume 20 so that everything is edible, and eating at
    * the volume CEILING adds nothing: the item would then carry zero mass, and a test of "digesting gives the mass
-   * back" would pass or fail depending on a clamp it was not asking about.
+   * back" would pass or fail depending on a clamp it was not asking about. The same clamp is why the volume is
+   * raised only by what was actually gained.
    *
    * @return the volume actually gained, so a test can assert the round trip against the same number.
    */
@@ -2920,7 +3149,7 @@ class Game {
     const before = this.player.volume;
     this.player.volume = growByAbsorbing(this.player.volume, massFromEating(kind));
     const gained = this.player.volume - before;
-    this.stomach.swallow(kind, gained);
+    this.stomach.swallow(kind, gained, stomachEffect(kind));
     this.stats.absorbed++;
     return gained;
   }

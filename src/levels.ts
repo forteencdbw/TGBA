@@ -50,8 +50,13 @@ export interface LevelEntry {
    *
    * Collectables are `bubble`, hazards name their kind, `skill` is a pickup, and `crate` / `coral` are the
    * destructible and the solid obstacles.
+   *
+   * `urchin` and `bombfish` are the negative food: ordinary hazards from the outside, and something that keeps
+   * acting once it is in the player's stomach. They are placed SPARINGLY, and that is a design decision rather
+   * than a difficulty one -- a risk decision is only a decision while it is occasional. A screen full of bomb fish
+   * would not be a choice between eating and avoiding, it would be a corridor of unavoidable damage.
    */
-  kind: 'bubble' | 'fish' | 'jelly' | 'trash' | 'crab' | 'skill' | 'crate' | 'coral';
+  kind: 'bubble' | 'fish' | 'jelly' | 'trash' | 'crab' | 'urchin' | 'bombfish' | 'skill' | 'crate' | 'coral';
   /**
    * Size for a collectable, as a multiple of the player's radius at full size. Ignored otherwise.
    *
@@ -242,13 +247,17 @@ export const LEVELS: readonly Level[] = [
       place.one(540, 'skill', 0.7),
 
       /**
-       * --- The first crates, at 340m. ---
+       * --- 620m: the first NEGATIVE FOOD, and the first real "should I?" of the run. ---
        *
-       * Placed EARLY and alone, because they are teaching something: a crate is scenery that can be got past two
-       * ways, and the player needs one cheap encounter to notice that ramming works before it matters. Two
-       * blocks with a wide gap, so passing them is never in doubt -- only HOW is.
+       * A single bomb fish, alone and off to one side, because a risk decision is only a decision while it is
+       * optional: it is worth more mass than a fish, it hurts to touch below its tier, and once it is inside it is
+       * a grenade with a lit fuse. Four seconds to spit it back out -- as a weapon, which is the reward -- or to
+       * compress it down; if neither happens it goes off in the player's stomach.
+       *
+       * At 620m rather than earlier because its tier is the fish's (volume 2.2). Before that the player simply
+       * cannot eat one, so the encounter would be pure hazard and would teach the wrong lesson about it.
        */
-      ...place.barrier(340, 'crate', 3, 0.5, 0.34),
+      place.one(620, 'bombfish', 0.68),
 
       // --- 550-900m: tighter, with trash to punish greed. ---
       ...place.spread(560, 240, 14, 'bubble', weave(0.34), sizes([0.3, 0.6, 0.45])),
@@ -256,6 +265,15 @@ export const LEVELS: readonly Level[] = [
       place.one(700, 'trash', 0.4),
       place.one(760, 'crab', 0.35),
       ...place.column(800, 60, 3, 'jelly', 0.72),
+      /**
+       * --- 860m: the first URCHIN, which is the other KIND of risk entirely. ---
+       *
+       * The bomb fish is a decision with a DEADLINE; the urchin is a decision with a BILL. It does not explode, it
+       * bleeds you for as long as you hold it, so the answer is not to hurry but to decide whether the mass is
+       * worth the hits -- and the interaction with compression is deliberately nasty, because compressing doubles
+       * the damage taken, which makes "just digest it away" the worst of the available options.
+       */
+      place.one(860, 'urchin', 0.28),
       ...place.line(880, 'fish', 6, 0.1, 0.9),
       place.one(920, 'skill', 0.25),
 
@@ -277,7 +295,12 @@ export const LEVELS: readonly Level[] = [
       ...place.line(1000, 'jelly', 3),
       ...place.line(1100, 'fish', 5),
       place.one(1150, 'trash', 0.55),
+      // A bomb fish in the middle of the tide: the one stretch where the player is most likely to swallow it
+      // carelessly, while vacuuming up the food the tide is made of.
+      place.one(1180, 'bombfish', 0.3),
       place.one(1200, 'crab', 0.5),
+      // A short column of urchins, as a spiky wall to go around -- or to run through and regret.
+      ...place.column(1250, 45, 3, 'urchin', 0.62),
 
       // --- 1260-1500m: the burst, then a clear run to the surface. ---
       ...place.line(1280, 'fish', 7, 0.08, 0.92),
@@ -286,6 +309,9 @@ export const LEVELS: readonly Level[] = [
       ...place.line(1400, 'trash', 2, 0.25, 0.75),
       ...place.line(1440, 'fish', 6, 0.12, 0.88),
       place.one(1470, 'crab', 0.5),
+      // One last urchin, just before the squeeze: the level's final "do I need this?" and the last chance to be
+      // carrying something that is bleeding you when the gap arrives.
+      place.one(1395, 'urchin', 0.72),
       /**
        * --- 1410m: the final squeeze, and the design's "极限瘦身" moment. ---
        *

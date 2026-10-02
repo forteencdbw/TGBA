@@ -326,4 +326,120 @@ test.describe('screen captures @screenshots', () => {
     });
     await page.screenshot({ path: testInfo.outputPath('obstacles.png') });
   });
+
+  /**
+   * The two negative food creatures, loose and side by side.
+   *
+   * Both have to be recognisable as "not food" from their SILHOUETTE, because that is what the player reads at
+   * speed: an urchin is a ball of needles and a bomb fish is a round body with a fuse, and if either of those needs
+   * colour to be told apart from a fish, it will not be read at all on a phone in daylight.
+   *
+   * Parked in a fixed lane position, like the stage captures, so the two can be compared against each other and
+   * against whatever the owner changes.
+   */
+  test('an urchin and a bomb fish, loose @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+    await page.evaluate(async () => {
+      /**
+       * Small, so NEITHER is edible at this size and both show the "threat" reading.
+       *
+       * That is the reading worth capturing: a creature the player must decide about has to look like something to
+       * avoid first, and both of these are ordinary hazards below their tier. The golden "this is food" halo is
+       * already shown on the other creatures by the captures above.
+       */
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugSetSteadyCruise: () => void;
+            debugSpawnHazardOnPlayer: (kind: string) => void;
+            hazardsRef: { hazards: { kind: string; x: number; y: number }[] };
+            camera: { viewport: { laneWidthMeters: number } };
+          };
+          player: { x: number; y: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      g.player.volume = 1;
+      g.game.debugSetSteadyCruise();
+      g.player.x = 0.5;
+      g.player.screenY = 0.3;
+      const lane = g.game.camera.viewport.laneWidthMeters;
+
+      for (const [kind, dx, dy] of [
+        ['urchin', -0.2, 0.16],
+        ['bombfish', 0.2, 0.16],
+        ['urchin', -0.2, -0.14],
+        ['bombfish', 0.2, -0.14],
+      ] as const) {
+        g.game.debugSpawnHazardOnPlayer(kind);
+        const h = g.game.hazardsRef.hazards[g.game.hazardsRef.hazards.length - 1]!;
+        h.x = g.player.x * lane + lane * dx;
+        h.y = g.player.y + lane * dy;
+      }
+      // Let the urchin needles rotate off their spawn angle so the drawing is not a still frame of one pose.
+      for (let i = 0; i < 20; i++) await raf();
+    });
+    await page.screenshot({ path: testInfo.outputPath('negative-food.png') });
+  });
+
+  /**
+   * A stomach with contents, being compressed, one of them about to go off.
+   *
+   * The picture that answers "can the player tell what is inside them, and which one is about to explode" -- the
+   * only warning a bomb fish gets, and the reason the contents are drawn on the bubble at all.
+   *
+   * TWO items, not three, and that is deliberate: three is CAPACITY, which lights the over-eating fuse, and the
+   * rim then shows that warning instead of the compression colour. The over-full silhouette has its own capture
+   * above; this one is for the state the compress control puts the bubble in.
+   */
+  test('a stomach being compressed, with a bomb about to go off @screenshots', async ({ page }, testInfo) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+    await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          mechRef: { hazards: Record<string, number>; spit: Record<string, number>; stomach: Record<string, number> };
+          game: {
+            debugSetSteadyCruise: () => void;
+            debugSwallowForTest: (kind: string) => number;
+            handlePointerDown: (id: number, x: number, y: number) => void;
+            touchRef: { compressGeometry: { x: number; y: number } };
+          };
+          player: { x: number; screenY: number; volume: number };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      g.player.volume = 5;
+      g.game.debugSetSteadyCruise();
+      g.player.x = 0.5;
+      g.player.screenY = 0.5;
+
+      /**
+       * The over-eating fuse is pushed out of the way for a different reason than in the capture above: with only
+       * two items the stomach is not full, so it would not light anyway -- but a future capacity change should not
+       * silently turn this picture into a picture of a different warning. The panic window is widened so the bomb
+       * marker is caught BLINKING without waiting out a real fuse at screenshot frame rates.
+       *
+       * Nothing about the drawing depends on these numbers; they only decide which frame is being photographed.
+       */
+      g.mechRef.spit.overloadFuseSeconds = 600;
+      g.mechRef.hazards.bombfishFuseSeconds = 600;
+      g.mechRef.hazards.urchinDrainPerSecond = 0;
+      g.mechRef.stomach.fusePanicSeconds = 600;
+
+      g.game.debugSwallowForTest('urchin');
+      g.game.debugSwallowForTest('bombfish');
+
+      const button = g.game.touchRef.compressGeometry;
+      g.game.handlePointerDown(94, button.x, button.y);
+      // Long enough for the rim to be in its compressed colour and the markers to be laid out and blinking.
+      for (let i = 0; i < 14; i++) await raf();
+    });
+    await page.screenshot({ path: testInfo.outputPath('stomach.png') });
+  });
 });
