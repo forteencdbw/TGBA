@@ -9,6 +9,7 @@ import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type Obsta
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
 import { audio } from './audio';
+import { Score } from './score';
 import { canEatHazard, hazardMass, massFromEating, volumeTier } from './consumption';
 import { MainMenu } from './menu';
 import { CodexUi } from './codexUi';
@@ -81,7 +82,7 @@ class Game {
   private readonly scene = new WorldLayer();
   private readonly hud = new Hud(LANDMARKS);
   private readonly touch = new TouchControls(this.input);
-  private readonly finishBanner = makeLabel('海面 / SURFACE', 0xeaf9ff, 26);
+  private readonly finishBanner = makeLabel('海面 / SURFACE', 0xeaf9ff, mech.hud.resultsCard.size);
   /** The gear button and the pause panel it opens. */
   private readonly settings = new SettingsUi();
   /** The main menu, shown before a run and after exiting to it. */
@@ -982,6 +983,9 @@ class Game {
       const volume = mech.audio.bulletHitVolume;
       audio.play('bulletHit', shots.drivenOff > 0 ? Math.min(1, volume * 1.4) : volume);
     }
+    // Points for the kill, told apart from the hit: the ledger is meant to show which act paid, not just that the
+    // gun was busy.
+    if (shots.drivenOff > 0) this.score.award('drivenOff', shots.drivenOff);
   }
 
   private updateProjectiles(dt: number, laneWidth: number, min: number, max: number): void {
@@ -1402,6 +1406,21 @@ class Game {
   /** Best run so far, kept across restarts. */
   private bestClimbed = 0;
   private bestVolume = 0;
+  /**
+   * The best score of this SESSION.
+   *
+   * Per session rather than saved, which is `progress.ts`'s deliberate line: the save holds which levels are open,
+   * and a best score is a per-run fact that would need a migration the day a value in the config changes. `bestClimbed`
+   * and `bestVolume` are kept the same way, for the same reason.
+   */
+  private bestScore = 0;
+  /**
+   * The score of the run in progress.
+   *
+   * The RULES live in `src/score.ts` and the VALUES in the config's `score` group; this object is the total and the
+   * ledger of what paid it.
+   */
+  private readonly score = new Score();
   /** White-out flash driven by the surface breach, 1 -> 0. */
   private splash = 0;
   /** Whether the current burst is a SURFACE finish rather than a death. */
@@ -1557,9 +1576,21 @@ class Game {
     this.menu.layout(viewport);
     this.codex.layout(viewport);
 
+    /**
+     * The results card, scaled by the world zoom -- and WRAPPED to the screen.
+     *
+     * The scale is the water's (it has always been: the card floats in the level, not in a fixed HUD), but a line of
+     * text has nothing to do with how many pixels a metre occupies. With three facts on a line the card ran off both
+     * edges and the player saw the middle of their own result. The wrap width is in the label's own units, so the text
+     * folds instead of being clipped, whatever the line ends up saying; the ratio is the config's.
+     */
     this.finishBanner.scale.set(viewport.scale);
     this.finishBanner.x = screenW / 2;
-    this.finishBanner.y = screenH * 0.3;
+    this.finishBanner.y = screenH * mech.hud.resultsCard.yRatio;
+    this.finishBanner.style.wordWrap = true;
+    // CJK lines have few spaces to break at, so a break has to be allowed inside a run of characters.
+    this.finishBanner.style.breakWords = true;
+    this.finishBanner.style.wordWrapWidth = (screenW * mech.hud.resultsCard.widthRatio) / viewport.scale;
 
     // The flash covers the canvas in SCREEN space, so it must be rebuilt whenever the canvas changes.
     this.flash.clear();
@@ -1936,6 +1967,9 @@ class Game {
       // choice of WHAT.
       const skill = pickup.id ?? (SKILLS[Math.floor(Math.random() * SKILLS.length)] ?? SKILLS[0]).id;
       this.grantSkill(skill);
+      // A special item is worth points because it is the level's one pure reward: everything else in the water is
+      // either an obstacle or something that hurts.
+      this.score.award('skill');
       this.skillPickup = null;
     }
   }
@@ -2028,6 +2062,9 @@ class Game {
         const beforeEating = this.player.volume;
         this.player.volume = growByAbsorbing(this.player.volume, massFromEating(e.kind));
         this.stats.absorbed++;
+        // The reversal pays: it is the game's signature act and the one that costs the most (the bubble gets bigger
+        // and slower for it), so a score that ignored it would price the safe play above the interesting one.
+        this.score.award('eaten');
         this.invulnerable = Math.max(this.invulnerable, mech.consumption.eatInvulnerableSeconds);
         /**
          * What was swallowed goes into the stomach, carrying THE VOLUME IT ACTUALLY ADDED.
@@ -2685,6 +2722,8 @@ class Game {
     this.projectiles.length = 0;
     // Nor with the previous run's rounds in the air, which would be free shots nobody asked for.
     this.bullets.reset();
+    // The score is the RUN's number, so it starts at zero with everything else that belongs to a run.
+    this.score.reset();
     this.spitCooldown = 0;
     this.spitHits = 0;
     /**
@@ -2899,6 +2938,8 @@ class Game {
     this.phaseTimer = SURFACE_SECONDS;
     this.surfaced = true;
     this.stats.ended++;
+    // Before `recordBest`, so the best this run leaves behind includes the bonus it just earned.
+    this.score.award('surface');
     this.recordBest();
     audio.play('surface');
     this.splash = 1;
@@ -2939,6 +2980,9 @@ class Game {
       this.stats.newRecord = false;
     }
     this.bestVolume = Math.max(this.bestVolume, this.stats.maxVolume);
+    // Kept beside the other bests, and NOT the thing `newRecord` is about: depth is the run's progress and the score
+    // is what it was worth, so a run can beat one and not the other, and the card says both.
+    this.bestScore = Math.max(this.bestScore, this.score.value);
   }
 
   private render(dt: number): void {
@@ -2960,6 +3004,8 @@ class Game {
     this.flash.visible = this.flash.visible && !fullScreenPage;
 
     if (!fullScreenPage) {
+      // The score, once per frame and only when it has moved -- see `Hud.setScore`.
+      this.hud.setScore(this.score.value);
       this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled, {
         stage: this.stage.stage,
         name: stageName(this.stage.stage),
@@ -3022,8 +3068,8 @@ class Game {
      */
     if (this.phase === 'burst') {
       this.finishBanner.text = this.surfaced
-        ? `冲破海面  ·  爬升 ${Math.round(DEPTH_TOTAL - this.player.depth)}m\n吸收 ${this.stats.absorbed}  ·  最大 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}`
-        : `破裂  ·  深度 ${Math.round(this.player.depth)}m\n吸收 ${this.stats.absorbed}  ·  爬升 ${Math.round(DEPTH_TOTAL - this.player.depth)}m\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}`;
+        ? `冲破海面  ·  爬升 ${Math.round(DEPTH_TOTAL - this.player.depth)}m\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  最大 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`
+        : `破裂  ·  深度 ${Math.round(this.player.depth)}m\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  爬升 ${Math.round(DEPTH_TOTAL - this.player.depth)}m\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`;
     }
 
     /**
@@ -3831,7 +3877,15 @@ class Game {
     };
     events: { seen: number; fired: number[]; last: { label: string; at: number } | null };
     audio: { muted: boolean; running: boolean };
-    ending: { surfaced: boolean; splash: number; bestClimbed: number; bestVolume: number };
+    ending: { surfaced: boolean; splash: number; bestClimbed: number; bestVolume: number; bestScore: number };
+    /**
+     * The score: the total, and what earned it.
+     *
+     * The ledger is reported because the total cannot say which act paid, and "the surface bonus landed" is a
+     * question about one event rather than about the sum. Counts rather than points: the points are derivable from
+     * the config, and reporting them would be reporting the config a second time.
+     */
+    score: { value: number; best: number; byEvent: Record<string, number> };
     /** A skill lying in the water. `id` is null until collected, since it is rolled at pickup. */
     skillPickup: { id: string | null; y: number } | null;
     activeSkill: { id: string; remaining: number } | null;
@@ -4116,7 +4170,8 @@ class Game {
        * a game that claims to have sound while silently muted is worse than one that admits it.
        */
       audio: { muted: this.audioMuted, running: audio.isRunning },
-      ending: { surfaced: this.surfaced, splash: +this.splash.toFixed(3), bestClimbed: Math.round(this.bestClimbed), bestVolume: +this.bestVolume.toFixed(2) },
+      ending: { surfaced: this.surfaced, splash: +this.splash.toFixed(3), bestClimbed: Math.round(this.bestClimbed), bestVolume: +this.bestVolume.toFixed(2), bestScore: this.bestScore },
+      score: { value: this.score.value, best: this.bestScore, byEvent: { ...this.score.ledger } },
       skillPickup: this.skillPickup ? { id: this.skillPickup.id, y: +this.skillPickup.y.toFixed(1) } : null,      /** Active effect timers, so a skill that lasts can be observed while it runs. */
       activeSkill: this.player.skillId ? { id: this.player.skillId, remaining: +this.player.skillRemaining.toFixed(2) } : null,
       /** The bubble's growth stage: its speed tier, and how far into the next one it is. */
@@ -4335,6 +4390,12 @@ class Game {
     const gained = this.player.volume - before;
     this.stomach.swallow(kind, gained, stomachEffect(kind));
     this.stats.absorbed++;
+    /**
+     * The score is awarded here too, because this hook stands in for the collision path above and has to leave the run
+     * in the state that path would have: a probe that swallowed something and then found the score unmoved would be
+     * right to call it a bug, and the ledger is meant to be checkable for each event.
+     */
+    this.score.award('eaten');
     return gained;
   }
 

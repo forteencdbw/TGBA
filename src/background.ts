@@ -394,6 +394,16 @@ export class Hud {
   private readonly resourceGauge = new Graphics();
   private readonly gauge = new Graphics();
   private readonly debug: Text;
+  /**
+   * The score, in the top-left corner.
+   *
+   * Its own label rather than a line in the subline block, because the subline block is CENTRED and belongs to the
+   * depth readout: the score is a running number that changes constantly, and putting it in the middle of the screen
+   * would put the one thing that moves next to the one thing the player is steering by.
+   */
+  private readonly scoreLabel: Text;
+  /** What the label currently shows, so a per-frame update does not rebuild a string that has not changed. */
+  private shownScore = -1;
   private readonly landmarkLabels: Text[] = [];
   private barGeometry = { barX: 0, barTop: 0, barBottom: 0, barW: 0 };
   /**
@@ -441,7 +451,24 @@ export class Hud {
     this.debug = makeLabel('', 0x7fc4e8, 11, 'normal', mech.text.monoFontFamily);
     this.debug.alpha = 0.8;
 
-    this.root.addChild(this.gauge, this.resourceGauge, this.headline, this.subline, this.resourceLabel, this.debug);
+    /**
+     * The score.
+     *
+     * Gold, like the landmarks and the spit button, and the only other gold number on the screen -- the top block is
+     * the cyan family ("where am I"), so the score reads as a different KIND of number at a glance.
+     */
+    this.scoreLabel = makeLabel('', mech.hud.score.colour, mech.hud.score.size);
+    this.scoreLabel.alpha = mech.hud.score.alpha;
+
+    this.root.addChild(
+      this.gauge,
+      this.resourceGauge,
+      this.headline,
+      this.subline,
+      this.resourceLabel,
+      this.scoreLabel,
+      this.debug,
+    );
 
     for (const mark of landmarks) {
       const label = makeLabel(mark.label, 0xffd479, 11);
@@ -496,6 +523,16 @@ export class Hud {
     this.debug.x = Math.max(6, viewport.left + (gaugeOnLeft ? mech.hud.gaugeEdgeInset + mech.hud.gaugeWidth + 4 : 3) * s);
     this.debug.y = 132 * s;
 
+    /**
+     * The score: the top-left corner, above the gauge and above the readout.
+     *
+     * The one piece of HUD furniture whose job is to be noticed when it changes, so it owns a corner rather than
+     * sharing the centred block with the depth.
+     */
+    this.scoreLabel.scale.set(s);
+    this.scoreLabel.x = viewport.left + mech.hud.score.x * s;
+    this.scoreLabel.y = mech.hud.score.y * s;
+
     const barTop = 110 * s;
     const barBottom = viewport.height - 46 * s;
     const barW = mech.hud.gaugeWidth * s;
@@ -530,6 +567,29 @@ export class Hud {
   /** Which birth type to show under the headline. */
   setSeedLabel(label: string): void {
     this.seedLabel = label;
+  }
+
+  /**
+   * The run's score.
+   *
+   * Called every frame, and it does nothing when the number has not moved: the digits are the point of this label, so
+   * rebuilding the string and re-laying out the text sixty times a second for a number that changes a few times a
+   * minute would be pure waste on the one screen that has to keep up with a phone.
+   */
+  setScore(points: number): void {
+    if (points === this.shownScore) return;
+    this.shownScore = points;
+    this.scoreLabel.text = `分数 ${points}`;
+  }
+
+  /**
+   * The score exactly as the player reads it.
+   *
+   * Exposed for the same reason as the headline: "it says 350" can only be checked against the string the HUD really
+   * shows, and a test that re-derived the format would pass while the screen showed something else.
+   */
+  get scoreText(): string {
+    return this.scoreLabel.text;
   }
 
   /** The run's talent, shown next to the seed so the player can see what they got. */

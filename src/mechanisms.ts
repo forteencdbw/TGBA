@@ -130,6 +130,19 @@ export interface StageConfig {
 
 export interface Mechanisms {
   /**
+   * What a run is worth, per event. The keys are `ScoreEvent` in `src/score.ts`.
+   *
+   * Every event is required rather than optional, and a value of 0 is how an event is taken OUT of the game: a
+   * missing row would be indistinguishable from a deliberate zero, and "shooting stopped giving points" would then
+   * have two very different explanations.
+   */
+  score: {
+    drivenOff: number;
+    skill: number;
+    eaten: number;
+    surface: number;
+  };
+  /**
    * Where the depth gauge sits, and how far in from the edge.
    *
    * A SIDE rather than two sets of coordinates, because the gauge and its landmark labels are one object: the labels
@@ -141,6 +154,29 @@ export interface Mechanisms {
     /** Design pixels from that edge of the lane. */
     gaugeEdgeInset: number;
     gaugeWidth: number;
+    /** The score readout, pinned to the top-left corner and on screen for the whole run. */
+    score: {
+      x: number;
+      y: number;
+      size: number;
+      colour: number;
+      alpha: number;
+    };
+    /**
+     * The results card: the lines shown when a run ends.
+     *
+     * `widthRatio` is the reason this is in the config at all. The card used to be sized by the WORLD zoom alone,
+     * which says nothing about how wide a line of text may be -- so adding one more fact to a line pushed it off both
+     * edges of the screen. A wrap width expressed in screen terms is the fix, and a wrap width is a number the owner
+     * will want to move.
+     */
+    resultsCard: {
+      size: number;
+      /** The card's centre, as a fraction of the canvas height. */
+      yRatio: number;
+      /** How much of the screen's width one line may use before it wraps. */
+      widthRatio: number;
+    };
   };
   /**
    * The touch buttons: one vertical column on the right edge of the lane.
@@ -769,6 +805,19 @@ const CODEX_COLOURS = [
 export const OBSTACLE_KINDS = ['crate', 'coral', 'wall', 'net'] as const;
 
 const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string }[] = [
+  ...['drivenOff', 'skill', 'eaten', 'surface'].map((event) => ({
+    path: `score.${event}`,
+    check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000,
+    describe: 'points for this event, between 0 and 100000; 0 takes the event out of the score',
+  })),
+  { path: 'hud.resultsCard.size', check: (v) => typeof v === 'number' && v >= 10 && v <= 60, describe: 'a font size between 10 and 60' },
+  { path: 'hud.resultsCard.yRatio', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 0.9, describe: 'a fraction of the canvas height between 0.05 and 0.9' },
+  { path: 'hud.resultsCard.widthRatio', check: (v) => typeof v === 'number' && v >= 0.3 && v <= 1, describe: 'a fraction of the canvas width between 0.3 and 1' },
+  { path: 'hud.score.x', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
+  { path: 'hud.score.y', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
+  { path: 'hud.score.size', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
+  { path: 'hud.score.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.score.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'hud.gaugeSide', check: (v) => v === 'left' || v === 'right', describe: "'left' or 'right'" },
   { path: 'hud.gaugeEdgeInset', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
   { path: 'hud.gaugeWidth', check: (v) => typeof v === 'number' && v >= 2 && v <= 40, describe: 'design pixels between 2 and 40' },
@@ -1451,6 +1500,8 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
 
 
 

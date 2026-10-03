@@ -93,7 +93,7 @@ export interface Diagnostics {
   };
   emergence: { fishCount: number; perceptionRadiusMeters: number };
   slow: { remaining: number; factor: number; impulseVy: number };
-  ending: { surfaced: boolean; splash: number; bestClimbed: number };
+  ending: { surfaced: boolean; splash: number; bestClimbed: number; bestScore: number };
   audio: { muted: boolean; running: boolean };
   /** The suction field: whether it is held, how far it reaches, and what it costs in speed. */
   suction: { held: boolean; radiusFraction: number; moveFactor: number };
@@ -110,6 +110,13 @@ export interface Diagnostics {
     ramThreshold: number;
     minGap: number;
   };
+  /**
+   * The score: the total, and the count of what earned it.
+   *
+   * The ledger is reported as well as the total because "the score is 350" cannot say which act paid, and checking
+   * that the surface bonus landed is a question about one event rather than about the sum.
+   */
+  score: { value: number; best: number; byEvent: Record<string, number> };
   /**
    * The stomach and what is in flight.
    *
@@ -243,6 +250,8 @@ export interface GameHandle {
      * fast does it fire" and "how much does a hit take off" are the two halves of what the spec is asserting.
      */
     bullets: { perSecond: number; damage: number; radiusRatio: number; speedPerSecond: number; lifeSeconds: number };
+    /** What each scoring event is worth, so a spec asserts the CONFIG's prices rather than numbers written into it. */
+    score: { drivenOff: number; skill: number; eaten: number; surface: number };
   };
   /** The lateral authority this display resolved to. */
   lateralSnapshot: { keyboardSpeed: number; laneWidth: number };
