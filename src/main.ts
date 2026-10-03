@@ -17,7 +17,7 @@ import { MainMenu } from './menu';
 import { CodexUi } from './codexUi';
 import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
 import { BUBBLE_TYPES, defaultBubbleType, findBubbleType, hasControl, hasVerb, type BubbleType } from './bubbleTypes';
-import type { PickupKind } from './levels';
+import { PICKUP_KINDS, type PickupKind } from './levels';
 import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
 import { endOverload, gainRage, hitRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName, slamDamage, spendRage, tickRage, type RageState } from './rage';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
@@ -624,6 +624,21 @@ class Game {
    * Exposed because "the upgrade changed the rate of fire" is only measurable against the number of rows: the cadence
    * is unchanged by design, so a probe counting rounds needs to know how many muzzles each tick had.
    */
+  /**
+   * Test hook: the run's fire-rate tier.
+   *
+   * Exposed next to `gunStreamsRef` because the two upgrades multiply: a probe checking the rate has to know both the
+   * tier and the number of rows to know what the stream it is counting was supposed to be.
+   */
+  get rateTierRef(): number {
+    return this.rateTier;
+  }
+
+  /** Test hook: the run banner's current text, so a probe can read the feedback the player got. */
+  get bannerTextRef(): string {
+    return this.runBanner.text;
+  }
+
   get gunStreamsRef(): number {
     return this.gunStreams;
   }
@@ -700,6 +715,13 @@ class Game {
    * advantage, and the run before it would have been a different game from the one after.
    */
   private gunStreams = 1;
+  /**
+   * The run's fire-rate tier, 1-based. One pickup per step, and the ladder's length is the ceiling.
+   *
+   * Per RUN, like the gun's rows: a permanent upgrade that survived a death would make dying a way to keep an
+   * advantage, and the run after it would be a different game from the one before.
+   */
+  private rateTier = 1;
   /** Seconds until the next spit is allowed. */
   private spitCooldown = 0;
   /** 1 -> 0 pulse on the spit button, for the refusal when the stomach is empty. */
@@ -1005,6 +1027,13 @@ class Game {
        * which is right -- they are in the water, not in the player's hands.
        */
       armed: this.phase === 'playing' && this.bubbleType.firesBullets,
+      /**
+       * The run's CURRENT rate tier.
+       *
+       * `rateTier` is 1-based and the ladder's first entry is what a run starts at, so the array's length IS the number
+       * of tiers there are -- see `bullets.rateTiers`.
+       */
+      perSecond: mech.bullets.rateTiers[Math.min(this.rateTier, mech.bullets.rateTiers.length) - 1] ?? 0,
       hazards: this.hazards,
       obstacles: this.obstacles,
     });
@@ -1996,10 +2025,10 @@ class Game {
       this.field.bubbles.push(this.field.bubbleFromEntry({ ...entry, at: spawnY }, laneWidth, stageRadiusFraction(this.stage.stage, this.player.volume)));
       return;
     }
-    if (entry.kind === 'skill' || entry.kind === 'upgrade') {
+    if ((PICKUP_KINDS as readonly string[]).includes(entry.kind)) {
       // A pickup sits where the level put it and drifts down with the water, waiting to be taken.
       this.pickup = {
-        kind: entry.kind,
+        kind: entry.kind as PickupKind,
         x: spawnX,
         y: spawnY,
         // The skill is rolled when it is COLLECTED, not when it is created: granting it here would
@@ -2027,7 +2056,8 @@ class Game {
       );
       return;
     }
-    const hazard = this.makeHazard(entry.kind, spawnX, spawnY, entering);
+    // Everything left is a creature: the pickups, the collectables and the scenery have all returned above.
+    const hazard = this.makeHazard(entry.kind as HazardKind, spawnX, spawnY, entering);
     this.hazards.hazards.push(hazard);
   }
 
@@ -2078,6 +2108,23 @@ class Game {
           this.gunStreams > before
             ? `火力升级  ·  ${this.gunStreams} 排小泡泡同时发射`
             : `火力升级  ·  已经是 ${this.gunStreams} 排（上限 ${mech.bullets.maxStreams}）`;
+        this.runBanner.alpha = 1;
+        this.bannerSeen = true;
+      } else if (pickup.kind === 'rate') {
+        /**
+         * The fire-rate ladder, one step per pickup.
+         *
+         * The ceiling is the LADDER'S LENGTH, not a separate number: "three tiers" and "three entries" are the same
+         * fact, so adding a tier is adding an entry and there is nothing to keep in sync. At the top the pickup is
+         * still consumed and says so -- a pickup that did nothing silently reads as a bug.
+         */
+        const before = this.rateTier;
+        this.rateTier = Math.min(mech.bullets.rateTiers.length, this.rateTier + 1);
+        audio.play('skill');
+        this.runBanner.text =
+          this.rateTier > before
+            ? `射速升级  ·  第 ${this.rateTier} 档  ·  每秒 ${mech.bullets.rateTiers[this.rateTier - 1]} 发`
+            : `射速升级  ·  已经是最高档（第 ${mech.bullets.rateTiers.length} 档）`;
         this.runBanner.alpha = 1;
         this.bannerSeen = true;
       } else {
@@ -2893,8 +2940,9 @@ class Game {
     // The enemies' rounds go with them: a new bubble that starts inside a wall of the last run's fire would be a
     // death the player cannot connect to anything they did.
     this.enemyBullets.reset();
-    // And the gun goes back to one row: the upgrade belongs to the run that earned it.
+    // And the gun goes back to one row and the first rate tier: both upgrades belong to the run that earned them.
     this.gunStreams = 1;
+    this.rateTier = 1;
     // The score is the RUN's number, so it starts at zero with everything else that belongs to a run -- including
     // the numbers still floating on screen from the previous one.
     this.score.reset();
@@ -3474,7 +3522,27 @@ class Game {
       const r = laneWidth * look.radiusRatio;
       const pulse = 1 + Math.sin(this.elapsed * mech.pickups.pulsePerSecond) * 0.12;
       g.circle(p.x, p.y, r * 2.1 * pulse).fill({ color: look.haloColour, alpha: look.haloAlpha });
-      if (p.kind === 'upgrade') {
+      if (p.kind === 'rate') {
+        /**
+         * A single chevron with speed dashes either side: "faster", where the rows upgrade is "more".
+         *
+         * Shape before colour, the same rule as the other two -- a player reading the water in peripheral vision has to
+         * tell "my gun shoots quicker" from "my gun shoots wider" before they can read a word.
+         */
+        g.moveTo(p.x - r * pulse, p.y - r * 0.3)
+          .lineTo(p.x, p.y + r * 0.42)
+          .lineTo(p.x + r * pulse, p.y - r * 0.3)
+          .stroke({ color: look.coreColour, alpha: look.coreAlpha, width: Math.max(1, r * 0.3) });
+        for (const side of [-1, 1]) {
+          g.moveTo(p.x + side * r * 1.15, p.y - r * 0.34)
+            .lineTo(p.x + side * r * 1.75, p.y - r * 0.34)
+            .stroke({ color: look.coreColour, alpha: look.coreAlpha * 0.6, width: Math.max(1, r * 0.22) });
+          g.moveTo(p.x + side * r * 1.15, p.y + r * 0.16)
+            .lineTo(p.x + side * r * 1.6, p.y + r * 0.16)
+            .stroke({ color: look.coreColour, alpha: look.coreAlpha * 0.6, width: Math.max(1, r * 0.22) });
+        }
+        g.circle(p.x, p.y, r * 1.05 * pulse).stroke({ color: look.rimColour, alpha: look.rimAlpha * 0.5, width: Math.max(1, r * 0.12) });
+      } else if (p.kind === 'upgrade') {
         /**
          * Stacked chevrons, pointing up the lane.
          *
@@ -4868,6 +4936,11 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
 
 
 

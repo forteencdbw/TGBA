@@ -325,6 +325,23 @@ const ENVIRONMENT: readonly CodexEntry[] = [
     icon: { kind: 'obstacle', obstacle: 'coral' },
   },
   {
+    id: 'env:ratePickup',
+    category: 'environment',
+    name: '射速升级',
+    tagline: '拾取后射速 +1 档，最高三档',
+    facts: [
+      { label: '档位', value: mech.bullets.rateTiers.map((r, i) => `第${i + 1}档 ${num(r, 0)}/秒`).join(' · ') },
+      { label: '上限', value: `第 ${mech.bullets.rateTiers.length} 档（档数就是这个表的长度）` },
+      { label: '持续', value: '整局有效，死亡后重置' },
+    ],
+    notes: [
+      '它改的是**扣扳机的频率**，火力升级改的是**一次几排**：两个乘数各自一条拾取线，互不干扰。',
+      '到顶之后再捡会被消耗掉，横幅会明说"已经是最高档"——一个什么都不做又不吭声的拾取物读起来就是 bug。',
+      '档数就是配置里那个数组的长度：加一档=多写一个数，没有第二个"上限"要同步。',
+    ],
+    icon: { kind: 'glyph', glyph: 'skillPickup' },
+  },
+  {
     id: 'env:upgradePickup',
     category: 'environment',
     name: '能力升级',
@@ -866,4 +883,5 @@ export function iconColour(entry: CodexEntry): number {
     }
   }
 }
+
 

@@ -82,7 +82,8 @@ test.describe('the gun', () => {
     const errors = watchForErrors(page);
     await openWater(page);
 
-    const rate = (await mechanics(page)).bullets.perSecond;
+    // The ladder's FIRST tier is what a fresh run fires at; the tiers above it come from pickups.
+    const rate = (await mechanics(page)).bullets.rateTiers[0] ?? 0;
     expect(rate, 'the config must have a cadence at all').toBeGreaterThan(0);
 
     const before = await gun(page);
@@ -183,4 +184,5 @@ test.describe('the gun', () => {
     await expectNoErrors(errors);
   });
 });
+
 

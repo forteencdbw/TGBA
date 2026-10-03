@@ -130,6 +130,7 @@ export type SpawnKind =
   | 'oil'
   | 'skill'
   | 'upgrade'
+  | 'rate'
   | ObstacleKind;
 
 /** The arrangement vocabulary: how a block's `count` things are laid out. */
@@ -318,6 +319,7 @@ const SPAWN_KINDS: readonly string[] = [
   'oil',
   'skill',
   'upgrade',
+  'rate',
   'crate',
   'coral',
   'wall',
@@ -334,7 +336,7 @@ const isScenery = (kind: string): boolean => (OBSTACLE_KINDS as readonly string[
  * with the current (never from a side), and they occupy a single slot in the water rather than a field. A new pickup
  * added here inherits both, which is the point.
  */
-export const PICKUP_KINDS = ['skill', 'upgrade'] as const;
+export const PICKUP_KINDS = ['skill', 'upgrade', 'rate'] as const;
 export type PickupKind = (typeof PICKUP_KINDS)[number];
 const isPickup = (kind: string): boolean => (PICKUP_KINDS as readonly string[]).includes(kind);
 const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom'];
@@ -713,6 +715,7 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
 
 
 

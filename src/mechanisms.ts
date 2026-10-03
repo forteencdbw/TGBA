@@ -272,6 +272,8 @@ export interface Mechanisms {
     pulsePerSecond: number;
     skill: PickupLook;
     upgrade: PickupLook;
+    /** Fire-rate upgrade: a different shape AND hue from the rows one, so the two never blur together. */
+    rate: PickupLook;
   };
   collectables: {
     riseMin: number;
@@ -459,8 +461,14 @@ export interface Mechanisms {
    * two coexist because they cost different things -- a stomach slot versus nothing but time.
    */
   bullets: {
-    /** Rounds per second. 0 turns the weapon off entirely. */
-    perSecond: number;
+    /**
+     * The fire-rate LADDER: the first entry is what a run starts at, and each rate pickup moves up one.
+     *
+     * An array rather than a number plus a cap, because "how many tiers are there" and "how fast is each tier" are the
+     * same fact: adding a tier is adding an entry and deleting one is deleting an entry. The FIRST entry being 0 is how
+     * the whole weapon is switched off.
+     */
+    rateTiers: number[];
     /** Speed as a fraction of the lane width per second, on top of the level's own scroll. */
     speedPerSecond: number;
     radiusRatio: number;
@@ -1161,7 +1169,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'spit.trailWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a ratio between 0 and 1' },
   { path: 'spit.glowAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'spit.glowRadiusRatio', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a radius multiple of at least 1' },
-  { path: 'bullets.perSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'rounds per second between 0 and 30; 0 turns the weapon off' },
+  { path: 'bullets.rateTiers', check: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 8 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 30), describe: 'a non-empty list of up to 8 rounds-per-second values between 0 and 30; the FIRST is what a run starts at' },
   { path: 'bullets.speedPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 8, describe: 'lane widths per second, above 0 and at most 8' },
   { path: 'bullets.radiusRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.1, describe: 'a fraction of the lane width, above 0.001 and at most 0.1' },
   { path: 'bullets.upgradeSpreadRatio', check: (v) => typeof v === 'number' && v > 0.005 && v < 0.3, describe: 'a fraction of the lane width above 0.005 and below 0.3' },
@@ -1749,6 +1757,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 

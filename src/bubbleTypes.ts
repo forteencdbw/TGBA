@@ -86,7 +86,7 @@ export interface BubbleType {
    *
    * A type property rather than a global behaviour, for the same reason the control list is: "what can this bubble
    * do" is the question the whole module answers, and a mechanic that every type shares but cannot be turned off is
-   * a mechanic nobody can take away again. `bullets.perSecond` is the rate; this is the switch.
+   * a mechanic nobody can take away again. `bullets.rateTiers` is the rate; this is the switch.
    */
   firesBullets: boolean;
   /** Where the bubble's colours come from. */
@@ -296,4 +296,6 @@ export function hasControl(type: BubbleType, control: ControlId): boolean {
 export function hasVerb(type: BubbleType, verb: 'suction' | 'spit' | 'compress' | 'charge' | 'burst'): boolean {
   return type.controls.includes(verb);
 }
+
+
 

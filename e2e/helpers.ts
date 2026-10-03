@@ -249,7 +249,7 @@ export interface GameHandle {
      * The gun, read from the config the RUNNING build loaded rather than from a number written into the test: "how
      * fast does it fire" and "how much does a hit take off" are the two halves of what the spec is asserting.
      */
-    bullets: { perSecond: number; damage: number; radiusRatio: number; speedPerSecond: number; lifeSeconds: number };
+    bullets: { rateTiers: number[]; damage: number; radiusRatio: number; speedPerSecond: number; lifeSeconds: number };
     /** What each scoring event is worth, so a spec asserts the CONFIG's prices rather than numbers written into it. */
     score: { drivenOff: number; absorb: number; skill: number; eaten: number; surface: number };
   };
@@ -395,6 +395,7 @@ export async function absorbUntilStage(page: Page, target: number): Promise<void
 
   expect(reached.stage, `the bubble should reach stage ${target}`).toBe(target);
 }
+
 
 
 

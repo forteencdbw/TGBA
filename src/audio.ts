@@ -348,7 +348,7 @@ export class GameAudio {
      * `bulletHit` is throttled hardest of all, and that is not a detail: several rounds can land in the same
      * frame on a swarm, and a gun that fired four cues at once would be a click, not a sound. `bulletFire` is
      * allowed to repeat faster than the rest because it IS a rhythm -- but not without a floor, or a very high
-     * `bullets.perSecond` would stack into a buzz.
+     * `bullets.rateTiers` at its top tier would stack into a buzz.
      */
     const minGap = event === 'absorb' ? 0.045 : event === 'bulletHit' ? 0.05 : event === 'bulletFire' ? 0.04 : 0.09;
     const previous = this.lastPlayed.get(event) ?? -1;
@@ -497,3 +497,5 @@ export class GameAudio {
 
 /** A single shared instance: audio is global state, and two contexts would fight over the device. */
 export const audio = new GameAudio();
+
+

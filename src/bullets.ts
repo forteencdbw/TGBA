@@ -59,6 +59,13 @@ export interface BulletContext {
    * knows nothing about either.
    */
   armed: boolean;
+  /**
+   * Rounds per second for THIS frame, from the run's current rate tier.
+   *
+   * Supplied rather than read from the config, for the same reason `armed` is: the cadence depends on what the run has
+   * picked up, and "how fast may I shoot right now" is a question about the RUN, not about the weapon in general.
+   */
+  perSecond: number;
   hazards: HazardField;
   obstacles: ObstacleField;
 }
@@ -99,7 +106,7 @@ export class BulletField {
     /** Positions of creatures finished this frame, for whatever the caller wants to draw there. */
     const driven: { x: number; y: number }[] = [];
 
-    if (ctx.armed && cfg.perSecond > 0) {
+    if (ctx.armed && ctx.perSecond > 0) {
       /**
        * `while` rather than `if`, and the cooldown is CARRIED rather than reset.
        *
@@ -110,7 +117,7 @@ export class BulletField {
        */
       this.cooldown -= dt;
       while (this.cooldown <= 0) {
-        this.cooldown += 1 / cfg.perSecond;
+        this.cooldown += 1 / ctx.perSecond;
         this.spawn(ctx);
         fired++;
       }
@@ -201,6 +208,7 @@ export function paintBullets(g: Graphics, field: BulletField, laneWidth: number)
     g.circle(b.x, b.y, r).stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha * fade, width: Math.max(1, r * 0.45) });
   }
 }
+
 
 
 
