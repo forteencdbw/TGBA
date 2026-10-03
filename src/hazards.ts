@@ -1642,7 +1642,17 @@ export class HazardField {
          */
         const band = Math.max(1, ctx.max - ctx.min);
         const hold = Math.max(cfg.holdMinMeters, Math.min(cfg.holdMeters, band * cfg.holdBandRatio));
-        const targetY = ctx.playerY + hold;
+        /**
+         * And then it is CLAMPED INTO THE VISIBLE BAND, which is the second half of the same bug.
+         *
+         * The hold is measured from the player, so a player who has fallen behind the camera -- stuck behind a wall in
+         * level 2's narrow passages, say -- would have their boss hovering wherever THEY are rather than where the
+         * fight is. The clamp says: whatever the offset works out to, the boss stays inside the band with a small
+         * margin. A boss that exists but is not on screen is indistinguishable from no boss, and a level only ends when
+         * one dies.
+         */
+        const margin = band * 0.08;
+        const targetY = Math.min(Math.max(ctx.playerY + hold, ctx.min + margin), ctx.max - margin);
         h.y += (targetY - h.y) * Math.min(1, dt * 1.4);
         break;
       }
@@ -2435,6 +2445,7 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
 
 
 

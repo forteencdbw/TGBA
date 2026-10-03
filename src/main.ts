@@ -3481,7 +3481,15 @@ class Game {
       const lane = this.camera.viewport.laneWidthMeters;
       // It arrives just above the visible band and swims down into the fight, so the arrival is something the player
       // watches rather than a creature that pops into existence beside them.
-      const boss = this.makeHazard('boss', this.player.x * lane, this.player.y + this.camera.viewport.visibleDepthMeters * 0.62, null, spec.health);
+      /**
+       * It arrives from just above the VISIBLE BAND, not from above the player.
+       *
+       * The two are the same thing only while the player is near the camera. In level 2 the passages are narrow enough
+       * that a player can be held up behind a wall while the current carries the camera on -- and a boss spawned
+       * relative to that player would appear far below the screen and be culled before anyone saw it.
+       */
+      const band = this.camera.viewport.visibleDepthMeters;
+      const boss = this.makeHazard('boss', this.player.x * lane, this.camera.y + band * 0.42, null, spec.health);
       boss.tint = spec.colour ?? null;
       this.hazards.hazards.push(boss);
       audio.play('surface');
@@ -5386,6 +5394,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 
