@@ -1,7 +1,7 @@
 import { CanvasTextMetrics, Container, Graphics, Text } from 'pixi.js';
 import { makeLabel } from './background';
 import { mech } from './mechanisms';
-import { HazardField, KIND_TUNING, paintHazards, type HazardKind } from './hazards';
+import { HazardField, KIND_TUNING, hazardHealth, paintHazards, type HazardKind } from './hazards';
 import { ObstacleField, paintObstacles } from './obstacles';
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
@@ -529,6 +529,10 @@ export class CodexUi {
           digest: 0,
           // Not arriving from anywhere: the card draws it at rest.
           entry: null,
+          // Untouched hit points, so the card shows a creature rather than one that has been driven off.
+          health: hazardHealth(kind),
+          maxHealth: hazardHealth(kind),
+          fleeing: false,
         },
       ];
       // Not edible and drawn at rest: the card shows the CREATURE, not the state of the water it happens to be in.

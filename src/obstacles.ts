@@ -283,6 +283,25 @@ export class ObstacleField {
   }
 
   /**
+   * Whether an obstacle is in the way of a projectile at this point.
+   *
+   * The bullets are small bubbles rather than thrown creatures: scenery stops them (a crate in front of a fish
+   * should stop what you are shooting at it) but they leave no mark on it. That needs its own query rather than
+   * `hitByProjectile(..., 0)`, which would route a block through the damage code and make a zero-damage hit
+   * indistinguishable from a real one in the counters.
+   */
+  blocks(x: number, y: number, hitRadius: number): boolean {
+    for (const o of this.obstacles) {
+      const r = mech.obstacles.radius[o.kind] ?? 0.05;
+      const reach = hitRadius + r;
+      const dx = o.x - x;
+      const dy = o.y - y;
+      if (dx * dx + dy * dy <= reach * reach) return true;
+    }
+    return false;
+  }
+
+  /**
    * Resolve a projectile against the obstacles.
    *
    * @return the hit, or null when nothing was in the way.

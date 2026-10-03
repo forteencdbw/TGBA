@@ -176,6 +176,16 @@ export interface Mechanisms {
   hazards: {
     slowFactor: number;
     slowSeconds: number;
+    /**
+     * How many bullet hits each kind of creature takes before it flees.
+     *
+     * Zero means the bullets pass through it: the default is that only fish are shootable, so that driving a
+     * chaser off is a thing the player can do without every creature in the water becoming a target. Depleting it
+     * does NOT kill the creature -- see `fleeSpeedFactor` and `HazardField`'s flee state.
+     */
+    health: Record<string, number>;
+    /** How fast a creature that has had enough leaves, in SCREEN HEIGHTS per second: see the config's note. */
+    fleeScreensPerSecond: number;
     crabLaunchMps: number;
     launchDecaySeconds: number;
     crabLaunchScreenBonus: number;
@@ -269,6 +279,28 @@ export interface Mechanisms {
     trailWidthRatio: number;
     glowAlpha: number;
     glowRadiusRatio: number;
+  };
+  /**
+   * The small bubbles the player's bubble fires on its own, continuously.
+   *
+   * A second KIND of projectile, not a second tuning of `spit`: a spat hazard is thrown back at what it came from
+   * and knocks it around, while these are ordinary fire that takes hit points off a creature until it leaves. The
+   * two coexist because they cost different things -- a stomach slot versus nothing but time.
+   */
+  bullets: {
+    /** Rounds per second. 0 turns the weapon off entirely. */
+    perSecond: number;
+    /** Speed as a fraction of the lane width per second, on top of the level's own scroll. */
+    speedPerSecond: number;
+    radiusRatio: number;
+    /** Hit points off a creature per hit, against `hazards.health`. */
+    damage: number;
+    /** Seconds in flight before a round disappears, which is also its range. */
+    lifeSeconds: number;
+    colour: number;
+    alpha: number;
+    rimColour: number;
+    rimAlpha: number;
   };
   /**
    * Digesting the stomach's contents: the third way out of a full stomach.
@@ -732,6 +764,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'collectables.wobbleMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.wobbleMin') as number), describe: 'at least wobbleMin' },
   { path: 'hazards.slowFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a number above 0 and at most 1' },
   { path: 'hazards.slowSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  { path: 'hazards.health', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0), describe: 'an object of hazard kind to hit points, e.g. { fish: 3, jelly: 0 }; 0 means the bullets pass through' },
+  { path: 'hazards.fleeScreensPerSecond', check: (v) => typeof v === 'number' && v > 0.05 && v <= 8, describe: 'screen heights per second, above 0.05 and at most 8; 0.9 is about a second to leave the screen' },
   { path: 'hazards.crabLaunchMps', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'hazards.launchDecaySeconds', check: (v) => typeof v === 'number' && v > 0.01, describe: 'seconds above 0.01' },
   { path: 'hazards.crabLaunchScreenBonus', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
@@ -810,6 +844,18 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'spit.trailWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a ratio between 0 and 1' },
   { path: 'spit.glowAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'spit.glowRadiusRatio', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a radius multiple of at least 1' },
+  { path: 'bullets.perSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'rounds per second between 0 and 30; 0 turns the weapon off' },
+  { path: 'bullets.speedPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 8, describe: 'lane widths per second, above 0 and at most 8' },
+  { path: 'bullets.radiusRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.1, describe: 'a fraction of the lane width, above 0.001 and at most 0.1' },
+  { path: 'bullets.damage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number of hit points above 0' },
+  { path: 'bullets.lifeSeconds', check: (v) => typeof v === 'number' && v > 0.05 && v <= 10, describe: 'seconds above 0.05 and at most 10' },
+  { path: 'bullets.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'bullets.rimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  ...(['colour', 'rimColour'] as const).map((key) => ({
+    path: `bullets.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
+  })),
   { path: 'digest.passivePerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 5, describe: 'a fraction per second between 0 and 5; 0 means "only while compressing"' },
   { path: 'digest.compressPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 10, describe: 'a fraction per second above 0 and at most 10' },
   { path: 'digest.energyPerMass', check: (v) => typeof v === 'number' && v >= 0 && v <= 5, describe: 'a number between 0 and 5' },
@@ -1234,6 +1280,27 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
   if (missing.length || extra.length) {
     fail(
       'angry.burst.hazardMode must say what a wave does to every hazard kind' +
+        (missing.length ? `; missing: ${missing.join(', ')}` : '') +
+        (extra.length ? `; not a hazard kind: ${extra.join(', ')}` : ''),
+    );
+  }
+}
+
+/**
+ * Every hazard kind must state its hit points, the same way it must state what a burst does to it.
+ *
+ * A missing row would read as a design choice rather than as a missing line of config: the creature would simply be
+ * immune to the bullets, and nobody would be able to tell that from "this one is not shootable on purpose" -- which
+ * is itself a legitimate setting, and exactly why it has to be written down as a `0` instead of left out.
+ */
+{
+  const rows = Object.keys(mech.hazards.health).sort();
+  const kinds = Object.keys(mech.consumption.mass).sort();
+  const missing = kinds.filter((k) => !rows.includes(k));
+  const extra = rows.filter((k) => !kinds.includes(k));
+  if (missing.length || extra.length) {
+    fail(
+      'hazards.health must state hit points for every hazard kind (0 = immune to the bullets)' +
         (missing.length ? `; missing: ${missing.join(', ')}` : '') +
         (extra.length ? `; not a hazard kind: ${extra.join(', ')}` : ''),
     );

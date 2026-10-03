@@ -76,6 +76,14 @@ export interface BubbleType {
   hint: string;
   /** The buttons and pads this type lays out. Order is irrelevant; the layout knows where each one goes. */
   controls: readonly ControlId[];
+  /**
+   * Whether this type's bubble fires the small-bubble bullets on its own.
+   *
+   * A type property rather than a global behaviour, for the same reason the control list is: "what can this bubble
+   * do" is the question the whole module answers, and a mechanic that every type shares but cannot be turned off is
+   * a mechanic nobody can take away again. `bullets.perSecond` is the rate; this is the switch.
+   */
+  firesBullets: boolean;
   /** Where the bubble's colours come from. */
   look: LookSource;
   /**
@@ -121,6 +129,14 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
     look: 'growthStage',
     // The original design: the reversal IS the mechanic, and both exits are one button away.
     swallowsHazards: true,
+    /**
+     * The gun, on by default.
+     *
+     * It gives the first bubble an answer to a fish it is not yet big enough to eat: shoot it until it leaves. That
+     * is the third way out of an encounter -- be eaten, be dodged, or be driven off -- and without it a small bubble
+     * has only one answer to everything, which is to run.
+     */
+    firesBullets: true,
     resource: null,
   },
   {
@@ -145,6 +161,15 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
      * nowhere to put them: no spit, no digest, so a swallowed creature would be a guaranteed death by fuse.
      */
     swallowsHazards: false,
+    /**
+     * And the same gun.
+     *
+     * Kept on for the second bubble deliberately: the gun is the DEFAULT, and a type that had to opt back IN to the
+     * game's basic verb would make the volatile bubble feel like a different game rather than a different
+     * character. The design's answer to a fish is still to be hit by it -- the gun just means a swarm can be carved
+     * down on the way in. Turn this off to make it purely a contact fighter.
+     */
+    firesBullets: true,
     resource: { label: '怒气' },
   },
 ];

@@ -3,7 +3,8 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeL
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, type EntrySide, type Level, type LevelEntry } from './levels';
 import { Progression } from './progress';
-import { blastRadiusFraction, HazardField, KIND_TUNING, hazardTuning, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
+import { blastRadiusFraction, HazardField, hazardHealth, KIND_TUNING, hazardTuning, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
+import { BulletField, paintBullets } from './bullets';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
@@ -647,6 +648,14 @@ class Game {
   /** Crates to smash and coral to squeeze past: the target for spitting and for being small. */
   private readonly obstacles = new ObstacleField();
   private readonly projectiles: SpitProjectile[] = [];
+  /**
+   * The gun: the small bubbles the player's bubble fires on its own.
+   *
+   * Its own field rather than more entries in `projectiles` above, because the two are different KINDS of thing: a
+   * spit projectile is a swallowed hazard thrown back (it carries a `kind`, knocks things around, and costs a
+   * stomach slot), while these are plain rounds that take hit points off a creature. See `src/bullets.ts`.
+   */
+  private readonly bullets = new BulletField();
   /** Seconds until the next spit is allowed. */
   private spitCooldown = 0;
   /** 1 -> 0 pulse on the spit button, for the refusal when the stomach is empty. */
@@ -918,6 +927,34 @@ class Game {
    * they were. The hit test reads the hazard list directly, which is the only part of the game with the authority
    * on where a hazard is.
    */
+  /**
+   * The gun: fire, fly, hit.
+   *
+   * All this does is supply the muzzle and the answer to "may I shoot"; where the rounds go and what they do to
+   * what they touch is `src/bullets.ts`, which is also the only place that knows what a round is.
+   */
+  private updateBullets(dt: number, laneWidth: number, min: number, max: number): void {
+    const playerRadius = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
+    this.bullets.update(dt, {
+      min,
+      max,
+      laneWidth,
+      muzzleX: this.player.x * laneWidth,
+      // The bubble's rim, so the stream reads as leaving the bubble rather than appearing inside it.
+      muzzleY: this.player.y + playerRadius,
+      /**
+       * Firing is a PLAYING-phase act, and one the bubble type can refuse.
+       *
+       * Not armed during the birth animation or while the bubble is popping: a stream of fire during either would
+       * be the game acting while the player has no control. Rounds already in flight keep flying in those phases,
+       * which is right -- they are in the water, not in the player's hands.
+       */
+      armed: this.phase === 'playing' && this.bubbleType.firesBullets,
+      hazards: this.hazards,
+      obstacles: this.obstacles,
+    });
+  }
+
   private updateProjectiles(dt: number, laneWidth: number, min: number, max: number): void {
     if (!this.projectiles.length) return;
     const hitRadius = laneWidth * mech.spit.hitRadiusRatio;
@@ -1654,6 +1691,15 @@ class Game {
      */
     this.updateStomach(dt, viewport.laneWidthMeters);
     this.updateProjectiles(dt, viewport.laneWidthMeters, min, max);
+    /**
+     * The gun, beside the spit and for the same two reasons.
+     *
+     * It resolves before `resolveHazards` below, so a creature driven off by a round this frame is already leaving
+     * by the time the hazards move -- otherwise the player would watch a fish they had just finished off take one
+     * more bite on its way out. And it fires from the bubble's position as of NOW rather than after the player
+     * moves, so the stream comes out of the bubble the player is looking at.
+     */
+    this.updateBullets(dt, viewport.laneWidthMeters, min, max);
     this.obstacles.update(dt, min, max);
 
     this.elapsed += dt;
@@ -2225,6 +2271,7 @@ class Game {
    */
   private makeHazard(kind: HazardKind, x: number, y: number, entry: Hazard['entry'] = null) {
     const radiusFraction = KIND_TUNING[kind].radius;
+    const health = hazardHealth(kind);
     return {
       id: -Math.floor(Math.random() * 1e9),
       kind,
@@ -2249,6 +2296,9 @@ class Game {
       fed: 0,
       digest: 0,
       entry,
+      health,
+      maxHealth: health,
+      fleeing: false,
     };
   }
 
@@ -2604,6 +2654,8 @@ class Game {
     // A new run must not begin holding the previous run's ammunition, nor its projectiles in flight.
     this.stomach.reset();
     this.projectiles.length = 0;
+    // Nor with the previous run's rounds in the air, which would be free shots nobody asked for.
+    this.bullets.reset();
     this.spitCooldown = 0;
     this.spitHits = 0;
     /**
@@ -3053,14 +3105,22 @@ class Game {
     }
 
     /**
+     * The gun's rounds, drawn UNDER the thrown hazards.
+     *
+     * Under, because a spat crab is a bigger, more important thing than a stream of small bubbles and the player
+     * needs to read it; the two are on screen together constantly, so the order has to be decided rather than left
+     * to whichever loop ran last.
+     */
+    paintBullets(g, this.bullets, laneWidth);
+
+    /**
      * Projectiles, drawn IN FLIGHT from the stomach.
      *
      * Each keeps the silhouette of the hazard it was, tinted with a hot rim so a flying crab is legible as
      * *something the player threw* rather than as a crab that happens to be moving fast. That distinction matters:
      * one is a threat and the other is the player's own ammunition, and they can be on screen together.
      */
-    for (const p of this.projectiles) {
-      const r = laneWidth * p.radiusFraction;
+    for (const p of this.projectiles) {      const r = laneWidth * p.radiusFraction;
       const fade = Math.max(0, 1 - p.age / (mech.spit.decaySeconds * 4));
       g.circle(p.x, p.y, r * mech.spit.glowRadiusRatio).fill({ color: 0xffd479, alpha: mech.spit.glowAlpha * 0.25 * fade });
       // A short trail behind it, back along its own velocity, so the direction of travel is unmistakable.
@@ -3596,6 +3656,8 @@ class Game {
     gameSeconds: number;
     hazards: {
       active: number;
+      /** How many are leaving because the gun finished them, rather than being eaten or having drifted off. */
+      fleeing: number;
       byKind: Record<string, number>;
       comedyBeats: number;
       lastBeat: { what: HazardKind; at: number } | null;
@@ -3603,6 +3665,9 @@ class Game {
       baits: number;
       /** Hazards eaten this run: the food-chain reversal. */
       eaten: number;
+      /** Creatures driven off by the gun, and hits that landed without finishing one. */
+      fled: number;
+      damaged: number;
     };
     slow: { remaining: number; factor: number; impulseVy: number };
     /** The suction field: whether it is held, how far it reaches, and what it costs in speed. */
@@ -3638,6 +3703,19 @@ class Game {
       fuseFraction: number;
       /** The bulge in item EQUIVALENTS: `swell`, so a half-digested item counts for the half that is left. */
       bulge: number;
+    };
+    /**
+     * The gun: the small bubbles fired on their own.
+     *
+     * `armed` is here because "nothing is happening" has two very different causes -- the type has no gun, or it has
+     * one and has not fired yet -- and a probe that could not tell them apart would report a broken weapon whenever
+     * it looked a frame too early.
+     */
+    bullets: {
+      inFlight: number;
+      fired: number;
+      hits: number;
+      armed: boolean;
     };
     /**
      * Digestion: the third way out of the stomach, and the only one that pays.
@@ -3859,6 +3937,8 @@ class Game {
        */
       hazards: {
         active: this.hazards.hazards.length,
+        /** How many are on their way out because the gun finished them: `fleeing`, not dead. */
+        fleeing: this.hazards.hazards.filter((h) => h.fleeing).length,
         byKind: this.hazards.hazards.reduce<Record<string, number>>((acc, h) => {
           acc[h.kind] = (acc[h.kind] ?? 0) + 1;
           return acc;
@@ -3875,8 +3955,15 @@ class Game {
          * answer whether it was eaten or simply drifted off screen.
          */
         eaten: this.hazards.eaten,
-      },
-      /**
+        /**
+         * Creatures driven off by the gun, and hits that landed without finishing one.
+         *
+         * Monotonic for the same reason as `eaten`: a creature that has been driven off is out of the list within a
+         * second, so nothing sampled afterwards can prove it happened.
+         */
+        fled: this.hazards.fled,
+        damaged: this.hazards.damaged,
+      },      /**
        * The suction field, so a probe can assert the pull and the cost without inferring them from motion.
        *
        * `radiusFraction` is the config-derived reach, and `moveFactor` is what the player's speed is currently
@@ -3898,6 +3985,17 @@ class Game {
         fuseRemaining: this.stomach.fuseRemaining,
         fuseFraction: this.stomach.fuseFraction,
         bulge: stomachBulge(this.stomach.swell),
+      },
+      /**
+       * The gun: how many rounds are in the air, and the two counters that make it answerable whether it fired and
+       * whether it connected. Both monotonic, because a round lives for a couple of seconds at most.
+       */
+      bullets: {
+        inFlight: this.bullets.bullets.length,
+        fired: this.bullets.fired,
+        hits: this.bullets.hits,
+        /** Whether this run's bubble has the gun at all, so a probe can tell "off" from "not firing yet". */
+        armed: this.bubbleType.firesBullets,
       },
       /** Digestion: the energy banked, the rank it bought, and the state that costs. */
       digest: {

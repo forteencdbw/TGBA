@@ -79,12 +79,17 @@ export interface Diagnostics {
   };
   hazards: {
     active: number;
+    /** How many are leaving because the gun finished them, rather than being eaten or having drifted off. */
+    fleeing: number;
     byKind: Record<string, number>;
     comedyBeats: number;
     grabs: number;
     baits: number;
     /** Hazards EATEN this run: the food-chain reversal. Monotonic, so transient events are answerable. */
     eaten: number;
+    /** Creatures DRIVEN OFF by the bullets, and hits that landed without finishing one. Monotonic. */
+    fled: number;
+    damaged: number;
   };
   emergence: { fishCount: number; perceptionRadiusMeters: number };
   slow: { remaining: number; factor: number; impulseVy: number };
@@ -122,6 +127,18 @@ export interface Diagnostics {
     fuseFraction: number;
     /** The bulge in item EQUIVALENTS, so a half-digested item counts for the half that is left. */
     bulge: number;
+  };
+  /**
+   * The gun: the small bubbles fired on their own.
+   *
+   * `armed` is reported because "nothing is happening" has two causes -- a type with no gun, and one that has not
+   * fired yet -- and a probe that could not tell them apart would call a working weapon broken.
+   */
+  bullets: {
+    inFlight: number;
+    fired: number;
+    hits: number;
+    armed: boolean;
   };
   /**
    * Digestion, and the eating rank it buys.
@@ -220,7 +237,12 @@ export interface GameHandle {
     };
     level: { scrollSpeed: number };
     volume: { max: number; hitCost: number; laneRatio: number };
-    hazards: { crabLaunchMps: number; crabLaunchScreenBonus: number };
+    hazards: { crabLaunchMps: number; crabLaunchScreenBonus: number; health: Record<string, number>; fleeScreensPerSecond: number };
+    /**
+     * The gun, read from the config the RUNNING build loaded rather than from a number written into the test: "how
+     * fast does it fire" and "how much does a hit take off" are the two halves of what the spec is asserting.
+     */
+    bullets: { perSecond: number; damage: number; radiusRatio: number; speedPerSecond: number; lifeSeconds: number };
   };
   /** The lateral authority this display resolved to. */
   lateralSnapshot: { keyboardSpeed: number; laneWidth: number };

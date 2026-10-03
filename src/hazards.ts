@@ -118,6 +118,26 @@ export interface Hazard {
    * down out of the level, because drifting away is what jellyfish do.
    */
   entry: { from: 'left' | 'right' | 'bottom'; speed: number } | null;
+  /**
+   * Hit points left, and the value it started with.
+   *
+   * In BULLET HITS, not in a general health system: this game has no damage-numbers for creatures, and the only
+   * thing that reduces it is the player's own fire. `maxHealth` is kept because "untouched" and "nearly gone" are
+   * different states worth being able to tell apart, and because a table lookup at draw time would be a second
+   * answer to "how much does a fish have".
+   *
+   * Zero means the bullets pass straight through it -- the config's way of saying "this one is not shootable".
+   */
+  health: number;
+  maxHealth: number;
+  /**
+   * Set once its hit points are gone: it is LEAVING, not dying.
+   *
+   * A state, like `entry`, and for the same reason: it replaces the kind's own motion rather than adding to it, so
+   * a fleeing fish does not chase, is not fooled by bait, and does not eat. Nothing in this game kills a creature --
+   * they are driven off or eaten -- and this is the driven-off half.
+   */
+  fleeing: boolean;
 }
 
 /** Tunables for D3. Kept together because they are only meaningful as a set. */
@@ -337,8 +357,7 @@ export function blastRadiusFraction(kind: HazardKind): number {
  * place this lives: there used to be a second copy of these numbers in `main.ts` for the spawn hooks, which meant
  * a new creature could be edible at one size and painted at another.
  */
-export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; spin: number }> = {
-  fish: { radius: 0.035, colour: 0x9ad7ff, spin: 0 },
+export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; spin: number }> = {  fish: { radius: 0.035, colour: 0x9ad7ff, spin: 0 },
   jelly: { radius: 0.062, colour: 0xc79bff, spin: 0 },
   trash: { radius: 0.05, colour: 0xb08a5a, spin: 0.6 },
   crab: { radius: 0.045, colour: 0xff9b6b, spin: 0 },
@@ -363,6 +382,16 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   /** Dark slate teal, drawn as a flat slick rather than a body: it is a substance, not a creature. */
   oil: { radius: 0.066, colour: 0x2f4f4a, spin: 0.1 },
 };
+
+/**
+ * How many bullet hits this kind takes before it leaves. From the config, one row per kind.
+ *
+ * A kind with no row is a load error rather than a silent zero: see the cross-check in `src/mechanisms.ts`. The
+ * fallback here is for safety only, and it is deliberately the "not shootable" answer.
+ */
+export function hazardHealth(kind: HazardKind): number {
+  return mech.hazards.health[kind] ?? 0;
+}
 
 export interface HazardContext {
   /** Visible world y range, so spawns appear just above the top of the screen. */
@@ -486,6 +515,7 @@ export class HazardField {
    * nothing, because the frame before it the player had swallowed one and the field had removed all four.
    */
   spawnForTest(kind: HazardKind, x: number, y: number): Hazard {
+    const health = hazardHealth(kind);
     const hazard: Hazard = {
       id: this.nextId++,
       kind,
@@ -504,6 +534,9 @@ export class HazardField {
       fed: 0,
       digest: 0,
       entry: null,
+      health,
+      maxHealth: health,
+      fleeing: false,
     };
     this.hazards.push(hazard);
     return hazard;
@@ -518,11 +551,42 @@ export class HazardField {
     this.eaten = 0;
     this.splits = 0;
     this.bubblesEaten = 0;
+    this.fled = 0;
+    this.damaged = 0;
   }
 
   /** Emergence counters, monotonic so "did it ever happen" is answerable. */
   splits = 0;
   bubblesEaten = 0;
+  /**
+   * Creatures driven off by the player's fire, and hits that landed without driving anything off.
+   *
+   * Both monotonic, for the same reason as the counters above: a creature that flees is gone from the list within a
+   * second, so sampling afterwards proves nothing about whether it happened at all.
+   */
+  fled = 0;
+  damaged = 0;
+
+  /**
+   * Take hit points off one creature, and let it go when they run out.
+   *
+   * Here rather than in the bullets' module because the STATE is this module's: `health` and `fleeing` belong to
+   * the hazard, and a caller that reached in and set them would be a second place that knows what "driven off"
+   * means. The return value is what happened, so the caller can count it and draw it without asking again.
+   */
+  hit(hazard: Hazard, damage: number): 'immune' | 'damaged' | 'fled' {
+    // Immune covers both "this kind is not shootable" and "this one is already leaving": firing at something that
+    // is on its way out should not keep re-triggering the same event.
+    if (hazard.maxHealth <= 0 || hazard.fleeing) return 'immune';
+    hazard.health = Math.max(0, hazard.health - damage);
+    if (hazard.health > 0) {
+      this.damaged++;
+      return 'damaged';
+    }
+    hazard.fleeing = true;
+    this.fled++;
+    return 'fled';
+  }
 
   /**
    * The fish's perception radius in metres, which grows with the player's volume.
@@ -616,6 +680,15 @@ export class HazardField {
         effects.push({ kind: h.kind, broke: true, eaten: { id: h.id } });
         continue;
       }
+
+      /**
+       * A creature that is leaving cannot hurt the player, and that is the whole point of driving it off.
+       *
+       * Deliberately AFTER the reversal above: being edible is a rule about the player's size, not about the
+       * creature's intentions, so a big enough bubble can still swallow a fish that is running away. What the flee
+       * state buys is immunity from the damage half.
+       */
+      if (h.fleeing) continue;
 
       switch (h.kind) {
         case 'fish': {
@@ -738,6 +811,8 @@ export class HazardField {
     const radiusSq = radius * radius;
 
     for (const h of this.hazards) {
+      // A creature on its way out is not still hunting: it neither eats nor is distracted.
+      if (h.fleeing) continue;
       const dx = at.x - h.x;
       const dy = at.y - h.y;
       const distSq = dx * dx + dy * dy;
@@ -778,6 +853,8 @@ export class HazardField {
 
     for (const h of this.hazards) {
       if (h.kind !== 'fish') continue;
+      // A fish that has been driven off stops feeding and cannot split: it is leaving, not hunting.
+      if (h.fleeing) continue;
       h.digest = Math.max(0, h.digest - 1 / 60);
       if (h.digest > 0) continue;
 
@@ -831,6 +908,8 @@ export class HazardField {
     for (const h of this.hazards) {
       if (h.kind !== 'jelly' && h.kind !== 'trash') continue;
       if (h.kind === 'trash' && h.gripping) continue;
+      // Leaving: it seeks nothing.
+      if (h.fleeing) continue;
 
       let best: { x: number; y: number; volume: number } | null = null;
       for (const b of ctx.bubbles) {
@@ -856,6 +935,7 @@ export class HazardField {
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
+    const health = hazardHealth(kind);
     return {
       id: this.nextId++,
       kind,
@@ -882,6 +962,9 @@ export class HazardField {
       digest: 0,
       entry: null,
       gripSeconds: 0,
+      health,
+      maxHealth: health,
+      fleeing: false,
     };
   }
 
@@ -894,6 +977,24 @@ export class HazardField {
   private advance(h: Hazard, dt: number, ctx: HazardContext): void {
     h.phase += dt;
     const base = ctx.descentSpeed;
+
+    /**
+     * DRIVEN OFF: up and out, and nothing else.
+     *
+     * Checked before the arrival state, because being shot is not something a creature should be able to ignore by
+     * still swimming in, and checked before the kind's own motion for the reason `entry` is: this has to REPLACE the
+     * chase rather than be added to it, or a fish would keep closing on the player while "fleeing".
+     *
+     * The speed is in SCREEN HEIGHTS per second rather than as a multiple of the current, and the band is where it
+     * comes from. The current is only ~25 m/s while a screenful of water is ~800 m tall, so "twice the current"
+     * -- which sounds fast -- is a creature that takes half a minute to get out of view. "0.9 screens per second"
+     * says what the player actually sees.
+     */
+    if (h.fleeing) {
+      const screen = Math.max(1, ctx.max - ctx.min);
+      h.y += screen * mech.hazards.fleeScreensPerSecond * dt;
+      return;
+    }
 
     /**
      * ---------------------------------------------------------------------------------------------
