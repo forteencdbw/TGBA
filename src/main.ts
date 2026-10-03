@@ -1,7 +1,7 @@
 import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
-import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, type EntrySide, type Level, type LevelEntry } from './levels';
+import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, selectLevel, type EntrySide, type Level, type LevelEntry } from './levels';
 import { Progression } from './progress';
 import { blastRadiusFraction, HazardField, hazardHealth, KIND_TUNING, hazardTuning, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
 import { BulletField, paintBullets } from './bullets';
@@ -760,6 +760,23 @@ class Game {
    * the first would leave a cheat that works until the player swallows the wrong thing.
    */
   private infiniteHealth = false;
+  /**
+   * The level the run walks into when the ending beat finishes, and whether the run has reached its own end.
+   *
+   * The transition is a HANDOFF rather than an immediate switch: the boss's death plays out (the same held beat and
+   * white-out a finished level always had), and only when that timer expires does the next level start. Doing it
+   * instantly would throw the player into a new level mid-flash with the victory banner still on screen.
+   */
+  private pendingLevel: string | null = null;
+  private runComplete = false;
+  /**
+   * How many levels this RUN has cleared, which is what the progress chart draws.
+   *
+   * Separate from the save's `cleared` list on purpose: the save is the lifetime ladder (what the player has ever
+   * unlocked, across every attempt), and this is one descent. A chart that showed the save would be full before the
+   * player had ever reached level three.
+   */
+  private levelsClearedInRun = 0;
   /**
    * LEVEL 3's conductive charge, and the bubble is the capacitor.
    *
@@ -1936,7 +1953,21 @@ class Game {
       case 'burst': {
         // Slow motion: the pop plays out before the run resets, so death has some weight.
         this.phaseTimer -= dt;
-        if (this.phaseTimer <= 0) this.startRun();
+        if (this.phaseTimer > 0) return;
+        /**
+         * Where the ending beat leads.
+         *
+         * Three destinations, and they are the whole of the run's shape: the next level (carrying the score), the same
+         * level again (a death, or a restart asked for from the settings panel), or -- on the final level -- the run's
+         * own end, which is what the results card shows.
+         */
+        if (this.pendingLevel) {
+          const nextId = this.pendingLevel;
+          this.pendingLevel = null;
+          this.enterLevel(nextId, true);
+          return;
+        }
+        this.startRun();
         return;
       }
       case 'playing':
@@ -2037,6 +2068,14 @@ class Game {
      * with it.
      */
     this.updateBoss();
+    /**
+     * The chart is redrawn from the run's own numbers every frame rather than being pushed on change.
+     *
+     * It is six circles and one string: rebuilding it is cheaper than the bookkeeping a change-detector would need, and
+     * it cannot fall out of step with the run -- which for a chart whose whole job is "where am I" is the property that
+     * matters.
+     */
+    this.hud.setProgress({ total: LEVELS.length, cleared: this.levelsClearedInRun, current: levelIndex(LEVEL.id) });
     this.updateConductiveCharge(dt, viewport.laneWidthMeters);
 
     // Trace the end condition, so a probe can see WHY a level failed to end rather than only that it
@@ -3082,7 +3121,14 @@ class Game {
     audio.play('pop');
   }
 
-  private startRun(): void {
+  /**
+   * Start (or restart) the current level.
+   *
+   * `carryScore` is the level TRANSITION: clearing a level walks the player straight into the next one, and the run's
+   * score goes with them -- that is the whole point of judging a run by its total rather than by one level's best. A
+   * death, by contrast, starts the same level with nothing, which is the same flag left at its default.
+   */
+  private startRun(carryScore = false): void {
     this.player.reset();
     /**
      * Back to stage 1, and push its speed into the player.
@@ -3106,10 +3152,23 @@ class Game {
     // The boss bar goes with the run it belonged to. Without this it hangs there through the next birth animation,
     // showing the previous level's boss at whatever health it died at -- a bar for a fight that is not happening.
     this.hud.setBoss(null);
+    // The chart follows the run, not the save: see `levelsClearedInRun`. `startRun` without a carry is a fresh run, so
+    // the chart goes back to zero with it; the transition path sets the count itself before calling in.
+    if (!carryScore) this.levelsClearedInRun = levelIndex(LEVEL.id);
+    this.hud.setProgress(this.runComplete ? null : { total: LEVELS.length, cleared: this.levelsClearedInRun, current: levelIndex(LEVEL.id) });
     this.bossSpawned = false;
-    // The score is the RUN's number, so it starts at zero with everything else that belongs to a run -- including
-    // the numbers still floating on screen from the previous one.
-    this.score.reset();
+    /**
+     * The score is the RUN's number.
+     *
+     * It starts at zero with everything else that belongs to a run -- including the numbers still floating on screen
+     * from the previous one -- EXCEPT on a level transition, where it is the one thing that is explicitly inherited.
+     * The popups still clear either way: a `+25` left over from the last level, floating over this one, would be a
+     * number with no event behind it.
+     */
+    if (!carryScore) {
+      this.score.reset();
+      this.runComplete = false;
+    }
     this.scorePopups.clear();
     this.spitCooldown = 0;
     this.spitHits = 0;
@@ -3239,6 +3298,23 @@ class Game {
   private restartLevel(): void {
     this.closeSettings();
     this.startRun();
+  }
+
+  /**
+   * Walk into a level as part of a run: switch the level, then start it with the score carried across.
+   *
+   * The level itself is switched through `selectLevel`, the same call the menu makes, so a level reached by clearing
+   * the one before it is identical to the same level reached by picking it -- one implementation of "be in this level",
+   * which is the only way the two can be trusted to agree.
+   */
+  private enterLevel(id: string, carryScore: boolean): void {
+    if (!selectLevel(id)) return;
+    const index = levelIndex(id);
+    this.levelsClearedInRun = Math.max(this.levelsClearedInRun, index);
+    this.startRun(carryScore);
+    this.runBanner.text = `第 ${index + 1} 关  ·  ${LEVEL.name}  ·  分数继承 ${this.score.value}`;
+    this.runBanner.alpha = 1;
+    this.bannerSeen = true;
   }
 
   /** Leave the level and show the main menu. */
@@ -3455,6 +3531,27 @@ class Game {
       this.runBanner.text += `\n新关卡解锁：${opened?.name ?? unlocked}`;
       this.refreshLevelMenu();
     }
+    /**
+     * And then the run WALKS ON.
+     *
+     * A cleared level no longer ends the run at a results card: if there is a next one, the player is taken to it with
+     * their score, their lives and their momentum intact. Two reasons, and they are the same reason: the ladder is six
+     * levels long, so a results card after each one is five interruptions between the player and the ending; and a score
+     * that restarts at zero can never express "how did the whole descent go", which is what a score is for.
+     *
+     * The final level is the exception, and it is the only place the run actually ends: `surfaced` is what the results
+     * card reads, so leaving it set means the last level gets the ending it has always had.
+     */
+    const index = levelIndex(LEVEL.id);
+    const next = LEVELS[index + 1];
+    if (!next) this.runBanner.text += '  ·  全部 ' + LEVELS.length + ' 关通关  ·  总分 ' + this.score.value;
+    if (next) {
+      this.pendingLevel = next.id;
+      this.levelsClearedInRun = index + 1;
+    } else {
+      // No next level: the run is over, and the ending is the one the last level has always had.
+      this.runComplete = true;
+    }
   }
 
   /**
@@ -3593,7 +3690,14 @@ class Game {
      * `recordBest` has already updated -- so the card has to say "new record" from a flag captured at
      * the moment the run ended, not by re-comparing against a best that now includes this run.
      */
-    if (this.phase === 'burst') {
+    /**
+     * The results card is only for a run that is OVER.
+     *
+     * A cleared level mid-run gets the banner (which names the level it is walking into next) and no card: the card is
+     * a full stop, and the ladder has five more levels to go. `surfaced` alone could not say this -- it is set by every
+     * boss death, including the ones that lead onward.
+     */
+    if (this.phase === 'burst' && !this.pendingLevel) {
       this.finishBanner.text = this.surfaced
         ? `击败 ${LEVEL.boss.name}  ·  通关\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  最大 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`
         : `破裂  ·  深度 ${Math.round(this.player.depth)}m\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  爬升 ${Math.round(DEPTH_TOTAL - this.player.depth)}m\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`;
@@ -5282,6 +5386,13 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
+
+
 
 
 

@@ -186,6 +186,28 @@
       "alpha": 0.95
     },
 
+    // 总的进度图：一行小圆点，一关一颗，通了就点亮。
+    //
+    // 它回答的是"这一局走到哪了"，和 BOSS 血条（这一关走到哪了）是两个不同的事实。**只在关卡里有**：
+    // 菜单和图鉴上没有"这一局"。
+    "progressChart": {
+      // 圆点离画布顶边的距离、半径、间距，以及离右边缘的距离。
+      "y": 22,
+      "pipRadius": 5,
+      "pipGap": 8,
+      "rightInset": 16,
+      // 已通 / 未通 / 当前 的颜色与不透明度。
+      "doneColour": 0x6fe3ff,
+      "doneAlpha": 1,
+      "pendingColour": 0x6fe3ff,
+      "pendingAlpha": 0.22,
+      "currentColour": 0xffd479,
+      "currentAlpha": 0.95,
+      // 下面那行"总进度 N/6"的字号与颜色。
+      "labelSize": 11,
+      "labelColour": 0x7fc4e8
+    },
+
     // 结算卡（破裂 / 冲破海面时那几行结果）。
     "resultsCard": {
       // 字号。
@@ -2093,6 +2115,7 @@
     "entryDepth": 0.72
   }
 }
+
 
 
 

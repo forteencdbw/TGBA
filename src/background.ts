@@ -409,6 +409,10 @@ export class Hud {
    */
   private readonly bossName: Text;
   private readonly bossBar = new Graphics();
+  /** The run's progress chart: a pip per level, plus the gauge layer that draws them. */
+  private readonly progressGauge = new Graphics();
+  private readonly progressLabel: Text;
+  private progressChart: { total: number; cleared: number; current: number } | null = null;
   /** What the bar currently shows, so a per-frame call does not redraw a bar that has not moved. */
   private shownBossFraction = -1;
   /** What the label currently shows, so a per-frame update does not rebuild a string that has not changed. */
@@ -467,6 +471,9 @@ export class Hud {
      */
     this.scoreLabel = makeLabel('', mech.hud.score.colour, mech.hud.score.size);
     this.bossName = makeLabel('', mech.hud.bossBar.nameColour, mech.hud.bossBar.nameSize);
+    this.progressLabel = makeLabel('', mech.hud.progressChart.labelColour, mech.hud.progressChart.labelSize);
+    this.progressGauge.visible = false;
+    this.progressLabel.visible = false;
     this.bossName.anchor.set(0.5, 1);
     this.bossName.visible = false;
     this.bossBar.visible = false;
@@ -479,6 +486,8 @@ export class Hud {
       this.scoreLabel,
       this.bossBar,
       this.bossName,
+      this.progressGauge,
+      this.progressLabel,
       this.debug,
     );
 
@@ -623,9 +632,65 @@ export class Hud {
    * Exposed for the same reason as the headline: "it says 350" can only be checked against the string the HUD really
    * shows, and a test that re-derived the format would pass while the screen showed something else.
    */
+  /**
+   * The run's progress chart: one pip per level, filled as the run clears them.
+   *
+   * The whole game is a ladder of six levels, and until now nothing on the play screen said so -- the level's own
+   * progress (a boss's health) is a different fact from the run's. Six pips answer "how far have I got" in one glance,
+   * which matters most exactly when the answer changes: the moment a boss dies and the run walks into the next level.
+   *
+   * `null` hides it, which is what the menu and the codex want: this is a chart about a RUN, and there is no run
+   * happening on those screens.
+   */
+  setProgress(chart: { total: number; cleared: number; current: number } | null): void {
+    this.progressChart = chart;
+    this.progressGauge.visible = chart !== null;
+    this.progressLabel.visible = chart !== null;
+    this.redrawProgress();
+  }
+
+  /** Where the pips go and what they look like: only `layout` knows the canvas. */
+  private redrawProgress(): void {
+    const g = this.progressGauge;
+    g.clear();
+    const chart = this.progressChart;
+    if (!chart) return;
+    const cfg = mech.hud.progressChart;
+    const s = this.hudScale;
+    const r = cfg.pipRadius * s;
+    const step = r * 2 + cfg.pipGap * s;
+    const y = cfg.y * s;
+    const x0 = this.canvasWidth - cfg.rightInset * s - (chart.total - 1) * step;
+    for (let i = 0; i < chart.total; i++) {
+      const x = x0 + i * step;
+      const done = i < chart.cleared;
+      const here = i === chart.current;
+      g.circle(x, y, r).fill({
+        color: done ? cfg.doneColour : cfg.pendingColour,
+        alpha: done ? cfg.doneAlpha : cfg.pendingAlpha,
+      });
+      if (here) {
+        // The current level gets a ring rather than a different fill: "where I am" and "what I have done" are two
+        // facts, and one pip cannot carry both with one channel.
+        g.circle(x, y, r * 1.7).stroke({ color: cfg.currentColour, alpha: cfg.currentAlpha, width: Math.max(1, r * 0.4) });
+      }
+    }
+    this.progressLabel.scale.set(s);
+    this.progressLabel.anchor.set(1, 0.5);
+    this.progressLabel.x = this.canvasWidth - cfg.rightInset * s;
+    this.progressLabel.y = y + r * 2.6;
+    this.progressLabel.text = `总进度 ${chart.cleared}/${chart.total}`;
+    this.progressLabel.style.fill = cfg.labelColour;
+  }
+
   /** Test hooks: the boss bar as the player sees it. Absence is information, so both are read. */
   get bossBarVisible(): boolean {
     return this.bossBar.visible;
+  }
+
+  /** Test hook: the progress chart as the player reads it. */
+  get progressText(): string {
+    return this.progressLabel.visible ? this.progressLabel.text : '(hidden)';
   }
 
   get bossBarName(): string {
@@ -886,6 +951,8 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+
+
 
 
 

@@ -194,6 +194,27 @@ export interface Mechanisms {
       borderColour: number;
       borderAlpha: number;
     };
+    /**
+     * The run's progress chart: one pip per level, filled as the run clears them.
+     *
+     * It answers "how far has THIS RUN got", which is a different fact from the boss bar's "how far has this level got"
+     * -- and the two are shown together on purpose, because after a boss dies the first one changes and the second one
+     * resets.
+     */
+    progressChart: {
+      y: number;
+      pipRadius: number;
+      pipGap: number;
+      rightInset: number;
+      doneColour: number;
+      doneAlpha: number;
+      pendingColour: number;
+      pendingAlpha: number;
+      currentColour: number;
+      currentAlpha: number;
+      labelSize: number;
+      labelColour: number;
+    };
     /** The score readout, pinned to the top-left corner and on screen for the whole run. */
     score: {
       x: number;
@@ -1202,6 +1223,18 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hud.resultsCard.size', check: (v) => typeof v === 'number' && v >= 10 && v <= 60, describe: 'a font size between 10 and 60' },
   { path: 'hud.resultsCard.yRatio', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 0.9, describe: 'a fraction of the canvas height between 0.05 and 0.9' },
   { path: 'hud.resultsCard.widthRatio', check: (v) => typeof v === 'number' && v >= 0.3 && v <= 1, describe: 'a fraction of the canvas width between 0.3 and 1' },
+  { path: 'hud.progressChart.y', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
+  { path: 'hud.progressChart.pipRadius', check: (v) => typeof v === 'number' && v >= 1 && v <= 30, describe: 'design pixels between 1 and 30' },
+  { path: 'hud.progressChart.pipGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'design pixels between 0 and 60' },
+  { path: 'hud.progressChart.rightInset', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
+  { path: 'hud.progressChart.doneColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.progressChart.doneAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.progressChart.pendingColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.progressChart.pendingAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.progressChart.currentColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.progressChart.currentAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.progressChart.labelSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 40, describe: 'a font size between 8 and 40' },
+  { path: 'hud.progressChart.labelColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hud.score.x', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
   { path: 'hud.score.y', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
   { path: 'hud.score.size', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
@@ -2008,6 +2041,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 
