@@ -77,7 +77,17 @@ export type HazardKind =
    * zapper discharges when it is touched OR shot, which makes it the one creature in the game that gets more
    * dangerous the harder the player fights it -- and the ignition source for the conductive chain.
    */
-  | 'zapper';
+  | 'zapper'
+  /**
+   * LEVEL 6 -- 破晓海面.
+   *
+   * oam looks like the player's own bubble and cannot be shot (0 health): the level's interference is
+   * ABOUT not being able to tell where you are. 
+ain falls from above and presses the bubble back down, which is
+   * the mechanic that makes approaching the surface a decision rather than a straight line.
+   */
+  | 'foam'
+  | 'rain';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
@@ -122,6 +132,12 @@ export interface HazardEffect {
    * that means for the run's charge. See mechanisms.chargeConfig.
    */
   charge?: number;
+  /**
+   * Metres the player is pushed DOWN, for LEVEL 6's rain.
+   *
+   * A push rather than a stun: it must be recoverable, and it must cost the player the height they just earned.
+   */
+  pushDown?: number;
 }
 
 /**
@@ -209,6 +225,8 @@ export interface Hazard {
    * that absorbs ten rounds in a row has to say so every single time, or the player cannot tell hits from misses.
    */
   hitFlash: number;
+  /** LEVEL 6's foam: how long it has left before it breaks up. */
+  foamLife: number;
   /** Seconds left of a zapper's discharge ring, and its cooldown. Both per instance: a shoal does not fire in unison. */
   discharge: number;
   dischargeRest: number;
@@ -264,7 +282,7 @@ export interface Hazard {
    * hit points are gone a creature stops chasing, stops being fooled by bait, stops eating, stops being pulled by
    * the suction field, cannot hurt the player -- and leaves, in one of three directions picked when it decided.
    */
-  flee: 'up' | 'left' | 'right' | null;
+  flee: 'up' | 'left' | 'right' | 'down' | null;
 }
 
 /** Tunables for D3. Kept together because they are only meaningful as a set. */
@@ -505,6 +523,8 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   angler: { radius: 0.045, colour: 0x2f4a63, spin: 0 },
   torpedo: { radius: 0.036, colour: 0x9aa7b4, spin: 0 },
   zapper: { radius: 0.058, colour: mech.hazards.zapper.bellColour, spin: 0 },
+  foam: { radius: mech.hazards.foam.radiusRatio, colour: mech.hazards.foam.colour, spin: 0 },
+  rain: { radius: 0.014, colour: mech.hazards.rain.colour, spin: 0 },
   /**
    * Electric chartreuse, and nothing else in the game is that hue.
    *
@@ -695,6 +715,7 @@ export class HazardField {
       hitFlash: 0,
       discharge: 0,
       dischargeRest: 0,
+      foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
       tint: null,
       // No random head start here: a test-spawned creature is placed ON the player to be observed, and a random
       // rest would make "did it lunge" a coin flip in the one place determinism matters most.
@@ -1026,6 +1047,30 @@ export class HazardField {
           h.flee = 'up';
           break;
         }
+        case 'foam': {
+          /**
+           * Foam does not hurt by default -- it exists to make the water unreadable.
+           *
+           * The effect is still reported because the caller needs to know it was TOUCHED: that is what tells the game
+           * the player has just found out where they really are.
+           */
+          const fc = mech.hazards.foam;
+          effects.push({ kind: 'foam', damage: ctx.invulnerable ? 0 : fc.contactDamage, broke: true });
+          h.flee = 'up';
+          break;
+        }
+        case 'rain': {
+          if (ctx.invulnerable) break;
+          /**
+           * A drop PRESSES the bubble back down, which is the mechanic rather than the damage.
+           *
+           * The push is what costs the player the height they just earned, so it is reported separately from the hit.
+           */
+          const rc = mech.hazards.rain;
+          effects.push({ kind: 'rain', damage: rc.contactDamage, pushDown: rc.pushMeters, broke: true });
+          h.flee = 'down';
+          break;
+        }
         case 'vent': {
           /**
            * The plume: lethal while it is erupting, harmless while it is quiet.
@@ -1256,7 +1301,7 @@ export class HazardField {
   }
 
   private spawn(ctx: HazardContext): Hazard {
-    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper'];
+    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
@@ -1295,6 +1340,7 @@ export class HazardField {
       hitFlash: 0,
       discharge: 0,
       dischargeRest: 0,
+      foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
       tint: null,
       // A random head start, so a shoal does not lunge in unison.
       chargeRest: Math.random() * (mech.charges.chargers[kind]?.cooldownSeconds ?? 0),
@@ -1707,6 +1753,31 @@ export class HazardField {
         h.x += Math.sin(h.phase * 0.7 + h.seed) * 2.4 * dt;
         break;
       }
+      case 'foam': {
+        /**
+         * Foam: it drifts with the water and breaks up on its own clock.
+         *
+         * It is the only hazard whose job is to make the picture WRONG -- it is drawn as a bubble much like the
+         * player's own -- so it must also expire by itself. Interference that could persist forever would turn a level
+         * about reading the water into a level about waiting.
+         */
+        h.foamLife -= dt;
+        if (h.foamLife <= 0) h.flee = 'up';
+        h.y -= base * 0.6 * dt;
+        h.x += Math.sin(h.phase * 0.9 + h.seed) * 3.2 * dt;
+        break;
+      }
+      case 'rain': {
+        /**
+         * Rain falls FASTER than the current, and that is its whole character.
+         *
+         * Everything else in the water moves at the level's scroll speed or slower; a drop that outruns the current
+         * reads as coming from somewhere else -- which is the fiction, and also the mechanic, because the surface is
+         * where the drops come from and the surface is what the player is trying to reach.
+         */
+        h.y -= ctx.laneWidth * mech.hazards.rain.fallSpeedFactor * dt;
+        break;
+      }
       case 'eel': {
         /**
          * Swims in a wide S, and that is a fairness requirement rather than decoration.
@@ -2047,6 +2118,31 @@ export function paintHazards(
         break;
       }
 
+      case 'foam': {
+        /**
+         * Foam, drawn as a bubble much like the player's own.
+         *
+         * That is the point of it: the level's interference is that the player cannot tell at a glance which bubble is
+         * theirs. It is deliberately paler and softer-edged than the real one -- a fair version of the trick, because a
+         * decoy that was pixel-identical would be a lie rather than a puzzle.
+         */
+        const fc = mech.hazards.foam;
+        g.circle(x, y, r).fill({ color: fc.colour, alpha: fc.alpha });
+        g.circle(x, y, r).stroke({ color: fc.rimColour, alpha: fc.rimAlpha, width: Math.max(1, r * 0.1) });
+        // A few smaller bubbles clinging to it, which is what foam actually looks like.
+        for (const [ox, oy, scale] of [[0.8, 0.6, 0.35], [-0.7, 0.5, 0.28], [0.2, -0.9, 0.24]]) {
+          g.circle(x + r * ox, y + r * oy, r * scale).fill({ color: fc.colour, alpha: fc.alpha * 0.8 });
+        }
+        break;
+      }
+      case 'rain': {
+        // A drop: a short vertical streak, because the direction of the threat has to be readable in one frame.
+        const rc = mech.hazards.rain;
+        const len = laneWidth * rc.lengthRatio;
+        g.moveTo(x, y + len).lineTo(x, y).stroke({ color: rc.colour, alpha: 0.75, width: Math.max(1, r * 1.2) });
+        g.circle(x, y, r).fill({ color: rc.colour, alpha: 0.95 });
+        break;
+      }
       case 'zapper': {
         /**
          * An electric jellyfish: a violet bell, a few thick tentacles, and the discharge ring.
@@ -2330,6 +2426,11 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
+
+
+
 
 
 

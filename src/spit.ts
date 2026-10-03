@@ -538,6 +538,8 @@ export function spitImpact(kind: HazardKind): number {
     torpedo: 1.3,
     // 电击水母的弹药带着电：扔出去就是一颗会放电的手雷。
     zapper: 0.55,
+    foam: 0.2,
+    rain: 0.6,
   };
   return perKind[kind];
 }
@@ -579,6 +581,7 @@ export function tierBonusFor(energy: number): number {
 }
 
 export const SPIT = mech.spit;
+
 
 
 

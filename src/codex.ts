@@ -303,6 +303,8 @@ const HAZARD_NAMES: Record<HazardKind, string> = {
   angler: '灯笼鱼',
   torpedo: '失控鱼雷',
   zapper: '电击水母',
+  foam: '碎浪泡沫',
+  rain: '雨滴冲击',
 };
 
 /** The four things in the water that are not creatures. */
@@ -914,6 +916,7 @@ export function iconColour(entry: CodexEntry): number {
     }
   }
 }
+
 
 
 

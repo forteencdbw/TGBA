@@ -459,6 +459,23 @@ export interface Mechanisms {
       burstAlpha: number;
       burstSeconds: number;
     };
+    /** LEVEL 6: foam that looks like the player's own bubble, and rain that presses them back down. */
+    foam: {
+      radiusRatio: number;
+      lifeSeconds: number;
+      contactDamage: number;
+      colour: number;
+      rimColour: number;
+      alpha: number;
+      rimAlpha: number;
+    };
+    rain: {
+      fallSpeedFactor: number;
+      pushMeters: number;
+      contactDamage: number;
+      colour: number;
+      lengthRatio: number;
+    };
     torpedo: {
       runSpeedFactor: number;
       runMeters: number;
@@ -1287,6 +1304,18 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.charge.burstColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.charge.burstAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'hazards.charge.burstSeconds', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 5, describe: 'seconds between 0.05 and 5' },
+  { path: 'hazards.foam.radiusRatio', check: (v) => typeof v === 'number' && v > 0.005 && v <= 0.3, describe: 'a fraction of the lane width above 0.005 and at most 0.3' },
+  { path: 'hazards.foam.lifeSeconds', check: (v) => typeof v === 'number' && v >= 0.2 && v <= 60, describe: 'seconds between 0.2 and 60' },
+  { path: 'hazards.foam.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
+  { path: 'hazards.foam.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.foam.rimColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.foam.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hazards.foam.rimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hazards.rain.fallSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
+  { path: 'hazards.rain.pushMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
+  { path: 'hazards.rain.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
+  { path: 'hazards.rain.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.rain.lengthRatio', check: (v) => typeof v === 'number' && v > 0.005 && v <= 0.6, describe: 'a fraction of the lane width above 0.005 and at most 0.6' },
   { path: 'hazards.torpedo.runSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
   { path: 'hazards.torpedo.runMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
   { path: 'hazards.torpedo.seekSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
@@ -1976,6 +2005,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 

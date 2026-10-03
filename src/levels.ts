@@ -140,6 +140,9 @@ export type SpawnKind =
   | 'torpedo'
   /** LEVEL 3's electric jellyfish: the ignition source for the conductive chain. */
   | 'zapper'
+  /** LEVEL 6's foam and rain. */
+  | 'foam'
+  | 'rain'
   | ObstacleKind;
 
 /** The arrangement vocabulary: how a block's `count` things are laid out. */
@@ -359,6 +362,8 @@ const SPAWN_KINDS: readonly string[] = [
   'angler',
   'torpedo',
   'zapper',
+  'foam',
+  'rain',
   'crate',
   'coral',
   'wall',
@@ -785,6 +790,7 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
 
 
 

@@ -2326,6 +2326,15 @@ class Game {
        * LEVEL 3's mechanic passes through the same channel every other consequence does, so a probe can drive it and
        * the picture can read it without a second code path.
        */
+      /**
+       * LEVEL 6's rain: it presses the bubble back DOWN.
+       *
+       * Applied to the player's own position rather than as a knockback impulse, so it costs exactly the height it
+       * says it does (`pushMeters`) whatever the frame rate did -- the same reasoning as the charge popups' rise.
+       */
+      if (e.pushDown) {
+        this.player.y = Math.max(0, this.player.y - e.pushDown);
+      }
       if (e.charge) {
         this.charge = Math.min(mech.hazards.charge.max, this.charge + e.charge);
       }
@@ -2678,6 +2687,7 @@ class Game {
       hitFlash: 0,
       discharge: 0,
       dischargeRest: 0,
+      foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
     };
   }
 
@@ -5250,6 +5260,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 

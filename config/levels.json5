@@ -386,6 +386,72 @@
         { at: 1360, kind: 'fish', count: 10, arrange: 'line' },
       ],
     },
+    // 第六关：破晓海面（最终关）
+    // =====================================================================================================
+    //
+    // 环境：最终区域横跨水下、海面与空气。阳光穿透水层，浪峰不断改变"终点"的高度。
+    // 这一关的干扰不是"打你"，而是"让你看不清"：泡沫长得像你的气泡，雨滴把你压回水下。
+    //
+    // 招牌（本轮实现的两件）：`foam` 碎浪泡沫（打不掉，遮蔽位置与判定，自己会散）、
+    // `rain` 雨滴冲击（比水流更快地落下，命中把气泡**压回**水里 `pushMeters` 米）。
+    //
+    // 尚未实现：海鸟群（俯冲啄击）、表层小鱼（跃出水面撞人并改变轨迹）、以及"水面 / 空气"这一层本身
+    // （玩家真的浮出水面）；最终 BOSS 风暴之眼现在是一只配置好的 BOSS。
+    {
+      id: 'dawn-surface',
+      name: '破晓海面',
+
+      scrollLength: 1700,
+
+      boss: {
+        at: 1450,
+        health: 320,
+        name: '风暴之眼',
+        colour: 0x8fb8d8
+      },
+
+      scrollSpeed: 34,
+      playerLeadLimit: 130,
+      landmarks: [
+        { depth: 1350, label: '阳光层' },
+        { depth: 900, label: '泡沫带' },
+        { depth: 400, label: '浪峰' },
+      ],
+      spawns: [
+        // --- 开场：光进来了，鱼群也多了。先给一段"看得清"的，泡沫随后才出现。 ---
+        { at: 30, span: 200, count: 14, kind: 'bubble', arrange: 'spread', amplitude: 0.28, sizes: [0.45, 0.6, 0.4] },
+        { at: 110, kind: 'fish', count: 5, arrange: 'line' },
+        { at: 180, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5, from: 'bottom' },
+        { at: 250, kind: 'skill', x: 0.4 },
+
+        // --- 泡沫带：视线开始不可信。泡沫和真泡泡一起漂，玩家要看清哪个是自己。 ---
+        { at: 300, kind: 'foam', count: 5, arrange: 'spread', span: 40, x: 0.5 },
+        { at: 340, kind: 'bubble', count: 6, arrange: 'spread', span: 30, x: 0.5, sizes: [0.5] },
+        { at: 400, kind: 'foam', count: 8, arrange: 'line' },
+        { at: 460, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'right', enterSpeed: 48 },
+        { at: 520, kind: 'upgrade', x: 0.35 },
+
+        // --- 雨滴冲击：从上面砸下来，把接近海面的气泡压回去。 ---
+        { at: 580, span: 70, count: 6, kind: 'rain', arrange: 'spread', amplitude: 0.3, x: 0.5 },
+        { at: 640, kind: 'foam', count: 6, arrange: 'spread', span: 40, x: 0.5 },
+        { at: 700, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.22, x: 0.5, from: 'bottom' },
+        { at: 760, kind: 'rain', count: 8, arrange: 'line' },
+        { at: 820, kind: 'rate', x: 0.6 },
+
+        // --- 浪峰：泡沫 + 雨 + 追兵混在一起，能见度最低的一段。 ---
+        { at: 880, kind: 'foam', count: 10, arrange: 'spread', span: 70, x: 0.5 },
+        { at: 940, kind: 'rain', count: 10, arrange: 'spread', span: 40, amplitude: 0.3, x: 0.5 },
+        { at: 1000, kind: 'angler', count: 2, arrange: 'line' },
+        { at: 1060, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.5, from: 'left', enterSpeed: 48 },
+        { at: 1120, kind: 'foam', count: 8, arrange: 'spread', span: 50, x: 0.4 },
+        { at: 1180, kind: 'rain', count: 12, arrange: 'spread', span: 60, amplitude: 0.28, x: 0.5 },
+
+        // --- 终段：最后一次补给，然后进风暴之眼。 ---
+        { at: 1250, span: 70, count: 8, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.55, 0.7] },
+        { at: 1320, kind: 'foam', count: 10, arrange: 'line' },
+        { at: 1380, kind: 'fish', count: 10, arrange: 'spread', span: 60, x: 0.5, from: 'bottom' },
+      ],
+    },
   ],
 }
 
