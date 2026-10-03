@@ -17,6 +17,7 @@ import { MainMenu } from './menu';
 import { CodexUi } from './codexUi';
 import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
 import { BUBBLE_TYPES, defaultBubbleType, findBubbleType, hasControl, hasVerb, type BubbleType } from './bubbleTypes';
+import type { PickupKind } from './levels';
 import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
 import { endOverload, gainRage, hitRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName, slamDamage, spendRage, tickRage, type RageState } from './rage';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
@@ -617,6 +618,16 @@ class Game {
    * Exposed for the same reason as the rest: "where did the number appear" is the whole of this feature, and a probe
    * that could only count them could not tell a popup at the pickup from a popup in the corner.
    */
+  /**
+   * Test hook: the gun's row count.
+   *
+   * Exposed because "the upgrade changed the rate of fire" is only measurable against the number of rows: the cadence
+   * is unchanged by design, so a probe counting rounds needs to know how many muzzles each tick had.
+   */
+  get gunStreamsRef(): number {
+    return this.gunStreams;
+  }
+
   get scorePopupsRef(): ScorePopups {
     return this.scorePopups;
   }
@@ -682,6 +693,13 @@ class Game {
   private readonly bullets = new BulletField();
   /** The enemies' rounds. Their own field, because they are a different thing entirely -- see the module. */
   private readonly enemyBullets = new EnemyBulletField();
+  /**
+   * How many rows of small bubbles the gun fires, once the ability upgrade has been taken.
+   *
+   * Per RUN state, like the score: an upgrade that survived a death would make dying a way to keep a permanent
+   * advantage, and the run before it would have been a different game from the one after.
+   */
+  private gunStreams = 1;
   /** Seconds until the next spit is allowed. */
   private spitCooldown = 0;
   /** 1 -> 0 pulse on the spit button, for the refusal when the stomach is empty. */
@@ -961,13 +979,24 @@ class Game {
    */
   private updateBullets(dt: number, laneWidth: number, min: number, max: number): void {
     const playerRadius = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
+    /**
+     * Where the rounds come from: one rim point, or one per gun row once the upgrade has been taken.
+     *
+     * The rows are offset LATERALLY (across the lane), because the gun fires up the lane: two rows side by side read
+     * as two streams, and the gap between them is a lane of its own the player can aim with. `gunStreams` is per-run
+     * state, reset with everything else, so an upgrade never survives a death.
+     */
+    const muzzles: { x: number; y: number }[] = [];
+    const rows = this.gunStreams;
+    for (let i = 0; i < rows; i++) {
+      const offset = (i - (rows - 1) / 2) * mech.bullets.upgradeSpreadRatio * laneWidth;
+      muzzles.push({ x: this.player.x * laneWidth + offset, y: this.player.y + playerRadius });
+    }
     const shots = this.bullets.update(dt, {
       min,
       max,
       laneWidth,
-      muzzleX: this.player.x * laneWidth,
-      // The bubble's rim, so the stream reads as leaving the bubble rather than appearing inside it.
-      muzzleY: this.player.y + playerRadius,
+      muzzles,
       /**
        * Firing is a PLAYING-phase act, and one the bubble type can refuse.
        *
@@ -1454,13 +1483,13 @@ class Game {
   private skillActivations = 0;
   /** The skill lying in the water, if any, and the countdown to the next one. */
   /**
-   * A skill lying in the water, waiting to be taken.
+   * A pickup lying in the water, waiting to be taken.
    *
-   * `id` is null until it is collected, because WHICH skill it is gets rolled at pickup time. It used to
-   * be decided on creation, which committed the player's next twenty seconds before they had even seen
-   * the thing.
+   * `kind` says WHAT it gives: a skill (rolled at pickup time, because deciding at spawn would commit the player's
+   * next twenty seconds before they had even seen the thing) or the ability upgrade. One slot rather than a list,
+   * because a level places at most one at a time and "which pickup is in the water" is a single fact the HUD reports.
    */
-  private skillPickup: { id: SkillId | null; x: number; y: number } | null = null;
+  private pickup: { kind: PickupKind; id: SkillId | null; x: number; y: number } | null = null;
   /** When the fish-fart talent can fire again, and how many times it has. */
   private fartReadyAt = 0;
   private farts = 0;
@@ -1873,7 +1902,7 @@ class Game {
     // actually at this frame rather than the one it started from.
     this.resolveHazards(dt, min, max, viewport.laneWidthMeters);
 
-    this.updateSkillPickup(dt, min, max, viewport.laneWidthMeters);
+    this.updatePickup(dt, min, max, viewport.laneWidthMeters);
 
     this.fireDepthEvents();
 
@@ -1907,7 +1936,7 @@ class Game {
       scrolled: +this.scrolled.toFixed(1),
       hazards: this.hazards.hazards.length,
       bubbles: this.field.bubbles.length,
-      pickup: this.skillPickup ? 1 : 0,
+      pickup: this.pickup ? 1 : 0,
       emitted: this.timelineEmitted,
       total: TIMELINE.length,
       phase: this.phase,
@@ -1967,9 +1996,10 @@ class Game {
       this.field.bubbles.push(this.field.bubbleFromEntry({ ...entry, at: spawnY }, laneWidth, stageRadiusFraction(this.stage.stage, this.player.volume)));
       return;
     }
-    if (entry.kind === 'skill') {
-      // A skill sits where the level put it and drifts down with the water, waiting to be taken.
-      this.skillPickup = {
+    if (entry.kind === 'skill' || entry.kind === 'upgrade') {
+      // A pickup sits where the level put it and drifts down with the water, waiting to be taken.
+      this.pickup = {
+        kind: entry.kind,
         x: spawnX,
         y: spawnY,
         // The skill is rolled when it is COLLECTED, not when it is created: granting it here would
@@ -2013,10 +2043,10 @@ class Game {
    *
    * This method is left with only motion and collection, because that is all that is left to do.
    */
-  private updateSkillPickup(dt: number, min: number, max: number, laneWidth: number): void {
+  private updatePickup(dt: number, min: number, max: number, laneWidth: number): void {
     // Held in a local so TypeScript can see it cannot become null between the checks: assigning
-    // `this.skillPickup = null` inside the block below widens it back to nullable.
-    const pickup = this.skillPickup;
+    // `this.pickup = null` inside the block below widens it back to nullable.
+    const pickup = this.pickup;
     if (!pickup) return;
 
     // The pickup is stationary in the water, so the SCROLL is what carries it down past the player.
@@ -2024,7 +2054,7 @@ class Game {
     // other way round; with the player able to hold still, the world has to do the moving.
     pickup.y -= LEVEL.scrollSpeed * dt;
     if (pickup.y < min - 40 || pickup.y > max + 160) {
-      this.skillPickup = null;
+      this.pickup = null;
       return;
     }
 
@@ -2032,16 +2062,33 @@ class Game {
     const dy = pickup.y - this.player.y;
     const reach = laneWidth * (stageRadiusFraction(this.stage.stage, this.player.volume) + 0.05);
     if (dx * dx + dy * dy <= reach * reach) {
-      // Rolled on COLLECTION. Deciding at placement would commit the player's next twenty seconds
-      // before they had even seen the pickup, and would make the level author's choice of WHERE into a
-      // choice of WHAT.
-      const skill = pickup.id ?? (SKILLS[Math.floor(Math.random() * SKILLS.length)] ?? SKILLS[0]).id;
-      this.grantSkill(skill);
+      /**
+       * What it gives depends on which pickup it is, and both are worth the same points.
+       *
+       * The skill is rolled on COLLECTION: deciding at placement would commit the player's next twenty seconds before
+       * they had even seen the pickup, and would turn the level author's choice of WHERE into a choice of WHAT. The
+       * upgrade has nothing to roll -- it is always the same one thing -- so it just raises the gun's row count, to
+       * the config's ceiling.
+       */
+      if (pickup.kind === 'upgrade') {
+        const before = this.gunStreams;
+        this.gunStreams = Math.min(mech.bullets.maxStreams, this.gunStreams + 1);
+        audio.play('skill');
+        this.runBanner.text =
+          this.gunStreams > before
+            ? `火力升级  ·  ${this.gunStreams} 排小泡泡同时发射`
+            : `火力升级  ·  已经是 ${this.gunStreams} 排（上限 ${mech.bullets.maxStreams}）`;
+        this.runBanner.alpha = 1;
+        this.bannerSeen = true;
+      } else {
+        const skill = pickup.id ?? (SKILLS[Math.floor(Math.random() * SKILLS.length)] ?? SKILLS[0]).id;
+        this.grantSkill(skill);
+      }
       // A special item is worth points because it is the level's one pure reward: everything else in the water is
       // either an obstacle or something that hurts. It floats up from WHERE IT WAS PICKED UP, which is this feature's
       // own example of what the numbers are for.
       this.scorePopups.add(pickup.x, pickup.y, this.score.award('skill'), this.camera);
-      this.skillPickup = null;
+      this.pickup = null;
     }
   }
 
@@ -2846,6 +2893,8 @@ class Game {
     // The enemies' rounds go with them: a new bubble that starts inside a wall of the last run's fire would be a
     // death the player cannot connect to anything they did.
     this.enemyBullets.reset();
+    // And the gun goes back to one row: the upgrade belongs to the run that earned it.
+    this.gunStreams = 1;
     // The score is the RUN's number, so it starts at zero with everything else that belongs to a run -- including
     // the numbers still floating on screen from the previous one.
     this.score.reset();
@@ -2901,7 +2950,7 @@ class Game {
     // Skills and talents are per-run state: carrying a skill across a death would make the restart
     // strictly easier than the run that just ended.
     this.skill = null;
-    this.skillPickup = null;
+    this.pickup = null;
     this.skillActivations = 0;
     this.decoy = null;
     this.fartReadyAt = 0;
@@ -3419,23 +3468,42 @@ class Game {
 
     // A skill lying in the water: a diamond, distinct from every collectable, with a halo so it
     // reads as "pick me up" rather than as another bubble.
-    if (this.skillPickup) {
-      const p = this.skillPickup;
-      const r = laneWidth * 0.045;
-      const pulse = 1 + Math.sin(this.elapsed * 3.4) * 0.12;
-      g.circle(p.x, p.y, r * 2.1 * pulse).fill({ color: 0xc79bff, alpha: 0.13 });
-      g.moveTo(p.x, p.y - r * pulse)
-        .lineTo(p.x + r * pulse, p.y)
-        .lineTo(p.x, p.y + r * pulse)
-        .lineTo(p.x - r * pulse, p.y)
-        .closePath()
-        .fill({ color: 0xe8d6ff, alpha: 0.9 });
-      g.moveTo(p.x, p.y - r * pulse)
-        .lineTo(p.x + r * pulse, p.y)
-        .lineTo(p.x, p.y + r * pulse)
-        .lineTo(p.x - r * pulse, p.y)
-        .closePath()
-        .stroke({ color: 0xffffff, alpha: 0.75, width: r * 0.14 });
+    if (this.pickup) {
+      const p = this.pickup;
+      const look = mech.pickups[p.kind];
+      const r = laneWidth * look.radiusRatio;
+      const pulse = 1 + Math.sin(this.elapsed * mech.pickups.pulsePerSecond) * 0.12;
+      g.circle(p.x, p.y, r * 2.1 * pulse).fill({ color: look.haloColour, alpha: look.haloAlpha });
+      if (p.kind === 'upgrade') {
+        /**
+         * Stacked chevrons, pointing up the lane.
+         *
+         * Shape is the first thing peripheral vision resolves, and the two pickups do completely different things --
+         * one swaps the skill slot, one permanently widens the gun -- so they must not be the same silhouette. Two
+         * arrows also say "more rows" without a word of text, which is what the pickup actually does.
+         */
+        for (const band of [-1, 1]) {
+          const y = p.y + band * r * 0.52 * pulse;
+          g.moveTo(p.x - r * pulse, y - r * 0.34)
+            .lineTo(p.x, y + r * 0.34)
+            .lineTo(p.x + r * pulse, y - r * 0.34)
+            .stroke({ color: look.coreColour, alpha: look.coreAlpha, width: Math.max(1, r * 0.3) });
+        }
+        g.circle(p.x, p.y, r * 1.05 * pulse).stroke({ color: look.rimColour, alpha: look.rimAlpha * 0.5, width: Math.max(1, r * 0.12) });
+      } else {
+        g.moveTo(p.x, p.y - r * pulse)
+          .lineTo(p.x + r * pulse, p.y)
+          .lineTo(p.x, p.y + r * pulse)
+          .lineTo(p.x - r * pulse, p.y)
+          .closePath()
+          .fill({ color: look.coreColour, alpha: look.coreAlpha });
+        g.moveTo(p.x, p.y - r * pulse)
+          .lineTo(p.x + r * pulse, p.y)
+          .lineTo(p.x, p.y + r * pulse)
+          .lineTo(p.x - r * pulse, p.y)
+          .closePath()
+          .stroke({ color: look.rimColour, alpha: look.rimAlpha, width: r * 0.14 });
+      }
     }
   }
 
@@ -4045,7 +4113,7 @@ class Game {
      */
     score: { value: number; best: number; byEvent: Record<string, number>; popups: number };
     /** A skill lying in the water. `id` is null until collected, since it is rolled at pickup. */
-    skillPickup: { id: string | null; y: number } | null;
+    pickup: { kind: string; id: string | null; y: number } | null;
     activeSkill: { id: string; remaining: number } | null;
     stage: {
       stage: number;
@@ -4336,7 +4404,7 @@ class Game {
       ending: { surfaced: this.surfaced, splash: +this.splash.toFixed(3), bestClimbed: Math.round(this.bestClimbed), bestVolume: +this.bestVolume.toFixed(2), bestScore: this.bestScore },
       score: { value: this.score.value, best: this.bestScore, byEvent: { ...this.score.ledger }, popups: this.scorePopups.count },
       enemyBullets: { inFlight: this.enemyBullets.count, fired: this.enemyBullets.fired, hits: this.enemyBullets.hits },
-      skillPickup: this.skillPickup ? { id: this.skillPickup.id, y: +this.skillPickup.y.toFixed(1) } : null,      /** Active effect timers, so a skill that lasts can be observed while it runs. */
+      pickup: this.pickup ? { kind: this.pickup.kind, id: this.pickup.id, y: +this.pickup.y.toFixed(1) } : null,      /** Active effect timers, so a skill that lasts can be observed while it runs. */
       activeSkill: this.player.skillId ? { id: this.player.skillId, remaining: +this.player.skillRemaining.toFixed(2) } : null,
       /** The bubble's growth stage: its speed tier, and how far into the next one it is. */
       stage: {
@@ -4800,6 +4868,12 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
+
 
 
 

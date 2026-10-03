@@ -42,12 +42,15 @@ export interface BulletContext {
   max: number;
   laneWidth: number;
   /**
-   * Where a round appears: the bubble's own rim, in world metres.
+   * Where rounds appear, in world metres: one muzzle, or one per gun row.
    *
-   * The rim rather than the centre, so the player sees it leave the bubble rather than appear inside it.
+   * A rim point rather than the centre, so the player sees a round leave the bubble rather than appear inside it.
+   *
+   * A LIST rather than a single point because the gun upgrade adds ROWS: one cadence tick fires one round from every
+   * muzzle at once, which is what "two rows of bubbles at the same time" means and what makes the upgrade worth
+   * taking. Alternating rounds between two muzzles would look the same and hit half as hard.
    */
-  muzzleX: number;
-  muzzleY: number;
+  muzzles: readonly { x: number; y: number }[];
   /**
    * Whether this run fires at all.
    *
@@ -164,13 +167,21 @@ export class BulletField {
 
   private spawn(ctx: BulletContext): void {
     const cfg = mech.bullets;
-    this.bullets.push({
-      x: ctx.muzzleX,
-      y: ctx.muzzleY,
-      vy: ctx.laneWidth * cfg.speedPerSecond,
-      age: 0,
-    });
-    this.fired++;
+    /**
+     * One round per muzzle, every tick.
+     *
+     * Simultaneous rather than alternating: an upgrade that fired the same number of rounds from two places would be
+     * a WIDER gun, and this is meant to be a stronger one. The caller decides how many muzzles there are.
+     */
+    for (const muzzle of ctx.muzzles) {
+      this.bullets.push({
+        x: muzzle.x,
+        y: muzzle.y,
+        vy: ctx.laneWidth * cfg.speedPerSecond,
+        age: 0,
+      });
+      this.fired++;
+    }
   }
 }
 
@@ -190,4 +201,6 @@ export function paintBullets(g: Graphics, field: BulletField, laneWidth: number)
     g.circle(b.x, b.y, r).stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha * fade, width: Math.max(1, r * 0.45) });
   }
 }
+
+
 

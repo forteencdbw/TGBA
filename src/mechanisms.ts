@@ -261,6 +261,18 @@ export interface Mechanisms {
       penaltiesApply: boolean;
     };
   };
+  /**
+   * The dropped pickups: one row per pickup kind, plus the pulse they share.
+   *
+   * A table of looks rather than two sets of hardcoded numbers, because the two pickups must be told apart at a
+   * glance in peripheral vision and that is exactly the kind of thing the owner will want to re-tune. Shape does most
+   * of the work (a diamond versus stacked arrows); colour confirms it.
+   */
+  pickups: {
+    pulsePerSecond: number;
+    skill: PickupLook;
+    upgrade: PickupLook;
+  };
   collectables: {
     riseMin: number;
     riseMax: number;
@@ -456,6 +468,15 @@ export interface Mechanisms {
     damage: number;
     /** Seconds in flight before a round disappears, which is also its range. */
     lifeSeconds: number;
+    /**
+     * Lateral gap between gun rows once the upgrade is taken, as a fraction of the lane width.
+     *
+     * The two streams have to be far enough apart to read as two, and close enough that the gap between them is not a
+     * corridor the player is forced into -- the lane is also where the enemies are.
+     */
+    upgradeSpreadRatio: number;
+    /** Rows the gun can reach. 2 is what one upgrade promises; higher makes the pickup stack. */
+    maxStreams: number;
     colour: number;
     alpha: number;
     rimColour: number;
@@ -782,6 +803,17 @@ export interface Mechanisms {
     insideMarginRatio: number;
     entryDepth: number;
   };
+}
+
+/** How a dropped pickup is painted. Radii are fractions of the lane width. */
+export interface PickupLook {
+  radiusRatio: number;
+  haloColour: number;
+  haloAlpha: number;
+  coreColour: number;
+  coreAlpha: number;
+  rimColour: number;
+  rimAlpha: number;
 }
 
 /** Throw with the offending key named, so a typo in the file is a message rather than a mystery. */
@@ -1132,6 +1164,22 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'bullets.perSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'rounds per second between 0 and 30; 0 turns the weapon off' },
   { path: 'bullets.speedPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 8, describe: 'lane widths per second, above 0 and at most 8' },
   { path: 'bullets.radiusRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.1, describe: 'a fraction of the lane width, above 0.001 and at most 0.1' },
+  { path: 'bullets.upgradeSpreadRatio', check: (v) => typeof v === 'number' && v > 0.005 && v < 0.3, describe: 'a fraction of the lane width above 0.005 and below 0.3' },
+  { path: 'pickups.pulsePerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'cycles per second between 0 and 20' },
+  ...[`${'skill'}`, `${'upgrade'}`].flatMap((kind) => [
+    { path: `pickups.${kind}.radiusRatio`, check: (v: unknown) => typeof v === 'number' && v > 0.005 && v < 0.3, describe: 'a fraction of the lane width above 0.005 and below 0.3' },
+    ...[`${'haloColour'}`, `${'coreColour'}`, `${'rimColour'}`].map((key) => ({
+      path: `pickups.${kind}.${key}`,
+      check: isColour,
+      describe: 'a colour, either 0xrrggbb or a "#rrggbb" string',
+    })),
+    ...[`${'haloAlpha'}`, `${'coreAlpha'}`, `${'rimAlpha'}`].map((key) => ({
+      path: `pickups.${kind}.${key}`,
+      check: (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1,
+      describe: 'an opacity between 0 and 1',
+    })),
+  ]),
+  { path: 'bullets.maxStreams', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 8, describe: 'a whole number of gun rows between 1 and 8' },
   { path: 'bullets.damage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number of hit points above 0' },
   { path: 'bullets.lifeSeconds', check: (v) => typeof v === 'number' && v > 0.05 && v <= 10, describe: 'seconds above 0.05 and at most 10' },
   { path: 'bullets.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
@@ -1701,6 +1749,10 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
+
+
 
 
 

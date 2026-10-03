@@ -129,6 +129,7 @@ export type SpawnKind =
   | 'rot'
   | 'oil'
   | 'skill'
+  | 'upgrade'
   | ObstacleKind;
 
 /** The arrangement vocabulary: how a block's `count` things are laid out. */
@@ -316,6 +317,7 @@ const SPAWN_KINDS: readonly string[] = [
   'rot',
   'oil',
   'skill',
+  'upgrade',
   'crate',
   'coral',
   'wall',
@@ -324,6 +326,17 @@ const SPAWN_KINDS: readonly string[] = [
 const ARRANGEMENTS: readonly string[] = ['single', 'line', 'column', 'spread', 'barrier'];
 /** Whether a kind is scenery. Asked of the config's own list, so a new obstacle kind is covered by construction. */
 const isScenery = (kind: string): boolean => (OBSTACLE_KINDS as readonly string[]).includes(kind);
+
+/**
+ * The kinds that are PICKED UP: a skill, or the ability upgrade.
+ *
+ * One list rather than a comparison repeated per rule, because these kinds share rules the others do not: they arrive
+ * with the current (never from a side), and they occupy a single slot in the water rather than a field. A new pickup
+ * added here inherits both, which is the point.
+ */
+export const PICKUP_KINDS = ['skill', 'upgrade'] as const;
+export type PickupKind = (typeof PICKUP_KINDS)[number];
+const isPickup = (kind: string): boolean => (PICKUP_KINDS as readonly string[]).includes(kind);
 const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom'];
 
 /** The keys a block may use. Anything else is an error rather than a silent no-op -- see `readBlock`. */
@@ -423,7 +436,7 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
    * Both are checked HERE rather than being ignored at runtime, because in both cases the config would look fine and
    * the game would look broken: scenery that never arrives, or a collectable that ignores its own direction.
    */
-  if (from !== 'top' && (kind === 'bubble' || kind === 'skill')) {
+  if (from !== 'top' && (kind === 'bubble' || isPickup(kind))) {
     fail(
       where,
       `is a "${kind}" arriving from the ${from}, but collectables and skills come down with the current. Only creatures and obstacles can enter from a side.`,
@@ -700,4 +713,6 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
+
 

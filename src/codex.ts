@@ -235,6 +235,19 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
       { label: '质量', value: num(mass) },
       { label: '弹药', value: `${num(impact)}× 击退${blast > 0 ? ' · 命中爆炸' : ''}` },
       { label: '体内', value: insideText(kind) },
+      /**
+       * How many rounds drive it off, DERIVED from the config.
+       *
+       * Worth a line because it is not the same for every creature and it changes: the fish took three rounds until
+       * the day it took two. A card that stated a number in prose would have gone stale that day.
+       */
+      {
+        label: '打跑',
+        value:
+          (mech.hazards.health[kind] ?? 0) > 0
+            ? `${mech.hazards.health[kind]} 发小泡泡（打空就跑，不会死）`
+            : '打不跑：子弹直接穿过去',
+      },
       ...(threat.length ? [{ label: '攻击方式', value: threat.join('；') }] : []),
     ],
     notes,
@@ -310,6 +323,23 @@ const ENVIRONMENT: readonly CodexEntry[] = [
       '每一排都保证留出"玩家最小时也能通过"的缺口——这不是体贴，而是让"变小"成为选择而不是必需。',
     ],
     icon: { kind: 'obstacle', obstacle: 'coral' },
+  },
+  {
+    id: 'env:upgradePickup',
+    category: 'environment',
+    name: '能力升级',
+    tagline: '拾取后火力永久 +1 排',
+    facts: [
+      { label: '效果', value: `小泡泡同时发射 ${mech.bullets.maxStreams} 排（当前上限）` },
+      { label: '持续', value: '整局有效，死亡后重置' },
+      { label: '排间距', value: `${num(mech.bullets.upgradeSpreadRatio * 100, 1)}% 泳道宽` },
+    ],
+    notes: [
+      '射速不变，**每排各出一发**：所以它是"DPS 翻倍"，不是"打得更快"。',
+      '排间距留在泳道里而且不宽，因为弹道之间那道缝也是玩家瞄准用的通道——糊满整条泳道会让"躲"失去意义。',
+      '上限由 bullets.maxStreams 决定：改成 3 或 4 它就能叠加，上限内再捡会被消耗但不再变化。',
+    ],
+    icon: { kind: 'glyph', glyph: 'skillPickup' },
   },
   {
     id: 'env:skillPickup',
@@ -836,3 +866,4 @@ export function iconColour(entry: CodexEntry): number {
     }
   }
 }
+

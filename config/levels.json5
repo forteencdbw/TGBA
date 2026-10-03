@@ -15,6 +15,7 @@
 //                 收集物   bubble
 //                 生物     fish / jelly / trash / crab / urchin / bombfish / eel / rot / oil
 //                 技能泡   skill
+//                 能力升级 upgrade（拾取后火力 +1 排）
 //                 障碍物   crate / coral / wall / net
 //   count       刷几个。默认 1。
 //   arrange     怎么摆。single（默认，count=1 时）/ line（横排）/ column（竖列）/
@@ -96,6 +97,9 @@
         { at: 30, span: 200, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.4, 0.5, 0.35] },
         { at: 140, kind: 'jelly', x: 0.5 },
         { at: 200, kind: 'skill', x: 0.3 },
+        // 第一个火力升级，早而单独出现：它是唯一一个效果立刻看得见的掉落物（弹道当场变成两排），
+        // 所以放在玩家能把「发生了什么」和「变强了」连起来的地方。
+        { at: 260, kind: 'upgrade', x: 0.7 },
 
         // --- 340m：第一批木箱，作为一次教学 ---
         //
@@ -322,3 +326,4 @@
     },
   ],
 }
+
