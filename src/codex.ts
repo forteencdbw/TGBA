@@ -302,6 +302,7 @@ const HAZARD_NAMES: Record<HazardKind, string> = {
   shrimp: '盲眼虾',
   angler: '灯笼鱼',
   torpedo: '失控鱼雷',
+  zapper: '电击水母',
 };
 
 /** The four things in the water that are not creatures. */
@@ -913,6 +914,7 @@ export function iconColour(entry: CodexEntry): number {
     }
   }
 }
+
 
 
 

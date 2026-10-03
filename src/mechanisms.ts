@@ -423,6 +423,42 @@ export interface Mechanisms {
       lurePulsePerSecond: number;
       lureOffsetRatio: number;
     };
+    /** LEVEL 3: a jellyfish that discharges when touched or shot -- the ignition source for the chain. */
+    zapper: {
+      ringRadiusRatio: number;
+      ringDamage: number;
+      ringSeconds: number;
+      ringCooldownSeconds: number;
+      dischargesWhenHit: boolean;
+      bellColour: number;
+      ringColour: number;
+      ringAlpha: number;
+    };
+    /**
+     * LEVEL 3's signature: the bubble accumulates charge, and a charged bubble ignites the water.
+     *
+     * One number on the player, and three uses: it makes the jellies dangerous, it makes the player's own body a
+     * weapon, and (because a discharge kills whatever it reaches) it is how a blocked route is opened. The same
+     * mechanic paying three ways is why it is worth a HUD ring rather than a status line.
+     */
+    charge: {
+      max: number;
+      chainAt: number;
+      perRingHit: number;
+      perSecondNearZapper: number;
+      decayPerSecond: number;
+      nearMeters: number;
+      chainRangeMeters: number;
+      chainJumpMeters: number;
+      chainDamage: number;
+      chainMaxTargets: number;
+      chainSelfDamage: number;
+      bubbleRingColour: number;
+      bubbleRingWidthRatio: number;
+      burstColour: number;
+      burstAlpha: number;
+      burstSeconds: number;
+    };
     torpedo: {
       runSpeedFactor: number;
       runMeters: number;
@@ -1227,6 +1263,30 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.angler.lureRadiusRatio', check: (v) => typeof v === 'number' && v > 0.002 && v <= 0.2, describe: 'a fraction of the lane width above 0.002 and at most 0.2' },
   { path: 'hazards.angler.lurePulsePerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'cycles per second between 0 and 20' },
   { path: 'hazards.angler.lureOffsetRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a multiple of the body radius between 0 and 3' },
+  { path: 'hazards.zapper.ringRadiusRatio', check: (v) => typeof v === 'number' && v > 0.02 && v <= 1.5, describe: 'a fraction of the lane width above 0.02 and at most 1.5' },
+  { path: 'hazards.zapper.ringDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
+  { path: 'hazards.zapper.ringSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 5, describe: 'seconds between 0 and 5' },
+  { path: 'hazards.zapper.ringCooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10' },
+  { path: 'hazards.zapper.dischargesWhenHit', check: (v) => typeof v === 'boolean', describe: 'true or false' },
+  { path: 'hazards.zapper.bellColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.zapper.ringColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.zapper.ringAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hazards.charge.max', check: (v) => typeof v === 'number' && v > 0 && v <= 1000, describe: 'a number above 0 and at most 1000' },
+  { path: 'hazards.charge.chainAt', check: (v) => typeof v === 'number' && v >= 0 && v <= 1000, describe: 'a threshold between 0 and 1000' },
+  { path: 'hazards.charge.perRingHit', check: (v) => typeof v === 'number' && v >= 0 && v <= 1000, describe: 'charge between 0 and 1000' },
+  { path: 'hazards.charge.perSecondNearZapper', check: (v) => typeof v === 'number' && v >= 0 && v <= 1000, describe: 'charge per second between 0 and 1000' },
+  { path: 'hazards.charge.decayPerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 1000, describe: 'charge per second between 0 and 1000' },
+  { path: 'hazards.charge.nearMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
+  { path: 'hazards.charge.chainRangeMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
+  { path: 'hazards.charge.chainJumpMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
+  { path: 'hazards.charge.chainDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 100, describe: 'hit points between 0 and 100' },
+  { path: 'hazards.charge.chainMaxTargets', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 64, describe: 'a whole number of targets between 1 and 64' },
+  { path: 'hazards.charge.chainSelfDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
+  { path: 'hazards.charge.bubbleRingColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.charge.bubbleRingWidthRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.4, describe: 'a fraction of the lane width above 0.001 and at most 0.4' },
+  { path: 'hazards.charge.burstColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.charge.burstAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hazards.charge.burstSeconds', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 5, describe: 'seconds between 0.05 and 5' },
   { path: 'hazards.torpedo.runSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
   { path: 'hazards.torpedo.runMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
   { path: 'hazards.torpedo.seekSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
@@ -1916,6 +1976,9 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
+
 
 
 

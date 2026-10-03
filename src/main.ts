@@ -659,6 +659,11 @@ class Game {
     return this.runBanner.text;
   }
 
+  /** Test hook: the run's conductive charge (LEVEL 3), 0 to `hazards.charge.max`. */
+  get chargeRef(): number {
+    return this.charge;
+  }
+
   get gunStreamsRef(): number {
     return this.gunStreams;
   }
@@ -744,6 +749,18 @@ class Game {
   private rateTier = 1;
   /** Whether this run's boss has arrived. Per run, like everything else about a run. */
   private bossSpawned = false;
+  /**
+   * LEVEL 3's conductive charge, and the bubble is the capacitor.
+   *
+   * The whole mechanic lives in these two numbers plus `resolveCharge` below: the field reports that an electric ring
+   * swept the bubble (an effect), this accumulates it, and once it is over `chainAt` the next zapper the bubble comes
+   * near is ignited -- which kills that one and jumps to others, and is therefore also how a blocked route is opened.
+   * Danger, weapon and key, from one number.
+   */
+  private charge = 0;
+  /** Seconds left of the chain-discharge visual, and the last burst's radius in metres. */
+  private chargeBurst = 0;
+  private chargeBurstRadius = 0;
   /** Seconds until the next spit is allowed. */
   private spitCooldown = 0;
   /** 1 -> 0 pulse on the spit button, for the refusal when the stomach is empty. */
@@ -2009,6 +2026,7 @@ class Game {
      * with it.
      */
     this.updateBoss();
+    this.updateConductiveCharge(dt, viewport.laneWidthMeters);
 
     // Trace the end condition, so a probe can see WHY a level failed to end rather than only that it
     // did. A win condition with five clauses is exactly the kind of thing that reports "still playing"
@@ -2302,6 +2320,15 @@ class Game {
        * Handled before the reversal below because a bomb that goes off is not a meal, and because the damage must go
        * through `takeHit` like every other hit -- the blast is a source, not a second damage system.
        */
+      /**
+       * An electric ring swept the bubble: it banks the charge rather than only hurting.
+       *
+       * LEVEL 3's mechanic passes through the same channel every other consequence does, so a probe can drive it and
+       * the picture can read it without a second code path.
+       */
+      if (e.charge) {
+        this.charge = Math.min(mech.hazards.charge.max, this.charge + e.charge);
+      }
       if (e.blast) {
         this.explosions.push({ x: e.blast.x, y: e.blast.y, radius: e.blast.radius, age: 0 });
         audio.play('pop');
@@ -2649,6 +2676,8 @@ class Game {
       blastFuse: null,
       tint: null,
       hitFlash: 0,
+      discharge: 0,
+      dischargeRest: 0,
     };
   }
 
@@ -3265,6 +3294,78 @@ class Game {
    * the player's gun hits it with no new code, and so that the invulnerability window, the damage numbers and the
    * culling rules all apply to it exactly as they do to a fish.
    */
+  /**
+   * LEVEL 3's conductive chain: charging, decaying, and the discharge itself.
+   *
+   * A charged bubble ignites the nearest zapper the moment it comes within `chainRangeMeters`, and the discharge then
+   * JUMPS between jellies (`chainJumpMeters`, up to `chainMaxTargets`), which is why the same mechanic is also a
+   * weapon against a shoal and a key against a tentacle blocking a route: the damage is area damage that propagates
+   * through the level's own creatures.
+   *
+   * The bubble is a capacitor and not a gun: charging is passive (be near the electric water), so the interesting
+   * decision is where to STAND while charged, which is exactly the decision the level is built around.
+   */
+  private updateConductiveCharge(dt: number, laneWidth: number): void {
+    const cfg = mech.hazards.charge;
+    if (this.phase !== 'playing') {
+      this.chargeBurst = Math.max(0, this.chargeBurst - dt);
+      return;
+    }
+    let near = false;
+    for (const h of this.hazards.hazards) {
+      if (h.kind !== 'zapper' || h.flee) continue;
+      if (Math.hypot(h.x - this.player.x * laneWidth, h.y - this.player.y) <= cfg.nearMeters) {
+        near = true;
+        break;
+      }
+    }
+    this.charge = near
+      ? Math.min(cfg.max, this.charge + cfg.perSecondNearZapper * dt)
+      : Math.max(0, this.charge - cfg.decayPerSecond * dt);
+    this.chargeBurst = Math.max(0, this.chargeBurst - dt);
+
+    if (this.charge < cfg.chainAt) return;
+    /**
+     * The discharge. Breadth-first from the nearest zapper, so the chain is a spreading event rather than a list of
+     * unrelated hits, and the visual radius is the distance it actually reached.
+     */
+    const px = this.player.x * laneWidth;
+    const py = this.player.y;
+    const origin = this.hazards.hazards
+      .filter((h) => h.kind === 'zapper' && !h.flee)
+      .map((h) => ({ h, d: Math.hypot(h.x - px, h.y - py) }))
+      .filter((e) => e.d <= cfg.chainRangeMeters)
+      .sort((a, b) => a.d - b.d)[0];
+    if (!origin) return;
+
+    const hit = new Set<number>([origin.h.id]);
+    const queue = [origin.h];
+    while (queue.length && hit.size < cfg.chainMaxTargets) {
+      const from = queue.shift()!;
+      for (const h of this.hazards.hazards) {
+        if (hit.has(h.id) || h.kind !== 'zapper' || h.flee) continue;
+        if (Math.hypot(h.x - from.x, h.y - from.y) > cfg.chainJumpMeters) continue;
+        hit.add(h.id);
+        queue.push(h);
+        if (hit.size >= cfg.chainMaxTargets) break;
+      }
+    }
+    this.chargeBurstRadius = cfg.chainJumpMeters * 0.5;
+    this.chargeBurst = cfg.burstSeconds;
+    this.charge = 0;
+    audio.play('surface');
+    for (const h of this.hazards.hazards) {
+      if (!hit.has(h.id)) continue;
+      // Through `hit`, so the discharge is ordinary damage: health, the driven-off score and the popup all apply.
+      this.hazards.hit(h, cfg.chainDamage);
+      this.scorePopups.add(h.x, h.y, this.score.award('drivenOff'), this.camera);
+    }
+    if (cfg.chainSelfDamage > 0) this.takeHit();
+    this.runBanner.text = `连锁放电  ·  ${hit.size} 只`;
+    this.runBanner.alpha = 1;
+    this.bannerSeen = true;
+  }
+
   private updateBoss(): void {
     const spec = LEVEL.boss;
     if (!this.bossSpawned && this.scrolled >= spec.at) {
@@ -3689,6 +3790,35 @@ class Game {
         width: Math.max(1, boom.radius * 0.16 * (1 - t)),
       });
       g.circle(boom.x, boom.y, boom.radius * (0.15 + 0.5 * t)).fill({ color: 0xffe9a8, alpha: 0.28 * (1 - t) });
+    }
+
+    /**
+     * LEVEL 3's two readings, drawn on the BUBBLE rather than in a corner.
+     *
+     * The charge is a property of the bubble -- it is the bubble that is dangerous to approach -- so it is shown where
+     * the bubble is, the same argument the rage ring and the stomach contents follow. The ring's thickness is the
+     * charge, so "am I about to ignite" is answered without reading a number, and the burst ring is the discharge
+     * itself, at the radius the chain actually reached.
+     */
+    const chargeCfg = mech.hazards.charge;
+    if (this.charge > 0 && this.phase === 'playing') {
+      const bubbleR = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
+      const fraction = Math.min(1, this.charge / Math.max(1, chargeCfg.max));
+      const armed = this.charge >= chargeCfg.chainAt;
+      const flicker = armed ? 0.7 + 0.3 * Math.sin(this.elapsed * 26) : 1;
+      g.circle(this.player.x * laneWidth, this.player.y, bubbleR * 1.16).stroke({
+        color: chargeCfg.bubbleRingColour,
+        alpha: (armed ? 0.85 : 0.4) * fraction * flicker,
+        width: Math.max(1, laneWidth * chargeCfg.bubbleRingWidthRatio * (armed ? 1.6 : 1)),
+      });
+    }
+    if (this.chargeBurst > 0) {
+      const left = Math.max(0, this.chargeBurst / Math.max(0.01, chargeCfg.burstSeconds));
+      g.circle(this.player.x * laneWidth, this.player.y, this.chargeBurstRadius * (1.6 - 0.6 * left)).stroke({
+        color: chargeCfg.burstColour,
+        alpha: chargeCfg.burstAlpha * left,
+        width: Math.max(1, laneWidth * 0.03 * left),
+      });
     }
 
     for (const p of this.pickupDrops) {
@@ -5120,6 +5250,13 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
+
+
 
 
 

@@ -536,6 +536,8 @@ export function spitImpact(kind: HazardKind): number {
     shrimp: 0.9,
     angler: 1.1,
     torpedo: 1.3,
+    // 电击水母的弹药带着电：扔出去就是一颗会放电的手雷。
+    zapper: 0.55,
   };
   return perKind[kind];
 }
@@ -577,5 +579,6 @@ export function tierBonusFor(energy: number): number {
 }
 
 export const SPIT = mech.spit;
+
 
 

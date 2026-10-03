@@ -210,7 +210,182 @@
         { at: 900, kind: 'net', count: 3, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.2 },
       ],
     },
+    // =====================================================================================================
+    // 第三关：发光水母林
+    // =====================================================================================================
+    //
+    // 环境：中层海域。巨型水母像树冠一样悬着，触须垂下形成垂直的"森林"。背景开始有微弱的阳光，
+    // 主色转成蓝紫 / 青 / 粉。**这一关强调路线观察**：战斗压力比前两关低，环境危险高。
+    //
+    // 招牌机制：**导电连锁**（已实现）。气泡不会被电立刻击破，而是**积累电荷**；带电时靠近另一只水母
+    // 就会引爆连锁，于是同一个机制同时是危险、武器、以及路线解谜（把电导向封路的触须）。
+    {
+      id: 'jelly-forest',
+      name: '发光水母林',
+
+      scrollLength: 1400,
+
+      boss: {
+        at: 1200,
+        health: 200,
+        name: '冠冕水母',
+        colour: 0xb98cff
+      },
+
+      scrollSpeed: 28,
+      playerLeadLimit: 110,
+      landmarks: [
+        { depth: 1050, label: '水母树冠' },
+        { depth: 650, label: '触须森林' },
+        { depth: 250, label: '冠冕' },
+      ],
+      spawns: [
+        // --- 开场：水母很多，但都很软。这一关的压力来自"电"，不来自追杀。 ---
+        { at: 30, span: 180, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.2, sizes: [0.4, 0.5, 0.35] },
+        { at: 120, kind: 'zapper', x: 0.35 },
+        { at: 180, kind: 'zapper', x: 0.68 },
+        { at: 240, kind: 'skill', x: 0.5 },
+
+        // --- 触须森林：竖直的水母列 + 之间夹着电击水母，路线要么穿过去、要么带电炸开。 ---
+        { at: 300, kind: 'zapper', count: 4, arrange: 'column', span: 90, x: 0.3 },
+        { at: 340, kind: 'zapper', count: 4, arrange: 'column', span: 90, x: 0.7 },
+        { at: 400, kind: 'upgrade', x: 0.5 },
+        { at: 450, kind: 'zapper', count: 3, arrange: 'line' },
+        { at: 500, kind: 'jelly', count: 4, arrange: 'line' },
+        { at: 560, kind: 'zapper', count: 5, arrange: 'line' },
+
+        // --- 中段：孢子鱼群和伪装者混进来，路线观察开始变难。 ---
+        { at: 620, kind: 'fish', count: 4, arrange: 'spread', span: 30, from: 'left', depth: 0.6 },
+        { at: 660, kind: 'shrimp', count: 3, arrange: 'spread', span: 30, x: 0.6, from: 'right', depth: 0.5 },
+        { at: 720, kind: 'zapper', count: 3, arrange: 'spread', span: 40, x: 0.5 },
+        { at: 780, kind: 'rate', x: 0.35 },
+        { at: 830, kind: 'zapper', count: 5, arrange: 'line' },
+        { at: 880, kind: 'jelly', count: 4, arrange: 'spread', span: 50, x: 0.5 },
+
+        // --- 终段：一连串带电的窄缝，然后进 BOSS。 ---
+        { at: 950, span: 60, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.45, 0.6] },
+        { at: 1000, kind: 'zapper', count: 4, arrange: 'line' },
+        { at: 1060, kind: 'zapper', count: 3, arrange: 'spread', span: 30, x: 0.35 },
+        { at: 1120, kind: 'mineral', count: 4, arrange: 'spread', span: 40, x: 0.6, from: 'bottom' },
+      ],
+    },
+
+    // =====================================================================================================
+    // 第四关：猎食者温跃层
+    // =====================================================================================================
+    //
+    // 环境：上下水层温差明显，能看到折射造成的扭曲边界。鱼群大量出现，生态活动比深海激烈得多。
+    // 温跃层不断上下移动，把战场分成两种状态：下层寒冷黏滞（慢，但敌人不活跃）、上层温暖轻盈（快，但猎食者密集）。
+    //
+    // 招牌机制（**尚未实现**，见 .scratch/levels/issues/）：冷热形态——温水里子弹更大更慢、冷水里更小更快。
+    {
+      id: 'thermocline',
+      name: '猎食者温跃层',
+
+      scrollLength: 1500,
+
+      boss: {
+        at: 1300,
+        health: 240,
+        name: '长尾鲨',
+        colour: 0x3f5f7a
+      },
+
+      scrollSpeed: 34,
+      playerLeadLimit: 120,
+      landmarks: [
+        { depth: 1150, label: '暖水层' },
+        { depth: 750, label: '温跃层' },
+        { depth: 300, label: '冷水层' },
+      ],
+      spawns: [
+        // --- 开场：鱼群本身就是内容（沙丁鱼群不主动攻击，但受惊会集体转向）。 ---
+        { at: 30, span: 200, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
+        { at: 100, kind: 'fish', count: 4, arrange: 'line' },
+        { at: 180, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5 },
+        { at: 250, kind: 'skill', x: 0.4 },
+        { at: 300, kind: 'torpedo', x: 0.5, from: 'right', enterSpeed: 46 },
+        { at: 360, kind: 'fish', count: 5, arrange: 'line' },
+        { at: 420, kind: 'upgrade', x: 0.65 },
+
+        // --- 温跃层：上下同时来东西，逼玩家换高度。 ---
+        { at: 480, kind: 'fish', count: 5, arrange: 'spread', span: 40, from: 'left', depth: 0.62 },
+        { at: 520, kind: 'fish', count: 5, arrange: 'spread', span: 40, from: 'right', depth: 0.42 },
+        { at: 580, kind: 'bombfish', count: 2, arrange: 'spread', span: 30, x: 0.5 },
+        { at: 640, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'left', enterSpeed: 46 },
+        { at: 700, kind: 'angler', count: 2, arrange: 'line' },
+        { at: 760, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.2, x: 0.5, from: 'bottom' },
+
+        // --- 冷水层：猎食者密集，速度更快。 ---
+        { at: 830, kind: 'crab', count: 3, arrange: 'line' },
+        { at: 880, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.5, from: 'right', enterSpeed: 46 },
+        { at: 940, kind: 'rate', x: 0.3 },
+        { at: 1000, kind: 'fish', count: 6, arrange: 'spread', span: 30, from: 'left', depth: 0.55 },
+        { at: 1060, kind: 'bombfish', count: 3, arrange: 'spread', span: 40, x: 0.6 },
+        { at: 1120, kind: 'angler', count: 3, arrange: 'spread', span: 40, x: 0.4 },
+        { at: 1200, kind: 'fish', count: 10, arrange: 'line' },
+        { at: 1260, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.7, from: 'bottom' },
+      ],
+    },
+
+    // =====================================================================================================
+    // 第五关：风暴暗流
+    // =====================================================================================================
+    //
+    // 环境：接近海面，上方正在经历暴风雨。巨浪通过水体产生周期性压力，雨滴撞击海面形成向下穿透的冲击，
+    // 闪电照亮整个区域。**场景明亮，却比深海更混乱**：背景里能看到船只、浮标与渔网的剪影。
+    //
+    // 招牌机制（**尚未实现**）：压力节拍——海面变暗预告浪潮、水体向下压迫抵消浮力、暗流横向翻转、短暂平静。
+    {
+      id: 'storm-surge',
+      name: '风暴暗流',
+
+      scrollLength: 1600,
+
+      boss: {
+        at: 1400,
+        health: 280,
+        name: '废网巨鲨',
+        colour: 0x5a5f66
+      },
+
+      scrollSpeed: 36,
+      playerLeadLimit: 130,
+      landmarks: [
+        { depth: 1250, label: '浪涌' },
+        { depth: 800, label: '暴雨层' },
+        { depth: 350, label: '废网' },
+      ],
+      spawns: [
+        // --- 开场：渔网团和暗流一起摆，通道本身就是危险。 ---
+        { at: 30, span: 200, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.45, 0.6, 0.4] },
+        { at: 110, kind: 'net', count: 4, arrange: 'line' },
+        { at: 180, kind: 'fish', count: 5, arrange: 'spread', span: 40, x: 0.5, from: 'bottom' },
+        { at: 240, kind: 'skill', x: 0.6 },
+        { at: 300, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.19 },
+        { at: 360, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'left', enterSpeed: 50 },
+        { at: 420, kind: 'upgrade', x: 0.3 },
+
+        // --- 暴雨层：从上往下穿透的冲击 + 高速穿刺的东西。 ---
+        { at: 480, kind: 'mineral', count: 6, arrange: 'spread', span: 50, amplitude: 0.3, x: 0.5, from: 'bottom' },
+        { at: 540, kind: 'shrimp', count: 3, arrange: 'spread', span: 40, x: 0.4, from: 'right', depth: 0.6 },
+        { at: 600, kind: 'net', count: 5, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.19 },
+        { at: 660, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.6, from: 'right', enterSpeed: 50 },
+        { at: 720, kind: 'crab', count: 3, arrange: 'line' },
+        { at: 780, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.24, x: 0.5, from: 'bottom' },
+        { at: 840, kind: 'rate', x: 0.7 },
+
+        // --- 废网区：网 + 木箱 + 钩（用珊瑚和木箱代替），路线被反复切断。 ---
+        { at: 900, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
+        { at: 960, kind: 'net', count: 4, arrange: 'line' },
+        { at: 1020, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.3, from: 'left', enterSpeed: 50 },
+        { at: 1080, kind: 'wall', count: 6, arrange: 'barrier', gapAt: 0.65, gapWidth: 0.18 },
+        { at: 1150, kind: 'shrimp', count: 4, arrange: 'spread', span: 50, x: 0.5, from: 'left', depth: 0.5 },
+        { at: 1220, kind: 'mineral', count: 8, arrange: 'spread', span: 60, amplitude: 0.28, x: 0.5, from: 'bottom' },
+        { at: 1300, kind: 'crab', count: 4, arrange: 'line' },
+        { at: 1360, kind: 'fish', count: 10, arrange: 'line' },
+      ],
+    },
   ],
 }
-
 

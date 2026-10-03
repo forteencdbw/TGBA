@@ -70,7 +70,14 @@ export type HazardKind =
    *            second leg is not, which is what makes the turn the event.
    */
   | 'angler'
-  | 'torpedo';
+  | 'torpedo'
+  /**
+   * LEVEL 3 -- 发光水母林.
+   *
+   * zapper discharges when it is touched OR shot, which makes it the one creature in the game that gets more
+   * dangerous the harder the player fights it -- and the ignition source for the conductive chain.
+   */
+  | 'zapper';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
@@ -108,6 +115,13 @@ export interface HazardEffect {
    * like -- and because the blast is the one thing in this module that is neither contact damage nor a state change.
    */
   blast?: { x: number; y: number; radius: number };
+  /**
+   * Charge handed to the bubble, for LEVEL 3's conductive chain.
+   *
+   * An effect like damage is: the field decides that an electric ring swept the player, and the game decides what
+   * that means for the run's charge. See mechanisms.chargeConfig.
+   */
+  charge?: number;
 }
 
 /**
@@ -195,6 +209,9 @@ export interface Hazard {
    * that absorbs ten rounds in a row has to say so every single time, or the player cannot tell hits from misses.
    */
   hitFlash: number;
+  /** Seconds left of a zapper's discharge ring, and its cooldown. Both per instance: a shoal does not fire in unison. */
+  discharge: number;
+  dischargeRest: number;
   /**
    * A per-INSTANCE colour, or null for the kind's own.\n   *\n   * Exists for the boss alone: a level picks its boss's colour (see BossSpec.colour), which is the one piece of a
    * creature's look that is level design rather than mechanics -- two levels should not look like the same monster.
@@ -487,6 +504,7 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   shrimp: { radius: 0.033, colour: 0xffd9d0, spin: 0 },
   angler: { radius: 0.045, colour: 0x2f4a63, spin: 0 },
   torpedo: { radius: 0.036, colour: 0x9aa7b4, spin: 0 },
+  zapper: { radius: 0.058, colour: mech.hazards.zapper.bellColour, spin: 0 },
   /**
    * Electric chartreuse, and nothing else in the game is that hue.
    *
@@ -675,6 +693,8 @@ export class HazardField {
       charge: null,
       blastFuse: null,
       hitFlash: 0,
+      discharge: 0,
+      dischargeRest: 0,
       tint: null,
       // No random head start here: a test-spawned creature is placed ON the player to be observed, and a random
       // rest would make "did it lunge" a coin flip in the one place determinism matters most.
@@ -731,6 +751,16 @@ export class HazardField {
     if (hazard.maxHealth <= 0 || hazard.flee) return 'immune';
     hazard.health = Math.max(0, hazard.health - damage);
     hazard.hitFlash = mech.hazards.boss.hitFlashSeconds;
+    /**
+     * A ZAPPER fires when it is shot.
+     *
+     * That is the whole reason it is interesting: every other creature rewards the player for shooting it, and this one
+     * bills them. The shot still does its damage -- the ring is the consequence, not a replacement.
+     */
+    if (hazard.kind === 'zapper' && mech.hazards.zapper.dischargesWhenHit && hazard.dischargeRest <= 0) {
+      hazard.discharge = mech.hazards.zapper.ringSeconds;
+      hazard.dischargeRest = mech.hazards.zapper.ringCooldownSeconds;
+    }
     if (hazard.health > 0) {
       this.damaged++;
       return 'damaged';
@@ -965,7 +995,31 @@ export class HazardField {
           h.y -= r * 2;
           break;
         }
-        case 'mineral': {
+        case 'zapper': {
+          /**
+           * The RING is the hitbox, not the bell.
+           *
+           * Touching a zapper is what makes it fire (below), and standing in a fired ring is what hurts -- so the two
+           * are separate events and the player who keeps their distance is never hit. Reaching the ring requires being
+           * within `ringRadiusRatio` of the bell rather than the usual body radius, which is the whole reason a ring
+           * is drawable as a circle and readable as a range.
+           */
+          const zc = mech.hazards.zapper;
+          const ring = ctx.laneWidth * zc.ringRadiusRatio;
+          const gap = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
+          if (gap <= r + ctx.laneWidth * ctx.playerRadiusFraction && h.discharge <= 0 && h.dischargeRest <= 0) {
+            // Touched: it fires, whether or not the player is hurt by the contact itself.
+            h.discharge = zc.ringSeconds;
+            h.dischargeRest = zc.ringCooldownSeconds;
+          }
+          if (h.discharge <= 0 || gap > ring || ctx.invulnerable) break;
+          effects.push({ kind: 'zapper', damage: zc.ringDamage, broke: false });
+          // The bubble drinks the charge: this is where the level's whole mechanic starts.
+          effects.push({ kind: 'zapper', charge: mech.hazards.charge.perRingHit, broke: false });
+          break;
+        }
+  
+      case 'mineral': {
           if (ctx.invulnerable) break;
           // Grit hurts, and it is SPENT by the hit rather than bouncing off: a particle is not a creature.
           effects.push({ kind: 'mineral', damage: 1, broke: true });
@@ -1202,7 +1256,7 @@ export class HazardField {
   }
 
   private spawn(ctx: HazardContext): Hazard {
-    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo'];
+    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
@@ -1239,6 +1293,8 @@ export class HazardField {
       charge: null,
       blastFuse: null,
       hitFlash: 0,
+      discharge: 0,
+      dischargeRest: 0,
       tint: null,
       // A random head start, so a shoal does not lunge in unison.
       chargeRest: Math.random() * (mech.charges.chargers[kind]?.cooldownSeconds ?? 0),
@@ -1551,6 +1607,7 @@ export class HazardField {
         h.phase = (h.phase + dt) % Math.max(0.2, cfg.periodSeconds);
         break;
       }
+
       case 'mineral': {
         /**
          * Grit on the heat flow: it RISES, which is the one direction nothing else in the game moves.
@@ -1633,6 +1690,21 @@ export class HazardField {
         } else {
           h.y -= base * 0.3 * dt;
         }
+        break;
+      }
+      case 'zapper': {
+        /**
+         * A zapper drifts like a jellyfish and keeps its own discharge clock.
+         *
+         * The ring is attack AND warning at once: it is drawn for `ringSeconds` and only hurts while it is up, so a
+         * player who watches can always be somewhere else. `dischargeRest` is per INSTANCE, so a row of them does not
+         * pulse in lockstep -- that would be a wall rather than a pattern.
+         */
+        // The drift below is deliberately the jellyfish drift, so a shoal of them reads as jellyfish.
+        if (h.dischargeRest > 0) h.dischargeRest -= dt;
+        if (h.discharge > 0) h.discharge -= dt;
+        h.y -= base * 0.28 * dt;
+        h.x += Math.sin(h.phase * 0.7 + h.seed) * 2.4 * dt;
         break;
       }
       case 'eel': {
@@ -1974,7 +2046,35 @@ export function paintHazards(
         }
         break;
       }
-      case 'mineral': {
+
+      case 'zapper': {
+        /**
+         * An electric jellyfish: a violet bell, a few thick tentacles, and the discharge ring.
+         *
+         * The ring is drawn at exactly the radius the hitbox uses (`ringRadiusRatio`), which is the rule this project
+         * keeps everywhere: what the player aims at and what the game tests are the same number, or the picture is a
+         * lie. It fades as it expires, so "how much of it is left" is answerable from the picture alone.
+         */
+        const zc = mech.hazards.zapper;
+        const ring = laneWidth * zc.ringRadiusRatio;
+        g.ellipse(x, y, r, r * 0.85).fill({ color: zc.bellColour, alpha: 0.85 });
+        g.ellipse(x, y, r, r * 0.85).stroke({ color: 0xffffff, alpha: 0.5, width: Math.max(1, r * 0.12) });
+        for (const offset of [-0.5, 0, 0.5]) {
+          g.moveTo(x + r * offset, y - r * 0.5)
+            .lineTo(x + r * offset * 1.6 + Math.sin(elapsed * 1.5 + offset * 4) * r * 0.3, y - r * 2.4)
+            .stroke({ color: zc.bellColour, alpha: 0.7, width: Math.max(1, r * 0.14) });
+        }
+        if (h.discharge > 0) {
+          const left = Math.max(0, Math.min(1, h.discharge / Math.max(0.01, zc.ringSeconds)));
+          g.circle(x, y, ring * (0.4 + 0.6 * (1 - left))).stroke({
+            color: zc.ringColour,
+            alpha: zc.ringAlpha * left,
+            width: Math.max(1, r * 0.35 * (0.4 + left)),
+          });
+          g.circle(x, y, ring * 0.55).fill({ color: zc.ringColour, alpha: 0.12 * left });
+        }
+        break;
+      }      case 'mineral': {
         // Grit: a hot speck with a short bright tail behind it, so its UPWARD direction is unmistakable.
         g.circle(x, y - r * 1.6, r * 1.6).fill({ color: mech.hazards.vent.edgeColour, alpha: 0.25 });
         g.circle(x, y, r).fill({ color: KIND_TUNING.mineral.colour, alpha: 1 });
@@ -2230,6 +2330,15 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
+
+
+
+
+
+
+
 
 
 
