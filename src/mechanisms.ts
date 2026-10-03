@@ -392,8 +392,16 @@ export interface Mechanisms {
      * design; everything here is shared mechanics.
      */
     boss: {
-      /** Metres above the player it holds. Too far and it leaves the visible band; too near and it is a wall. */
+      /**
+       * Where it holds station above the player: a CEILING in metres, a fraction of the visible band, and a floor.
+       *
+       * All three are needed. The ceiling stops a huge window putting the fight absurdly far away, the ratio is
+       * what keeps the boss ON SCREEN (the visible band shrinks as the window gets wider and shorter), and the floor
+       * stops a short window putting it in the player's lap.
+       */
       holdMeters: number;
+      holdBandRatio: number;
+      holdMinMeters: number;
       /** Lateral patrol: amplitude as a fraction of the lane width, and the period in seconds. */
       patrolAmplitude: number;
       patrolPeriodSeconds: number;
@@ -2041,6 +2049,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 

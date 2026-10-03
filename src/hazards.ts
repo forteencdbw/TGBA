@@ -1633,7 +1633,16 @@ export class HazardField {
         const gapX = targetX - h.x;
         const step = cfg.seekSpeedFactor * ctx.laneWidth * dt;
         h.x += Math.abs(gapX) <= step ? gapX : Math.sign(gapX) * step;
-        const targetY = ctx.playerY + cfg.holdMeters;
+        /**
+         * Its height, derived from the VISIBLE BAND rather than fixed in metres.
+         *
+         * A fixed hold height is only correct for one window shape: the band shrinks as the window gets wider and
+         * shorter (802m on a phone, 289m at 1280x720), and a boss hovering past its top edge is a boss that never
+         * appears -- which is exactly the bug this replaced.
+         */
+        const band = Math.max(1, ctx.max - ctx.min);
+        const hold = Math.max(cfg.holdMinMeters, Math.min(cfg.holdMeters, band * cfg.holdBandRatio));
+        const targetY = ctx.playerY + hold;
         h.y += (targetY - h.y) * Math.min(1, dt * 1.4);
         break;
       }
@@ -2426,6 +2435,7 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
 
 
 
