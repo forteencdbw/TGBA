@@ -41,3 +41,14 @@ msg.txt
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Probe artifacts under `.scratch`.
+#
+# `.scratch/<feature>/issues/*.md` are the ISSUE NOTES and the design docs are tracked; the throwaway half of the
+# same directory is measurement scripts and screenshots, and those are deleted after use. `git add -A` swept them
+# into the history TWICE, which is what this rule is for: the notes are the thing worth keeping, and everything
+# else in there is regenerable in a minute.
+.scratch/**/*.mjs
+.scratch/**/*.png
+.scratch/**/*.py
+.scratch/**/*.json
