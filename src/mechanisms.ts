@@ -388,6 +388,48 @@ export interface Mechanisms {
       weakPointWidthRatio: number;
       hitFlashColour: number;
     };
+    /** LEVEL 1's signature: the black smoker's lethal column. */
+    vent: {
+      radiusRatio: number;
+      contactDamage: number;
+      periodSeconds: number;
+      activeSeconds: number;
+      warnSeconds: number;
+      plumeColour: number;
+      glowColour: number;
+      edgeColour: number;
+      edgeAlpha: number;
+    };
+    /** Mineral grit on the heat flow: slow, fragile, and mostly in the way. */
+    mineral: {
+      riseSpeedFactor: number;
+      wobbleAmplitude: number;
+      wobblePeriodSeconds: number;
+      lifeMeters: number;
+    };
+    shrimp: {
+      driftSpeedFactor: number;
+      contactDamage: number;
+    };
+    angler: {
+      driftFactor: number;
+      lureMeters: number;
+      telegraphSeconds: number;
+      travelSeconds: number;
+      cooldownSeconds: number;
+      bowRatio: number;
+      lureColour: number;
+      lureRadiusRatio: number;
+      lurePulsePerSecond: number;
+      lureOffsetRatio: number;
+    };
+    torpedo: {
+      runSpeedFactor: number;
+      runMeters: number;
+      seekSpeedFactor: number;
+      seekSeconds: number;
+      contactDamage: number;
+    };
     bombfish: {
       /** Toward the player, in lane widths per second. Kept below the player's own lateral speed, so it can be fled. */
       seekSpeedFactor: number;
@@ -742,6 +784,9 @@ export interface Mechanisms {
     netRimColor: number;
     /** Mesh lines each way in a net's drawn grid. */
     netMesh: number;
+    /** LEVEL 1's tube worms: pale tubes on a dark base. */
+    tubeColor: number;
+    tubeRimColor: number;
     crackWidthRatio: number;
     damagedDarken: number;
   };
@@ -1055,7 +1100,7 @@ const CODEX_COLOURS = [
  * one-hit-point obstacle instead of an error -- a content bug with no symptom, which is the shape this project
  * guards everywhere else.
  */
-export const OBSTACLE_KINDS = ['crate', 'coral', 'wall', 'net'] as const;
+export const OBSTACLE_KINDS = ['crate', 'coral', 'wall', 'net', 'tube'] as const;
 
 const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string }[] = [
   ...['drivenOff', 'absorb', 'skill', 'eaten', 'boss'].map((event) => ({
@@ -1157,6 +1202,36 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'collectables.riseSpeedExponent', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'collectables.wobbleMin', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'collectables.wobbleMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.wobbleMin') as number), describe: 'at least wobbleMin' },
+  { path: 'hazards.vent.radiusRatio', check: (v) => typeof v === 'number' && v > 0.01 && v <= 0.5, describe: 'a fraction of the lane width above 0.01 and at most 0.5' },
+  { path: 'hazards.vent.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 50, describe: 'hit points between 0 and 50' },
+  { path: 'hazards.vent.periodSeconds', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 60, describe: 'seconds between 0.5 and 60' },
+  { path: 'hazards.vent.activeSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'seconds between 0 and 60' },
+  { path: 'hazards.vent.warnSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10' },
+  { path: 'hazards.vent.plumeColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.vent.glowColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.vent.edgeColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.vent.edgeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hazards.mineral.riseSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
+  { path: 'hazards.mineral.wobbleAmplitude', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction of the lane width between 0 and 1' },
+  { path: 'hazards.mineral.wobblePeriodSeconds', check: (v) => typeof v === 'number' && v >= 0.2 && v <= 30, describe: 'seconds between 0.2 and 30' },
+  { path: 'hazards.mineral.lifeMeters', check: (v) => typeof v === 'number' && v >= 50 && v <= 5000, describe: 'metres between 50 and 5000' },
+  { path: 'hazards.shrimp.driftSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
+  { path: 'hazards.shrimp.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
+  { path: 'hazards.angler.driftFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a fraction of the current between 0 and 3' },
+  { path: 'hazards.angler.lureMeters', check: (v) => typeof v === 'number' && v >= 20 && v <= 800, describe: 'metres between 20 and 800' },
+  { path: 'hazards.angler.telegraphSeconds', check: (v) => typeof v === 'number' && v > 0.1 && v <= 5, describe: 'seconds above 0.1 and at most 5' },
+  { path: 'hazards.angler.travelSeconds', check: (v) => typeof v === 'number' && v > 0.05 && v <= 5, describe: 'seconds above 0.05 and at most 5' },
+  { path: 'hazards.angler.cooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30' },
+  { path: 'hazards.angler.bowRatio', check: (v) => typeof v === 'number' && Math.abs(v) <= 2, describe: 'a curve amount from -2 to 2' },
+  { path: 'hazards.angler.lureColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.angler.lureRadiusRatio', check: (v) => typeof v === 'number' && v > 0.002 && v <= 0.2, describe: 'a fraction of the lane width above 0.002 and at most 0.2' },
+  { path: 'hazards.angler.lurePulsePerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'cycles per second between 0 and 20' },
+  { path: 'hazards.angler.lureOffsetRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a multiple of the body radius between 0 and 3' },
+  { path: 'hazards.torpedo.runSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
+  { path: 'hazards.torpedo.runMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
+  { path: 'hazards.torpedo.seekSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
+  { path: 'hazards.torpedo.seekSeconds', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 60, describe: 'seconds between 0.5 and 60' },
+  { path: 'hazards.torpedo.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
   { path: 'hazards.bombfish.seekSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
   { path: 'hazards.bombfish.armMeters', check: (v) => typeof v === 'number' && v >= 10 && v <= 600, describe: 'metres between 10 and 600' },
   { path: 'hazards.bombfish.fuseSeconds', check: (v) => typeof v === 'number' && v > 0.2 && v <= 15, describe: 'seconds above 0.2 and at most 15' },
@@ -1417,6 +1492,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'obstacles.wallRimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'obstacles.netColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'obstacles.netRimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'obstacles.tubeColor', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'obstacles.tubeRimColor', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'obstacles.netMesh', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 2 && v <= 10, describe: 'a whole number of mesh lines between 2 and 10' },
   { path: 'obstacles.crackWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.5, describe: 'a stroke width ratio between 0 and 0.5' },  { path: 'obstacles.damagedDarken', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
   { path: 'emergence.fishPerceptionBaseMeters', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
@@ -1839,6 +1916,9 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
+
 
 
 

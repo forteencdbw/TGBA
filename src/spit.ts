@@ -530,6 +530,12 @@ export function spitImpact(kind: HazardKind): number {
     // Spitting a boss is not a thing that happens (it cannot be swallowed at all), but the table has every kind,
     // and a neutral number is the honest filler for an unreachable row.
     boss: 1,
+    vent: 1,
+    // 矿物颗粒轻得像沙子：扔出去几乎没有分量。
+    mineral: 0.7,
+    shrimp: 0.9,
+    angler: 1.1,
+    torpedo: 1.3,
   };
   return perKind[kind];
 }
@@ -571,4 +577,5 @@ export function tierBonusFor(energy: number): number {
 }
 
 export const SPIT = mech.spit;
+
 

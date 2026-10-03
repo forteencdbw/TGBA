@@ -297,6 +297,11 @@ const HAZARD_NAMES: Record<HazardKind, string> = {
   rot: '腐败物',
   oil: '油污',
   boss: 'BOSS',
+  vent: '热液喷口',
+  mineral: '矿物颗粒',
+  shrimp: '盲眼虾',
+  angler: '灯笼鱼',
+  torpedo: '失控鱼雷',
 };
 
 /** The four things in the water that are not creatures. */
@@ -908,6 +913,7 @@ export function iconColour(entry: CodexEntry): number {
     }
   }
 }
+
 
 
 

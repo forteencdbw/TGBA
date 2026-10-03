@@ -131,6 +131,13 @@ export type SpawnKind =
   | 'skill'
   | 'upgrade'
   | 'rate'
+  /** LEVEL 1's black smokers, the mineral grit they throw up, and the blind shrimp. */
+  | 'vent'
+  | 'mineral'
+  | 'shrimp'
+  /** LEVEL 2's lanternfish and rogue torpedoes. */
+  | 'angler'
+  | 'torpedo'
   | ObstacleKind;
 
 /** The arrangement vocabulary: how a block's `count` things are laid out. */
@@ -344,10 +351,16 @@ const SPAWN_KINDS: readonly string[] = [
   'skill',
   'upgrade',
   'rate',
+  'vent',
+  'mineral',
+  'shrimp',
+  'angler',
+  'torpedo',
   'crate',
   'coral',
   'wall',
   'net',
+  'tube',
 ];
 const ARRANGEMENTS: readonly string[] = ['single', 'line', 'column', 'spread', 'barrier'];
 /** Whether a kind is scenery. Asked of the config's own list, so a new obstacle kind is covered by construction. */
@@ -769,6 +782,8 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
+
 
 
 

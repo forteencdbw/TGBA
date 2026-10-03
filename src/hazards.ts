@@ -49,7 +49,28 @@ export type HazardKind =
    * the current, it does not flee when its health runs out (it DIES, and that is what ends the level), and it cannot be
    * eaten.
    */
-  | 'boss';
+  | 'boss'
+  /**
+   * LEVEL 1 -- 黑烟囱墓场.
+   *
+   * `vent`     a black smoker's plume: a lethal column of hot mineral water. The level's signature hazard, because it
+   *            is the one thing the player must learn to move SIDEWAYS for.
+   * `mineral`  mineral grit thrown up by the heat flow: the environment's own danmaku, slow and easy to read.
+   * `shrimp`   a blind shrimp: drifts in from the side and probes at the bubble. Slow, and it never turns.
+   */
+  | 'vent'
+  | 'mineral'
+  | 'shrimp'
+  /**
+   * LEVEL 2 -- 沉船幽谷.
+   *
+   * `angler`   a lanternfish: hangs in the dark with a lit lure, then lunges. The lure is the whole design -- it is
+   *            the one creature that advertises itself, and that is the trap.
+   * `torpedo`  a rogue torpedo: runs straight out of a wreck, then turns and hunts. Its first leg is honest and its
+   *            second leg is not, which is what makes the turn the event.
+   */
+  | 'angler'
+  | 'torpedo';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
@@ -461,6 +482,11 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   // The boss's size and colour come from `mech.hazards.boss` (a level may override the colour); this row exists because
   // every kind needs one, and it has to be BIG -- a boss the size of a fish is a fish.
   boss: { radius: mech.hazards.boss.radiusRatio, colour: mech.hazards.boss.colour, spin: 0 },
+  vent: { radius: mech.hazards.vent.radiusRatio, colour: mech.hazards.vent.plumeColour, spin: 0 },
+  mineral: { radius: 0.018, colour: 0xffb066, spin: 2.4 },
+  shrimp: { radius: 0.033, colour: 0xffd9d0, spin: 0 },
+  angler: { radius: 0.045, colour: 0x2f4a63, spin: 0 },
+  torpedo: { radius: 0.036, colour: 0x9aa7b4, spin: 0 },
   /**
    * Electric chartreuse, and nothing else in the game is that hue.
    *
@@ -924,11 +950,38 @@ export class HazardField {
         case 'eel':
         case 'rot':
         case 'boss':
+        case 'angler':
+        case 'torpedo':
         case 'oil': {
           if (ctx.invulnerable) break;
           effects.push({ kind: h.kind, damage: h.kind === 'boss' ? mech.hazards.boss.contactDamage : 1, broke: false });
           // Bounce it away so one cannot immediately re-hit, as a fish does.
           h.y -= r * 2;
+          break;
+        }
+        case 'shrimp': {
+          if (ctx.invulnerable) break;
+          effects.push({ kind: 'shrimp', damage: mech.hazards.shrimp.contactDamage, broke: false });
+          h.y -= r * 2;
+          break;
+        }
+        case 'mineral': {
+          if (ctx.invulnerable) break;
+          // Grit hurts, and it is SPENT by the hit rather than bouncing off: a particle is not a creature.
+          effects.push({ kind: 'mineral', damage: 1, broke: true });
+          h.flee = 'up';
+          break;
+        }
+        case 'vent': {
+          /**
+           * The plume: lethal while it is erupting, harmless while it is quiet.
+           *
+           * The gate is the same `phase` the painter reads, so the picture IS the hitbox -- there is no second timer
+           * that could drift out of step with what the player can see.
+           */
+          const vent = mech.hazards.vent;
+          if (h.phase >= vent.activeSeconds || ctx.invulnerable) break;
+          effects.push({ kind: 'vent', damage: vent.contactDamage, broke: false });
           break;
         }
       }
@@ -1149,7 +1202,7 @@ export class HazardField {
   }
 
   private spawn(ctx: HazardContext): Hazard {
-    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss'];
+    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
@@ -1482,6 +1535,106 @@ export class HazardField {
         h.y += (targetY - h.y) * Math.min(1, dt * 1.4);
         break;
       }
+      case 'vent': {
+        /**
+         * A black smoker does not move; its PLUME does, and the plume is the hazard.
+         *
+         * The cycle is the whole mechanic: a vent that was always lethal could only be avoided by never being in the
+         * middle of the lane, and a level made of those is a corridor. `periodSeconds` with a shorter `activeSeconds`
+         * makes it a rhythm the player can learn -- and the warning is drawn (the plume brightens while `warn` is
+         * counting) so learning it is a matter of paying attention rather than of memorising.
+         *
+         * `h.phase` carries how far through the cycle it is, which is also what the painter reads, so the picture and
+         * the hitbox cannot disagree.
+         */
+        const cfg = mech.hazards.vent;
+        h.phase = (h.phase + dt) % Math.max(0.2, cfg.periodSeconds);
+        break;
+      }
+      case 'mineral': {
+        /**
+         * Grit on the heat flow: it RISES, which is the one direction nothing else in the game moves.
+         *
+         * That is why it is the teaching level's danmaku. Every other threat comes down or sideways and is dodged by
+         * reaction; this one comes up out of the terrain and is dodged by knowing where the vents are.
+         */
+        const cfg = mech.hazards.mineral;
+        h.y += ctx.laneWidth * cfg.riseSpeedFactor * dt;
+        h.x += Math.sin((ctx.elapsed / Math.max(0.2, cfg.wobblePeriodSeconds)) * Math.PI * 2 + h.seed) * ctx.laneWidth * cfg.wobbleAmplitude * dt;
+        // It expires on AGE rather than on distance left behind, so a slow one does not linger in the level's path.
+        h.fed += dt;
+        if (h.fed * ctx.laneWidth * cfg.riseSpeedFactor > cfg.lifeMeters) h.flee = 'up';
+        break;
+      }
+      case 'shrimp': {
+        /**
+         * A blind shrimp: it walks a straight line and never turns.
+         *
+         * Deliberately the simplest possible pursuer -- it is the first thing the level introduces, and the lesson is
+         * "the lane is not always yours" rather than "learn a pattern". Because it does not steer, walking around one
+         * is always possible; because it comes from the SIDE, walking around it is not optional.
+         */
+        const cfg = mech.hazards.shrimp;
+        h.x += h.seed % 2 < 1 ? -ctx.laneWidth * cfg.driftSpeedFactor * dt : ctx.laneWidth * cfg.driftSpeedFactor * dt;
+        h.y -= base * 0.25 * dt;
+        break;
+      }
+      case 'angler': {
+        /**
+         * A lanternfish: it hangs still with a lit lure, then lunges at whatever came to look.
+         *
+         * The lure is a promise -- the only light in a dark level -- and the lunge is the bill for believing it. The
+         * lunge reuses the charge machinery (`h.charge`), so the telegraph, the curve and the recovery are the same
+         * geometry the player already learned from the fish, and only the TRIGGER differs: proximity rather than a
+         * distance along the level.
+         */
+        const cfg = mech.hazards.angler;
+        if (h.chargeRest > 0) h.chargeRest -= dt;
+        const gap = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
+        if (h.chargeRest <= 0 && gap <= cfg.lureMeters) {
+          h.chargeRest = cfg.cooldownSeconds;
+          const span = gap;
+          h.charge = {
+            fromX: h.x,
+            fromY: h.y,
+            toX: ctx.playerX,
+            toY: ctx.playerY,
+            bow: (h.x < ctx.playerX ? 1 : -1) * cfg.bowRatio * span,
+            elapsed: 0,
+          };
+        }
+        h.y -= base * cfg.driftFactor * dt;
+        break;
+      }
+      case 'torpedo': {
+        /**
+         * A rogue torpedo: it runs STRAIGHT first, then turns and hunts.
+         *
+         * Both halves matter. The straight leg is honest -- it can only be dodged sideways -- and the turn is the
+         * event, because a round that has already been dodged once becomes a different problem. `fed` accumulates how
+         * far it has run, which is the same trick the mineral countdown uses: a per-hazard number rather than a flag
+         * somewhere else.
+         */
+        const cfg = mech.hazards.torpedo;
+        const run = ctx.laneWidth * cfg.runSpeedFactor;
+        const seek = ctx.laneWidth * cfg.seekSpeedFactor;
+        if (h.fed < cfg.runMeters) {
+          h.fed += run * dt;
+          h.y += run * dt;
+        } else if (h.digest < cfg.seekSeconds) {
+          h.digest += dt;
+          const dx = ctx.playerX - h.x;
+          const dy = ctx.playerY - h.y;
+          const len = Math.hypot(dx, dy) || 1;
+          // It re-aims every frame, like the bomb fish: a homing round that overshoots is a round the player can beat
+          // by moving, and one that does not is a round that has to be outrun.
+          h.x += (dx / len) * seek * dt;
+          h.y += (dy / len) * seek * dt;
+        } else {
+          h.y -= base * 0.3 * dt;
+        }
+        break;
+      }
       case 'eel': {
         /**
          * Swims in a wide S, and that is a fairness requirement rather than decoration.
@@ -1769,6 +1922,143 @@ export function paintHazards(
         g.circle(x, y, r * 0.95).stroke({ color: KIND_TUNING.urchin.colour, alpha: 1, width: Math.max(1, r * 0.2) });
         break;
       }
+      case 'vent': {
+        /**
+         * A black smoker: a rock chimney with a plume, and the plume is the hazard.
+         *
+         * The reading order is deliberate. The CHIMNEY is always drawn (it is terrain, and terrain does not flicker).
+         * The PLUME is drawn only while it is erupting, in a colour that brightens through the warning, so "is it
+         * dangerous right now" is answered by whether the column is there at all -- the one question the player has to
+         * be able to answer at a glance, since getting it wrong is death.
+         */
+        const cfg = mech.hazards.vent;
+        const erupting = h.phase < cfg.activeSeconds;
+        const warning = h.phase > cfg.periodSeconds - cfg.warnSeconds;
+        // The chimney: a dark cone standing on the seabed.
+        g.moveTo(x - r, y)
+          .lineTo(x - r * 0.35, y + r * 2.2)
+          .lineTo(x + r * 0.35, y + r * 2.2)
+          .lineTo(x + r, y)
+          .closePath()
+          .fill({ color: cfg.plumeColour, alpha: 1 });
+        const top = y + r * 2.2;
+        const height = laneWidth * 1.5;
+        if (erupting || warning) {
+          const heat = erupting ? 1 : 0.35;
+          // Smoke, widening as it rises, so the column reads as a column rather than as a bar.
+          g.moveTo(x - r * 0.4, top)
+            .lineTo(x - r * 1.25, top + height)
+            .lineTo(x + r * 1.25, top + height)
+            .lineTo(x + r * 0.4, top)
+            .closePath()
+            .fill({ color: cfg.plumeColour, alpha: 0.5 * heat });
+          g.moveTo(x - r * 0.25, top)
+            .lineTo(x - r * 0.9, top + height)
+            .lineTo(x + r * 0.9, top + height)
+            .lineTo(x + r * 0.25, top)
+            .closePath()
+            .fill({ color: cfg.glowColour, alpha: 0.35 * heat });
+        }
+        /**
+         * The dangerous WIDTH, drawn as two edges while the plume is up.
+         *
+         * This is the line the player actually steers by: the smoke is decoration, and a lethal hitbox that is only
+         * implied by decoration is the one kind of unfair this level cannot afford.
+         */
+        if (erupting) {
+          for (const side of [-1, 1]) {
+            g.moveTo(x + side * r, top)
+              .lineTo(x + side * r * 1.25, top + height)
+              .stroke({ color: cfg.edgeColour, alpha: cfg.edgeAlpha, width: Math.max(1, r * 0.12) });
+          }
+        }
+        break;
+      }
+      case 'mineral': {
+        // Grit: a hot speck with a short bright tail behind it, so its UPWARD direction is unmistakable.
+        g.circle(x, y - r * 1.6, r * 1.6).fill({ color: mech.hazards.vent.edgeColour, alpha: 0.25 });
+        g.circle(x, y, r).fill({ color: KIND_TUNING.mineral.colour, alpha: 1 });
+        g.circle(x, y, r * 1.9).stroke({ color: mech.hazards.vent.edgeColour, alpha: 0.5, width: Math.max(1, r * 0.35) });
+        break;
+      }
+      case 'shrimp': {
+        // A pale, blind drifter: a curved body, no eyes, and antennae that read as "feeling its way".
+        g.ellipse(x, y, r * 1.5, r * 0.85).fill({ color: KIND_TUNING.shrimp.colour, alpha: 0.95 });
+        g.moveTo(x - r * 1.4, y + r * 0.2)
+          .lineTo(x - r * 2.3, y - r * 0.3)
+          .lineTo(x - r * 2.4, y + r * 0.5)
+          .closePath()
+          .fill({ color: KIND_TUNING.shrimp.colour, alpha: 0.8 });
+        for (const tilt of [-0.35, 0.35]) {
+          g.moveTo(x + r * 1.2, y + r * tilt)
+            .lineTo(x + r * 2.6, y + r * tilt * 2.4)
+            .stroke({ color: KIND_TUNING.shrimp.colour, alpha: 0.7, width: Math.max(1, r * 0.16) });
+        }
+        break;
+      }
+      case 'angler': {
+        /**
+         * A lanternfish: a dark body and a lit lure on a stalk in front of it.
+         *
+         * The lure is drawn LAST and brightest -- it is the thing the player's eye goes to, which is exactly the trap.
+         * It hangs on the side the creature will lunge toward, so the bait already points the way it is going to come.
+         */
+        const cfg = mech.hazards.angler;
+        const facing = h.x < laneWidth * 0.5 ? 1 : -1;
+        g.ellipse(x, y, r * 1.4, r * 0.95).fill({ color: KIND_TUNING.angler.colour, alpha: 1 });
+        g.moveTo(x - facing * r * 1.2, y)
+          .lineTo(x - facing * r * 2.2, y - r * 0.6)
+          .lineTo(x - facing * r * 2.2, y + r * 0.6)
+          .closePath()
+          .fill({ color: KIND_TUNING.angler.colour, alpha: 0.9 });
+        // Teeth, because a lunge has to be advertised as a mouth and not as a nudge.
+        for (const step of [-0.4, 0, 0.4]) {
+          g.moveTo(x + facing * r * 1.3, y + r * step)
+            .lineTo(x + facing * r * 1.7, y + r * step + r * 0.16)
+            .stroke({ color: 0xffffff, alpha: 0.7, width: Math.max(1, r * 0.12) });
+        }
+        const lurePulse = 1 + 0.18 * Math.sin(elapsed * cfg.lurePulsePerSecond * Math.PI * 2);
+        const lx = x + facing * r * cfg.lureOffsetRatio * 2.4;
+        const ly = y - r * 1.5;
+        g.moveTo(x + facing * r * 0.8, y - r * 0.7)
+          .lineTo(lx, ly)
+          .stroke({ color: cfg.lureColour, alpha: 0.55, width: Math.max(1, r * 0.1) });
+        g.circle(lx, ly, laneWidth * cfg.lureRadiusRatio * 3 * lurePulse).fill({ color: cfg.lureColour, alpha: 0.16 });
+        g.circle(lx, ly, laneWidth * cfg.lureRadiusRatio * lurePulse).fill({ color: cfg.lureColour, alpha: 0.95 });
+        break;
+      }
+      case 'torpedo': {
+        /**
+         * A torpedo: a metal cylinder with a lit nose, pointing the way it is going.
+         *
+         * `fed` tells the painter which half of its life it is in, so the LOOK changes when it turns -- the dive light
+         * goes from white to red. That is the only warning the player gets that a dodged round is now a pursuer, and
+         * without it the turn is invisible.
+         */
+        const cfg = mech.hazards.torpedo;
+        const homing = h.fed >= cfg.runMeters;
+        // No transform stack on a Graphics in this project: the body is drawn along the lane and the FIN carries the
+        // tilt, which is enough to read a turn without a rotation.
+        const droop = homing ? r * 0.5 : 0;
+        g.roundRect(x - r * 1.7, y - r * 0.55, r * 3.4, r * 1.1, r * 0.5).fill({ color: KIND_TUNING.torpedo.colour, alpha: 1 });
+        g.moveTo(x + r * 1.7, y - r * 0.55).lineTo(x + r * 2.4, y).lineTo(x + r * 1.7, y + r * 0.55).closePath().fill({ color: 0xc9d4de, alpha: 1 });
+        g.circle(x + r * 1.9, y, r * 0.34).fill({ color: homing ? 0xff5a5a : 0xdff3ff, alpha: 1 });
+        // A tail flame while it is running, which is the "it is coming" half of the warning.
+        g.moveTo(x - r * 1.7, y)
+          .lineTo(x - r * (homing ? 3.4 : 2.6), y + droop)
+          .stroke({ color: homing ? 0xff8a5a : 0xa8d8ff, alpha: 0.6, width: Math.max(1, r * 0.4) });
+        if (homing) {
+          // The turn itself, drawn: two fins that were flat while it ran and are swept back once it is hunting.
+          for (const side of [-1, 1]) {
+            g.moveTo(x - r * 1.2, y + side * r * 0.5)
+              .lineTo(x - r * 2.2, y + side * r * 1.4)
+              .lineTo(x - r * 0.6, y + side * r * 0.6)
+              .closePath()
+              .fill({ color: KIND_TUNING.torpedo.colour, alpha: 0.9 });
+          }
+        }
+        break;
+      }
       case 'boss': {
         /**
          * The boss: a heavy armoured body with an eye, drawn BIG and unmistakable.
@@ -1940,6 +2230,12 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
+
+
+
+
 
 
 

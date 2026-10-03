@@ -138,6 +138,7 @@ export const OBSTACLE_NAMES: Record<ObstacleKind, string> = {
   coral: '珊瑚',
   wall: '封路木箱',
   net: '渔网',
+  tube: '管虫群',
 };
 
 /** A kind's display name. */
@@ -501,6 +502,26 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
       }
       g.stroke({ color: body, alpha: 0.85, width: r * 0.09 });
       g.rect(o.x - r, o.y - r, r * 2, r * 2).stroke({ color: rim, alpha: 0.75, width: r * 0.11 });
+    } else if (o.kind === 'tube') {
+      /**
+       * Tube worms: a fan of pale tubes on a dark base.
+       *
+       * They read as a CLUSTER rather than as a slab, because the thing that distinguishes them from a wall is that
+       * they are alive -- and the crown opens and closes on the obstacle's own age so that even a still frame says
+       * "this moves".
+       */
+      const body = shade(mech.obstacles.tubeColor, darken);
+      const rim = shade(mech.obstacles.tubeRimColor, darken);
+      const open = 0.55 + 0.45 * Math.sin(o.age * 1.6 + o.id);
+      g.roundRect(o.x - r * 0.9, o.y - r * 0.5, r * 1.8, r * 1.0, r * 0.3).fill({ color: 0x2a2028, alpha: 0.9 });
+      for (let i = 0; i < 4; i++) {
+        const stem = o.x - r * 0.6 + (i / 3) * r * 1.2;
+        const lean = Math.sin(o.age * 1.2 + i + o.id) * r * 0.12;
+        g.moveTo(stem, o.y + r * 0.4)
+          .lineTo(stem + lean, o.y + r * 0.5 + r * 1.1 * open)
+          .stroke({ color: body, alpha: 0.95, width: r * 0.22 });
+        g.circle(stem + lean, o.y + r * 0.5 + r * 1.1 * open, r * 0.2).fill({ color: rim, alpha: 0.95 });
+      }
     } else {
       const body = shade(mech.obstacles.coralColor, darken);
       const rim = shade(mech.obstacles.coralRimColor, darken);
@@ -535,3 +556,5 @@ function shade(colour: number, factor: number): number {
   const b = Math.max(0, Math.min(255, Math.round((colour & 255) * factor)));
   return (r << 16) | (g << 8) | b;
 }
+
+
