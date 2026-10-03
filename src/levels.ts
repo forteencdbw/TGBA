@@ -550,11 +550,45 @@ function readLevels(text: string): { start: string; levels: Level[] } {
 
 const FILE = readLevels(rawLevels);
 
-/** Every level in the file, in file order. */
+/** Every level in the file, in file order. THIS IS THE PROGRESSION ORDER: each level unlocks the next. */
 export const LEVELS: readonly Level[] = FILE.levels;
 
-/** The level currently being played, named by the file's `start` key. */
-export const LEVEL: Level = LEVELS.find((l) => l.id === FILE.start) ?? (LEVELS[0] as Level);
+/** The level the file names as `start`, which is where a fresh player begins. */
+export const START_LEVEL_ID: string = FILE.start;
+
+/**
+ * The level currently being played.
+ *
+ * A `let` because levels are SELECTED now: the menu picks one and every reader has to follow, including the ones that
+ * read the binding after import (`depth.ts` and `main.ts` both use `LEVEL.scrollLength`, and an ES module export is a
+ * live binding, so reassigning here is seen everywhere).
+ */
+export let LEVEL: Level = LEVELS.find((l) => l.id === START_LEVEL_ID) ?? (LEVELS[0] as Level);
+
+/** Where a level sits in the file, or -1. Used by the unlock rule and by the menu. */
+export function levelIndex(id: string): number {
+  return LEVELS.findIndex((l) => l.id === id);
+}
+
+/**
+ * Switch levels.
+ *
+ * The four things that follow from the level are reassigned together rather than left to the caller: the level, its
+ * timeline, its length, and the discard of any timeline a spec installed. One function so there is no way to select a
+ * level and keep playing the previous one's content.
+ *
+ * @return false for an id that does not exist, so a caller with a stale name learns about it instead of silently
+ *   continuing on the previous level.
+ */
+export function selectLevel(id: string): boolean {
+  const level = LEVELS.find((l) => l.id === id);
+  if (!level) return false;
+  LEVEL = level;
+  TIMELINE = level.entries;
+  DEPTH_TOTAL = level.scrollLength;
+  installedBlocks = null;
+  return true;
+}
 
 /**
  * The timeline, sorted by distance so consumers can walk it forwards with a cursor.
@@ -607,9 +641,10 @@ export const WORLD_WIDTH = WORLD_HEIGHT * PLAY_AREA_ASPECT;
  * The level's length.
  *
  * Kept under this name because the whole codebase used to think of the vertical axis as "depth from
- * the surface", and the two are the same number.
+ * the surface", and the two are the same number. It is a live binding now that levels have different lengths --
+ * selectLevel reassigns it with the level.
  */
-export const DEPTH_TOTAL = LEVEL.scrollLength;
+export let DEPTH_TOTAL = LEVEL.scrollLength;
 
 /**
  * Fail loudly at startup rather than shipping a level that cannot be played.

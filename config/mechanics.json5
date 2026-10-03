@@ -837,7 +837,41 @@
     "typeSelectedTextColour": 0xeafcff,
     "typeIdleFill": 0x0f2333,
     "typeIdleStroke": 0x4f86a8,
-    "typeIdleTextColour": 0x9fc4d8
+    "typeIdleTextColour": 0x9fc4d8,
+
+    // ---------------------------------------------------------------------------------------------
+    // 关卡选择（主菜单，在气泡类型上面）
+    // ---------------------------------------------------------------------------------------------
+    //
+    // 一局玩哪一关现在是个选择。**关卡顺序就是解锁顺序**：通关第 N 关解锁第 N+1 关，
+    // 所以这一行同时是"选择"和"进度"的显示位置。
+    //
+    // 三种状态：选中（填充）、可选（描边）、**锁着**（更暗、更冷，文字也暗）。
+    // 锁着的那一格按下去不会有反应——不是报错，是"还不能选"。
+    "levelRowHeight": 34,
+    // 关卡行与它下面那行文字（锁着的提示 / 解锁通知）的间距。
+    "levelRowGap": 10,
+    // 关卡行与上方标题之间的间距。
+    "levelRowTopGap": 40,
+    "levelTextSize": 13,
+    // 关卡名字下面那行状态文字的字号。
+    "levelNoteSize": 11,
+    // 一格关卡能占的最大宽度比例（关卡多了会平分整行，但不能挤成一条）。
+    "levelMaxWidthRatio": 0.3,
+    "levelSelectedFill": 0x2f6f8f,
+    "levelSelectedStroke": 0xd8fbff,
+    "levelSelectedTextColour": 0xeafcff,
+    "levelIdleFill": 0x0f2333,
+    "levelIdleStroke": 0x4f86a8,
+    "levelIdleTextColour": 0x9fc4d8,
+    // 锁着的那一格：填充更暗、描边更弱，文字也压暗。刻意不用锁的图标——一个暗格子加一行说明就够，
+    // 而且图标要在 canvas 里手画，代价和收益不成比例。
+    "levelLockedFill": 0x0a1a26,
+    "levelLockedStroke": 0x2c4a5e,
+    "levelLockedTextColour": 0x54748a,
+    // 状态文字的颜色：普通提示、以及"解锁了"的高亮。
+    "levelNoteColour": 0x7fb2cc,
+    "levelUnlockColour": 0xffd479
   },
 
   // ---------------------------------------------------------------------------------------------

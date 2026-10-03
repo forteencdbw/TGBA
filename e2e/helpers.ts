@@ -251,8 +251,7 @@ export async function startFromMenu(page: Page): Promise<void> {
   await page.mouse.click(box.x, box.y);
 }
 
-/** Wait for a specific phase, and fail with what it saw instead. */
-export async function waitForPhase(page: Page, phase: Diagnostics['phase'], timeout = 30_000): Promise<void> {
+/** Wait for a specific phase, and fail with what it saw instead. */export async function waitForPhase(page: Page, phase: Diagnostics['phase'], timeout = 30_000): Promise<void> {
   try {
     await page.waitForFunction(
       (want) => (window as unknown as { __GB: { game: { diagnostics: { phase: string } } } }).__GB.game.diagnostics.phase === want,

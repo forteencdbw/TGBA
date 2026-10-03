@@ -1,10 +1,22 @@
 import { Container, Graphics, Text } from 'pixi.js';
-import { LEVEL } from './levels';
 import { mech } from './mechanisms';
 import { BUBBLE_TYPES, defaultBubbleType, type BubbleType } from './bubbleTypes';
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
 import { buildLabel } from './version';
+
+/**
+ * One level as the menu needs it: what to draw, and whether it can be played.
+ *
+ * The lock state is GIVEN to the menu rather than worked out by it, because what unlocks what belongs to the progress
+ * store. A menu that knew the rule would be a second place to change it, and the two would eventually disagree.
+ */
+export interface MenuLevel {
+  id: string;
+  name: string;
+  locked: boolean;
+  selected: boolean;
+}
 
 /**
  * The main menu.
@@ -40,6 +52,13 @@ export class MainMenu {
    * between the two bubbles is not something a name can carry -- one eats and grows, the other wants to be hit.
    */
   private readonly typeLabels: Text[] = [];
+  /**
+   * The level selector: one pill per level, above the bubble types.
+   *
+   * Above them because it is the larger choice of the two -- which water, then which bubble -- and because the row
+   * doubles as the progress display: cleared levels are plain, the next one is the only thing that was ever locked.
+   */
+  private readonly levelRow = new Graphics();
   private readonly tagline = mk('', 0x8fd4f0, mech.menu.taglineSize);
   private readonly primaryLabel = mk('', mech.menu.primaryTextColour, mech.menu.primaryTextSize);
   private readonly secondaryLabel = mk('', mech.menu.secondaryTextColour, mech.menu.secondaryTextSize);
@@ -69,18 +88,44 @@ export class MainMenu {
   onStart: (typeId: string) => void = () => {};
   /** Called when the player asks for the codex. */
   onCodex: () => void = () => {};
+  /**
+   * Called when the player taps a level that is selectable.
+   *
+   * Only reachable levels fire: a locked pill is not a disabled button that reports a press, it is a thing that does
+   * nothing, because "you cannot play this yet" is already visible from its colour and the note below.
+   */
+  onPickLevel: (levelId: string) => void = () => {};
 
   private primaryRect = { x: 0, y: 0, w: 0, h: 0 };
   private secondaryRect = { x: 0, y: 0, w: 0, h: 0 };
   /** One rectangle per type button, in the same order as `types`. */
   private typeRects: { x: number; y: number; w: number; h: number }[] = [];
   /**
+   * The level row: one pill per level, with its lock state.
+   *
+   * A row rather than the line of text it replaces, because a level is a CHOICE now and a line of text can only say
+   * which one is current. `locked` is carried in the data rather than worked out here: what unlocks what is the
+   * progress store's rule, and the menu should not have a second copy of it.
+   */
+  private levels: readonly MenuLevel[] = [];
+  private levelRects: { x: number; y: number; w: number; h: number }[] = [];
+  private levelLabels: Text[] = [];
+  private selectedLevelId = '';
+  /**
+   * What the line under the level row says, and whether it is the "unlocked!" highlight.
+   *
+   * Set by the game rather than derived, because the two things it reports -- why a level is locked, and that one
+   * just opened -- are both facts only the game has.
+   */
+  private levelNote = '';
+  private levelNoteHighlight = false;
+  /**
    * Which control the current press landed on, or null.
    *
    * One field rather than a boolean per button, so a drag that leaves one button and lands on the other cannot end
    * up firing both -- which two independent flags would allow. `type:<id>` names the selector buttons.
    */
-  private pressed: 'start' | 'codex' | `type:${string}` | null = null;
+  private pressed: 'start' | 'codex' | `type:${string}` | `level:${string}` | null = null;
   private time = 0;
   /** Scale from the last real layout, so `update` can redraw without a viewport. */
   private scale = 1;
@@ -89,7 +134,7 @@ export class MainMenu {
 
   constructor() {
     this.root.eventMode = 'none';
-    for (const child of [this.backdrop, this.primary, this.secondary, this.typeRow, this.primaryLabel, this.secondaryLabel]) {
+    for (const child of [this.backdrop, this.primary, this.secondary, this.levelRow, this.typeRow, this.primaryLabel, this.secondaryLabel]) {
       child.eventMode = 'none';
     }
 
@@ -114,6 +159,8 @@ export class MainMenu {
       this.backdrop,
       this.title,
       this.subtitle,
+      this.levelRow,
+      ...this.levelLabels,
       this.levelLine,
       this.typeRow,
       this.tagline,
@@ -157,12 +204,6 @@ export class MainMenu {
     this.subtitle.x = cx;
     this.subtitle.y = viewport.height * 0.3 + 30 * s;
 
-    this.levelLine.scale.set(s);
-    this.levelLine.anchor.set(0.5, 0.5);
-    this.levelLine.text = `关卡：${LEVEL.name}   ·   ${LEVEL.scrollLength} m`;
-    this.levelLine.x = cx;
-    this.levelLine.y = viewport.height * 0.42;
-
     const w = Math.min(laneWidth * cfg.buttonWidthRatio, cfg.buttonMaxWidth * s);
     const h = cfg.buttonHeight * s;
     const top = viewport.height * 0.55;
@@ -174,7 +215,7 @@ export class MainMenu {
      * The type selector, ABOVE the start button.
      *
      * Above rather than below because it is answered before the button it feeds: a player reads the menu top to
-     * bottom, and "which bubble" is the first thing a run decides. The row is as wide as the buttons so the whole
+     * bottom, and "which bubble" is the second thing a run decides. The row is as wide as the buttons so the whole
      * column reads as one stack, and each type gets an equal share of it.
      */
     const typeH = cfg.typeRowHeight * s;
@@ -190,6 +231,41 @@ export class MainMenu {
       label.x = rect.x + rect.w / 2;
       label.y = rect.y + rect.h / 2;
     }
+
+    /**
+     * The level row: where the level line used to be, above the bubble types.
+     *
+     * It replaces that line rather than joining it, because the line could only report the current level and the row
+     * reports the whole ladder -- which makes it both the choice and the progress display. The line itself survives as
+     * the NOTE under the row: why a level is locked, or what has just been unlocked.
+     *
+     * Placed from the subtitle down rather than from the buttons up, so the top of the menu reads as a stack of
+     * headings: which water, which bubble, go.
+     */
+    const levelH = cfg.levelRowHeight * s;
+    const levelTop = this.subtitle.y + cfg.levelRowTopGap * s;
+    // Each level gets an equal share of a row that is at most this wide -- so two levels do not become two enormous
+    // bars on a desktop window, and five still fit across a phone.
+    const levelW = Math.min(w, Math.max(1, this.levels.length) * w * cfg.levelMaxWidthRatio);
+    const levelSlot = levelW / Math.max(1, this.levels.length);
+    const levelLeft = cx - levelW / 2;
+    this.levelRects = this.levels.map((_, i) => ({ x: levelLeft + i * levelSlot, y: levelTop, w: levelSlot, h: levelH }));
+    for (const [i, label] of this.levelLabels.entries()) {
+      const rect = this.levelRects[i];
+      if (!rect) continue;
+      label.style.fontSize = cfg.levelTextSize;
+      label.scale.set(s);
+      label.anchor.set(0.5, 0.5);
+      label.x = rect.x + rect.w / 2;
+      label.y = rect.y + rect.h / 2;
+    }
+
+    this.levelLine.scale.set(s);
+    this.levelLine.anchor.set(0.5, 0.5);
+    this.levelLine.text = this.levelNote;
+    this.levelLine.style.fill = this.levelNoteHighlight ? cfg.levelUnlockColour : cfg.levelNoteColour;
+    this.levelLine.x = cx;
+    this.levelLine.y = levelTop + levelH + cfg.levelRowGap * s;
 
     this.tagline.style.fontSize = cfg.taglineSize;
     this.tagline.scale.set(s);
@@ -269,10 +345,37 @@ export class MainMenu {
      * current, those are available" rather than two. The hint and the tagline change with the selection, which is
      * what tells a player who has never seen either bubble what they are about to be.
      */
+    this.levelRow.clear();
+    for (const [i, rect] of this.levelRects.entries()) {
+      const level = this.levels[i];
+      if (!level) continue;
+      const r = cfg.buttonRadius * s;
+      /**
+       * Three states, and no lock icon.
+       *
+       * Selected is FILLED, unlockable is outlined, locked is darker with a dim stroke -- the same language as the
+       * type row, so a reader who has understood one row has understood both. A padlock would have to be drawn on the
+       * canvas by hand for a state that the colour and the note below already carry.
+       */
+      const fill = level.selected ? cfg.levelSelectedFill : level.locked ? cfg.levelLockedFill : cfg.levelIdleFill;
+      const stroke = level.selected ? cfg.levelSelectedStroke : level.locked ? cfg.levelLockedStroke : cfg.levelIdleStroke;
+      this.levelRow
+        .roundRect(rect.x, rect.y, rect.w, rect.h, r)
+        .fill({ color: fill, alpha: level.locked ? 0.6 : 0.95 })
+        .stroke({ color: stroke, alpha: level.selected ? 1 : 0.7, width: Math.max(1, 1.2 * s) });
+    }
+
     this.typeRow.clear();
     const selected = this.selectedType();
     for (const [i, rect] of this.typeRects.entries()) {
-      const type = this.types[i];
+      for (const [i, label] of this.levelLabels.entries()) {
+      const level = this.levels[i];
+      if (!level) continue;
+      const want = level.selected ? cfg.levelSelectedTextColour : level.locked ? cfg.levelLockedTextColour : cfg.levelIdleTextColour;
+      if (label.style.fill !== want) label.style.fill = want;
+    }
+
+    const type = this.types[i];
       if (!type) continue;
       const isSelected = type.id === this.selectedTypeId;
       const down = this.pressed === `type:${type.id}`;
@@ -344,13 +447,64 @@ export class MainMenu {
     this.taglineDirty = true;
   }
 
+  /**
+   * Hand the menu the levels to offer, with their lock state.
+   *
+   * The list comes from the progress store rather than from `LEVELS` directly, so the menu never has to know the
+   * unlock rule -- and a probe can hand it any list to check the row re-lays out. Rebuilds the labels because the
+   * number of pills is part of the layout.
+   */
+  setLevels(levels: readonly MenuLevel[]): void {
+    this.levels = levels;
+    for (const label of this.levelLabels) {
+      this.root.removeChild(label);
+      label.destroy();
+    }
+    this.levelLabels.length = 0;
+    for (const level of levels) {
+      const label = mk(level.name, mech.menu.levelIdleTextColour, mech.menu.levelTextSize);
+      label.eventMode = 'none';
+      this.levelLabels.push(label);
+      this.root.addChild(label);
+    }
+    if (!levels.some((l) => l.id === this.selectedLevelId)) {
+      this.selectedLevelId = levels.find((l) => !l.locked)?.id ?? '';
+    }
+    this.draw(this.scale);
+  }
+
+  /**
+   * Set the line under the level row.
+   *
+   * The game owns both texts: why a level is locked ("通关 X 之后解锁") and what has just opened, because both are
+   * facts about progress rather than about the menu.
+   */
+  setLevelNote(text: string, highlight = false): void {
+    this.levelNote = text;
+    this.levelNoteHighlight = highlight;
+    this.draw(this.scale);
+  }
+
+  /** Test hook and game hook: which level the start button would begin a run on. */
+  get selectedLevelIdValue(): string {
+    return this.selectedLevelId;
+  }
+
   handlePointerDown(x: number, y: number): boolean {
     if (this.inRect(this.primaryRect, x, y)) this.pressed = 'start';
     else if (this.inRect(this.secondaryRect, x, y)) this.pressed = 'codex';
     else {
-      const hit = this.typeRects.findIndex((rect) => this.inRect(rect, x, y));
-      const type = hit >= 0 ? this.types[hit] : undefined;
-      this.pressed = type ? `type:${type.id}` : null;
+      const hitLevel = this.levelRects.findIndex((rect) => this.inRect(rect, x, y));
+      const level = hitLevel >= 0 ? this.levels[hitLevel] : undefined;
+      // A LOCKED pill does not even arm: not firing on release is the whole behaviour, and arming it would make the
+      // press look accepted while nothing happened.
+      if (level && !level.locked) {
+        this.pressed = `level:${level.id}`;
+      } else {
+        const hit = this.typeRects.findIndex((rect) => this.inRect(rect, x, y));
+        const type = hit >= 0 ? this.types[hit] : undefined;
+        this.pressed = type ? `type:${type.id}` : null;
+      }
     }
     return true;
   }
@@ -358,6 +512,11 @@ export class MainMenu {
   handlePointerMove(x: number, y: number): boolean {
     if (this.pressed === 'start' && !this.inRect(this.primaryRect, x, y)) this.pressed = null;
     if (this.pressed === 'codex' && !this.inRect(this.secondaryRect, x, y)) this.pressed = null;
+    if (this.pressed?.startsWith('level:')) {
+      const hit = this.levelRects.findIndex((rect) => this.inRect(rect, x, y));
+      const level = hit >= 0 ? this.levels[hit] : undefined;
+      if (!level || `level:${level.id}` !== this.pressed) this.pressed = null;
+    }
     if (this.pressed?.startsWith('type:')) {
       const hit = this.typeRects.findIndex((rect) => this.inRect(rect, x, y));
       const type = hit >= 0 ? this.types[hit] : undefined;
@@ -378,6 +537,12 @@ export class MainMenu {
     }
     if (fire === 'codex' && this.inRect(this.secondaryRect, x, y)) {
       this.onCodex();
+      return true;
+    }
+    if (fire?.startsWith('level:')) {
+      const hit = this.levelRects.findIndex((rect) => this.inRect(rect, x, y));
+      const level = hit >= 0 ? this.levels[hit] : undefined;
+      if (level && !level.locked) this.onPickLevel(level.id);
       return true;
     }
     if (fire?.startsWith('type:')) {
@@ -402,6 +567,8 @@ export class MainMenu {
     button: { x: number; y: number; w: number; h: number };
     codex: { x: number; y: number; w: number; h: number };
     types: { id: string; label: string; rect: { x: number; y: number; w: number; h: number } }[];
+    levels: { id: string; label: string; locked: boolean; selected: boolean; rect: { x: number; y: number; w: number; h: number } }[];
+    levelNote: string;
     tagline: string;
     hint: string;
   } {
@@ -413,6 +580,14 @@ export class MainMenu {
         label: type.name,
         rect: { ...(this.typeRects[i] ?? { x: 0, y: 0, w: 0, h: 0 }) },
       })),
+      levels: this.levels.map((level, i) => ({
+        id: level.id,
+        label: level.name,
+        locked: level.locked,
+        selected: level.selected,
+        rect: { ...(this.levelRects[i] ?? { x: 0, y: 0, w: 0, h: 0 }) },
+      })),
+      levelNote: this.levelLine.text,
       tagline: this.tagline.text,
       hint: this.hint.text,
     };

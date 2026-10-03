@@ -263,5 +263,62 @@
         { at: 1010, kind: 'crate', x: 0.72, from: 'right', enterSpeed: 26 },
       ],
     },
+
+    // =====================================================================================================
+    // 第二关（**示范关卡**：结构是真的，内容请随便改——它存在的意义是让"关卡选择"有东西可选）
+    // =====================================================================================================
+    //
+    // 和第一关的区别是**节奏**和**内容取向**，不是长度：
+    //   - 更短更快（900m，30 m/s = 30 秒）：一口气跑完，适合当"第二关"而不是"更长的第一关"。
+    //   - 食物更少：第一关是"吃得很爽，然后为变胖付账"，这一关是"一直不太够吃"，所以容错更小。
+    //   - 侧向和下方的进场从第一波就开始（第一关到 300m 才出现），因为玩家已经会玩了。
+    {
+      id: 'reef-run',
+      name: '暗礁水道',
+      scrollLength: 900,
+      scrollSpeed: 30,
+      playerLeadLimit: 110,
+      landmarks: [
+        { depth: 620, label: '暗礁' },
+        { depth: 300, label: '急流' },
+      ],
+      spawns: [
+        // --- 开场就告诉你这一关不一样：食物稀，而且两侧都有东西进来 ---
+        { at: 20, span: 160, count: 5, kind: 'bubble', arrange: 'spread', amplitude: 0.3, sizes: [0.35, 0.5] },
+        { at: 40, kind: 'fish', count: 2, arrange: 'spread', span: 20, from: 'left', depth: 0.6 },
+        { at: 80, kind: 'fish', count: 2, arrange: 'spread', span: 20, from: 'right', depth: 0.45 },
+
+        // --- 暗礁：珊瑚横排从早开始，缺口比第一关更窄（仍然是规则允许的最小值） ---
+        { at: 150, kind: 'coral', count: 4, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
+        { at: 210, kind: 'jelly', count: 3, arrange: 'line' },
+        { at: 240, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.65, gapWidth: 0.19 },
+
+        // --- 第一只海胆来得比第一关早得多：这一关的核心就是"这份质量值不值" ---
+        { at: 300, kind: 'urchin', x: 0.3 },
+        { at: 330, kind: 'fish', count: 5, arrange: 'line' },
+        { at: 360, kind: 'skill', x: 0.6 },
+        { at: 380, kind: 'crab', x: 0.45 },
+
+        // --- 追兵：从下面上来的两条，压力来自背后 ---
+        { at: 430, span: 24, count: 2, kind: 'fish', arrange: 'spread', x: 0.5, from: 'bottom' },
+
+        // --- 急流：连续三排窄缝，中间夹着负食物 ---
+        { at: 500, kind: 'bombfish', x: 0.7 },
+        { at: 520, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.19 },
+        { at: 560, kind: 'trash', x: 0.35 },
+        { at: 580, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
+        { at: 620, kind: 'eel', x: 0.55 },
+        { at: 640, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.7, gapWidth: 0.19 },
+
+        // --- 一片被水冲进来的木箱（两侧都有），当成会移动的掩体 ---
+        { at: 690, kind: 'crate', x: 0.4, from: 'left', enterSpeed: 30 },
+        { at: 700, kind: 'crate', x: 0.75, from: 'right', enterSpeed: 30 },
+
+        // --- 终段：一点食物，然后上浮 ---
+        { at: 760, span: 60, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.25, sizes: [0.5, 0.7] },
+        { at: 820, kind: 'fish', count: 4, arrange: 'line', xFrom: 0.15, xTo: 0.85 },
+        { at: 860, kind: 'rot', x: 0.25 },
+      ],
+    },
   ],
 }

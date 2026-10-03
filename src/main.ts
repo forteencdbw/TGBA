@@ -1,7 +1,8 @@
 import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest, type Landmark } from './background';
 import { tuning } from './config';
-import { DEPTH_TOTAL, LEVEL, TIMELINE, currentSpawnBlocks, installSpawnBlocks, type EntrySide, type Level, type LevelEntry } from './levels';
+import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, type EntrySide, type Level, type LevelEntry } from './levels';
+import { Progression } from './progress';
 import { blastRadiusFraction, HazardField, KIND_TUNING, hazardTuning, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
@@ -84,6 +85,13 @@ class Game {
   private readonly settings = new SettingsUi();
   /** The main menu, shown before a run and after exiting to it. */
   private readonly menu = new MainMenu();
+  /**
+   * The save: which levels are cleared, and which one is selected.
+   *
+   * Constructed before the menu is wired, because its constructor is what SELECTS the stored level -- and the menu's
+   * first layout reads the level's name and length off the row it is handed.
+   */
+  private readonly progress = new Progression();
   /**
    * The codex page.
    *
@@ -375,6 +383,22 @@ class Game {
     this.settings.onExit = () => this.exitToMenu();
     this.menu.onStart = (typeId) => this.enterFromMenu(typeId);
     this.menu.onCodex = () => this.enterCodex();
+    /**
+     * Picking a level, which the menu only offers for levels that are reachable.
+     *
+     * The menu does not know the unlock rule -- it is handed the list and reports a press -- so the decision is made
+     * here, by the store, and the menu is handed the result. `refreshLevelMenu` is what puts the new selection and the
+     * note back on screen.
+     */
+    this.menu.onPickLevel = (levelId) => {
+      if (this.progress.select(levelId)) {
+        this.refreshLevelMenu();
+        // The type selector's start button begins a NEW run on whatever is selected, so a level change while a run is
+        // on screen is only meaningful at the menu. Picking one there is the only path, and this is it.
+      } else {
+        this.menu.setLevelNote('这一关还没解锁', false);
+      }
+    };
     this.codex.onBack = () => this.exitCodex();
     /**
      * The menu is handed the types rather than importing them, so "which bubbles exist" has one owner.
@@ -383,6 +407,12 @@ class Game {
      * learned about a third type after laying out would draw two.
      */
     this.menu.setTypes(BUBBLE_TYPES);
+    /**
+     * The levels, from the progress store rather than from `LEVELS`.
+     *
+     * Also before the first layout, and for the same reason: the number of pills is part of the geometry.
+     */
+    this.refreshLevelMenu();
 
     this.input.attach(window);
 
@@ -1095,6 +1125,36 @@ class Game {
    */
   debugBubbleTypeIds(): string[] {
     return BUBBLE_TYPES.map((type) => type.id);
+  }
+
+  /**
+   * Test hook: the progress store, so a spec can drive the ladder without playing two levels to the surface.
+   *
+   * Three things, because they are what a test needs and nothing more: read it, set it, and forget it. Setting goes
+   * through the SAME `select` the menu uses, so a spec cannot put the game into a state the menu could not.
+   */
+  debugProgress(): { cleared: string[]; selected: string; ladder: { id: string; name: string; locked: boolean; selected: boolean }[] } {
+    return { cleared: [...this.progress.cleared], selected: this.progress.selected, ladder: this.progress.entries() };
+  }
+
+  /** Test hook: pretend a level was cleared, exactly as reaching its surface does. */
+  debugClearLevel(id: string): string | null {
+    const unlocked = this.progress.clear(id);
+    this.refreshLevelMenu();
+    return unlocked;
+  }
+
+  /** Test hook: select a level if it is reachable. */
+  debugSelectLevel(id: string): boolean {
+    if (!this.progress.select(id)) return false;
+    this.refreshLevelMenu();
+    return true;
+  }
+
+  /** Test hook: forget the save, as a player clearing their progress would. */
+  debugResetProgress(): void {
+    this.progress.reset();
+    this.refreshLevelMenu();
   }
 
   /**
@@ -2674,6 +2734,25 @@ class Game {
   }
 
   /** Leave the menu and begin a run, as the chosen bubble. */
+  /**
+   * Put the level ladder on the menu: the pills, the selection, and the note under them.
+   *
+   * One function because the three have to agree. The note says what the row cannot: why a level is locked ("通关 X
+   * 之后解锁") or that one has just opened, and the two cases are mutually exclusive -- an unlock message that was left
+   * on screen while the row showed a locked level would be a menu contradicting itself.
+   */
+  private refreshLevelMenu(): void {
+    this.menu.setLevels(this.progress.entries());
+    const locked = this.progress.entries().find((l) => l.locked);
+    if (locked) {
+      const index = levelIndex(locked.id);
+      const previous = LEVELS[index - 1];
+      this.menu.setLevelNote(previous ? `通关「${previous.name}」后解锁「${locked.name}」` : '', false);
+    } else {
+      this.menu.setLevelNote('');
+    }
+  }
+
   private enterFromMenu(typeId: string): void {
     this.menu.root.visible = false;
     this.setBubbleType(typeId);
@@ -2731,6 +2810,20 @@ class Game {
     this.runBanner.alpha = 1;
     this.finishBanner.alpha = 1;
     this.bannerSeen = true;
+    /**
+     * Clearing the level, which is what unlocks the next one.
+     *
+     * Recorded HERE rather than where the results are shown, because this is the moment the player earned it -- and so
+     * that a level reached by any route unlocks the next one the same way. `clear` returns the level it opened, if
+     * any, and the banner NAMES it: an unlock that only shows up as a pill changing colour on a menu the player is not
+     * looking at is an unlock nobody notices.
+     */
+    const unlocked = this.progress.clear(LEVEL.id);
+    if (unlocked) {
+      const opened = LEVELS.find((l) => l.id === unlocked);
+      this.runBanner.text += `\n新关卡解锁：${opened?.name ?? unlocked}`;
+      this.refreshLevelMenu();
+    }
   }
 
   /**
@@ -3470,6 +3563,11 @@ class Game {
       arrivals: { top: number; left: number; right: number; bottom: number };
       /** Whether the timeline in use came from a spec rather than from the level file. */
       installed: boolean;
+      /** The ladder, in file order, with the save's state against each one. */
+      ladder: { id: string; name: string; locked: boolean; selected: boolean }[];
+      /** The save: which levels are cleared, and which is selected. */
+      cleared: string[];
+      selected: string;
       secondsPerScreen: number[];
     };
     playerVx: number;
@@ -3706,6 +3804,11 @@ class Game {
         arrivals: { ...this.spawnedBySide },
         /** Whether the timeline in use is the level FILE's or one a spec installed. */
         installed: TIMELINE !== LEVEL.entries,
+        /** The ladder, in file order, with the save's state against each one. */
+        ladder: this.progress.entries(),
+        /** The save itself, so a test can assert what was written rather than only what is drawn. */
+        cleared: [...this.progress.cleared],
+        selected: this.progress.selected,
         /**
          * Seconds per screenful, in order from the seabed up.
          *

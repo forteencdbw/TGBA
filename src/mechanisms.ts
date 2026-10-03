@@ -394,6 +394,24 @@ export interface Mechanisms {
     typeIdleFill: number;
     typeIdleStroke: number;
     typeIdleTextColour: number;
+    /** The level row: one pill per level, with a selected, an idle and a locked state. */
+    levelRowHeight: number;
+    levelRowGap: number;
+    levelRowTopGap: number;
+    levelTextSize: number;
+    levelNoteSize: number;
+    levelMaxWidthRatio: number;
+    levelSelectedFill: number;
+    levelSelectedStroke: number;
+    levelSelectedTextColour: number;
+    levelIdleFill: number;
+    levelIdleStroke: number;
+    levelIdleTextColour: number;
+    levelLockedFill: number;
+    levelLockedStroke: number;
+    levelLockedTextColour: number;
+    levelNoteColour: number;
+    levelUnlockColour: number;
   };
   /**
    * Obstacles: what is in the water that is neither food nor threat, but scenery you have to answer.
@@ -834,6 +852,42 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'menu.secondaryTextSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 48, describe: 'a font size between 8 and 48' },
   { path: 'menu.secondaryStrokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'menu.buttonStrokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  // The two selector rows on the menu: the bubble types, and the levels.
+  { path: 'menu.typeRowHeight', check: (v) => typeof v === 'number' && v > 4 && v <= 200, describe: 'a number above 4 and at most 200' },
+  { path: 'menu.typeRowGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a number between 0 and 200' },
+  { path: 'menu.typeRowTopGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 600, describe: 'a number between 0 and 600' },
+  { path: 'menu.taglineGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a number between 0 and 200' },
+  { path: 'menu.typeTextSize', check: (v) => typeof v === 'number' && v > 4 && v <= 60, describe: 'a number above 4 and at most 60' },
+  { path: 'menu.taglineSize', check: (v) => typeof v === 'number' && v > 4 && v <= 60, describe: 'a number above 4 and at most 60' },
+  { path: 'menu.levelRowHeight', check: (v) => typeof v === 'number' && v > 4 && v <= 200, describe: 'a number above 4 and at most 200' },
+  { path: 'menu.levelRowGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a number between 0 and 200' },
+  { path: 'menu.levelRowTopGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 600, describe: 'a number between 0 and 600' },
+  { path: 'menu.levelTextSize', check: (v) => typeof v === 'number' && v > 4 && v <= 60, describe: 'a number above 4 and at most 60' },
+  { path: 'menu.levelNoteSize', check: (v) => typeof v === 'number' && v > 4 && v <= 60, describe: 'a number above 4 and at most 60' },
+  { path: 'menu.levelMaxWidthRatio', check: (v) => typeof v === 'number' && v > 0.05 && v <= 1, describe: 'a fraction above 0.05 and at most 1' },
+  ...[
+    'typeSelectedFill',
+    'typeSelectedStroke',
+    'typeSelectedTextColour',
+    'typeIdleFill',
+    'typeIdleStroke',
+    'typeIdleTextColour',
+    'levelSelectedFill',
+    'levelSelectedStroke',
+    'levelSelectedTextColour',
+    'levelIdleFill',
+    'levelIdleStroke',
+    'levelIdleTextColour',
+    'levelLockedFill',
+    'levelLockedStroke',
+    'levelLockedTextColour',
+    'levelNoteColour',
+    'levelUnlockColour',
+  ].map((key) => ({
+    path: `menu.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
+  })),
   ...[
     'primaryFill',
     'primaryPressedFill',
