@@ -54,6 +54,14 @@ export interface HazardEffect {
    * the caller, which owns the player's volume.
    */
   eaten?: { id: number };
+  /**
+   * A creature's order to FIRE, from where it is.
+   *
+   * An effect rather than a direct call into the bullet field for the reason every other entry here is: this module
+   * knows what a creature does, and the caller knows what worlds exist to do it into. The position is carried so the
+   * caller never has to look the creature up again -- by the time it reads this, the creature may be gone.
+   */
+  shot?: { x: number; y: number };
 }
 
 /**
@@ -128,6 +136,13 @@ export interface Hazard {
   } | null;
   /** Seconds before this creature may lunge again. Counted down whether or not it is hunting. */
   chargeRest: number;
+  /**
+   * Seconds until this creature may fire again, for the kinds that shoot.
+   *
+   * On the hazard rather than in the bullet field, because this is a creature's rhythm and not a property of the
+   * water: two jellyfish should not fire in lockstep, and a colony that shared one timer would.
+   */
+  shootTimer: number;
   /**
    * Set while it is still ARRIVING from a screen edge, and null once it is in the water.
    *
@@ -587,6 +602,8 @@ export class HazardField {
       // No random head start here: a test-spawned creature is placed ON the player to be observed, and a random
       // rest would make "did it lunge" a coin flip in the one place determinism matters most.
       chargeRest: 0,
+      // Likewise no random offset on the trigger finger.
+      shootTimer: 0,
     };
     this.hazards.push(hazard);
     return hazard;
@@ -691,6 +708,17 @@ export class HazardField {
 
     for (const h of this.hazards) {
       this.advance(h, dt, ctx);
+      /**
+       * A creature's trigger finger, kept out of `advance` on purpose.
+       *
+       * `advance` is the creature's MOVEMENT, and it already returns early for the flee, arrival and charge states;
+       * putting the firing decision in there would mean repeating it on every one of those paths, and one of them
+       * would eventually forget. Here it is one place, it can be suppressed by any state that means "busy", and the
+       * caller gets an effect rather than a direct mutation of a field this module knows nothing about.
+       */
+      if (this.updateShooting(h, dt, ctx)) {
+        effects.push({ kind: h.kind, broke: false, shot: { x: h.x, y: h.y } });
+      }
     }
 
     // Emergence, in order: fish eat (which may split them), then the seeking hazards pick a target.
@@ -1034,6 +1062,8 @@ export class HazardField {
       charge: null,
       // A random head start, so a shoal does not lunge in unison.
       chargeRest: Math.random() * mech.charges.cooldownSeconds,
+      // And a random offset on the trigger finger, so a colony does not volley.
+      shootTimer: Math.random() / Math.max(0.01, mech.enemyBullets.shooters[kind]?.perSecond ?? 1),
     };
   }
 
@@ -1310,6 +1340,41 @@ export class HazardField {
     }
 
     h.x = Math.max(0, Math.min(ctx.laneWidth, h.x));
+  }
+
+  /**
+   * Whether this creature fires this frame.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHAT MAKES ENEMY FIRE FAIR, IN ONE PLACE
+   * ---------------------------------------------------------------------------------------------
+   * The shots are AIMED at the player's current position and never corrected afterwards, so they can be read and
+   * stepped out of; the speed is a fraction of a lane per second (see `enemyBullets.shooters`) and is slower than the
+   * player's own lateral speed, so the dodge is always physically available; and a shooter only fires from inside
+   * `enemyBullets.rangeMeters`, so a round can never arrive from a creature the player cannot see.
+   *
+   * A creature that is fleeing, still arriving or mid-lunge does not shoot: all three mean "busy", and a fish that
+   * lunged AND fired from inside its own telegraph would be two threats wearing one warning.
+   */
+  private updateShooting(h: Hazard, dt: number, ctx: HazardContext): boolean {
+    const row = mech.enemyBullets.shooters[h.kind];
+    if (!row) return false;
+    if (h.flee || h.entry || h.charge) return false;
+    const gap = 1 / Math.max(0.01, row.perSecond);
+    const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
+    // Out of range the timer HOLDS rather than banking: a creature that drifted off and came back should not open
+    // with a burst of the shots it saved up.
+    if (dist > mech.enemyBullets.rangeMeters) {
+      h.shootTimer = Math.max(h.shootTimer, gap);
+      return false;
+    }
+    h.shootTimer -= dt;
+    if (h.shootTimer > 0) return false;
+    // Carried rather than reset, so a slow frame does not turn a cadence into a stutter -- the same reasoning as the
+    // player's gun.
+    h.shootTimer += gap;
+    if (h.shootTimer <= 0) h.shootTimer = gap;
+    return true;
   }
 }
 
@@ -1641,6 +1706,12 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
+
+
+
+
 
 
 

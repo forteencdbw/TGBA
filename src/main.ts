@@ -5,6 +5,7 @@ import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnB
 import { Progression } from './progress';
 import { blastRadiusFraction, HazardField, hazardHealth, KIND_TUNING, hazardTuning, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
 import { BulletField, paintBullets } from './bullets';
+import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
@@ -679,6 +680,8 @@ class Game {
    * stomach slot), while these are plain rounds that take hit points off a creature. See `src/bullets.ts`.
    */
   private readonly bullets = new BulletField();
+  /** The enemies' rounds. Their own field, because they are a different thing entirely -- see the module. */
+  private readonly enemyBullets = new EnemyBulletField();
   /** Seconds until the next spit is allowed. */
   private spitCooldown = 0;
   /** 1 -> 0 pulse on the spit button, for the refusal when the stomach is empty. */
@@ -1005,6 +1008,50 @@ class Game {
       const points = this.score.award('drivenOff', shots.drivenOff);
       // Divided by the count so the numbers on screen add up to what the ledger recorded, whatever the config says.
       for (const at of shots.driven) this.scorePopups.add(at.x, at.y, points / shots.drivenOff, this.camera);
+    }
+  }
+
+  /**
+   * The enemies' guns: their rounds fly, are stopped by scenery, and hurt the player.
+   *
+   * The creatures fire through `HazardEffect.shot` (see `HazardField`), which is why this method is a consumer and not
+   * a poller: it is handed the orders that came out of this frame's hazard update and turns them into rounds. Damage
+   * is applied by CALLING `takeHit`, so an enemy round is the same hit as a collision -- there is no second damage
+   * path, and the invulnerability window protects against a whole fan landing at once.
+   */
+  private updateEnemyBullets(dt: number, laneWidth: number, min: number, max: number, shots: readonly { kind: HazardKind; x: number; y: number }[]): void {
+    const playerRadius = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
+    /**
+     * Firing and being hit are PLAYING-phase acts, the same rule the player's own gun follows.
+     *
+     * Not during the birth animation (the player has no control yet) and not during the ending: a round that landed
+     * while the bubble was already bursting would restart the burst timer, so the results card would sit there being
+     * extended by a creature still shooting at a run that is over. Rounds already in the water keep flying -- they are
+     * in the water, not in anyone's hands.
+     */
+    const live = this.phase === 'playing';
+    if (live) {
+      for (const shot of shots) {
+        audio.play('hit', 0.25);
+        this.enemyBullets.fire(shot.kind, shot.x, shot.y, this.player.x * laneWidth, this.player.y, laneWidth);
+      }
+    }
+    const landed = this.enemyBullets.update(dt, {
+      min,
+      max,
+      laneWidth,
+      playerX: this.player.x * laneWidth,
+      playerY: this.player.y,
+      playerRadius,
+      // Scenery is cover for both sides -- the same call the player's own rounds make.
+      blocks: (x, y, hitRadius) => this.obstacles.blocks(x, y, hitRadius),
+    });
+    if (live && landed > 0) {
+      for (let i = 0; i < landed; i++) {
+        this.takeHit();
+        // A hit can end the run; nothing after this may assume there is still a bubble.
+        if (this.phase !== 'playing') return;
+      }
     }
   }
 
@@ -2063,6 +2110,21 @@ class Game {
 
     const effects = this.hazards.update(dt, ctx);
 
+    /**
+     * Enemy fire, taken from the same effects list the damage comes out of.
+     *
+     * Called BEFORE the effect loop below, because the loop `continue`s on some branches and this is not one creature's
+     * event -- it is the frame's. A shooter that was also, say, eaten this frame still gets its round away; the round
+     * was fired before anything touched it, and dropping it would make being eaten a way to cancel an attack.
+     */
+    this.updateEnemyBullets(
+      dt,
+      laneWidth,
+      min,
+      max,
+      effects.filter((e) => e.shot).map((e) => ({ kind: e.kind, x: e.shot!.x, y: e.shot!.y })),
+    );
+
     // Remove whatever the swarm ate. Done with a Set so a large bubble field does not cost a linear
     // scan per eaten bubble.
     if (ctx.eatenBubbleIds.length) {
@@ -2393,6 +2455,7 @@ class Game {
       flee: null,
       charge: null,
       chargeRest: 0,
+      shootTimer: 0,
     };
   }
 
@@ -2780,6 +2843,9 @@ class Game {
     this.projectiles.length = 0;
     // Nor with the previous run's rounds in the air, which would be free shots nobody asked for.
     this.bullets.reset();
+    // The enemies' rounds go with them: a new bubble that starts inside a wall of the last run's fire would be a
+    // death the player cannot connect to anything they did.
+    this.enemyBullets.reset();
     // The score is the RUN's number, so it starts at zero with everything else that belongs to a run -- including
     // the numbers still floating on screen from the previous one.
     this.score.reset();
@@ -3278,6 +3344,14 @@ class Game {
      */
     paintBullets(g, this.bullets, laneWidth);
 
+    /**
+     * The enemies' rounds, drawn after the scenery so cover never hides what can kill you.
+     *
+     * Scenery BLOCKS them (so a crate is real cover), but drawing them behind it would make a round about to emerge
+     * from the far side of a crate invisible until it did -- and this whole feature's contract is that everything
+     * lethal is visible before it lands.
+     */
+    paintEnemyBullets(g, this.enemyBullets, laneWidth);
     /**
      * Projectiles, drawn IN FLIGHT from the stomach.
      *
@@ -3878,6 +3952,10 @@ class Game {
      * one and has not fired yet -- and a probe that could not tell them apart would report a broken weapon whenever
      * it looked a frame too early.
      */
+    /**
+     * The enemies' fire, so a probe can tell "nothing is shooting" from "the rounds are all gone".
+     */
+    enemyBullets: { inFlight: number; fired: number; hits: number };
     bullets: {
       inFlight: number;
       fired: number;
@@ -4257,6 +4335,7 @@ class Game {
       audio: { muted: this.audioMuted, running: audio.isRunning },
       ending: { surfaced: this.surfaced, splash: +this.splash.toFixed(3), bestClimbed: Math.round(this.bestClimbed), bestVolume: +this.bestVolume.toFixed(2), bestScore: this.bestScore },
       score: { value: this.score.value, best: this.bestScore, byEvent: { ...this.score.ledger }, popups: this.scorePopups.count },
+      enemyBullets: { inFlight: this.enemyBullets.count, fired: this.enemyBullets.fired, hits: this.enemyBullets.hits },
       skillPickup: this.skillPickup ? { id: this.skillPickup.id, y: +this.skillPickup.y.toFixed(1) } : null,      /** Active effect timers, so a skill that lasts can be observed while it runs. */
       activeSkill: this.player.skillId ? { id: this.player.skillId, remaining: +this.player.skillRemaining.toFixed(2) } : null,
       /** The bubble's growth stage: its speed tier, and how far into the next one it is. */
@@ -4721,6 +4800,11 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
 
 
 

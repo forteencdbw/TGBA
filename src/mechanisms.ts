@@ -269,6 +269,34 @@ export interface Mechanisms {
     wobbleMax: number;
   };
   /**
+   * Enemy fire: which creatures shoot, how often, how fast, and what a round costs.
+   *
+   * The table is a SUBSET of the kinds on purpose -- most creatures do not shoot -- so an absent row means "no gun",
+   * and the boot check below only demands that every row names a real creature.
+   */
+  enemyBullets: {
+    shooters: Record<
+      string,
+      {
+        perSecond: number;
+        /** Lane widths per second. Kept below the player's own lateral speed, or the dodge is not available. */
+        speedPerSecond: number;
+        /** Rounds per shot. Above 1 they fan out by `spreadRadians`. */
+        spread: number;
+        spreadRadians: number;
+        /** Hit points a round takes off. */
+        damage: number;
+      }
+    >;
+    /** A creature only opens fire from inside this distance, so nothing arrives from off screen. */
+    rangeMeters: number;
+    radiusRatio: number;
+    lifeSeconds: number;
+    coreColour: number;
+    rimColour: number;
+    rimAlpha: number;
+  };
+  /**
    * The charging lunge: a creature that hunts aims at where the player was, telegraphs the curve, and commits.
    *
    * The curve is fixed at the moment the wind-up starts, which is what makes it fair: the player always gets a
@@ -759,6 +787,26 @@ function isNumberTable(v: unknown): v is Record<string, number> {
   return values.length > 0 && values.every((n) => typeof n === 'number' && Number.isFinite(n));
 }
 
+/**
+ * True if every row of the enemy-shooters table is a complete, sane row.
+ *
+ * Checked field by field rather than as "an object", because these five numbers ARE a difficulty: a row missing its
+ * `speedPerSecond` would fire a round that goes nowhere, and a missing `perSecond` would divide by zero into an
+ * infinite cadence. Both fail as "the game feels broken" rather than as an error message, which is the shape this
+ * project turns into a boot failure everywhere else.
+ */
+function isShooterTable(v: unknown): boolean {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const rows = Object.values(v as Record<string, unknown>);
+  if (rows.length === 0) return false;
+  const fields = ['perSecond', 'speedPerSecond', 'spread', 'spreadRadians', 'damage'] as const;
+  return rows.every((row) => {
+    if (row === null || typeof row !== 'object') return false;
+    const r = row as Record<string, unknown>;
+    return fields.every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number) && (r[k] as number) >= 0);
+  });
+}
+
 /** True if `v` is a usable colour: a JSON5 hex literal, or a "#rrggbb" string. */
 function isColour(v: unknown): boolean {
   return (
@@ -879,6 +927,13 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000,
     describe: 'points for this event, between 0 and 100000; 0 takes the event out of the score',
   })),
+  { path: 'enemyBullets.shooters', check: (v) => isShooterTable(v), describe: 'an object of hazard kind to a shooter row' },
+  { path: 'enemyBullets.rangeMeters', check: (v) => typeof v === 'number' && v >= 40 && v <= 2000, describe: 'metres between 40 and 2000' },
+  { path: 'enemyBullets.radiusRatio', check: (v) => typeof v === 'number' && v > 0.002 && v < 0.2, describe: 'a fraction of the lane width above 0.002 and below 0.2' },
+  { path: 'enemyBullets.lifeSeconds', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 30, describe: 'seconds between 0.5 and 30' },
+  { path: 'enemyBullets.coreColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
+  { path: 'enemyBullets.rimColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
+  { path: 'enemyBullets.rimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'charges.kinds', check: (v) => Array.isArray(v) && v.length >= 1 && v.every((k) => typeof k === 'string' && k.length > 0), describe: 'a non-empty array of hazard kind names' },
   { path: 'charges.triggerMeters', check: (v) => typeof v === 'number' && v >= 20 && v <= 1200, describe: 'metres between 20 and 1200' },
   { path: 'charges.telegraphSeconds', check: (v) => typeof v === 'number' && v >= 0.1 && v <= 4, describe: 'seconds between 0.1 and 4' },
@@ -1618,6 +1673,9 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
+
 
 
 

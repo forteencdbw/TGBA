@@ -212,6 +212,15 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
   if (mech.charges.kinds.includes(kind)) {
     threat.push(`冲锋：进入 ${num(mech.charges.triggerMeters, 0)}m 蓄势 ${num(mech.charges.telegraphSeconds, 2)}s，按一条固定曲线撞过来`);
   }
+  const gun = mech.enemyBullets.shooters[kind];
+  if (gun) {
+    const speed = `${num(gun.speedPerSecond, 2)} 泳道/秒`;
+    threat.push(
+      gun.spread > 1
+        ? `开火：每秒 ${num(gun.perSecond, 2)} 组扇形 ${gun.spread} 发 · ${speed}`
+        : `开火：每秒 ${num(gun.perSecond, 2)} 发 · ${speed}`,
+    );
+  }
   return {
     id: `enemy:${kind}`,
     category: 'enemy',
