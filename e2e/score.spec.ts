@@ -152,7 +152,6 @@ test.describe('the score', () => {
         life: g.game.score.popups.lifeSeconds,
       };
     });
-
     await expect.poll(async () => page.evaluate(() => (window as unknown as { __GB: { game: { scorePopupsRef: { count: number } } } }).__GB.game.scorePopupsRef.count), {
       message: 'collecting a special item has to float a number',
       timeout: 10_000,
@@ -164,7 +163,9 @@ test.describe('the score', () => {
       return { text: g.lastText, x: label.x, y: label.y };
     });
     const price = (await prices(page)).skill;
-    expect(first.text, 'the number is the points, not the score').toBe(`+${price}`);
+    // The prefix comes from the config too, so re-labelling the popups is not a failing test.
+    const prefix = await page.evaluate(() => (window as unknown as { __GB: { mechRef: { score: { popups: { prefix: string } } } } }).__GB.mechRef.score.popups.prefix);
+    expect(first.text, 'the number is the points, not the score').toBe(`${prefix}${price}`);
     expect(Math.abs(first.x - placed.itemX), 'it appears where the ITEM was').toBeLessThan(6);
     expect(Math.abs(first.x - placed.bubbleX), 'and not where the bubble is').toBeGreaterThan(10);
 

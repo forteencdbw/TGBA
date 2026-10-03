@@ -85,6 +85,7 @@ export class ScorePopups {
    */
   add(worldX: number, worldY: number, points: number, camera: Camera): void {
     if (points <= 0) return;
+    const cfg = mech.score.popups;
     /**
      * At the cap, retire the OLDEST rather than refusing the new one.
      *
@@ -92,11 +93,23 @@ export class ScorePopups {
      * for two seconds is the one they have already read. Its label goes straight back to the pool, so the cap costs
      * nothing but a swap.
      */
-    if (this.live.length >= mech.score.popups.max) this.retire(0);
-    const label = this.pool.pop() ?? makeLabel('', mech.score.popups.colour, mech.score.popups.size);
-    label.text = `+${points}`;
+    if (this.live.length >= cfg.max) this.retire(0);
+    const label = this.pool.pop() ?? makeLabel('', cfg.colour, cfg.size, cfg.weight);
+    /**
+     * The style is re-applied on every spawn, not only at construction.
+     *
+     * A pooled label would otherwise keep whatever the config said the first time it was used, and the owner tunes
+     * these numbers live in the console (`window.__GB.mechRef`) as well as in the file -- a pooled label that ignored
+     * a live edit would make half the knobs look broken. Pixi's style setters early-return when the value has not
+     * changed, so the usual case costs a comparison and no texture work.
+     */
+    label.style.fontSize = cfg.size;
+    label.style.fill = cfg.colour;
+    label.style.fontWeight = cfg.weight;
+    label.anchor.set(cfg.anchorX, cfg.anchorY);
+    label.text = `${cfg.prefix}${points}`;
     label.visible = true;
-    label.alpha = 1;
+    label.alpha = cfg.alpha;
     this.root.addChild(label);
     this.live.push({ label, x: camera.toScreenX(worldX), y: camera.toScreenY(worldY), age: 0 });
   }
@@ -105,7 +118,8 @@ export class ScorePopups {
    * Advance, place and fade everything in flight.
    *
    * The rise and the fade are both functions of the AGE rather than accumulations, so a popup's path is identical
-   * whatever the frame rate did on the way -- a dropped frame cannot leave one stranded halfway up.
+   * whatever the frame rate did on the way -- a dropped frame cannot leave one stranded halfway up. Both are shaped
+   * by their own exponent from the config, so "how it moves" is tunable without touching this file.
    */
   update(dt: number): void {
     const cfg = mech.score.popups;
@@ -121,14 +135,15 @@ export class ScorePopups {
       popup.label.scale.set(this.scale);
       popup.label.x = popup.x;
       // Upward drift, and the only motion: see the note at the top for why the water's own drift is not added.
-      popup.label.y = popup.y - rise * t;
+      popup.label.y = popup.y - rise * t ** cfg.riseEase;
       /**
        * Full brightness for the first stretch, then a fade.
        *
        * A popup that started fading immediately would be half-read by the time the eye arrived; holding it and then
        * dropping it is what makes three seconds feel like a beat rather than like a slow dissolve.
        */
-      popup.label.alpha = t <= cfg.fadeFrom ? 1 : 1 - (t - cfg.fadeFrom) / (1 - cfg.fadeFrom);
+      const faded = t <= cfg.fadeFrom ? 0 : (t - cfg.fadeFrom) / (1 - cfg.fadeFrom);
+      popup.label.alpha = cfg.alpha * (1 - faded ** cfg.fadeEase);
     }
   }
 

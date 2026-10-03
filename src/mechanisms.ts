@@ -151,10 +151,22 @@ export interface Mechanisms {
       lifeSeconds: number;
       /** Design pixels of upward drift over that life. */
       risePx: number;
+      /** Exponent on the progress: 1 linear, below 1 fast-then-slow, above 1 slow-then-fast. */
+      riseEase: number;
       size: number;
       colour: number;
+      /** Base opacity, which the fade then scales. */
+      alpha: number;
+      weight: 'bold' | 'normal';
+      /** Text before the number. `+` by default, so it reads as "that earned 50" rather than "the score is 50". */
+      prefix: string;
       /** Fraction of the life held at full brightness before the fade starts. */
       fadeFrom: number;
+      /** Exponent on the fade's progress: 1 linear, above 1 holds bright then drops, below 1 fades early. */
+      fadeEase: number;
+      /** Where the EVENT's position sits inside the label: 0 is the left/top edge, 0.5 the middle. */
+      anchorX: number;
+      anchorY: number;
       /** Ceiling on popups in flight: a guard against a scoring loop, not a budget to spend. */
       max: number;
     };
@@ -844,6 +856,13 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000,
     describe: 'points for this event, between 0 and 100000; 0 takes the event out of the score',
   })),
+  { path: 'score.popups.riseEase', check: (v) => typeof v === 'number' && v > 0.05 && v <= 6, describe: 'an exponent above 0.05 and at most 6' },
+  { path: 'score.popups.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'score.popups.weight', check: (v) => v === 'bold' || v === 'normal', describe: "'bold' or 'normal'" },
+  { path: 'score.popups.prefix', check: (v) => typeof v === 'string' && v.length <= 8, describe: 'a string of at most 8 characters; the empty string is allowed' },
+  { path: 'score.popups.fadeEase', check: (v) => typeof v === 'number' && v > 0.05 && v <= 6, describe: 'an exponent above 0.05 and at most 6' },
+  { path: 'score.popups.anchorX', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
+  { path: 'score.popups.anchorY', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
   { path: 'score.popups.lifeSeconds', check: (v) => typeof v === 'number' && v > 0.2 && v <= 12, describe: 'seconds above 0.2 and at most 12' },
   { path: 'score.popups.risePx', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
   { path: 'score.popups.size', check: (v) => typeof v === 'number' && v >= 8 && v <= 48, describe: 'a font size between 8 and 48' },
@@ -1545,6 +1564,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 

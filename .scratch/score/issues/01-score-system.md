@@ -102,6 +102,46 @@ Measured:
     driving a fish off floats "+25"
     a new run: 0 popups left
 
+### Follow-up: every popup parameter in the config
+
+Requested: make the popup's parameters configurable.
+
+Six were already (`lifeSeconds`, `risePx`, `size`, `colour`, `fadeFrom`, `max`); the audit found seven more hardcoded
+in `scorePopups.ts`, and all seven are now keys:
+
+  riseEase    exponent on the rise. 1 linear, 0.6 fast-then-slow (the arcade feel), 1.6 slow-then-fast. It shapes
+              the PATH only: at 2.9s of a 3s life all three curves have risen the same 34px.
+  fadeEase    exponent on the fade. 1 linear, 2 holds bright then drops, 0.5 goes translucent early.
+  alpha       base opacity, which the fade then scales.
+  weight      'bold' | 'normal'. The family stays global (`text.fontFamily`).
+  prefix      text before the number, "+" by default so it reads as "that earned 50" rather than "the score is 50".
+              The empty string is allowed.
+  anchorX/Y   where the event's position sits inside the label. 0.5/0.5 centres the number on the event, which is
+              also a fix: the old left/top anchor put a wide `+500` visibly right of and below the thing it marked.
+
+Two things deliberately NOT in the config, with reasons:
+
+  the number's own formatting   the points are printed as earned, so the floating numbers always add up to the
+                                ledger. A `decimals` knob would let a +12.5 print as +13 and quietly break that.
+  per-event switches            a price of 0 already removes an event from the score AND from the popups (`add`
+                                ignores a non-positive award), so a second set of toggles would be two switches for
+                                one behaviour that could disagree.
+
+The style is re-applied on EVERY spawn rather than only when a label is created: pooled labels would otherwise keep
+whatever the config said the first time they were used, and the owner tunes these numbers live in the console as well
+as in the file. Pixi's style setters early-return when the value has not changed, so the usual case is a comparison.
+
+Measured, stepping the module by hand with a fixed dt so the numbers are exact (a frame-rate loop was too noisy to
+read a 0.3px difference out of):
+
+    rise at half a life (35.1px total)   ease 1 -> 17.55px, ease 0.5 -> 24.82px, ease 2 -> 8.77px
+    rise at 2.9s                         all three -> ~34px, i.e. the curve shapes the path, not the distance
+    alpha at 2.4s (fade from 0.45)       ease 1 -> 0.364 (exactly linear), ease 2 -> 0.595, ease 0.5 -> 0.202
+    alpha at 1.0s                        still 1: the hold before the fade is real
+    alpha 0.5                            scales the whole curve (0.182 where the base gave 0.364)
+    lifeSeconds / max                    alive at 2.9s and gone at 3.1s; with max 3, five awards keep +30/+40/+50
+    prefix / weight / size / colour / anchor   each read back off the label after a live edit
+
 ## Comments
 
 - 2026-10: requested as "现在新增积分系统，常驻展示在屏幕顶部，击败小鱼、拾取特殊道具等会获得分数".
