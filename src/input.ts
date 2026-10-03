@@ -1,7 +1,10 @@
 /**
  * Input. Desktop is the development driver (keyboard); touch is the shipping target.
  *
- * Both produce the same pair of axes, so the physics never learns which device is in use.
+ * The two devices do NOT produce the same kind of thing, and pretending they did cost the phone its feel. The
+ * keyboard asks for a SPEED (an axis, with a ramp and a coast); a finger on a phone asks for a DISTANCE -- drag
+ * 30px and the bubble moves 30px, from wherever it is. So the input carries both: `axisX`/`axisY` for the keyboard,
+ * and a displacement (`consumeDrag`) for touch. See `src/player.ts` for where each one is applied.
  *
  * The bubble moves FREELY in the plane, so the keyboard drives four directions and there is no boost
  * or brake key: with the player in control of the vertical, both would just be second ways to do what
@@ -70,15 +73,81 @@ export class Input {
   axisY = 0;
 
   /**
-   * The touch wheel's deflection, -1..1 on each axis. Written by `TouchControls` before `update()` runs.
+   * The touch drag: a DISPLACEMENT, not a throttle.
    *
-   * An AXIS rather than a target position. The wheel's whole point is that push distance maps to speed, and a
-   * target position cannot express "move slowly" -- it only says where to end up.
+   * The phone steers by dragging a finger anywhere on the screen, and what that produces is a distance rather
+   * than a speed -- the bubble moves by exactly the distance the finger moved, from wherever it already is. So it
+   * cannot be folded into the axes above, which are speeds with a ramp and a coast; it is its own channel, and
+   * `Player.update` applies it as a position.
+   *
+   * `dragFracX` is in LANE WIDTHS and `dragFracY` in WINDOW HEIGHTS, the two fractions the player already stores
+   * its position in, so nothing here has to know the viewport -- the touch layer, which does, converts.
    */
-  wheelX = 0;
-  wheelY = 0;
-  /** True while a thumb is on the wheel, including inside the dead zone. */
-  wheelHeld = false;
+  private dragFracX = 0;
+  private dragFracY = 0;
+
+  /**
+   * True while a finger is on the screen steering.
+   *
+   * Not the same as "the finger has moved": a thumb resting still is still a hand on the controls, and the trash
+   * bag's grip, which tears off a STRUGGLING player, has to read it that way. See `steering`.
+   */
+  dragHeld = false;
+
+  /**
+   * Where the drag is pointing, -1..1 on each axis, +Y up.
+   *
+   * From the finger's offset from the point it first landed on, so it is a direction the player chose rather than
+   * a leftover of the last few pixels of movement. Read by the two aiming verbs (spit and the charge slam), and
+   * zero while the finger sits on its own anchor -- which is what makes "not aiming" expressible.
+   */
+  dragAimX = 0;
+  dragAimY = 0;
+
+  /**
+   * Add a finger's movement to the pending displacement.
+   *
+   * ACCUMULATED rather than assigned: pointer events arrive between frames, the physics runs in fixed sub-steps,
+   * and the first sub-step consumes the whole lot. Assigning would keep only the last event of the frame and lose
+   * the rest of the gesture.
+   */
+  addDrag(fracX: number, fracY: number): void {
+    this.dragFracX += fracX;
+    this.dragFracY += fracY;
+  }
+
+  /** Point the aim, from the finger's offset from the point it landed on. */
+  setDragAim(x: number, y: number): void {
+    this.dragAimX = x;
+    this.dragAimY = y;
+  }
+
+  /**
+   * Take the pending displacement, once.
+   *
+   * Consuming rather than reading is what keeps the 1:1 promise: the physics runs up to eight sub-steps per frame,
+   * and a displacement read eight times would move the bubble eight times as far as the finger.
+   */
+  consumeDrag(): { x: number; y: number } {
+    const drag = { x: this.dragFracX, y: this.dragFracY };
+    this.dragFracX = 0;
+    this.dragFracY = 0;
+    return drag;
+  }
+
+  /** Let go of the drag, and forget anything it had queued. */
+  releaseDrag(): void {
+    this.dragFracX = 0;
+    this.dragFracY = 0;
+    this.dragHeld = false;
+    this.dragAimX = 0;
+    this.dragAimY = 0;
+  }
+
+  /** The queued displacement, for probes. READING it does not consume it; only `consumeDrag` does. */
+  get debugPendingDrag(): { x: number; y: number } {
+    return { x: this.dragFracX, y: this.dragFracY };
+  }
 
   /**
    * True while the suction button is held.
@@ -174,15 +243,17 @@ export class Input {
   }
 
   /**
-   * Whether any deliberate movement input is present: a key held, or the wheel pushed past its dead zone.
+   * Whether any deliberate movement input is present: a key held, or a finger steering.
    *
    * Exposed because several systems ask "is the player actively steering" rather than "where are they going" --
    * a trash bag is torn off by a struggling player, and a measurement wants a player who is not struggling.
-   * Deriving that from the axis magnitudes rather than from raw pointer state means it stays true for the wheel
-   * exactly when it was true for a drag.
+   *
+   * A finger that is down counts even if it is not moving, because a thumb on the screen IS the player's hands on
+   * the controls; with the drag there is no axis left over to be off-centre, and reading only the displacement
+   * would make "hold still and struggle" unexpressible.
    */
   get steering(): boolean {
-    return this.axisX !== 0 || this.axisY !== 0;
+    return this.axisX !== 0 || this.axisY !== 0 || this.dragHeld;
   }
 
   /**
@@ -237,14 +308,15 @@ export class Input {
     const keyY = (held(KEYS.up) ? 1 : 0) - (held(KEYS.down) ? 1 : 0);
 
     /**
-     * Keyboard wins when it is being used, otherwise the wheel does.
+     * The axes are the keyboard's alone now.
      *
-     * A SUM would be worse: pressing a key while the thumb rests off-centre would move the bubble faster than
-     * either input alone, and the wheel's own deflection is already a full 0..1 range. Taking the one that was
-     * actually touched keeps each device's ceiling exactly where it was tuned.
+     * Touch used to share them, feeding the wheel's deflection in when no key was down. It cannot any more, and
+     * that is the point of the drag: a displacement is not a speed, so it travels on its own channel and the
+     * physics applies it as a position. Nothing is summed, so a key and a finger cannot add up to a bubble that
+     * moves faster than either device was tuned for.
      */
-    this.axisX = keyX !== 0 ? keyX : this.wheelX;
-    this.axisY = keyY !== 0 ? keyY : this.wheelY;
+    this.axisX = keyX;
+    this.axisY = keyY;
 
     // Keyboard is edge-detected here rather than in the event handler, so the key repeat rate and a
     // held key cannot fire the skill more than once.
@@ -343,9 +415,7 @@ export class Input {
    * the axes as the single source of truth this is one place rather than one per input device.
    */
   clearSteering(): void {
-    this.wheelX = 0;
-    this.wheelY = 0;
-    this.wheelHeld = false;
+    this.releaseDrag();
     this.axisX = 0;
     this.axisY = 0;
     // The suction field goes too: it is a deliberate input, and a measurement that wanted a passive player would

@@ -19,38 +19,34 @@ function suctionFieldColor(): number {
 const COMPRESS_BUTTON_SCALE = 0.8;
 
 /**
- * The on-screen thumb wheel: a virtual analog stick at the bottom of the lane.
+ * The touch controls: a drag to move, and a few buttons for the verbs.
  *
  * ---------------------------------------------------------------------------------------------
- * WHAT IT IS
+ * MOVEMENT IS A DRAG, ANYWHERE ON THE SCREEN
  * ---------------------------------------------------------------------------------------------
- * A fixed circular pad. Press anywhere on it, push in a direction, and the bubble moves that way. Push further
- * and it moves faster, up to full speed at the rim -- which is exactly the keyboard's speed, because both go
- * through the same axis and the same crossing-time constant. Release and the bubble coasts to a stop.
+ * Press anywhere that is not a button and move your finger: the bubble travels the SAME DISTANCE the finger did,
+ * in the same direction, measured on the glass. It is a displacement, not a stick -- there is no pad to find, no
+ * dead zone to leave, no ramp to spin up and no coast when you let go. Lift the finger and the bubble stays
+ * exactly where it is, because it only ever moved while the finger was moving.
  *
  * ---------------------------------------------------------------------------------------------
- * WHY NOT "THE BUBBLE FOLLOWS YOUR FINGER"
+ * WHY IF NOT "THE BUBBLE FOLLOWS YOUR FINGER", WHICH IS ALSO A POSITION
  * ---------------------------------------------------------------------------------------------
- * That was the previous model: the finger named an absolute destination and the bubble eased toward it. It has
- * two problems that a wheel does not.
- *
- * It wastes the information in the gesture. A destination says "end up there" and nothing else, so there is no
- * way to ask for a slow, careful correction -- which is exactly what dodging a fish that is already closing on
- * you needs. A wheel gives direction AND magnitude continuously.
- *
- * And the finger covers the bubble. The thumb has to be where the destination is, so the player's own hand
- * hides the thing they are steering, on a screen where seeing a hazard early is the whole skill.
+ * Because that version moves the bubble TO the finger. The bubble lands under the thumb, the player's own hand
+ * covers the thing they are steering, and on a screen where seeing a hazard early is the whole skill that is the
+ * wrong half of the gesture to give up. A RELATIVE drag keeps the finger free to sit on empty water: the bubble
+ * moves the way the thumb moved and never has to be under it.
  *
  * ---------------------------------------------------------------------------------------------
- * A FIXED PAD, NOT A FLOATING STICK
+ * WHAT IT COSTS, STATED PLAINLY
  * ---------------------------------------------------------------------------------------------
- * The pad does not appear where you first touch. A control that appears under the thumb is more comfortable for
- * one press, but it cannot be learned: a player who wants to push "up and slightly right" has no consistent
- * physical reference for where up is, so every touch is re-aimed by eye. A fixed pad is a place the thumb can
- * return to without looking, which is what makes it usable at speed.
+ * "The bubble always moves exactly as far as the finger" cannot also mean "a big bubble moves less", so the stage
+ * and suction speed multipliers do NOT apply to touch while this is the scheme. `movement.drag.penaltiesApply` in
+ * the config puts them back for anyone who prefers that tension to the 1:1 promise; the eel's inversion still
+ * applies either way, because losing control is not a speed penalty.
  *
  * ---------------------------------------------------------------------------------------------
- * ARCHITECTURE NOTE, unchanged from before
+ * ARCHITECTURE NOTE, unchanged
  * ---------------------------------------------------------------------------------------------
  * There is ONE interactive graphic covering the whole screen and the code decides what a touch means. An earlier
  * version used a separate interactive graphic per control and relied on Pixi's display-list ordering and
@@ -63,12 +59,30 @@ export class TouchControls {
 
   /** One hit layer for the whole screen; the code decides what a touch means. */
   private readonly surface = new Graphics();
-  /** The wheel pad and its knob. */
-  private readonly wheelGfx = new Graphics();
   private readonly buttonGfx = new Graphics();
 
-  /** The pointer currently on the wheel, or null. Only one thumb drives it. */
-  private wheelPointer: number | null = null;
+  /**
+   * The pointer steering the bubble, or null. Only one finger drives it.
+   *
+   * Anywhere off the buttons, which is why it is the LAST branch of `onPointerDown`: a touch that lands on a
+   * control belongs to that control, and everything else is the player putting their hand on the bubble.
+   */
+  private dragPointer: number | null = null;
+  /** Where the steering finger currently is, in canvas pixels. */
+  private dragX = 0;
+  private dragY = 0;
+  /**
+   * Where the steering finger LANDED, in canvas pixels.
+   *
+   * Kept only for the AIM. The movement is the movement -- what the finger did since the last event -- but a
+   * direction read from the last few pixels of a slow drag is noise, whereas the offset from where the thumb went
+   * down is a direction the player chose and can hold.
+   */
+  private dragAnchorX = 0;
+  private dragAnchorY = 0;
+  /** The play area's size from the last layout: what turns a finger's pixels into a fraction of the screen. */
+  private laneWidthPx = 0;
+  private canvasHeightPx = 0;
   /**
    * The pointer holding the suction button, or null.
    *
@@ -92,14 +106,8 @@ export class TouchControls {
    * fires the slam. Claimed so a second finger cannot let go of a charge the first is still winding.
    */
   private chargePointer: number | null = null;
-  /** Knob offset from the pad centre, in canvas pixels, already clamped to the radius. */
-  private knobX = 0;
-  private knobY = 0;
-  /** 0..1, how far the knob is pushed beyond the dead zone. Drives the pad's opacity. */
-  private deflection = 0;
 
-  /** Screen geometry, recomputed by `layout`. */
-  private wheel = { x: 0, y: 0, radius: 0 };
+  /** Button geometry, recomputed by `layout`. */
   private skillButton = { x: 0, y: 0, radius: 0 };
   /** The HUD scale from the last layout, so a redraw needs no viewport. */
   private scale = 1;
@@ -124,8 +132,8 @@ export class TouchControls {
   /**
    * The spit button's geometry, in the bottom-LEFT corner.
    *
-   * The wheel takes the centre and suction the right, so this is the remaining thumb-reachable spot. Near enough
-   * to the wheel for a right-handed player to reach across, and far enough that a wheel drag never starts on it.
+   * The bottom of the lane is where a thumb rests, and the two corners take the two deliberate verbs while the
+   * middle stays free for the drag -- a drag that started on a button would be a press of that button instead.
    */
   private spitButton = { x: 0, y: 0, radius: 0 };
   /**
@@ -169,7 +177,7 @@ export class TouchControls {
    * anywhere saying "the volatile bubble has no spit" -- the button it would have been simply is not in the list.
    * See `src/bubbleTypes.ts`.
    */
-  private controls: readonly ControlId[] = ['wheel', 'skill', 'suction', 'spit', 'compress'];
+  private controls: readonly ControlId[] = ['skill', 'suction', 'spit', 'compress'];
 
   private has(control: ControlId): boolean {
     return this.controls.includes(control);
@@ -183,9 +191,8 @@ export class TouchControls {
 
   constructor(private readonly input: Input) {
     this.root.eventMode = 'none';
-    this.root.addChild(this.surface, this.wheelGfx, this.buttonGfx);
+    this.root.addChild(this.surface, this.buttonGfx);
     this.surface.eventMode = 'none';
-    this.wheelGfx.eventMode = 'none';
     this.buttonGfx.eventMode = 'none';
   }
 
@@ -193,9 +200,9 @@ export class TouchControls {
    * Pointer entry points. Called by the host from stage-level listeners, so nothing here depends on Pixi's hit
    * testing. See the class comment.
    *
-   * MULTI-TOUCH: the wheel and the skill button are routed independently, so a thumb can hold a direction while
-   * the other hand fires a skill. Every handler is a no-op for an id it does not already know, so an unrelated
-   * pointer cannot disturb an active control.
+   * MULTI-TOUCH: the steering finger and the buttons are routed independently, so one hand can steer while the
+   * other fires a skill. Every handler is a no-op for an id it does not already know, so an unrelated pointer
+   * cannot disturb an active control.
    */
   onPointerDown(pointerId: number, x: number, y: number): void {
     /**
@@ -273,31 +280,57 @@ export class TouchControls {
     }
 
     /**
-     * The wheel claims a touch that starts ON the pad, and ignores one that starts elsewhere.
+     * Everything else is the player putting a hand on the bubble.
      *
-     * Not "the whole screen is a stick": a touch in the water has to be free for the skill button and for the
-     * settings panel, and a pad that grabbed every touch would steer the bubble whenever the player reached for
-     * anything else. A player who presses outside the pad simply gets no steering, which is the same as not
-     * touching the controls at all.
+     * ANYWHERE on the screen, which is the whole point of the scheme: there is no pad to find, and the finger is
+     * free to sit on empty water where it covers nothing. It is the LAST branch here because a touch that lands on
+     * a control belongs to that control -- reaching for the spit button must not also shove the bubble sideways.
      *
-     * A second finger on the pad while one is already there is ignored rather than taking over: swapping hands
+     * A second finger while one is already steering is ignored rather than taking over: swapping hands
      * mid-manoeuvre should not happen by accident.
      */
-    if (this.wheelPointer === null && this.isInWheel(x, y)) {
-      this.wheelPointer = pointerId;
-      this.moveKnob(x, y);
-      this.update();
-      return;
+    if (this.dragPointer === null) {
+      this.dragPointer = pointerId;
+      this.dragX = x;
+      this.dragY = y;
+      this.dragAnchorX = x;
+      this.dragAnchorY = y;
+      this.input.dragHeld = true;
+      this.input.setDragAim(0, 0);
     }
   }
 
+  /**
+   * A finger moved: move the bubble by the same distance, in the same direction.
+   *
+   * The displacement is handed over in the two fractions the player stores its position in -- lane widths across,
+   * window heights up -- because that is what makes the bubble travel exactly as far as the finger: the lane is
+   * `laneWidthPx` wide on screen and the window `canvasHeightPx` tall, so a pixel delta divided by those is the
+   * same distance measured on the glass.
+   *
+   * The sign of the vertical is flipped here, once: screen y grows DOWNWARDS and `screenY` grows UPWARDS.
+   */
   onPointerMove(pointerId: number, x: number, y: number): void {
-    if (this.wheelPointer !== pointerId) return;
-    this.moveKnob(x, y);
+    if (this.dragPointer !== pointerId) return;
+
+    const dx = x - this.dragX;
+    // Negated: a finger moving down the screen must move the bubble down, and `screenY` counts upwards.
+    const dy = -(y - this.dragY);
+    this.dragX = x;
+    this.dragY = y;
+
+    if (this.laneWidthPx > 0 && this.canvasHeightPx > 0) {
+      this.input.addDrag(dx / this.laneWidthPx, dy / this.canvasHeightPx);
+    }
+
+    // The aim, from where the thumb went down rather than from the last few pixels of movement: a slow drag has
+    // almost no direction in it frame to frame, but "up and to the right of my thumb's landing spot" is a
+    // direction the player chose and is holding.
+    this.input.setDragAim(x - this.dragAnchorX, -(y - this.dragAnchorY));
   }
 
   onPointerUp(pointerId: number): void {
-    // Releasing the suction button ends the field. Checked before the wheel so a stray release cannot leave the
+    // Releasing the suction button ends the field. Checked before the drag so a stray release cannot leave the
     // field on, which would drain the player's speed with no way to stop it.
     if (this.suctionPointer === pointerId) {
       this.suctionPointer = null;
@@ -324,32 +357,26 @@ export class TouchControls {
       this.input.setChargeHeld(false);
       this.update();
     }
-    if (this.wheelPointer !== pointerId) return;
-    // Recentre. The knob is a stick, not a place: unlike a drag, releasing must not leave the bubble heading
-    // for wherever the thumb happened to stop.
-    this.wheelPointer = null;
-    this.knobX = 0;
-    this.knobY = 0;
-    this.deflection = 0;
-    this.input.wheelX = 0;
-    this.input.wheelY = 0;
-    this.input.wheelHeld = false;
-    this.update();
+    if (this.dragPointer !== pointerId) return;
+    /**
+     * Letting go simply stops the bubble, and there is nothing to recentre.
+     *
+     * A stick has to be re-zeroed on release or it would keep asking to move; a drag has already delivered
+     * everything it was going to. Wherever the bubble is when the finger lifts is where it stays -- including
+     * mid-screen and including after the drag ran into a wall, since nothing is stored to spring back from.
+     */
+    this.dragPointer = null;
+    this.input.releaseDrag();
   }
 
   /** Forget every pointer, e.g. after a layout change or on leaving the level. */
   releaseAll(): void {
-    this.wheelPointer = null;
+    this.dragPointer = null;
     this.suctionPointer = null;
     this.compressPointer = null;
     this.chargePointer = null;
     this.chargeHold = 0;
-    this.knobX = 0;
-    this.knobY = 0;
-    this.deflection = 0;
-    this.input.wheelX = 0;
-    this.input.wheelY = 0;
-    this.input.wheelHeld = false;
+    this.input.releaseDrag();
     this.input.suctionHeld = false;
     this.input.setCompressHeld(false);
     this.input.setChargeHeld(false);
@@ -364,14 +391,6 @@ export class TouchControls {
   }
 
   /** Same generosity as the skill button has: hit with a thumb, and near-misses still register. */
-  private isInWheel(x: number, y: number): boolean {
-    const dx = x - this.wheel.x;
-    const dy = y - this.wheel.y;
-    // Slightly beyond the drawn rim, so a thumb landing on the edge does not have to be exact.
-    const reach = this.wheel.radius * 1.15;
-    return dx * dx + dy * dy <= reach * reach;
-  }
-
   private isInSkillButton(x: number, y: number): boolean {
     const dx = x - this.skillButton.x;
     const dy = y - this.skillButton.y;
@@ -442,56 +461,6 @@ export class TouchControls {
   }
 
   /**
-   * Turn a touch position into a deflection, and write it to the shared input.
-   *
-   * The knob is clamped to the rim, so pushing past the edge keeps full speed rather than losing the input --
-   * a thumb that slides off a small pad is normal, and it should not read as "stop".
-   */
-  private moveKnob(canvasX: number, canvasY: number): void {
-    const r = this.wheel.radius;
-    if (r <= 0) return;
-
-    let dx = canvasX - this.wheel.x;
-    // Screen y grows DOWNWARDS and the vertical axis grows UPWARDS, so the y deflection is flipped.
-    let dy = -(canvasY - this.wheel.y);
-    const distance = Math.hypot(dx, dy);
-    if (distance > r) {
-      const k = r / distance;
-      dx *= k;
-      dy *= k;
-    }
-    this.knobX = dx;
-    this.knobY = -dy;
-
-    /**
-     * The dead zone is RESCALED, not merely clipped.
-     *
-     * Clipping it would mean the axis jumps from 0 to `deadZone` the instant the thumb leaves the centre, so
-     * the slowest speed available would be the dead zone's worth. Subtracting the dead zone and dividing by what
-     * remains maps "just outside the centre" to just above zero, which is the fine control the wheel exists for.
-     */
-    const clampedDistance = Math.min(distance, r);
-    const dead = r * mech.movement.wheel.deadZoneRatio;
-    const live = Math.max(0, clampedDistance - dead);
-    const span = Math.max(1e-6, r - dead);
-    this.deflection = Math.min(1, live / span);
-
-    if (this.deflection <= 0 || clampedDistance < 1e-6) {
-      this.input.wheelX = 0;
-      this.input.wheelY = 0;
-    } else {
-      // Normalised to a unit direction, then scaled by the deflection. Using the raw offset instead would let a
-      // diagonal push reach 1.41 on both axes and move the bubble 41% faster than a cardinal one.
-      const ux = dx / (clampedDistance || 1);
-      const uy = dy / (clampedDistance || 1);
-      this.input.wheelX = ux * this.deflection;
-      this.input.wheelY = uy * this.deflection;
-    }
-    this.input.wheelHeld = true;
-    this.update();
-  }
-
-  /**
    * @param laneLeft,laneWidth the play area in canvas pixels.
    *
    *   The controls are laid out against the LANE, not the canvas. On a wide desktop window the lane is a centred
@@ -500,28 +469,22 @@ export class TouchControls {
    */
   layout(laneLeft: number, laneWidth: number, canvasWidth: number, canvasHeight: number, scale: number): void {
     this.scale = scale;
+    /**
+     * Remembered for the drag, which is the one control with no geometry of its own.
+     *
+     * A finger's movement arrives in canvas pixels and the bubble's position is stored as fractions of exactly
+     * these two lengths, so this is where "the bubble moves as far as the finger" is made true: 30px across a
+     * 390px lane is 30/390 of the lane, whether that lane is on a phone or letterboxed into a desktop window.
+     */
+    this.laneWidthPx = laneWidth;
+    this.canvasHeightPx = canvasHeight;
 
     this.surface.clear();
     this.surface.rect(0, 0, canvasWidth, canvasHeight).fill({ color: 0xffffff, alpha: 0.001 });
 
     /**
-     * The wheel: bottom CENTRE of the lane.
-     *
-     * Centre rather than a corner because it is the primary control and both thumbs can reach it, and because
-     * the corners are then free for the skill button. Its radius is capped in pixels as well as derived from the
-     * lane, or a 900px-wide desktop lane would grow it to 153px and swallow the bottom of the water.
-     */
-    const wheelRadius = Math.min(mech.movement.wheel.maxRadiusPx, laneWidth * mech.movement.wheel.radiusRatio);
-    const inset = mech.movement.wheel.bottomInset * scale;
-    this.wheel = {
-      x: laneLeft + laneWidth / 2,
-      y: canvasHeight - wheelRadius - inset,
-      radius: wheelRadius,
-    };
-
-    /**
      * The skill button sits low and to the RIGHT within the lane, where a thumb rests without covering the
-     * bubble, and clear of the wheel so a press cannot be ambiguous.
+     * bubble, and clear of the middle so a drag never starts on it.
      */
     const buttonRadius = Math.min(38 * scale, laneWidth * 0.13);
     this.skillButton = {
@@ -568,10 +531,8 @@ export class TouchControls {
     this.update();
   }
 
-  /** Redraw the wheel and the buttons. Cheap: a few circles and paths per frame. */
+  /** Redraw the buttons. Cheap: a few circles and paths. */
   update(): void {
-    // The wheel is drawn for every type: it is the one control none of them can do without.
-    this.drawWheel();
     /**
      * `buttonGfx` is ONE layer for every button, so it is cleared once here and each draw adds its own shapes.
      * Clearing inside `drawSkillButton` (which is how this started) is only correct while that button is always
@@ -670,58 +631,6 @@ export class TouchControls {
     g.circle(sb.x, sb.y, sb.radius * 0.2).fill({ color: 0xfff0d0, alpha: 0.9 });
   }
 
-  private drawWheel(): void {
-    const g = this.wheelGfx;
-    const w = this.wheel;
-    g.clear();
-    if (w.radius <= 0) return;
-
-    /**
-     * The pad brightens with the thumb on it.
-     *
-     * Idle it is very faint -- it is permanent UI and must not compete with the water for attention -- but
-     * faint is not invisible, because a control the player cannot find is a control they do not have. Pressing
-     * it brightens immediately, which is the acknowledgement that the touch landed.
-     */
-    const held = this.wheelPointer !== null;
-    const alpha = held ? mech.movement.wheel.activeAlpha : mech.movement.wheel.idleAlpha;
-    const rim = held ? 0x9fe4ff : 0x6dc7e8;
-
-    g.circle(w.x, w.y, w.radius).fill({ color: 0x08131f, alpha: alpha * 0.55 });
-    g.circle(w.x, w.y, w.radius).stroke({ color: rim, alpha, width: 1.6 * this.scale });
-
-    /**
-     * A ring at the dead zone boundary.
-     *
-     * It shows the player where "centred enough to stop" begins, which is the one piece of the control's
-     * internal state that is otherwise invisible -- and without it, a bubble that refuses to budge because the
-     * thumb is 5px off centre looks like a bug.
-     */
-    const dead = w.radius * mech.movement.wheel.deadZoneRatio;
-    g.circle(w.x, w.y, dead).stroke({ color: rim, alpha: alpha * 0.5, width: 1 });
-
-    // Cardinal ticks, so the pad reads as a directional control rather than a button.
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2;
-      const inner = w.radius * 0.72;
-      const outer = w.radius * 0.88;
-      g.moveTo(w.x + Math.cos(a) * inner, w.y + Math.sin(a) * inner);
-      g.lineTo(w.x + Math.cos(a) * outer, w.y + Math.sin(a) * outer);
-    }
-    g.stroke({ color: rim, alpha: alpha * 0.7, width: 1.4 * this.scale });
-
-    // The knob: at the centre when released, and pushed to where the thumb is while held.
-    const knobRadius = w.radius * 0.36;
-    g.circle(w.x + this.knobX, w.y + this.knobY, knobRadius).fill({
-      color: held ? 0x2f5f86 : 0x21344d,
-      alpha: held ? 0.9 : 0.6,
-    });
-    g.circle(w.x + this.knobX, w.y + this.knobY, knobRadius).stroke({
-      color: held ? 0xd8fbff : 0x7fb6d4,
-      alpha: held ? 0.95 : 0.5,
-      width: 1.6 * this.scale,
-    });
-  }
 
   /**
    * The right-hand button: the skill, plus whichever HOLD this type's bubble has.
@@ -832,20 +741,24 @@ export class TouchControls {
   /**
    * Exposed for probes.
    *
-   * `targetX`/`targetY` are gone with the drag model. What replaces them is the axis the wheel feeds, plus the
-   * deflection, which is the number a test actually wants: "the wheel is pushed 60% up" is the input, and the
-   * movement that follows is a separate claim.
+   * The drag's own numbers are what a test wants -- "the finger is down", "this much displacement is queued", "the
+   * aim points this way" -- because the movement that follows is a separate claim. `pendingX`/`pendingY` are the
+   * displacement still waiting to be consumed, so a probe can assert that a gesture produced it without depending
+   * on which frame the physics got to.
    */
   get debugState(): {
-    held: boolean;
-    wheelPointers: number;
-    deflection: number;
-    axisX: number;
-    axisY: number;
-    wheelX: number;
-    wheelY: number;
-    knobX: number;
-    knobY: number;
+    /** Whether a finger is steering the bubble. */
+    steering: boolean;
+    /** How many pointers are steering. Never more than one, by design. */
+    dragPointers: number;
+    /** The displacement queued for the physics, in lane widths and window heights. */
+    pendingX: number;
+    pendingY: number;
+    /** Where the drag points, from the point the finger landed. */
+    aimX: number;
+    aimY: number;
+    /** The finger's live position in canvas pixels, or null when nothing is steering. */
+    pointerAt: { x: number; y: number } | null;
     hasSkill: boolean;
     /** Whether the suction field is being held. */
     sucking: boolean;
@@ -855,25 +768,18 @@ export class TouchControls {
     compressPointer: number | null;
   } {
     return {
-      held: this.wheelPointer !== null,
-      wheelPointers: this.wheelPointer === null ? 0 : 1,
-      deflection: this.deflection,
-      axisX: this.input.wheelX,
-      axisY: this.input.wheelY,
-      wheelX: this.input.wheelX,
-      wheelY: this.input.wheelY,
-      knobX: this.knobX,
-      knobY: this.knobY,
+      steering: this.dragPointer !== null,
+      dragPointers: this.dragPointer === null ? 0 : 1,
+      pendingX: this.input.debugPendingDrag.x,
+      pendingY: this.input.debugPendingDrag.y,
+      aimX: this.input.dragAimX,
+      aimY: this.input.dragAimY,
+      pointerAt: this.dragPointer === null ? null : { x: this.dragX, y: this.dragY },
       hasSkill: this.hasSkill,
       sucking: this.input.suctionHeld,
       compressing: this.input.compressing,
       compressPointer: this.compressPointer,
     };
-  }
-
-  /** Wheel geometry, so a probe can push the real control instead of guessing where it is. */
-  get wheelGeometry(): { x: number; y: number; radius: number; deadZone: number } {
-    return { ...this.wheel, deadZone: this.wheel.radius * mech.movement.wheel.deadZoneRatio };
   }
 
   /** Skill button geometry, so a probe can press the real control instead of guessing. */
@@ -907,8 +813,8 @@ export class TouchControls {
   }
 
   /** Named layers, exposed so a test can inspect them. */
-  get layers(): { surface: Graphics; wheel: Graphics; button: Graphics } {
-    return { surface: this.surface, wheel: this.wheelGfx, button: this.buttonGfx };
+  get layers(): { surface: Graphics; button: Graphics } {
+    return { surface: this.surface, button: this.buttonGfx };
   }
 
   /** Test hook: force the press pulse, bypassing the event system. */

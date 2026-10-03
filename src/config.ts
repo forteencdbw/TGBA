@@ -51,13 +51,14 @@ export const TOUCH_SLOP_PX = 12;
 /**
  * How fast lateral velocity bleeds off when the player is not steering, per second.
  *
- * This is the COAST-DOWN rate: releasing a key or centring the wheel decays `vx` by this factor each second
- * rather than stopping dead, which is what makes a small correction possible instead of a lurch.
+ * This is the COAST-DOWN rate: releasing a key decays `vx` by this factor each second rather than stopping dead,
+ * which is what makes a small correction possible instead of a lurch.
  *
  * It used to double as the touch steering's easing rate, when touch named a destination and the bubble eased
- * toward it. That model is gone -- the wheel produces an axis like the keyboard does -- so this is now only the
- * coast-down and the calibration value `src/lateral.ts` solves against. Kept out of the config file for that
- * reason: it is part of the calibration contract, not a knob the balance depends on.
+ * toward it. Touch does not coast at all any more -- it is a drag, a distance rather than a speed, and it stops the
+ * instant the finger does -- so this is only the keyboard's coast-down and the calibration value
+ * `src/lateral.ts` solves against. Kept out of the config file for that reason: it is part of the calibration
+ * contract, not a knob the balance depends on.
  */
 export const LATERAL_DAMPING = 5.5;
 
@@ -69,8 +70,8 @@ export const LATERAL_DAMPING = 5.5;
  * top speed absurd rather than making it controllable. A crossing time is directly predictable: hold the key,
  * cross in this long.
  *
- * Shared by the keyboard and the touch wheel: full deflection on the wheel is exactly this speed. One constant
- * for both, so switching device does not switch feel.
+ * The KEYBOARD's speed, and only the keyboard's: the touch drag is 1:1 with the finger and therefore has no speed
+ * of its own to state. See `movement.drag` in the config file.
  */
 export const KEYBOARD_CROSSING_SECONDS = mech.movement.keyboardCrossingSeconds;
 

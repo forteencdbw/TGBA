@@ -482,8 +482,8 @@ export class Stomach {
  * rather than an arbitrary one: the level is a vertical ascent, so "forward" is up, and a projectile fired up
  * travels into the water the player is about to enter -- where the targets are.
  *
- * Normalising here rather than at the call site means a weak steering deflection fires at FULL speed in that
- * direction, which is what a player expects from a discrete shot: the wheel aims it, it does not throttle it.
+ * Normalising here rather than at the call site means a weak aim fires at FULL speed in that direction, which is
+ * what a player expects from a discrete shot: the drag aims it, it does not throttle it.
  */
 export function spitDirection(steerX: number, steerY: number): { x: number; y: number } {
   const length = Math.hypot(steerX, steerY);

@@ -1,4 +1,4 @@
-import { SPAWN_X_RATIO, tuning } from './config';
+import { SPAWN_X_RATIO, mech, tuning } from './config';
 import { DEPTH_TOTAL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Input } from './input';
@@ -13,6 +13,10 @@ import type { Input } from './input';
  * put the player in world space and let the camera follow them, which made "press up" also advance the
  * level -- the two are independent, and storing screen position is what makes that structural rather
  * than a rule someone has to remember.
+ *
+ * Storing screen fractions is also what lets the phone's control be a DISPLACEMENT: a finger that moves
+ * 30px on the glass is 30px of lane width or of window height, which is exactly the unit of `x` and
+ * `screenY`. See the drag block in `update`.
  *
  *   x        fraction across the play area, 0..1
  *   screenY  fraction up the visible window, 0 at the bottom edge and 1 at the top
@@ -173,10 +177,11 @@ export class Player {
   /**
    * Movement multiplier from the current growth stage, 0..1.
    *
-   * Set by the game from `src/stages.ts`, and applied to BOTH axes and to TOUCH as well as the keyboard. That
-   * last part is deliberate: applying it only to keyboard speed would make the stage system invisible to anyone
-   * playing on a phone, which is the shipping target -- and "bigger is slower" is the entire tension of the
-   * design, so it has to be felt on the device that matters.
+   * Set by the game from `src/stages.ts`, and applied to the keyboard's two axes and to the vertical slow. Touch
+   * is the exception, and it is forced rather than chosen: the drag promises the bubble travels exactly as far as
+   * the finger did, and a stage multiplier on a distance is a broken promise. `movement.drag.penaltiesApply` in the
+   * config puts them back for anyone who would rather have "bigger is slower" than strict 1:1 -- on the phone that
+   * tension is otherwise felt only through the keyboard, which the phone does not have.
    */
   stageSpeedMultiplier = 1;
 
@@ -238,12 +243,15 @@ export class Player {
    * @param lateral calibrated control authority for the current play-area width
    * @param dt seconds
    *
-   * Movement is a CONSTANT speed in the input direction, with no acceleration ramp. An acceleration
-   * model on a binary axis saturates almost immediately and overshoots, which reads as twitchy however
-   * the ramp is scaled -- the same conclusion the horizontal axis reached earlier, now applied to both.
+   * Two movement models, one per device, and they are different KINDS of thing rather than two tunings of one:
    *
-   * Both axes move within the SCREEN. Neither touches the level's scroll, which the game advances
-   * independently -- that separation is the whole point of this model.
+   *   keyboard  an axis, a constant speed (no acceleration ramp -- one saturates and overshoots on a binary key,
+   *             which reads as twitchy however it is scaled), scaled by the stage, the suction field and the slow
+   *   touch     a displacement. Drag 30px on the glass and the bubble moves 30px, from where it already was, with
+   *             no ramp, no coast, and nothing scaling it: see the drag block in `update`
+   *
+   * Both move within the SCREEN. Neither touches the level's scroll, which the game advances independently --
+   * that separation is the whole point of this model.
    */
   update(input: Input, dt: number, lateral: LateralAuthority): void {
     this.debugUpdates++;
@@ -270,33 +278,29 @@ export class Player {
     if (this.misfireSeconds > 0) this.misfireSeconds = Math.max(0, this.misfireSeconds - dt);
 
     /**
-     * One multiplier for everything that follows, folding in the growth stage and the suction field.
-     *
-     * The stage applies to EVERY steering source -- the keyboard and the touch wheel alike -- because the
-     * design's tension is that bigger means slower, and that has to be felt on the device the game ships to.
+     * One multiplier for everything the KEYBOARD does, folding in the growth stage and the suction field.
      *
      * `suctionMoveFactor` is the gathering cost, applied to the same product rather than to a separate branch, so
      * there is one number describing "how fast can I move right now" and no way for a new penalty to miss a path.
+     *
+     * The drag is outside this product by default, and that is forced rather than chosen: a distance cannot be
+     * scaled without breaking "the bubble moves exactly as far as the finger". `movement.drag.penaltiesApply` puts
+     * the same multipliers on it for anyone who would rather have "bigger is slower" than the 1:1 promise.
      */
     const steer =
       Math.max(0, this.steerScale) * Math.max(0, this.stageSpeedMultiplier) * Math.max(0, this.suctionMoveFactor);
     this.debugSteerMultiplier = steer;
 
     /**
-     * ONE movement model, two producers.
+     * The keyboard's model: an axis, a constant speed, and a coast when the axis centres.
      *
-     * The axes are either -1/0/+1 from the keyboard or a fraction from the touch wheel, and nothing here needs
-     * to know which: the axis IS the throttle. That replaced a branch where touch named an absolute TARGET
-     * position and the bubble eased toward it, which was a different physics with its own damping constant, its
-     * own feel, and no way to express "move slowly".
-     *
-     * `axisX === 0` coasts to a stop rather than stopping dead, which is a released key and a centred wheel
-     * alike -- and coasting is what makes a small correction possible instead of a lurch.
+     * `axisX === 0` coasts to a stop rather than stopping dead, which is what makes a small correction possible
+     * instead of a lurch. Touch does NOT go through this (see the drag below): a finger asks for a distance, not a
+     * speed, and there is nothing to coast.
      *
      * `axisX` is flipped on the way IN when an eel has shocked the bubble, rather than the input itself being
-     * rewritten: the raw axis is what the wheel's knob is drawn from and what the spit aims with, so inverting it
-     * at the source would also make the controls LOOK wrong and the shots fly backwards. What breaks is the
-     * bubble's obedience, and that is what this line is.
+     * rewritten: the raw axis is what the spit aims with, so inverting it at the source would also make the shots
+     * fly backwards. What breaks is the bubble's obedience, and that is what this line is.
      */
     const axisX = this.misfireSeconds > 0 ? -input.axisX : input.axisX;
     if (axisX === 0) {
@@ -313,6 +317,29 @@ export class Player {
     const verticalSpeed = lateral.keyboardSpeed * tuning.verticalSpeedScale * steer;
     this.vy = input.axisY * verticalSpeed * this.slowMultiplier;
     this.screenY += this.vy * dt;
+
+    /**
+     * The touch drag: a POSITION, applied on top of the keyboard's velocity.
+     *
+     * Consumed rather than read, so one frame's worth of finger movement moves the bubble once -- the physics runs
+     * up to eight sub-steps per frame, and a displacement read eight times would travel eight times as far as the
+     * finger did.
+     *
+     * Applied as a displacement and NOT as a speed, deliberately. A speed would have to be ramped, damped and
+     * multiplied like the keyboard's, and every one of those breaks the promise the control makes: the bubble goes
+     * exactly as far as the finger went, and stops when the finger stops. That is also why the drag is applied
+     * after the velocity model rather than instead of it: a player with both hands on a device gets both, and the
+     * drag's contribution is never scaled by anything.
+     *
+     * `penaltiesApply` is the one exception, and it is off by default: see `config/mechanics.json5`. The eel's
+     * inversion is not a penalty and applies either way -- it inverts the LATERAL axis only, which on a phone is
+     * the drag, and losing obedience is the whole point of being shocked.
+     */
+    const drag = input.consumeDrag();
+    const dragScale = mech.movement.drag.sensitivity * (mech.movement.drag.penaltiesApply ? steer * this.slowMultiplier : 1);
+    const dragX = this.misfireSeconds > 0 ? -drag.x : drag.x;
+    this.x += dragX * dragScale;
+    this.screenY += drag.y * dragScale;
 
     // A launch impulse is added on top of whichever input is driving, so being shoved does not cancel
     // the player's own control of the other axis.

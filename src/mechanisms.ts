@@ -154,19 +154,16 @@ export interface Mechanisms {
     keyboardCrossingSeconds: number;
     verticalSpeedScale: number;
     /**
-     * The on-screen thumb wheel: a virtual analog stick at the bottom of the lane.
+     * The touch drag: the phone's only way to move, and a POSITION rather than a throttle.
      *
-     * Push direction and push distance map to direction and speed, so the wheel reaches exactly the keyboard's
-     * full speed at full deflection -- they share one speed constant, which means changing device does not
-     * change the feel and there is no second set of speed numbers to keep in sync.
+     * A finger anywhere on the screen moves the bubble by the distance the finger moved, from wherever the bubble
+     * already is -- not to where the finger is. `sensitivity` 1 is that 1:1 contract, and `penaltiesApply` decides
+     * whether the growth stage, the suction field and the slows are allowed to shrink the distance (they do not, by
+     * default, because shrinking it would break the 1:1 promise). See the config file.
      */
-    wheel: {
-      radiusRatio: number;
-      maxRadiusPx: number;
-      bottomInset: number;
-      deadZoneRatio: number;
-      idleAlpha: number;
-      activeAlpha: number;
+    drag: {
+      sensitivity: number;
+      penaltiesApply: boolean;
     };
   };
   collectables: {
@@ -726,12 +723,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'volume.laneRatio', check: (v) => typeof v === 'number' && v > 0 && v < 0.5, describe: 'a small number above 0' },
   { path: 'movement.keyboardCrossingSeconds', check: (v) => typeof v === 'number' && v > 0.05, describe: 'seconds above 0.05' },
   { path: 'movement.verticalSpeedScale', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
-  { path: 'movement.wheel.radiusRatio', check: (v) => typeof v === 'number' && v > 0.03 && v < 0.45, describe: 'a fraction of the lane width, above 0.03 and below 0.45' },
-  { path: 'movement.wheel.maxRadiusPx', check: (v) => typeof v === 'number' && v >= 30, describe: 'a pixel radius of at least 30' },
-  { path: 'movement.wheel.bottomInset', check: (v) => typeof v === 'number' && v >= 0, describe: 'a non-negative number of design pixels' },
-  { path: 'movement.wheel.deadZoneRatio', check: (v) => typeof v === 'number' && v >= 0 && v < 0.6, describe: 'a fraction of the wheel radius, below 0.6' },
-  { path: 'movement.wheel.idleAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  { path: 'movement.wheel.activeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'movement.drag.sensitivity', check: (v) => typeof v === 'number' && v > 0 && v <= 4, describe: 'a displacement multiplier above 0 and at most 4; 1 is finger-for-finger' },
+  { path: 'movement.drag.penaltiesApply', check: (v) => typeof v === 'boolean', describe: 'true or false; false keeps the drag a strict 1:1 with the finger' },
   { path: 'collectables.riseMin', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'collectables.riseMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.riseMin') as number), describe: 'at least riseMin' },
   { path: 'collectables.riseSpeedExponent', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },

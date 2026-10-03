@@ -312,7 +312,6 @@ const ENVIRONMENT: readonly CodexEntry[] = [
  * place that has to turn an id into a word for a reader is this page.
  */
 const CONTROL_LABELS: Record<ControlId, string> = {
-  wheel: '摇杆',
   skill: '技能',
   suction: '吸附',
   spit: '喷吐',
@@ -545,7 +544,7 @@ const BUBBLE_PROSE: Record<BubbleTypeId, BubbleProse> = {
           },
           { label: '花费', value: `撞中 -${mech.angry.charge.rageCostPerHit} · 撞碎 -${mech.angry.charge.rageCostPerBreak}` },
           { label: '猛撞窗口', value: `${num(mech.angry.charge.slamSeconds, 2)}s（这段时间内的接触才算撞）` },
-          { label: '方向', value: '按住时跟随摇杆，松开摇杆就锁定' },
+          { label: '方向', value: '按住时跟随拖动/方向键，松开就锁定' },
           { label: '代价', value: '不掉血：它是玩家自己的攻击' },
         ],
         notes: [

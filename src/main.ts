@@ -887,14 +887,21 @@ class Game {
      */
     this.player.volume = drainByDigesting(this.player.volume, item.mass * (1 - item.digest));
 
-    const dir = spitDirection(this.input.wheelX, this.input.wheelY);
+    /**
+     * The aim: where the finger is relative to where it landed, or straight up when there is none.
+     *
+     * The keyboard has no aim of its own -- it is four directions and nothing else -- so `spitDirection` falls back
+     * to up, which is "forward" in a vertical ascent. See the drag in `src/touch.ts`: keeping the aim on the
+     * ANCHOR rather than on the last few pixels is what lets a player hold a direction while barely moving.
+     */
+    const dir = spitDirection(this.input.dragAimX, this.input.dragAimY);
     const speed = laneWidth * mech.spit.speedPerSecond;
     this.projectiles.push({
       kind: item.kind,
       x: this.player.x * laneWidth,
       y: this.player.y,
       vx: dir.x * speed,
-      // World y grows upward and the direction's y is already in world terms (the wheel writes +1 for up).
+      // World y grows upward and the direction's y is already in world terms (the drag's aim writes +1 for up).
       vy: dir.y * speed,
       screenY: this.player.screenY,
       radiusFraction: spitRadiusFraction(item.kind),
@@ -2481,9 +2488,18 @@ class Game {
 
     const held = this.input.charging;
     if (!this.input.consumeChargeRelease() && held) {
-      // Winding up: the aim follows the stick while the player is pushing, and holds still when they are not.
+      /**
+       * Winding up: the aim follows whichever hand is pointing, and freezes when nothing is.
+       *
+       * Two producers, one number, the same shape the movement axes had: the keyboard's axis while a direction
+       * key is held, otherwise the touch drag's direction from where the finger landed. On a phone that gives the
+       * whole verb -- drag to point, hold the button to wind up, let the finger off the drag so nothing overwrites
+       * `chargeAim` any more, then release the button to slam.
+       */
       if (this.input.axisX !== 0 || this.input.axisY !== 0) {
         this.chargeAim = { x: this.input.axisX, y: this.input.axisY };
+      } else if (this.input.dragAimX !== 0 || this.input.dragAimY !== 0) {
+        this.chargeAim = { x: this.input.dragAimX, y: this.input.dragAimY };
       } else if (!this.charging && this.chargeAim.x === 0 && this.chargeAim.y === 0) {
         // First press with no aim at all: go the configured way (up), so a player who taps cannot waste a slam.
         this.chargeAim = { x: mech.angry.charge.defaultAimX, y: mech.angry.charge.defaultAimY };

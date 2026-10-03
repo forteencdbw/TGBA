@@ -107,7 +107,7 @@ test.describe('layout holds at any canvas size', () => {
        * It only ever checked the gear, and the gap is exactly the kind of thing that goes unnoticed: the compress
        * button is stacked ABOVE the spit button, which is the first control whose position depends on another
        * control's size -- so on a narrow lane a fixed pixel gap could have pushed it off the top of the reachable
-       * area, or dropped it on top of the wheel.
+       * area, or dropped it on top of the skill button on the other side.
        */
       for (const [name, c] of Object.entries(geo.controls)) {
         expect(c.x - c.radius, `${label}: the ${name} button must be inside the left edge`).toBeGreaterThanOrEqual(0);

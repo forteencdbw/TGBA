@@ -126,7 +126,7 @@ test.describe('bubble types', () => {
 
     const run = await state(page);
     expect(run.bubbleType.id, 'the run must be the bubble that was chosen').toBe('angry');
-    expect(run.bubbleType.controls, 'and must lay out that type\'s controls').toEqual(['wheel', 'skill', 'charge', 'burst']);
+    expect(run.bubbleType.controls, 'and must lay out that type\'s controls').toEqual(['skill', 'charge', 'burst']);
     expect(run.bubbleType.hasSpit, 'the volatile bubble has no spit').toBe(false);
     expect(run.bubbleType.hasCompress, 'and no digest').toBe(false);
     expect(run.bubbleType.hasCharge, 'but it does have the charge').toBe(true);
@@ -144,7 +144,6 @@ test.describe('bubble types', () => {
             touchRef: {
               controlIds: string[];
               chargeGeometry: { x: number; y: number; radius: number };
-              wheelGeometry: { x: number; y: number; radius: number };
             };
           };
         };
@@ -152,7 +151,6 @@ test.describe('bubble types', () => {
       return {
         controlIds: [...g.touchRef.controlIds],
         charge: g.touchRef.chargeGeometry,
-        wheel: g.touchRef.wheelGeometry,
       };
     });
 
@@ -162,10 +160,12 @@ test.describe('bubble types', () => {
      * `layout` computes a position for every button whether or not the type uses it, so the geometry being non-zero
      * proves nothing. What proves the abstraction works is that the type's list does not contain spit or digest --
      * and the drawing and the hit testing both read that list.
+     *
+     * Nothing in the list is MOVEMENT: a phone steers by dragging anywhere on the screen, which needs no button and
+     * therefore no id. See `src/touch.ts`.
      */
-    expect(layout.controlIds).toEqual(['wheel', 'skill', 'charge', 'burst']);
+    expect(layout.controlIds).toEqual(['skill', 'charge', 'burst']);
     expect(layout.charge.radius, 'the charge button must have a real size to press').toBeGreaterThan(0);
-    expect(layout.wheel.radius, 'and the wheel must still be there').toBeGreaterThan(0);
 
     /**
      * And pressing where the spit button WOULD be must do nothing.
@@ -201,7 +201,7 @@ test.describe('bubble types', () => {
 
     const run = await state(page);
     expect(run.bubbleType.id, 'the default run is still the devour bubble').toBe('devour');
-    expect(run.bubbleType.controls, 'with exactly its old controls').toEqual(['wheel', 'skill', 'suction', 'spit', 'compress']);
+    expect(run.bubbleType.controls, 'with exactly its old controls').toEqual(['skill', 'suction', 'spit', 'compress']);
     expect(run.bubbleType.hasSpit).toBe(true);
     expect(run.bubbleType.hasCompress).toBe(true);
     expect(run.bubbleType.hasCharge, 'and no charge verb it never had').toBe(false);
@@ -936,7 +936,7 @@ test.describe('bubble types', () => {
     expect(swallowed.size, 'and a fish on top of it goes in').toBeGreaterThan(0);
   });
 
-  test('the aim locks while winding up, so a released stick still slams where it was pointed', async ({ page }) => {
+  test('the aim locks while winding up, so a released drag still slams where it was pointed', async ({ page }) => {
     await boot(page);
     await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
     await waitForPhase(page, 'playing');
@@ -945,7 +945,8 @@ test.describe('bubble types', () => {
       const g = (window as unknown as {
         __GB: {
           game: {
-            touchRef: { chargeGeometry: { x: number; y: number }; wheelGeometry: { x: number; y: number; radius: number } };
+            touchRef: { chargeGeometry: { x: number; y: number } };
+            canvasSize: { width: number; height: number };
             handlePointerDown: (id: number, x: number, y: number) => void;
             handlePointerMove: (id: number, x: number, y: number) => void;
             handlePointerUp: (id: number) => void;
@@ -956,23 +957,25 @@ test.describe('bubble types', () => {
       const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
       const c = g.game.touchRef.chargeGeometry;
-      const w = g.game.touchRef.wheelGeometry;
+      const startX = g.game.canvasSize.width * 0.5;
+      const startY = g.game.canvasSize.height * 0.4;
 
       /**
-       * Point LEFT on the wheel with one thumb, wind up with the other, then let the stick go.
+       * Drag LEFT with one thumb, wind up with the other, then let go of the drag.
        *
-       * Two pointers, because that is the gesture: the wheel is held with one hand and the charge button with the
-       * other. The aim is captured WHILE CHARGING -- it follows the stick until the stick is released and then holds
-       * -- which is why the first reading is taken after the wind-up starts rather than before it.
+       * Two pointers, because that is the gesture: one hand steers (which is also how the aim is chosen now that the
+       * wheel is gone), the other holds the charge button. The aim is captured WHILE CHARGING -- it follows the drag
+       * until the finger lifts and then holds -- which is why the first reading is taken after the wind-up starts.
        */
-      g.game.handlePointerDown(31, w.x - w.radius * 0.9, w.y);
+      g.game.handlePointerDown(31, startX, startY);
+      g.game.handlePointerMove(31, startX - 60, startY);
       await raf();
 
       g.game.handlePointerDown(32, c.x, c.y);
       await raf();
       const whileHeld = { ...g.game.diagnostics.rage.aiming };
 
-      // Let go of the STICK only. The charge is still being wound.
+      // Let go of the DRAG only. The charge is still being wound.
       g.game.handlePointerUp(31);
       await raf();
 
@@ -984,9 +987,9 @@ test.describe('bubble types', () => {
     });
 
     console.log(`aim: ${JSON.stringify(aim)}`);
-    expect(aim.whileHeld.x, 'holding the stick left while winding must aim left').toBeLessThan(-0.5);
-    expect(aim.stillCharging, 'releasing the stick must not release the charge').toBe(true);
-    expect(aim.locked.x, 'and the aim must LOCK at that direction once the stick is let go').toBeLessThan(-0.5);
+    expect(aim.whileHeld.x, 'dragging left while winding must aim left').toBeLessThan(-0.5);
+    expect(aim.stillCharging, 'releasing the drag must not release the charge').toBe(true);
+    expect(aim.locked.x, 'and the aim must LOCK at that direction once the finger is let go').toBeLessThan(-0.5);
     expect(Math.abs(aim.locked.y), 'with no drift sideways').toBeLessThan(0.3);
   });
 });

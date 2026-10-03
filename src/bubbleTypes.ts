@@ -5,14 +5,14 @@
  * WHY THIS EXISTS, AND WHY IT CAME FIRST
  * ---------------------------------------------------------------------------------------------
  * The design document for the second bubble type ends with an architecture decision, and it is right: **the button
- * layout belongs to the TYPE, not to the game.** The devour bubble wants a wheel, a suction field that doubles as
- * the skill button, and a spit/compress pair; the volatile bubble wants a wheel and a charge button and has no use
- * for spit or digest at all.
+ * layout belongs to the TYPE, not to the game.** The devour bubble wants a suction field that doubles as the skill
+ * button, and a spit/compress pair; the volatile bubble wants a charge button and has no use for spit or digest at
+ * all. (Movement is not on this list: the phone steers by dragging anywhere on the screen, which needs no button.)
  *
  * The alternative -- one global set of buttons that each type reinterprets -- fails in a way that is easy to
- * predict and expensive to unpick. The volatile bubble locks its aim while charging, so its wheel has to freeze;
- * with a global wheel that becomes a special case ("the wheel is frozen when..."), and with a per-type control list
- * the type simply has a wheel that it stops reading. A rule that lives on the type cannot leak into the other type.
+ * predict and expensive to unpick. A type that must not fire a control the other type owns cannot say so through a
+ * shared layout; per type, the control is simply absent from the list, and the drawing and the hit testing both
+ * read that list. A rule that lives on the type cannot leak into the other type.
  *
  * So this module is deliberately a DESCRIPTOR and nothing more: which controls exist, which palette paints the
  * bubble, and which resource the HUD reports. Behaviour lives in the modules that already own it -- the devour
@@ -33,10 +33,11 @@
  * hold-and-release button on the right", and which corner that ends up in is the layout's business.
  */
 export type ControlId =
-  /** The thumb wheel. Every type has one, and every type reads it the same way. */
-  | 'wheel'
   /**
    * The right-hand button: tap to spend a skill. Every type has one, because every type can carry a skill.
+   *
+   * There is no id for MOVEMENT. It is not a control a type can ask for or leave out: the phone steers by
+   * dragging anywhere on the screen, which needs no button, no pad and therefore no entry here. See `src/touch.ts`.
    *
    * Separate from `suction` even though the two share a slot, and the separation is load-bearing rather than tidy:
    * both types have the BUTTON, and only one has the FIELD. Folded into one id, the volatile bubble's list would
@@ -116,7 +117,7 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
     name: '吞噬气泡',
     tagline: '吃掉一切，越大越强 —— 代价是越来越难躲',
     hint: 'WASD / 方向键移动   ·   吸附：按住右下   ·   喷吐：K   ·   消化：按住 L',
-    controls: ['wheel', 'skill', 'suction', 'spit', 'compress'],
+    controls: ['skill', 'suction', 'spit', 'compress'],
     look: 'growthStage',
     // The original design: the reversal IS the mechanic, and both exits are one button away.
     swallowsHazards: true,
@@ -134,7 +135,7 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
      * pulling, which is the design's "poor at precise collecting". What it does not do is swallow CREATURES: see
      * `swallowsHazards`.
      */
-    controls: ['wheel', 'skill', 'charge', 'burst'],
+    controls: ['skill', 'charge', 'burst'],
     look: 'rage',
     /**
      * No stomach, and therefore no over-eating fuse: an enemy it touches is an enemy that HITS it.

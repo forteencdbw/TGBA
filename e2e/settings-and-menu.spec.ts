@@ -167,12 +167,13 @@ test.describe('settings, pause and the menu', () => {
   });
 
   /**
-   * Two-finger steering-plus-skill coverage moved to `wheel.spec.ts`.
+   * Two-finger steering-plus-skill coverage lives in `drag.spec.ts`.
    *
-   * It lived here as "dragging and the skill button" and asserted that a DRAG kept steering the bubble while a
-   * second finger pressed the skill. The drag model is gone -- the thumb wheel replaced it -- so that assertion
-   * was testing a control the game no longer has, and it failed for the right reason. The wheel has its own
-   * routing for the same two-finger case, and the test for it belongs beside the control it drives.
+   * It has moved twice, and both times for the same reason: the movement control changed and the assertion was
+   * about the control. It started here as "dragging and the skill button", moved to the wheel when the wheel
+   * replaced the drag, and is now back with the drag -- which is a relative one again, so the case is once more
+   * "steer with one finger while the other fires". Keeping it beside the control it drives is what stops it from
+   * being an assertion about a scheme the game no longer has.
    */
 });
 

@@ -174,12 +174,13 @@ test.describe('screen captures @screenshots', () => {
   }
 
   /**
-   * The wheel with a thumb on it, pushed up and to the right.
+   * Mid-drag: a finger down in the water and the bubble moved by it.
    *
-   * The idle wheel's appearance can be reasoned about from the code; this state cannot, because it is about
-   * whether the knob's offset and the pad brightening actually read as "I am pushing this way".
+   * There is no control to look at any more -- the drag is invisible by design, and the bubble's own displacement
+   * is the whole feedback -- so what this picture is for is whether the bubble reads as "being moved" rather than
+   * as "drifting", and whether a finger on empty water leaves the water legible.
    */
-  test('the wheel pushed up and right @screenshots', async ({ page }, testInfo) => {
+  test('mid-drag, with the bubble moved by the finger @screenshots', async ({ page }, testInfo) => {
     await boot(page);
     await startFromMenu(page);
     await waitForPhase(page, 'playing');
@@ -189,21 +190,25 @@ test.describe('screen captures @screenshots', () => {
           game: {
             debugSetSteadyCruise: () => void;
             handlePointerDown: (id: number, x: number, y: number) => void;
-            touchRef: { wheelGeometry: { x: number; y: number; radius: number } };
+            handlePointerMove: (id: number, x: number, y: number) => void;
+            canvasSize: { width: number; height: number };
           };
           player: { x: number; screenY: number };
         };
       }).__GB;
       const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
       g.game.debugSetSteadyCruise();
-      g.player.x = 0.42;
-      g.player.screenY = 0.5;
-      const w = g.game.touchRef.wheelGeometry;
-      // Up and to the right: clearly deflected, but not pinned to the rim.
-      g.game.handlePointerDown(71, w.x + w.radius * 0.6, w.y - w.radius * 0.6);
+      g.player.x = 0.35;
+      g.player.screenY = 0.4;
+
+      // A thumb well below and to the left of the bubble, dragged up and to the right by a visible distance.
+      const startX = g.game.canvasSize.width * 0.3;
+      const startY = g.game.canvasSize.height * 0.75;
+      g.game.handlePointerDown(71, startX, startY);
+      g.game.handlePointerMove(71, startX + g.game.canvasSize.width * 0.22, startY - g.game.canvasSize.height * 0.16);
       for (let i = 0; i < 20; i++) await raf();
     });
-    await page.screenshot({ path: testInfo.outputPath('wheel-pushed.png') });
+    await page.screenshot({ path: testInfo.outputPath('drag-mid-gesture.png') });
   });
 
   /**
