@@ -590,6 +590,8 @@ export interface Mechanisms {
      * a sound-design one.
      */
     bulletHitVolume: number;
+    /** How loud a round leaving the muzzle is. Quieter than the hit: the shot is the rhythm, the hit is the news. */
+    bulletFireVolume: number;
   };
   emergence: {
     fishPerceptionBaseMeters: number;
@@ -977,6 +979,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   })),
   { path: 'audio.musicVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity-like level between 0 and 1' },
   { path: 'audio.bulletHitVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1; 0 mutes the bullet hit' },
+  { path: 'audio.bulletFireVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1; 0 mutes the shot' },
   { path: 'obstacles.health', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to hit points' },
   { path: 'obstacles.radius', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to a radius fraction' },
   {
@@ -1411,4 +1414,5 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 

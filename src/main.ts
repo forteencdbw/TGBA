@@ -964,7 +964,7 @@ class Game {
     });
 
     /**
-     * The one bit of feedback the gun needs a sound for.
+     * The gun's two sounds, and the order between them matters: the shot first, then the hit.
      *
      * A round is small and gone in a frame, so without a tick the player cannot tell "I am hitting it" from "I am
      * missing" at four rounds a second -- the counters say it, but nobody reads counters while dodging. Only hits
@@ -972,7 +972,12 @@ class Game {
      *
      * The hit that drives a creature off is played louder, which is the "that one is done" beat -- the same cue
      * rather than a second sound, so the gun keeps one voice.
+     *
+     * The fire cue is played ONCE per frame however many rounds the frame owed: a long frame can produce several,
+     * and firing the cue per round would turn one stutter into a burst of clicks. Its volume is its own config key
+     * because it is the rhythm rather than the information: the hit should be the one that stands out.
      */
+    if (shots.fired > 0) audio.play('bulletFire', mech.audio.bulletFireVolume);
     if (shots.hits > 0) {
       const volume = mech.audio.bulletHitVolume;
       audio.play('bulletHit', shots.drivenOff > 0 ? Math.min(1, volume * 1.4) : volume);

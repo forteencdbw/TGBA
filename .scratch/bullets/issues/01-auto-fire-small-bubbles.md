@@ -117,3 +117,27 @@ keys modules by full URL, so the bare one is a second instance with its own empt
 
     a fish in the line of fire   [bulletHit 0.5, bulletHit 0.5, bulletHit 0.7]
     a crate in the way           [] while four rounds were blocked
+
+### Follow-up (same day): the shot needs a sound too
+
+Requested: a cue for the rounds LEAVING the bubble, not only landing.
+
+`bulletFire`, designed as the hit's mirror image so the two halves of the gun are told apart by direction alone:
+a soft chirp that FALLS (430 Hz down to 55% over 55 ms) with a short low puff of noise behind it, where the hit
+RISES with a high crack. Quieter than the hit on purpose -- the shot is the rhythm, the hit is the news -- and its
+pitch wanders a few percent per shot, because a cue that repeats four times a second at exactly one frequency stops
+being a sound and becomes a metronome.
+
+Two details worth writing down:
+
+- `BulletField.update` reports `fired` alongside `hits` and `drivenOff`, and the CALLER plays the cue once per
+  frame however many rounds that frame owed. A long frame can legitimately produce several rounds (the cadence
+  carries its remainder), and a cue per round would turn one stutter into a burst of clicks.
+- `bulletFire` is throttled at 0.04 s rather than the usual 0.09: it is a rhythm, so it is allowed to repeat
+  faster than the rest -- but not without a floor, or a very high `bullets.perSecond` would stack into a buzz.
+
+Measured:
+
+    empty water      10 fire cues in 2.53s of game time = 3.95/s (configured 4/s), and 0 hit cues
+    with a fish      [bulletHit 0.5, bulletFire 0.3, bulletHit 0.5, bulletFire 0.3, bulletHit 0.7]
+    shot pitch       441, 427, 421, 424, 417, 428, 423, 430, 436, 447 -- ten distinct values in ten shots

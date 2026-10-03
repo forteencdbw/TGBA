@@ -49,7 +49,15 @@ export type SoundEvent =
    * and this is "I am doing that to IT". The gun fires several times a second, so this is the shortest and
    * highest sound in the game -- it has to register without ever crowding the mix.
    */
-  | 'bulletHit';
+  | 'bulletHit'
+  /**
+   * A small-bubble round LEAVING the bubble.
+   *
+   * The other half of the gun's voice, and quieter than the hit on purpose: the shot is the rhythm and the hit is
+   * the information. Its pitch wanders a little per shot, because a cue that repeats four times a second at exactly
+   * the same frequency stops being a sound and becomes a metronome.
+   */
+  | 'bulletFire';
 
 export class GameAudio {
   private ctx: AudioContext | null = null;
@@ -338,9 +346,11 @@ export class GameAudio {
      * clips into a click.
      *
      * `bulletHit` is throttled hardest of all, and that is not a detail: several rounds can land in the same
-     * frame on a swarm, and a gun that fired four cues at once would be a click, not a sound.
+     * frame on a swarm, and a gun that fired four cues at once would be a click, not a sound. `bulletFire` is
+     * allowed to repeat faster than the rest because it IS a rhythm -- but not without a floor, or a very high
+     * `bullets.perSecond` would stack into a buzz.
      */
-    const minGap = event === 'absorb' ? 0.045 : event === 'bulletHit' ? 0.05 : 0.09;
+    const minGap = event === 'absorb' ? 0.045 : event === 'bulletHit' ? 0.05 : event === 'bulletFire' ? 0.04 : 0.09;
     const previous = this.lastPlayed.get(event) ?? -1;
     if (this.now - previous < minGap) return;
     this.lastPlayed.set(event, this.now);
@@ -400,6 +410,21 @@ export class GameAudio {
          */
         this.tone(1050, 0.045, 0.09 + level * 0.07, 'square', t, 1.5);
         this.burst(0.028, 3200, 0.05 + level * 0.06, t);
+        break;
+      case 'bulletFire':
+        /**
+         * A soft downward chirp with a puff of air behind it: a bubble being pushed out, not a gunshot.
+         *
+         * FALLING where the hit RISES, so the two halves of the gun are told apart by direction alone -- the shot
+         * leaves and drops away, the impact snaps upward. It is deliberately the quieter of the two: this one is
+         * the rhythm, and the hit is the information.
+         *
+         * The frequency wanders a few percent per shot. A cue that repeats four times a second at exactly one pitch
+         * stops being a sound and becomes a metronome, which is the one thing a fire sound must not be.
+         */
+        const detune = 0.96 + Math.random() * 0.08;
+        this.tone(430 * detune, 0.055, 0.06 + level * 0.05, 'triangle', t, 0.55);
+        this.burst(0.022, 1300 * detune, 0.03 + level * 0.04, t);
         break;
     }
   }
