@@ -85,7 +85,7 @@ class Game {
   private readonly scene = new WorldLayer();
   private readonly hud = new Hud(LANDMARKS);
   private readonly touch = new TouchControls(this.input);
-  private readonly finishBanner = makeLabel('海面 / SURFACE', 0xeaf9ff, mech.hud.resultsCard.size);
+  private readonly finishBanner = makeLabel('击败 BOSS  ·  通关', 0xeaf9ff, mech.hud.resultsCard.size);
   /** The gear button and the pause panel it opens. */
   private readonly settings = new SettingsUi();
   /** The main menu, shown before a run and after exiting to it. */
@@ -743,6 +743,8 @@ class Game {
    * advantage, and the run after it would be a different game from the one before.
    */
   private rateTier = 1;
+  /** Whether this run's boss has arrived. Per run, like everything else about a run. */
+  private bossSpawned = false;
   /** Seconds until the next spit is allowed. */
   private spitCooldown = 0;
   /** 1 -> 0 pulse on the spit button, for the refusal when the stomach is empty. */
@@ -1979,9 +1981,15 @@ class Game {
      * The scroll is a level's own progress, so when it finishes the level is over. Nothing else needs to be
      * true.
      */
-    if (this.scrolled >= LEVEL.scrollLength) {
-      this.reachSurface();
-    }
+    /**
+     * THE LEVEL ENDS WHEN ITS BOSS DOES.
+     *
+     * The distance no longer ends anything: a level's length is now just how much level there is before the boss
+     * arrives, and the scroll simply stops at the end of it (which is what turns the last stretch into an arena the
+     * player cannot leave). Everything the old rule needed -- a length, a finish line, a countdown to it -- is gone
+     * with it.
+     */
+    this.updateBoss();
 
     // Trace the end condition, so a probe can see WHY a level failed to end rather than only that it
     // did. A win condition with five clauses is exactly the kind of thing that reports "still playing"
@@ -2580,9 +2588,15 @@ class Game {
    * The scripted events need this: `HazardField.spawn` picks a random kind and position for ambient
    * pressure, which is the opposite of what a scripted beat wants.
    */
-  private makeHazard(kind: HazardKind, x: number, y: number, entry: Hazard['entry'] = null) {
+  private makeHazard(kind: HazardKind, x: number, y: number, entry: Hazard['entry'] = null, healthOverride?: number): Hazard {
     const radiusFraction = KIND_TUNING[kind].radius;
-    const health = hazardHealth(kind);
+    /**
+     * The boss's health is the LEVEL's, so it is passed in rather than read from `hazards.health`.
+     *
+     * That table row exists only so the per-kind tables stay complete (and is 0, which every other consumer reads as
+     * "not shootable" -- correct for a boss spawned by accident, wrong for the real one).
+     */
+    const health = healthOverride ?? hazardHealth(kind);
     return {
       id: -Math.floor(Math.random() * 1e9),
       kind,
@@ -2614,6 +2628,8 @@ class Game {
       chargeRest: 0,
       shootTimer: 0,
       blastFuse: null,
+      tint: null,
+      hitFlash: 0,
     };
   }
 
@@ -3007,6 +3023,10 @@ class Game {
     // And the gun goes back to one row and the first rate tier: both upgrades belong to the run that earned them.
     this.gunStreams = 1;
     this.rateTier = 1;
+    // The boss bar goes with the run it belonged to. Without this it hangs there through the next birth animation,
+    // showing the previous level's boss at whatever health it died at -- a bar for a fight that is not happening.
+    this.hud.setBoss(null);
+    this.bossSpawned = false;
     // The score is the RUN's number, so it starts at zero with everything else that belongs to a run -- including
     // the numbers still floating on screen from the previous one.
     this.score.reset();
@@ -3218,19 +3238,54 @@ class Game {
     this.menu.root.visible = true;
   }
 
-  private reachSurface(): void {
+  /**
+   * The boss fight: arrival, the health bar, and the win condition.
+   *
+   * Three jobs in one place because they are one fact -- "is there a boss, and how is it doing". The level says where
+   * and how tough (`LEVEL.boss`), the config says how it behaves, and the FIELD owns its body: it is a hazard so that
+   * the player's gun hits it with no new code, and so that the invulnerability window, the damage numbers and the
+   * culling rules all apply to it exactly as they do to a fish.
+   */
+  private updateBoss(): void {
+    const spec = LEVEL.boss;
+    if (!this.bossSpawned && this.scrolled >= spec.at) {
+      this.bossSpawned = true;
+      const lane = this.camera.viewport.laneWidthMeters;
+      // It arrives just above the visible band and swims down into the fight, so the arrival is something the player
+      // watches rather than a creature that pops into existence beside them.
+      const boss = this.makeHazard('boss', this.player.x * lane, this.player.y + this.camera.viewport.visibleDepthMeters * 0.62, null, spec.health);
+      boss.tint = spec.colour ?? null;
+      this.hazards.hazards.push(boss);
+      audio.play('surface');
+      this.runBanner.text = `${spec.name}  ·  击败它才能离开这一关`;
+      this.runBanner.alpha = 1;
+      this.bannerSeen = true;
+    }
+    const boss = this.hazards.hazards.find((h) => h.kind === 'boss');
+    this.hud.setBoss(boss && !boss.flee ? { name: spec.name, fraction: boss.health / Math.max(1, boss.maxHealth) } : null);
+    if (this.phase === 'playing' && this.hazards.killed > 0) this.defeatBoss();
+  }
+
+  /**
+   * The level is WON: its boss is dead.
+   *
+   * This used to be `reachSurface`, fired by the scroll running out. The ending itself is unchanged -- the same held
+   * beat, the same white-out, the same results card -- because the reward for finishing a level was never about the
+   * surface; it was about having finished it. What changed is what finishes it.
+   */
+  private defeatBoss(): void {
     this.phase = 'burst';
-    // Longer than a death: the surface is a reward, not a failure, and the design asks for a beat of
-    // held breath before the pop. See the spec's 终点 section.
+    // Longer than a death: winning is a reward, not a failure, and the design asks for a beat of held breath before
+    // the pop.
     this.phaseTimer = SURFACE_SECONDS;
     this.surfaced = true;
     this.stats.ended++;
     // Before `recordBest`, so the best this run leaves behind includes the bonus it just earned.
-    this.scorePopups.add(this.player.x * this.camera.viewport.laneWidthMeters, this.player.y, this.score.award('surface'), this.camera);
+    this.scorePopups.add(this.player.x * this.camera.viewport.laneWidthMeters, this.player.y, this.score.award('boss'), this.camera);
     this.recordBest();
     audio.play('surface');
     this.splash = 1;
-    this.runBanner.text = `你变成了海面上的一朵浪花  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s`;
+    this.runBanner.text = `击败了 ${LEVEL.boss.name}  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s`;
     this.runBanner.alpha = 1;
     this.finishBanner.alpha = 1;
     this.bannerSeen = true;
@@ -3388,7 +3443,7 @@ class Game {
      */
     if (this.phase === 'burst') {
       this.finishBanner.text = this.surfaced
-        ? `冲破海面  ·  爬升 ${Math.round(DEPTH_TOTAL - this.player.depth)}m\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  最大 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`
+        ? `击败 ${LEVEL.boss.name}  ·  通关\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  最大 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`
         : `破裂  ·  深度 ${Math.round(this.player.depth)}m\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  爬升 ${Math.round(DEPTH_TOTAL - this.player.depth)}m\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`;
     }
 
@@ -4677,8 +4732,18 @@ class Game {
    * up, which is the entire point of the current model.
    */
   teleportToSurface(): void {
-    const justShort = Math.max(0, DEPTH_TOTAL - 0.2);
-    this.scrolled = justShort;
+    this.teleportToDistance(DEPTH_TOTAL - 0.2);
+  }
+
+  /**
+   * Test hook: jump the level to a given DISTANCE travelled.
+   *
+   * This is what `teleportToSurface` means now that the surface is not the finish line: the level's length is where the
+   * boss waits, so a probe wants "put me in front of the boss", not "put me at the top". Moves the SCROLL rather than
+   * the player, for the same reason as before -- the level's progress is not the bubble's position.
+   */
+  teleportToDistance(meters: number): void {
+    this.scrolled = Math.max(0, Math.min(LEVEL.scrollLength, meters));
     this.camera.setScroll(this.scrolled);
     this.player.syncToCamera(this.camera.y, this.camera.viewport.visibleDepthMeters);
     this.player.vy = 0;
@@ -5036,6 +5101,19 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

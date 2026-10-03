@@ -166,6 +166,15 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
     ],
   },
   {
+    kind: 'boss',
+    tagline: '每关的终点：不打掉它，这一关就不会结束',
+    notes: [
+      '它**不随水流走**：它一直悬在你上方横向游弋，所以你跑不掉，只能打——或者死。',
+      '它的血量、名字和颜色是**关卡**给的（每关一只，各不相同），怎么动和怎么开枪是共享机制。',
+      '打它是在**倒计时**：它的血量就是这一关的进度条（屏幕顶部那条）。',
+    ],
+  },
+  {
     kind: 'urchin',
     tagline: '会放尖刺的硬壳：打得跑，但要十几发',
     notes: [
@@ -287,6 +296,7 @@ const HAZARD_NAMES: Record<HazardKind, string> = {
   eel: '电鳗',
   rot: '腐败物',
   oil: '油污',
+  boss: 'BOSS',
 };
 
 /** The four things in the water that are not creatures. */
@@ -898,6 +908,8 @@ export function iconColour(entry: CodexEntry): number {
     }
   }
 }
+
+
 
 
 

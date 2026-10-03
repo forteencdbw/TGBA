@@ -193,6 +193,30 @@ export interface Level {
    * them along, which is what stops a level being skipped by holding "up".
    */
   playerLeadLimit?: number;
+  /**
+   * The level's BOSS: what has to die before the level is over.
+   *
+   * Required, and that is the point of the field rather than an oversight: a level ends when its boss is defeated, so
+   * a level without one could never finish. The schema says so instead of leaving a level that quietly cannot be
+   * completed.
+   *
+   * `health` and `name` are HERE rather than in `mechanics.json5` because they are level design -- how long the fight
+   * lasts and what the thing is called. The shared mechanics (how it moves, what it fires, how big it is) live in the
+   * config's `hazards.boss`, exactly as a fish's motion lives there and its spawn position lives in the level.
+   */
+  boss: BossSpec;
+}
+
+/** One level's boss, as authored: where it arrives, how tough it is, and what it is called. */
+export interface BossSpec {
+  /** Metres travelled when it arrives. Must be inside the level, or the fight could never start. */
+  at: number;
+  /** Hit points. The length of the fight. */
+  health: number;
+  /** Shown above its health bar. */
+  name: string;
+  /** Body colour, so two levels' bosses do not look like the same creature. */
+  colour?: number;
 }
 
 
@@ -361,7 +385,7 @@ const BLOCK_KEYS: readonly string[] = [
   'depth',
 ];
 
-const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'spawns'];
+const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'spawns'];
 
 /** Throw with the offending place named, so a typo in the file is a message rather than a mystery. */
 function fail(where: string, message: string): never {
@@ -542,15 +566,45 @@ function readLevels(text: string): { start: string; levels: Level[] } {
       ? (node['landmarks'] as { depth: number; label: string }[])
       : undefined;
 
+    const scrollLength = reqNum(node, 'scrollLength', `levels["${id}"]`, 1, 1000000);
+    /**
+     * The boss, validated against the level's own length.
+     *
+     * `at` must be INSIDE the level, because the scroll stops at `scrollLength`: a boss scheduled past that point would
+     * never arrive, and the level could never be completed. That is a config error that looks exactly like the game
+     * hanging at the end of a level, so it is caught here with the numbers in the message.
+     */
+    const rawBoss = node['boss'];
+    if (rawBoss === null || typeof rawBoss !== 'object' || Array.isArray(rawBoss)) {
+      fail(`levels["${id}"].boss`, 'is missing. Every level ends when its boss is defeated, so a level must name one.');
+    }
+    const bossNode = rawBoss as Record<string, unknown>;
+    const bossAt = reqNum(bossNode, 'at', `levels["${id}"].boss`, 0, 1000000);
+    if (bossAt >= scrollLength) {
+      fail(
+        `levels["${id}"].boss.at`,
+        `is ${bossAt}, but the level is only ${scrollLength} long and the scroll stops there -- the boss would never arrive and the level could never end. Put it below ${scrollLength}.`,
+      );
+    }
+    const boss: BossSpec = {
+      at: bossAt,
+      health: reqNum(bossNode, 'health', `levels["${id}"].boss`, 1, 100000),
+      name: typeof bossNode['name'] === 'string' ? (bossNode['name'] as string) : 'BOSS',
+      ...(bossNode['colour'] === undefined
+        ? {}
+        : { colour: reqNum(bossNode, 'colour', `levels["${id}"].boss`, 0, 0xffffff) }),
+    };
+
     levels.push({
       id,
       name,
-      scrollLength: reqNum(node, 'scrollLength', `levels["${id}"]`, 1, 1000000),
+      scrollLength,
       scrollSpeed: reqNum(node, 'scrollSpeed', `levels["${id}"]`, 0.001, 10000),
       ...(node['playerLeadLimit'] === undefined
         ? {}
         : { playerLeadLimit: optNum(node, 'playerLeadLimit', `levels["${id}"]`, 0, 0, 10000) }),
       ...(landmarks ? { landmarks } : {}),
+      boss,
       entries,
       blocks,
     });
@@ -715,6 +769,9 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
+
+
 
 
 

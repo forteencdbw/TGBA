@@ -141,7 +141,7 @@ export interface Mechanisms {
     absorb: number;
     skill: number;
     eaten: number;
-    surface: number;
+    boss: number;
     /**
      * The floating numbers that appear where points were earned.
      *
@@ -180,10 +180,22 @@ export interface Mechanisms {
    * different places would be a config that can put a label off the lane.
    */
   hud: {
-    gaugeSide: 'left' | 'right';
-    /** Design pixels from that edge of the lane. */
-    gaugeEdgeInset: number;
-    gaugeWidth: number;
+    /** How far the level's signpost labels sit from the lane's left edge, in design pixels. */
+    landmarkInset: number;
+    /** The boss health bar across the top, shown only while a boss is alive. */
+    bossBar: {
+      y: number;
+      widthRatio: number;
+      height: number;
+      nameSize: number;
+      nameOffset: number;
+      nameColour: number;
+      fillColour: number;
+      backColour: number;
+      backAlpha: number;
+      borderColour: number;
+      borderAlpha: number;
+    };
     /** The score readout, pinned to the top-left corner and on screen for the whole run. */
     score: {
       x: number;
@@ -353,6 +365,31 @@ export interface Mechanisms {
      * One group because they are one creature's behaviour, and because a reader looking for "how long until the bomb
      * fish goes off" should not have to know whether that is a stomach number or an ocean one.
      */
+    /**
+     * The boss: the one creature that does not belong to the current.
+     *
+     * It holds station above the player instead of drifting, so it cannot be outrun -- the fight ends when one of the
+     * two of them does. Its health, name and arrival point are the LEVEL's (see `BossSpec`), because those are level
+     * design; everything here is shared mechanics.
+     */
+    boss: {
+      /** Metres above the player it holds. Too far and it leaves the visible band; too near and it is a wall. */
+      holdMeters: number;
+      /** Lateral patrol: amplitude as a fraction of the lane width, and the period in seconds. */
+      patrolAmplitude: number;
+      patrolPeriodSeconds: number;
+      /** How fast it tracks the player sideways, in lane widths per second. Kept below the player's own speed. */
+      seekSpeedFactor: number;
+      contactDamage: number;
+      /** Body radius as a fraction of the lane width. Large on purpose: this is the level's answer, not another fish. */
+      radiusRatio: number;
+      colour: number;
+      eyeColour: number;
+      armourColour: number;
+      hitFlashSeconds: number;
+      weakPointWidthRatio: number;
+      hitFlashColour: number;
+    };
     bombfish: {
       /** Toward the player, in lane widths per second. Kept below the player's own lateral speed, so it can be fled. */
       seekSpeedFactor: number;
@@ -1023,7 +1060,7 @@ const CODEX_COLOURS = [
 export const OBSTACLE_KINDS = ['crate', 'coral', 'wall', 'net'] as const;
 
 const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string }[] = [
-  ...['drivenOff', 'absorb', 'skill', 'eaten', 'surface'].map((event) => ({
+  ...['drivenOff', 'absorb', 'skill', 'eaten', 'boss'].map((event) => ({
     path: `score.${event}`,
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000,
     describe: 'points for this event, between 0 and 100000; 0 takes the event out of the score',
@@ -1072,9 +1109,18 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hud.score.size', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
   { path: 'hud.score.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hud.score.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  { path: 'hud.gaugeSide', check: (v) => v === 'left' || v === 'right', describe: "'left' or 'right'" },
-  { path: 'hud.gaugeEdgeInset', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
-  { path: 'hud.gaugeWidth', check: (v) => typeof v === 'number' && v >= 2 && v <= 40, describe: 'design pixels between 2 and 40' },
+  { path: 'hud.landmarkInset', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
+  { path: 'hud.bossBar.y', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
+  { path: 'hud.bossBar.widthRatio', check: (v) => typeof v === 'number' && v > 0.1 && v <= 1, describe: 'a fraction of the canvas width above 0.1 and at most 1' },
+  { path: 'hud.bossBar.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },
+  { path: 'hud.bossBar.nameSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
+  { path: 'hud.bossBar.nameOffset', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
+  { path: 'hud.bossBar.nameColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.bossBar.fillColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.bossBar.backColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.bossBar.backAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.bossBar.borderColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.bossBar.borderAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'touch.buttonRadius', check: (v) => typeof v === 'number' && v >= 16 && v <= 80, describe: 'design pixels between 16 and 80' },
   { path: 'touch.buttonMaxRadiusRatio', check: (v) => typeof v === 'number' && v > 0.03 && v < 0.45, describe: 'a fraction of the lane width, above 0.03 and below 0.45' },
   { path: 'touch.rightInset', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
@@ -1796,6 +1842,8 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
 
 
 

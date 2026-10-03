@@ -392,7 +392,6 @@ export class Hud {
   private readonly resourceLabel: Text;
   /** The resource's gauge. Own layer, so hiding it cannot erase anything else. */
   private readonly resourceGauge = new Graphics();
-  private readonly gauge = new Graphics();
   private readonly debug: Text;
   /**
    * The score, in the top-left corner.
@@ -402,10 +401,20 @@ export class Hud {
    * would put the one thing that moves next to the one thing the player is steering by.
    */
   private readonly scoreLabel: Text;
+  /**
+   * The boss fight's readout: a name and a bar across the top.
+   *
+   * Own layer and own label, hidden as a pair. It appears when a boss does and disappears when the fight ends, so it
+   * is the one piece of HUD furniture whose ABSENCE is information -- before the boss arrives, and after it dies, the
+   * top of the screen is not a boss bar at zero.
+   */
+  private readonly bossName: Text;
+  private readonly bossBar = new Graphics();
+  /** What the bar currently shows, so a per-frame call does not redraw a bar that has not moved. */
+  private shownBossFraction = -1;
   /** What the label currently shows, so a per-frame update does not rebuild a string that has not changed. */
   private shownScore = -1;
   private readonly landmarkLabels: Text[] = [];
-  private barGeometry = { barX: 0, barTop: 0, barBottom: 0, barW: 0 };
   /**
    * The HUD's own scale, set by `layout`.
    *
@@ -413,10 +422,14 @@ export class Hud {
    * `designScale`.
    */
   private hudScale = 1;
+  /** The canvas width in CSS pixels, remembered for the boss bar (which is centred on the screen). */
+  private canvasWidth = 0;
   /** The lane's width and centre in canvas pixels, remembered from layout for the resource gauge. */
   private laneWidthPx = 0;
   private laneCentreX = 0;
   private debugTimer = 0;
+  /** Metres to the surface as the last `update` computed it: used by the debug line, not by any gauge. */
+  private levelDepthMeters = 0;
   /** Which of the three birth types this run rolled. Set by the game after construction. */
   private seedLabel = '';
   /** This run's talent, and the carried skill with its uses. Empty strings mean "show nothing". */
@@ -458,15 +471,20 @@ export class Hud {
      * the cyan family ("where am I"), so the score reads as a different KIND of number at a glance.
      */
     this.scoreLabel = makeLabel('', mech.hud.score.colour, mech.hud.score.size);
+    this.bossName = makeLabel('', mech.hud.bossBar.nameColour, mech.hud.bossBar.nameSize);
+    this.bossName.anchor.set(0.5, 1);
+    this.bossName.visible = false;
+    this.bossBar.visible = false;
     this.scoreLabel.alpha = mech.hud.score.alpha;
 
     this.root.addChild(
-      this.gauge,
       this.resourceGauge,
       this.headline,
       this.subline,
       this.resourceLabel,
       this.scoreLabel,
+      this.bossBar,
+      this.bossName,
       this.debug,
     );
 
@@ -498,14 +516,18 @@ export class Hud {
      */
     this.laneWidthPx = viewport.laneWidthPx;
     this.laneCentreX = viewport.left + viewport.laneWidthPx / 2;
-    const right = viewport.left + viewport.laneWidthPx;
     const centreX = this.laneCentreX;
 
-    this.headline.scale.set(s);
-    this.headline.x = centreX;
+    /**
+     * The headline slot is GONE, and the subline took its place.
+     *
+     * It used to be the metres to the surface, which was the level's progress. A level now ends when its boss does, so
+     * that number was measuring something the player could no longer do anything with -- and the space belongs to the
+     * boss bar, which measures the thing they can.
+     */
     this.subline.scale.set(s);
     this.subline.x = centreX;
-    this.subline.y = this.headline.y + 50 * s;
+    this.subline.y = 22 * s;
     // The resource sits directly under the subline: same block of screen furniture, one line lower, so the two read
     // as one readout rather than as two unrelated facts in different corners.
     this.resourceLabel.scale.set(s);
@@ -519,9 +541,8 @@ export class Hud {
      * Shifted clear of the gauge when the gauge is on the left: the readout is nine lines of small text starting at
      * the top of the lane, and the bar would run straight through its first characters.
      */
-    const gaugeOnLeft = mech.hud.gaugeSide === 'left';
-    this.debug.x = Math.max(6, viewport.left + (gaugeOnLeft ? mech.hud.gaugeEdgeInset + mech.hud.gaugeWidth + 4 : 3) * s);
-    this.debug.y = 132 * s;
+    this.debug.x = Math.max(6, viewport.left + 3 * s);
+    this.debug.y = 116 * s;
 
     /**
      * The score: the top-left corner, above the gauge and above the readout.
@@ -533,18 +554,20 @@ export class Hud {
     this.scoreLabel.x = viewport.left + mech.hud.score.x * s;
     this.scoreLabel.y = mech.hud.score.y * s;
 
-    const barTop = 110 * s;
-    const barBottom = viewport.height - 46 * s;
-    const barW = mech.hud.gaugeWidth * s;
+    // The boss bar is centred on the CANVAS rather than on the lane: it is a headline about the fight, not a marker in
+    // the water, and the lane can be much narrower than the screen.
+    this.canvasWidth = viewport.width;
+    this.bossName.scale.set(s);
+    this.bossName.x = viewport.width / 2;
+    this.bossName.y = mech.hud.bossBar.y * s - mech.hud.bossBar.nameOffset * s;
+
     /**
-     * The gauge belongs to the LANE rather than to the letterbox, so it sits inside the lane's edge -- whichever edge
-     * the config names. Left is the current answer because the whole right edge is the button column now: two pieces
-     * of screen furniture competing for the same strip is how a thumb ends up grabbing the wrong thing.
+     * The level's signposts, anchored to the LANE's left edge.
+     *
+     * They used to hang off the progress bar, which is gone. They still read INWARD from the edge (left-anchored, so
+     * the text grows into the lane) because that is the only way the whole label stays on screen at a small width.
      */
-    const barX = gaugeOnLeft
-      ? viewport.left + mech.hud.gaugeEdgeInset * s
-      : right - mech.hud.gaugeEdgeInset * s - barW;
-    this.barGeometry = { barX, barTop, barBottom, barW };
+    const landmarkX = viewport.left + mech.hud.landmarkInset * s;
 
     for (const [i, label] of this.landmarkLabels.entries()) {
       const mark = this.landmarks[i];
@@ -558,9 +581,9 @@ export class Hud {
        * left-hand one. The anchor has to flip with the side, or a left-hand gauge would have its labels hanging out of
        * the lane where nobody could see them.
        */
-      label.anchor.set(gaugeOnLeft ? 0 : 1, 0.5);
-      label.x = gaugeOnLeft ? barX + barW + 4 * s : barX - 4 * s;
-      label.y = barBottom - t * (barBottom - barTop);
+      label.anchor.set(0, 0.5);
+      label.x = landmarkX;
+      label.y = 110 * s + (1 - t) * (viewport.height - 156 * s);
     }
   }
 
@@ -583,11 +606,57 @@ export class Hud {
   }
 
   /**
+   * The boss fight, or nothing.
+   *
+   * Called every frame with the boss's state: `null` hides the pair, and a name with a fraction draws them. The bar is
+   * only redrawn when the fraction actually moves, for the same reason the score label is: this is a phone, and the
+   * digits and the bar are the only things on screen that change every frame.
+   */
+  setBoss(boss: { name: string; fraction: number } | null): void {
+    const cfg = mech.hud.bossBar;
+    const visible = boss !== null;
+    this.bossBar.visible = visible;
+    this.bossName.visible = visible;
+    if (!boss) {
+      this.shownBossFraction = -1;
+      this.bossBar.clear();
+      return;
+    }
+    const s = this.hudScale;
+    if (this.bossName.text !== boss.name) this.bossName.text = boss.name;
+    const fraction = Math.max(0, Math.min(1, boss.fraction));
+    if (fraction === this.shownBossFraction) return;
+    this.shownBossFraction = fraction;
+
+    const width = this.canvasWidth * cfg.widthRatio;
+    const height = cfg.height * s;
+    const x = (this.canvasWidth - width) / 2;
+    const y = cfg.y * s;
+    const g = this.bossBar;
+    g.clear();
+    g.roundRect(x, y, width, height, height / 2).fill({ color: cfg.backColour, alpha: cfg.backAlpha });
+    const filled = width * fraction;
+    if (filled > 1) {
+      g.roundRect(x, y, filled, height, height / 2).fill({ color: cfg.fillColour, alpha: 1 });
+    }
+    g.roundRect(x, y, width, height, height / 2).stroke({ color: cfg.borderColour, alpha: cfg.borderAlpha, width: 1 });
+  }
+
+  /**
    * The score exactly as the player reads it.
    *
    * Exposed for the same reason as the headline: "it says 350" can only be checked against the string the HUD really
    * shows, and a test that re-derived the format would pass while the screen showed something else.
    */
+  /** Test hooks: the boss bar as the player sees it. Absence is information, so both are read. */
+  get bossBarVisible(): boolean {
+    return this.bossBar.visible;
+  }
+
+  get bossBarName(): string {
+    return this.bossName.text;
+  }
+
   get scoreText(): string {
     return this.scoreLabel.text;
   }
@@ -701,6 +770,12 @@ export class Hud {
     nominalSeconds: number,
     elapsed: number,
     lateral: LateralAuthority,
+    /**
+     * How far the level has scrolled.
+     *
+     * Still a parameter because the water colour is a function of depth, and no longer used for a progress readout --
+     * a level's progress is its boss's health now, and that arrives through `setBoss`.
+     */
     scrolled: number,
     /**
      * The growth stage, how far into the next one, and the eating rank digestion has bought.
@@ -733,11 +808,14 @@ export class Hud {
       resource?: { label: string; text: string; colour: number; fraction: number } | null;
     },
   ): void {
-    // Distance still to travel, from the LEVEL's progress rather than the bubble's position. The bubble
-    // is born on the seabed with the whole length ahead of it, and it cannot change this number by
-    // steering -- which is exactly the point.
-    const remaining = Math.max(0, DEPTH_TOTAL - scrolled);
-    this.headline.text = `${Math.round(remaining)}`;
+    /**
+     * The metres-to-surface readout is DELETED rather than hidden.
+     *
+     * It was the level's progress while the surface was the finish line. A level now ends when its boss is defeated, so
+     * the number measured something the player could not act on -- and a HUD that shows a countdown to nothing teaches
+     * the player to ignore the HUD. What replaced it is the boss bar below, which is the one progress that means
+     * something.
+     */
     // The talent and the skill share the subline: they are both "what am I this run", and the screen
     // has no room for a third line. The skill comes first because it is the one that changes.
     const tags = [this.skillLabel, this.talentLabel].filter(Boolean).join('   ·   ');
@@ -759,10 +837,10 @@ export class Hud {
           : `${stage.name} ${stage.stage}阶 ${stage.absorbedInStage}/${stage.neededForNext}`) +
       (stage.tierBonus > 0 ? `  吞阶+${stage.tierBonus}` : '');
     this.subline.text = tags
-      ? `距海面 / TO SURFACE (m)   ·   ${stageText}   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
+      ? `${stageText}   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
       : this.seedLabel
-        ? `距海面 / TO SURFACE (m)   ·   ${stageText}   ·   ${this.seedLabel}`
-        : `距海面 / TO SURFACE (m)   ·   ${stageText}`;
+        ? `${stageText}   ·   ${this.seedLabel}`
+        : stageText;
 
     /**
      * The second resource gets its OWN line, in its own colour, rather than a slot in the subline.
@@ -786,31 +864,11 @@ export class Hud {
     // sense that both are HUD text, and a stale fill from a previous type would outlive the type change.
     this.subline.style.fill = 0x7fc4e8;
 
-    const { barX, barTop, barBottom, barW } = this.barGeometry;
-    // Reads as a vessel filling up: the water level rises as the level advances, and the surface line is
-    // the cursor. Empty at the seabed, full at the surface.
-    const travelled = Math.min(Math.max(scrolled / DEPTH_TOTAL, 0), 1);
-    const rise = travelled;
-    const s = this.hudScale;
-
-    const g = this.gauge;
-    g.clear();
-    g.roundRect(barX, barTop, barW, barBottom - barTop, barW / 2).fill({ color: 0x0a1c2e, alpha: 0.72 });
-    g.roundRect(barX, barTop, barW, barBottom - barTop, barW / 2).stroke({ color: 0x3d7fa8, alpha: 0.5, width: 1 });
-
-    const fillHeight = rise * (barBottom - barTop);
-    if (fillHeight > 1) {
-      g.roundRect(barX, barBottom - fillHeight, barW, fillHeight, barW / 2).fill({ color: 0x6fe3ff, alpha: 0.9 });
-    }
-
-    for (const mark of this.landmarks) {
-      const t = mark.depth / DEPTH_TOTAL;
-      const y = barBottom - t * (barBottom - barTop);
-      g.rect(barX - 3 * s, y - s, barW + 6 * s, 2 * s).fill({ color: 0xffd479, alpha: 0.85 });
-    }
-
-    const cursorY = barBottom - rise * (barBottom - barTop);
-    g.circle(barX + barW / 2, cursorY, 5 * s).fill({ color: 0xffffff, alpha: 0.95 });
+    // The level gauge is gone; the boss bar is drawn by `setBoss` from the game's own state.
+    //
+    // `scrolled` still matters because the level's DEPTH remains a real reading -- the water colour and the debug line
+    // both use it -- even though it no longer drives a progress bar.
+    this.levelDepthMeters = Math.max(0, DEPTH_TOTAL - scrolled);
 
     if (++this.debugTimer % 10 === 0) {
       this.debug.text = [
@@ -822,7 +880,7 @@ export class Hud {
          */
         `build   ${buildLabel()}`,
         `fps     ${fps.toFixed(0)}`,
-        `depth   ${player.depth.toFixed(1)} m`,
+        `depth   player ${player.depth.toFixed(1)} m   level ${this.levelDepthMeters.toFixed(0)} m to surface`,
         // The player's own motion, on both axes, and the SCREEN fraction the vertical is expressed in:
         // "depth" alone no longer describes where the bubble is, because the world moves under it.
         `vy      ${player.vy.toFixed(3)} screen/s`,
@@ -862,4 +920,14 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+
+
+
+
+
+
+
+
+
+
 

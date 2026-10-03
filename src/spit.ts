@@ -527,6 +527,9 @@ export function spitImpact(kind: HazardKind): number {
     rot: 0.5,
     // Heavy and smothering: a slick of oil is a good thing to throw at something.
     oil: 1.35,
+    // Spitting a boss is not a thing that happens (it cannot be swallowed at all), but the table has every kind,
+    // and a neutral number is the honest filler for an unreachable row.
+    boss: 1,
   };
   return perKind[kind];
 }
@@ -568,3 +571,4 @@ export function tierBonusFor(energy: number): number {
 }
 
 export const SPIT = mech.spit;
+

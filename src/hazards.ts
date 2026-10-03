@@ -31,7 +31,25 @@ import { Graphics } from 'pixi.js';
 import { mech, tuning } from './config';
 import { hazardMass } from './consumption';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
-export type HazardKind = 'fish' | 'jelly' | 'trash' | 'crab' | 'urchin' | 'bombfish' | 'eel' | 'rot' | 'oil';
+export type HazardKind =
+  | 'fish'
+  | 'jelly'
+  | 'trash'
+  | 'crab'
+  | 'urchin'
+  | 'bombfish'
+  | 'eel'
+  | 'rot'
+  | 'oil'
+  /**
+   * The level's boss.
+   *
+   * A hazard kind like the rest, which is what makes the player's gun hit it with no new code at all -- and what makes
+   * shooting the boss the same act as shooting a fish. What differs is stated where it matters: it does not drift with
+   * the current, it does not flee when its health runs out (it DIES, and that is what ends the level), and it cannot be
+   * eaten.
+   */
+  | 'boss';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
@@ -151,6 +169,16 @@ export interface Hazard {
    * clocks. `fuse` is the crab's launch wind-up; the stomach's runs on the swallowed ITEM, in `src/spit.ts`.
    */
   blastFuse: number | null;
+  /**
+   * Seconds left of the hit flash, drawn by the boss.\n   *\n   * A BIG target needs the feedback more than a small one does: a fish's death is its own confirmation, while a boss
+   * that absorbs ten rounds in a row has to say so every single time, or the player cannot tell hits from misses.
+   */
+  hitFlash: number;
+  /**
+   * A per-INSTANCE colour, or null for the kind's own.\n   *\n   * Exists for the boss alone: a level picks its boss's colour (see BossSpec.colour), which is the one piece of a
+   * creature's look that is level design rather than mechanics -- two levels should not look like the same monster.
+   */
+  tint: number | null;
   /**
    * Seconds until this creature may fire again, for the kinds that shoot.
    *
@@ -430,6 +458,9 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   urchin: { radius: 0.052, colour: 0x3d4a7a, spin: 0.2 },
   /** Deep red, well away from the crab's orange, with a stubby body: round and heavy rather than sleek. */
   bombfish: { radius: 0.048, colour: 0xd94a3f, spin: 0 },
+  // The boss's size and colour come from `mech.hazards.boss` (a level may override the colour); this row exists because
+  // every kind needs one, and it has to be BIG -- a boss the size of a fish is a fish.
+  boss: { radius: mech.hazards.boss.radiusRatio, colour: mech.hazards.boss.colour, spin: 0 },
   /**
    * Electric chartreuse, and nothing else in the game is that hue.
    *
@@ -617,6 +648,8 @@ export class HazardField {
       flee: null,
       charge: null,
       blastFuse: null,
+      hitFlash: 0,
+      tint: null,
       // No random head start here: a test-spawned creature is placed ON the player to be observed, and a random
       // rest would make "did it lunge" a coin flip in the one place determinism matters most.
       chargeRest: 0,
@@ -638,6 +671,7 @@ export class HazardField {
     this.splits = 0;
     this.bubblesEaten = 0;
     this.fled = 0;
+    this.killed = 0;
     this.damaged = 0;
   }
 
@@ -651,6 +685,8 @@ export class HazardField {
    * second, so sampling afterwards proves nothing about whether it happened at all.
    */
   fled = 0;
+  /** Bosses defeated this run. One number, because a level has one boss. */
+  killed = 0;
   damaged = 0;
 
   /**
@@ -663,11 +699,12 @@ export class HazardField {
    * The direction is rolled HERE, once, at the moment it turns: deciding per frame would have it leave in a
    * direction that changes every frame, which reads as a glitch rather than as a decision.
    */
-  hit(hazard: Hazard, damage: number): 'immune' | 'damaged' | 'fled' {
+  hit(hazard: Hazard, damage: number): 'immune' | 'damaged' | 'fled' | 'killed' {
     // Immune covers both "this kind is not shootable" and "this one is already leaving": firing at something that
     // is on its way out should not keep re-triggering the same event, and it should certainly not re-roll its exit.
     if (hazard.maxHealth <= 0 || hazard.flee) return 'immune';
     hazard.health = Math.max(0, hazard.health - damage);
+    hazard.hitFlash = mech.hazards.boss.hitFlashSeconds;
     if (hazard.health > 0) {
       this.damaged++;
       return 'damaged';
@@ -683,6 +720,18 @@ export class HazardField {
       hazard.blastFuse = 0;
       this.fled++;
       return 'fled';
+    }
+    /**
+     * A BOSS dies, and that is a different event from anything else in this file.
+     *
+     * Every other creature leaves when its health runs out -- the whole point of the reversal is that nothing is
+     * destroyed. A boss has nowhere to leave to: it is the level's win condition, so it is removed by the death, and
+     * the outcome it reports is the one the game watches for to end the level. `killed` rather than `fled` is what
+     * keeps "I survived that" and "I beat that" from being the same message.
+     */
+    if (hazard.kind === 'boss') {
+      this.killed++;
+      return 'killed';
     }
     hazard.flee = FLEE_DIRECTIONS[Math.floor(Math.random() * FLEE_DIRECTIONS.length)]!;
     this.fled++;
@@ -874,9 +923,10 @@ export class HazardField {
         case 'bombfish':
         case 'eel':
         case 'rot':
+        case 'boss':
         case 'oil': {
           if (ctx.invulnerable) break;
-          effects.push({ kind: h.kind, damage: 1, broke: false });
+          effects.push({ kind: h.kind, damage: h.kind === 'boss' ? mech.hazards.boss.contactDamage : 1, broke: false });
           // Bounce it away so one cannot immediately re-hit, as a fish does.
           h.y -= r * 2;
           break;
@@ -1099,7 +1149,7 @@ export class HazardField {
   }
 
   private spawn(ctx: HazardContext): Hazard {
-    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil'];
+    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
@@ -1135,6 +1185,8 @@ export class HazardField {
       flee: null,
       charge: null,
       blastFuse: null,
+      hitFlash: 0,
+      tint: null,
       // A random head start, so a shoal does not lunge in unison.
       chargeRest: Math.random() * (mech.charges.chargers[kind]?.cooldownSeconds ?? 0),
       // And a random offset on the trigger finger, so a colony does not volley.
@@ -1412,6 +1464,24 @@ export class HazardField {
         if (h.blastFuse === null && gap <= cfg.armMeters) h.blastFuse = cfg.fuseSeconds;
         break;
       }
+      case 'boss': {
+        /**
+         * The boss does NOT ride the current.
+         *
+         * Everything else in this file is carried down at the level's scroll speed, which is what makes the water feel
+         * like water. The boss holds a position RELATIVE TO THE PLAYER instead -- `holdMeters` above the bubble -- which
+         * is the whole reason it is a fight rather than an encounter the player can simply outrun. It patrols sideways
+         * and tracks the player's lane slowly: slowly enough that being cornered is always something the player did.
+         */
+        const cfg = mech.hazards.boss;
+        const targetX = ctx.playerX + Math.sin(ctx.elapsed * ((Math.PI * 2) / cfg.patrolPeriodSeconds)) * cfg.patrolAmplitude * ctx.laneWidth;
+        const gapX = targetX - h.x;
+        const step = cfg.seekSpeedFactor * ctx.laneWidth * dt;
+        h.x += Math.abs(gapX) <= step ? gapX : Math.sign(gapX) * step;
+        const targetY = ctx.playerY + cfg.holdMeters;
+        h.y += (targetY - h.y) * Math.min(1, dt * 1.4);
+        break;
+      }
       case 'eel': {
         /**
          * Swims in a wide S, and that is a fairness requirement rather than decoration.
@@ -1443,6 +1513,8 @@ export class HazardField {
       }
     }
 
+    // The hit flash decays with the creature's own clock, so it is a property of the body rather than of the frame.
+    if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
     h.x = Math.max(0, Math.min(ctx.laneWidth, h.x));
   }
 
@@ -1697,6 +1769,40 @@ export function paintHazards(
         g.circle(x, y, r * 0.95).stroke({ color: KIND_TUNING.urchin.colour, alpha: 1, width: Math.max(1, r * 0.2) });
         break;
       }
+      case 'boss': {
+        /**
+         * The boss: a heavy armoured body with an eye, drawn BIG and unmistakable.
+         *
+         * It borrows the fish's silhouette on purpose -- it should read as "a creature, and much larger" rather than as
+         * a different order of thing -- and adds two marks that only it has: a plated shell and a single lit eye. The
+         * colour comes from the instance when the level set one (`tint`), so two levels do not look like the same
+         * monster.
+         */
+        const cfg = mech.hazards.boss;
+        const body = h.tint ?? cfg.colour;
+        const flash = h.hitFlash > 0;
+        g.ellipse(x, y, r * 1.35, r * 1.05).fill({ color: flash ? cfg.hitFlashColour : body, alpha: flash ? 0.85 : 1 });
+        // Armour plates: three bands across the back, which is what makes it look like it can take a hit.
+        for (const band of [-0.45, 0, 0.45]) {
+          g.moveTo(x - r * 1.2, y + r * band * 0.8)
+            .lineTo(x + r * 1.2, y + r * band * 0.8)
+            .stroke({ color: cfg.armourColour, alpha: 0.75, width: Math.max(1, r * 0.16) });
+        }
+        // A jaw, so the front is not ambiguous.
+        g.moveTo(x + r * 1.2, y - r * 0.5)
+          .lineTo(x + r * 1.75, y)
+          .lineTo(x + r * 1.2, y + r * 0.5)
+          .closePath()
+          .fill({ color: cfg.armourColour, alpha: 0.9 });
+        g.circle(x + r * 0.55, y + r * 0.1, r * 0.24).fill({ color: cfg.eyeColour, alpha: 1 });
+        // A weak-point ring: the game's way of saying "this is the thing to shoot".
+        g.circle(x, y, r * 1.06).stroke({
+          color: cfg.eyeColour,
+          alpha: 0.5,
+          width: Math.max(1, laneWidth * cfg.weakPointWidthRatio),
+        });
+        break;
+      }
       case 'bombfish': {
         /**
          * A round, heavy fish with a stub of fuse, which is the whole joke: it looks like a bomb.
@@ -1834,6 +1940,19 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

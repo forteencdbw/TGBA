@@ -35,10 +35,10 @@
 import { mech } from './config';
 
 /** Every way a run can earn points. The names are the config's keys. */
-export type ScoreEvent = 'drivenOff' | 'absorb' | 'skill' | 'eaten' | 'surface';
+export type ScoreEvent = 'drivenOff' | 'absorb' | 'skill' | 'eaten' | 'boss';
 
 export class Score {
-  private counts: Record<ScoreEvent, number> = { drivenOff: 0, absorb: 0, skill: 0, eaten: 0, surface: 0 };
+  private counts: Record<ScoreEvent, number> = { drivenOff: 0, absorb: 0, skill: 0, eaten: 0, boss: 0 };
   private total = 0;
 
   /** Points on the board right now. */
@@ -82,7 +82,9 @@ export class Score {
    */
   reset(): void {
     this.total = 0;
-    this.counts = { drivenOff: 0, absorb: 0, skill: 0, eaten: 0, surface: 0 };
+    this.counts = { drivenOff: 0, absorb: 0, skill: 0, eaten: 0, boss: 0 };
   }
 }
+
+
 
