@@ -1512,13 +1512,17 @@ class Game {
   private skillActivations = 0;
   /** The skill lying in the water, if any, and the countdown to the next one. */
   /**
-   * A pickup lying in the water, waiting to be taken.
+   * The pickups lying in the water, waiting to be taken.
    *
-   * `kind` says WHAT it gives: a skill (rolled at pickup time, because deciding at spawn would commit the player's
-   * next twenty seconds before they had even seen the thing) or the ability upgrade. One slot rather than a list,
-   * because a level places at most one at a time and "which pickup is in the water" is a single fact the HUD reports.
+   * A LIST, and that is a fix rather than a tidy-up: this used to be a single slot, so a level that placed two pickups
+   * near each other silently lost the first one -- the second overwrote it, and what the player saw was a pickup
+   * vanishing with no explanation. Level 1 had exactly that (a rate upgrade at 520m and a skill at 540m, twenty metres
+   * apart), which is how it was found.
+   *
+   * `kind` says WHAT each one gives: a skill (rolled at pickup time, because deciding at spawn would commit the
+   * player's next twenty seconds before they had even seen the thing), the gun upgrade, or the rate upgrade.
    */
-  private pickup: { kind: PickupKind; id: SkillId | null; x: number; y: number } | null = null;
+  private pickupDrops: { kind: PickupKind; id: SkillId | null; x: number; y: number }[] = [];
   /** When the fish-fart talent can fire again, and how many times it has. */
   private fartReadyAt = 0;
   private farts = 0;
@@ -1965,7 +1969,7 @@ class Game {
       scrolled: +this.scrolled.toFixed(1),
       hazards: this.hazards.hazards.length,
       bubbles: this.field.bubbles.length,
-      pickup: this.pickup ? 1 : 0,
+      pickup: this.pickupDrops.length,
       emitted: this.timelineEmitted,
       total: TIMELINE.length,
       phase: this.phase,
@@ -2026,15 +2030,17 @@ class Game {
       return;
     }
     if ((PICKUP_KINDS as readonly string[]).includes(entry.kind)) {
+      // APPENDED, not assigned: a level may place several, and one silently replacing another is how a pickup came to
+      // vanish on the player (see `pickups`).
       // A pickup sits where the level put it and drifts down with the water, waiting to be taken.
-      this.pickup = {
+      this.pickupDrops.push({
         kind: entry.kind as PickupKind,
         x: spawnX,
         y: spawnY,
         // The skill is rolled when it is COLLECTED, not when it is created: granting it here would
         // decide the player's next twenty seconds before they had even seen the pickup.
         id: null,
-      };
+      });
       return;
     }
     /**
@@ -2074,24 +2080,28 @@ class Game {
    * This method is left with only motion and collection, because that is all that is left to do.
    */
   private updatePickup(dt: number, min: number, max: number, laneWidth: number): void {
-    // Held in a local so TypeScript can see it cannot become null between the checks: assigning
-    // `this.pickup = null` inside the block below widens it back to nullable.
-    const pickup = this.pickup;
-    if (!pickup) return;
-
-    // The pickup is stationary in the water, so the SCROLL is what carries it down past the player.
-    // It used to be offset by the player's ascent, which was the same relative motion expressed the
-    // other way round; with the player able to hold still, the world has to do the moving.
-    pickup.y -= LEVEL.scrollSpeed * dt;
-    if (pickup.y < min - 40 || pickup.y > max + 160) {
-      this.pickup = null;
-      return;
-    }
-
-    const dx = pickup.x - this.player.x * laneWidth;
-    const dy = pickup.y - this.player.y;
+    if (!this.pickupDrops.length) return;
     const reach = laneWidth * (stageRadiusFraction(this.stage.stage, this.player.volume) + 0.05);
-    if (dx * dx + dy * dy <= reach * reach) {
+    /**
+     * Backwards, because collecting one removes it from the list.
+     *
+     * Each drop is moved, culled and collected INDEPENDENTLY: two pickups on screen at once is the normal case now
+     * (a level may place them metres apart), and they cannot interfere.
+     */
+    for (let i = this.pickupDrops.length - 1; i >= 0; i--) {
+      const pickup = this.pickupDrops[i]!;
+      // The pickup is stationary in the water, so the SCROLL is what carries it down past the player.
+      // It used to be offset by the player's ascent, which was the same relative motion expressed the
+      // other way round; with the player able to hold still, the world has to do the moving.
+      pickup.y -= LEVEL.scrollSpeed * dt;
+      if (pickup.y < min - 40 || pickup.y > max + 160) {
+        this.pickupDrops.splice(i, 1);
+        continue;
+      }
+
+      const dx = pickup.x - this.player.x * laneWidth;
+      const dy = pickup.y - this.player.y;
+      if (dx * dx + dy * dy > reach * reach) continue;
       /**
        * What it gives depends on which pickup it is, and both are worth the same points.
        *
@@ -2135,7 +2145,7 @@ class Game {
       // either an obstacle or something that hurts. It floats up from WHERE IT WAS PICKED UP, which is this feature's
       // own example of what the numbers are for.
       this.scorePopups.add(pickup.x, pickup.y, this.score.award('skill'), this.camera);
-      this.pickup = null;
+      this.pickupDrops.splice(i, 1);
     }
   }
 
@@ -2998,7 +3008,7 @@ class Game {
     // Skills and talents are per-run state: carrying a skill across a death would make the restart
     // strictly easier than the run that just ended.
     this.skill = null;
-    this.pickup = null;
+    this.pickupDrops.length = 0;
     this.skillActivations = 0;
     this.decoy = null;
     this.fartReadyAt = 0;
@@ -3516,8 +3526,7 @@ class Game {
 
     // A skill lying in the water: a diamond, distinct from every collectable, with a halo so it
     // reads as "pick me up" rather than as another bubble.
-    if (this.pickup) {
-      const p = this.pickup;
+    for (const p of this.pickupDrops) {
       const look = mech.pickups[p.kind];
       const r = laneWidth * look.radiusRatio;
       const pulse = 1 + Math.sin(this.elapsed * mech.pickups.pulsePerSecond) * 0.12;
@@ -4181,7 +4190,7 @@ class Game {
      */
     score: { value: number; best: number; byEvent: Record<string, number>; popups: number };
     /** A skill lying in the water. `id` is null until collected, since it is rolled at pickup. */
-    pickup: { kind: string; id: string | null; y: number } | null;
+    pickups: { kind: string; id: string | null; y: number }[];
     activeSkill: { id: string; remaining: number } | null;
     stage: {
       stage: number;
@@ -4472,7 +4481,7 @@ class Game {
       ending: { surfaced: this.surfaced, splash: +this.splash.toFixed(3), bestClimbed: Math.round(this.bestClimbed), bestVolume: +this.bestVolume.toFixed(2), bestScore: this.bestScore },
       score: { value: this.score.value, best: this.bestScore, byEvent: { ...this.score.ledger }, popups: this.scorePopups.count },
       enemyBullets: { inFlight: this.enemyBullets.count, fired: this.enemyBullets.fired, hits: this.enemyBullets.hits },
-      pickup: this.pickup ? { kind: this.pickup.kind, id: this.pickup.id, y: +this.pickup.y.toFixed(1) } : null,      /** Active effect timers, so a skill that lasts can be observed while it runs. */
+      pickups: this.pickupDrops.map((p) => ({ kind: p.kind, id: p.id, y: +p.y.toFixed(1) })),      /** Active effect timers, so a skill that lasts can be observed while it runs. */
       activeSkill: this.player.skillId ? { id: this.player.skillId, remaining: +this.player.skillRemaining.toFixed(2) } : null,
       /** The bubble's growth stage: its speed tier, and how far into the next one it is. */
       stage: {
@@ -4936,6 +4945,11 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
 
 
 

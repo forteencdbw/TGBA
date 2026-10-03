@@ -84,13 +84,13 @@ test.describe('the score', () => {
     await page.evaluate(() => {
       const g = (window as unknown as {
         __GB: {
-          game: { skillPickup: { id: null; x: number; y: number } | null };
+          game: { pickupDrops: { kind: string; id: string | null; x: number; y: number }[] };
           player: { x: number; y: number };
           camera: { viewport: { laneWidthMeters: number } };
         };
       }).__GB;
       // Placed on the bubble, so the pickup's own collision takes it on the next update.
-      g.game.skillPickup = { id: null, x: g.player.x * g.camera.viewport.laneWidthMeters, y: g.player.y };
+      g.game.pickupDrops.push({ kind: 'skill', id: null, x: g.player.x * g.camera.viewport.laneWidthMeters, y: g.player.y });
     });
     await expect.poll(async () => (await score(page)).byEvent.skill, { message: 'the pickup has to be collected', timeout: 10_000 }).toBe(1);
     const afterPickup = await score(page);
@@ -135,7 +135,7 @@ test.describe('the score', () => {
     const placed = await page.evaluate(() => {
       const g = (window as unknown as {
         __GB: {
-          game: { skillPickup: { id: null; x: number; y: number } | null; scorePopupsRef: { count: number; lastText: string | null }; score: { popups: { lifeSeconds: number } } };
+          game: { pickupDrops: { kind: string; id: string | null; x: number; y: number }[]; scorePopupsRef: { count: number; lastText: string | null }; score: { popups: { lifeSeconds: number } } };
           player: { x: number; y: number };
           camera: { viewport: { laneWidthMeters: number }; toScreenX: (x: number) => number; toScreenY: (y: number) => number };
         };
@@ -144,7 +144,8 @@ test.describe('the score', () => {
       // Inside the pickup's reach (~33 m) and off to the side, so the two positions cannot be confused.
       const x = g.player.x * lane + 20;
       const y = g.player.y + 8;
-      g.game.skillPickup = { id: null, x, y };
+      // The pickups are a list now (a level may place several); a probe drops one in the same way the spawner does.
+      g.game.pickupDrops.push({ kind: 'skill', id: null, x, y });
       return {
         itemX: g.camera.toScreenX(x),
         itemY: g.camera.toScreenY(y),
@@ -208,4 +209,6 @@ test.describe('the score', () => {
     await expectNoErrors(errors);
   });
 });
+
+
 
