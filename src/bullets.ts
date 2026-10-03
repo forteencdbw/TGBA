@@ -123,7 +123,7 @@ export class BulletField {
       if (!spent) {
         for (const h of ctx.hazards.hazards) {
           // Not shootable, or already leaving: the round passes through rather than being eaten by it.
-          if (h.maxHealth <= 0 || h.fleeing) continue;
+          if (h.maxHealth <= 0 || h.flee) continue;
           const reach = radius + ctx.laneWidth * h.radiusFraction;
           const dx = h.x - b.x;
           const dy = h.y - b.y;
@@ -171,3 +171,4 @@ export function paintBullets(g: Graphics, field: BulletField, laneWidth: number)
     g.circle(b.x, b.y, r).stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha * fade, width: Math.max(1, r * 0.45) });
   }
 }
+

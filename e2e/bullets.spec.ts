@@ -23,7 +23,7 @@ test.describe('the gun', () => {
   const hazardCounters = (page: Page) =>
     page.evaluate(() => {
       const d = (window as unknown as {
-        __GB: { game: { diagnostics: { hazards: { active: number; fleeing: number; fled: number; damaged: number } } } };
+        __GB: { game: { diagnostics: { hazards: { active: number; leaving: number; fled: number; damaged: number } } } };
       }).__GB.game.diagnostics;
       return d.hazards;
     });
@@ -55,9 +55,9 @@ test.describe('the gun', () => {
   const creature = (page: Page, id: number) =>
     page.evaluate((i) => {
       const h = (window as unknown as {
-        __GB: { game: { hazardsRef: { hazards: { id: number; health: number; maxHealth: number; fleeing: boolean; y: number }[] } } };
+        __GB: { game: { hazardsRef: { hazards: { id: number; health: number; maxHealth: number; flee: string | null; y: number }[] } } };
       }).__GB.game.hazardsRef.hazards.find((x) => x.id === i);
-      return h ? { health: h.health, maxHealth: h.maxHealth, fleeing: h.fleeing, y: h.y } : null;
+      return h ? { health: h.health, maxHealth: h.maxHealth, flee: h.flee, y: h.y } : null;
     }, id);
 
   /** A run with the water emptied and the bubble fat enough to survive a contact or two. */
@@ -116,15 +116,17 @@ test.describe('the gun', () => {
       .toBeLessThan(health);
 
     await expect
-      .poll(async () => (await creature(page, id))?.fleeing ?? false, { message: 'at zero hit points it must be LEAVING', timeout: 15_000 })
+      .poll(async () => (await creature(page, id))?.flee ?? null, { message: 'at zero hit points it must be LEAVING', timeout: 15_000 })
       .toBe(true);
 
     /**
      * And it leaves FAST: it is out of the field within a second or so, which is the whole point of the state --
      * a fish that hung around after being finished would not read as driven off.
      */
-    const fleeing = await creature(page, id);
-    expect(fleeing, 'it must still be in the water for a moment, so the player sees it go').not.toBeNull();
+    const leaving = await creature(page, id);
+    expect(leaving, 'it must still be in the water for a moment, so the player sees it go').not.toBeNull();
+    // One of the three ways out, picked when it decided to go -- never a diagonal, never nothing.
+    expect(['up', 'left', 'right'], 'and it must be leaving in one of the three directions').toContain(leaving?.flee);
     await expect
       .poll(async () => (await creature(page, id)) === null, { message: 'and it must be gone shortly after', timeout: 5000 })
       .toBe(true);
@@ -147,7 +149,7 @@ test.describe('the gun', () => {
     await expect.poll(async () => (await gun(page)).fired, { timeout: 10_000 }).toBeGreaterThan(before.fired + 3);
 
     const untouched = await creature(page, id);
-    expect(untouched?.fleeing, 'an immune creature must not be driven off').toBe(false);
+    expect(untouched?.flee, 'an immune creature must not be driven off').toBeNull();
     expect(untouched?.health, 'and must not lose hit points').toBe(0);
     const countersAfter = await hazardCounters(page);
     expect(countersAfter.fled, 'nothing fled').toBe(countersBefore.fled);
@@ -181,3 +183,4 @@ test.describe('the gun', () => {
     await expectNoErrors(errors);
   });
 });
+

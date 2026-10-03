@@ -80,7 +80,7 @@ export interface Diagnostics {
   hazards: {
     active: number;
     /** How many are leaving because the gun finished them, rather than being eaten or having drifted off. */
-    fleeing: number;
+    leaving: number;
     byKind: Record<string, number>;
     comedyBeats: number;
     grabs: number;
@@ -386,3 +386,4 @@ export async function absorbUntilStage(page: Page, target: number): Promise<void
 
   expect(reached.stage, `the bubble should reach stage ${target}`).toBe(target);
 }
+

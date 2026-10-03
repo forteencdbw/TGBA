@@ -532,11 +532,13 @@ export class CodexUi {
           // Untouched hit points, so the card shows a creature rather than one that has been driven off.
           health: hazardHealth(kind),
           maxHealth: hazardHealth(kind),
-          fleeing: false,
+          flee: null,
         },
       ];
       // Not edible and drawn at rest: the card shows the CREATURE, not the state of the water it happens to be in.
-      paintHazards(g, field, lane, ICON_PHASE, () => false);
+      // `in-play` because a card is of a creature that has not been driven off, and a dimmed one on a card would
+      // read as a rendering fault rather than as "this one is leaving".
+      paintHazards(g, field, lane, ICON_PHASE, () => false, 'in-play');
       return;
     }
 
@@ -885,3 +887,4 @@ function inside(rect: Rect, x: number, y: number): boolean {
 function diamond(g: Graphics, cx: number, cy: number, r: number): void {
   g.moveTo(cx, cy - r).lineTo(cx + r, cy).lineTo(cx, cy + r).lineTo(cx - r, cy).closePath();
 }
+

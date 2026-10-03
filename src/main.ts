@@ -104,6 +104,15 @@ class Game {
 
   /** Everything drawn in world metres: collectables, the bubble, and its trailing micro-bubbles. */
   private readonly pickups = new Graphics();
+  /**
+   * Creatures that are LEAVING, on their own layer so the whole pass can be dimmed at once.
+   *
+   * Every alpha in `paintHazards` is written per shape, so there is no single number on the shared layer to scale;
+   * a separate `Graphics` with its own `alpha` is what makes `hazards.fleeAlpha` a config value rather than forty
+   * edited fills. Drawn just above `pickups`, so a fish on its way out is still over the water and under the
+   * bubble.
+   */
+  private readonly leaving = new Graphics();
   private readonly bubble = new Graphics();
   /**
    * The rage burst's wave, on its own layer UNDER the bubble.
@@ -352,7 +361,7 @@ class Game {
   constructor(readonly app: Application) {
     this.nominalSeconds = nominalAscentSeconds();
 
-    this.scene.world.addChild(this.pickups, this.burstWave, this.bubble, this.particles);
+    this.scene.world.addChild(this.pickups, this.leaving, this.burstWave, this.bubble, this.particles);
     // The flash sits directly over the water but UNDER the HUD, so the depth readout stays legible
     // through it -- the player should still be able to see where they got to during the white-out.
     this.flash.visible = false;
@@ -2298,7 +2307,7 @@ class Game {
       entry,
       health,
       maxHealth: health,
-      fleeing: false,
+      flee: null,
     };
   }
 
@@ -3058,7 +3067,20 @@ class Game {
     // `canEat` is the same function the collision uses, asked again here to draw the edibility marker. One
     // source of truth on purpose: a marker that promised food while the collision delivered a hit would be the
     // worst bug this feature could have, because it would punish the player for trusting what they saw.
-    paintHazards(g, this.hazards, laneWidth, this.elapsed, (kind) => this.canSwallow(kind));
+    paintHazards(g, this.hazards, laneWidth, this.elapsed, (kind) => this.canSwallow(kind), 'in-play');
+
+    /**
+     * The ones on their way out, in their own pass so they can be dimmed as a whole.
+     *
+     * `hazards.fleeAlpha` on the layer rather than a faded copy of every fill: a creature that has been driven off
+     * is the SAME creature, and "the same drawing, at 42%" is a rule that cannot drift as the creatures are
+     * redrawn. It is also what makes the difference legible at a glance in a busy screen -- which of these is still
+     * a threat, and which is already leaving.
+     */
+    this.leaving.alpha = mech.hazards.fleeAlpha;
+    const leavingG = this.leaving;
+    leavingG.clear();
+    paintHazards(leavingG, this.hazards, laneWidth, this.elapsed, (kind) => this.canSwallow(kind), 'leaving');
 
     /**
      * Obstacles, UNDER the hazards.
@@ -3657,7 +3679,7 @@ class Game {
     hazards: {
       active: number;
       /** How many are leaving because the gun finished them, rather than being eaten or having drifted off. */
-      fleeing: number;
+      leaving: number;
       byKind: Record<string, number>;
       comedyBeats: number;
       lastBeat: { what: HazardKind; at: number } | null;
@@ -3938,7 +3960,7 @@ class Game {
       hazards: {
         active: this.hazards.hazards.length,
         /** How many are on their way out because the gun finished them: `fleeing`, not dead. */
-        fleeing: this.hazards.hazards.filter((h) => h.fleeing).length,
+        leaving: this.hazards.hazards.filter((h) => h.flee).length,
         byKind: this.hazards.hazards.reduce<Record<string, number>>((acc, h) => {
           acc[h.kind] = (acc[h.kind] ?? 0) + 1;
           return acc;
@@ -4525,3 +4547,6 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+

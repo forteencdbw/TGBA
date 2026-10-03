@@ -67,3 +67,30 @@ leaves the band on its own.
 ## Comments
 
 - 2026-10: requested as "气泡默认一直射小泡泡，打在鱼身上掉血，血空了快速离屏（不是杀死），血量和伤害可配置".
+
+### Follow-up (same day): three exit directions, and a dimmed exit
+
+Requested: a creature leaves in one of three directions -- up, left, right -- chosen at random, and while it is
+leaving it must be visibly dimmer than one that has not been driven off.
+
+- `Hazard.fleeing: boolean` became `Hazard.flee: 'up' | 'left' | 'right' | null`, the shape `entry` already uses:
+  "is it leaving" and "which way" are the same fact, and a boolean beside a direction is a state that can
+  disagree with itself. The direction is rolled once, in `HazardField.hit`, because deciding per frame would have
+  it leave in a direction that changes every frame.
+- The motion is a straight line along one axis -- never a diagonal, because a creature leaving diagonally at speed
+  reads as a glitch rather than as an exit.
+- A sideways exit needed a HORIZONTAL cull: the field's band test is a y test only, so a fish that crossed the
+  left edge would have sat outside the lane for ever -- invisible, still active, still in the water as far as
+  everything else was concerned. Only a leaving creature is tested on x, because a side ENTRY starts outside the
+  lane on purpose.
+- The dimming is a separate `Graphics` layer whose `alpha` is `hazards.fleeAlpha` (0.42), with `paintHazards`
+  gaining a `which: 'in-play' | 'leaving'` filter. Every alpha in the painter is written per shape, so there is no
+  single number on the shared layer to scale; the alternative was forty edited fills, and this way the dimming
+  cannot drift from the drawing because it IS the drawing, faded.
+- The fish's facing follows the exit: `dir` now comes from `flee` when it is set, so a fish leaving to the left
+  swims left rather than sliding out of frame backwards.
+
+Measured: 30 exits gave `{up: 8, left: 9, right: 13}`; each direction moves on exactly one axis (dx 0 for up, dy 0
+for a side); a side exit is out of the field 0.30 s of game time after it starts; and a frozen side-by-side
+picture has the leaving fish's peak brightness at 121 against the normal fish's 197 on the same background, with
+the same shape and colours.

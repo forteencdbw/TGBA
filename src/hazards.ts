@@ -131,13 +131,17 @@ export interface Hazard {
   health: number;
   maxHealth: number;
   /**
-   * Set once its hit points are gone: it is LEAVING, not dying.
+   * Which way it is LEAVING, or null while it is still in the fight.
    *
-   * A state, like `entry`, and for the same reason: it replaces the kind's own motion rather than adding to it, so
-   * a fleeing fish does not chase, is not fooled by bait, and does not eat. Nothing in this game kills a creature --
-   * they are driven off or eaten -- and this is the driven-off half.
+   * One field rather than a flag plus a direction, because "is it leaving" and "which way" are the same fact and a
+   * boolean beside a direction is a state that can disagree with itself. The shape is `entry`'s, for the same
+   * reason: a state that REPLACES the kind's own motion rather than adding to it.
+   *
+   * Nothing in this game kills a creature. They are eaten or driven off, and this is the driven-off half: once its
+   * hit points are gone a creature stops chasing, stops being fooled by bait, stops eating, stops being pulled by
+   * the suction field, cannot hurt the player -- and leaves, in one of three directions picked when it decided.
    */
-  fleeing: boolean;
+  flee: 'up' | 'left' | 'right' | null;
 }
 
 /** Tunables for D3. Kept together because they are only meaningful as a set. */
@@ -393,6 +397,14 @@ export function hazardHealth(kind: HazardKind): number {
   return mech.hazards.health[kind] ?? 0;
 }
 
+/**
+ * The three ways a driven-off creature can leave: up, or out of either side.
+ *
+ * Three rather than one so the exit is not a fixed animation the player learns in two minutes -- and rather than
+ * "any angle" so an exit is always legible, since a creature leaving diagonally at speed reads as a glitch.
+ */
+const FLEE_DIRECTIONS = ['up', 'left', 'right'] as const;
+
 export interface HazardContext {
   /** Visible world y range, so spawns appear just above the top of the screen. */
   min: number;
@@ -536,7 +548,7 @@ export class HazardField {
       entry: null,
       health,
       maxHealth: health,
-      fleeing: false,
+      flee: null,
     };
     this.hazards.push(hazard);
     return hazard;
@@ -570,20 +582,23 @@ export class HazardField {
   /**
    * Take hit points off one creature, and let it go when they run out.
    *
-   * Here rather than in the bullets' module because the STATE is this module's: `health` and `fleeing` belong to
-   * the hazard, and a caller that reached in and set them would be a second place that knows what "driven off"
-   * means. The return value is what happened, so the caller can count it and draw it without asking again.
+   * Here rather than in the bullets' module because the STATE is this module's: `health` and `flee` belong to the
+   * hazard, and a caller that reached in and set them would be a second place that knows what "driven off" means.
+   * The return value is what happened, so the caller can count it and draw it without asking again.
+   *
+   * The direction is rolled HERE, once, at the moment it turns: deciding per frame would have it leave in a
+   * direction that changes every frame, which reads as a glitch rather than as a decision.
    */
   hit(hazard: Hazard, damage: number): 'immune' | 'damaged' | 'fled' {
     // Immune covers both "this kind is not shootable" and "this one is already leaving": firing at something that
-    // is on its way out should not keep re-triggering the same event.
-    if (hazard.maxHealth <= 0 || hazard.fleeing) return 'immune';
+    // is on its way out should not keep re-triggering the same event, and it should certainly not re-roll its exit.
+    if (hazard.maxHealth <= 0 || hazard.flee) return 'immune';
     hazard.health = Math.max(0, hazard.health - damage);
     if (hazard.health > 0) {
       this.damaged++;
       return 'damaged';
     }
-    hazard.fleeing = true;
+    hazard.flee = FLEE_DIRECTIONS[Math.floor(Math.random() * FLEE_DIRECTIONS.length)]!;
     this.fled++;
     return 'fled';
   }
@@ -688,7 +703,7 @@ export class HazardField {
        * creature's intentions, so a big enough bubble can still swallow a fish that is running away. What the flee
        * state buys is immunity from the damage half.
        */
-      if (h.fleeing) continue;
+      if (h.flee) continue;
 
       switch (h.kind) {
         case 'fish': {
@@ -785,6 +800,18 @@ export class HazardField {
     this.hazards = this.hazards.filter((h) => {
       if (eatenIds.has(h.id)) return false;
       const inside = h.y > ctx.min - 80 && h.y < ctx.max + 120;
+      /**
+       * A creature leaving through a SIDE needs retiring on the X axis, because the band above is a y test only.
+       *
+       * Without this a fish driven off to the left would sit outside the lane for ever -- invisible, but alive,
+       * still counted as active and still in the water as far as everything else is concerned. Only a leaving
+       * creature is tested this way: a side ENTRY starts outside the lane on purpose, and would be culled on the
+       * frame it spawned.
+       */
+      if (h.flee && h.flee !== 'up') {
+        const margin = ctx.laneWidth * h.radiusFraction * 2;
+        if (h.x < -margin || h.x > ctx.laneWidth + margin) return false;
+      }
       // `fired` is reused per kind: for trash it means "torn open", for a crab "already launched".
       // Neither should linger.
       const spent = h.fired && (h.kind === 'trash' || h.kind === 'crab');
@@ -812,7 +839,7 @@ export class HazardField {
 
     for (const h of this.hazards) {
       // A creature on its way out is not still hunting: it neither eats nor is distracted.
-      if (h.fleeing) continue;
+      if (h.flee) continue;
       const dx = at.x - h.x;
       const dy = at.y - h.y;
       const distSq = dx * dx + dy * dy;
@@ -854,7 +881,7 @@ export class HazardField {
     for (const h of this.hazards) {
       if (h.kind !== 'fish') continue;
       // A fish that has been driven off stops feeding and cannot split: it is leaving, not hunting.
-      if (h.fleeing) continue;
+      if (h.flee) continue;
       h.digest = Math.max(0, h.digest - 1 / 60);
       if (h.digest > 0) continue;
 
@@ -909,7 +936,7 @@ export class HazardField {
       if (h.kind !== 'jelly' && h.kind !== 'trash') continue;
       if (h.kind === 'trash' && h.gripping) continue;
       // Leaving: it seeks nothing.
-      if (h.fleeing) continue;
+      if (h.flee) continue;
 
       let best: { x: number; y: number; volume: number } | null = null;
       for (const b of ctx.bubbles) {
@@ -964,7 +991,7 @@ export class HazardField {
       gripSeconds: 0,
       health,
       maxHealth: health,
-      fleeing: false,
+      flee: null,
     };
   }
 
@@ -979,7 +1006,7 @@ export class HazardField {
     const base = ctx.descentSpeed;
 
     /**
-     * DRIVEN OFF: up and out, and nothing else.
+     * DRIVEN OFF: out in one direction, and nothing else.
      *
      * Checked before the arrival state, because being shot is not something a creature should be able to ignore by
      * still swimming in, and checked before the kind's own motion for the reason `entry` is: this has to REPLACE the
@@ -989,10 +1016,16 @@ export class HazardField {
      * comes from. The current is only ~25 m/s while a screenful of water is ~800 m tall, so "twice the current"
      * -- which sounds fast -- is a creature that takes half a minute to get out of view. "0.9 screens per second"
      * says what the player actually sees.
+     *
+     * A sideways exit is a straight line, NOT a swim: it does not drift with the water, because it is out of the
+     * fight and the only thing left to read is which way it went. Over the half second a crossing takes, the
+     * current would move it a metre or two anyway.
      */
-    if (h.fleeing) {
+    if (h.flee) {
       const screen = Math.max(1, ctx.max - ctx.min);
-      h.y += screen * mech.hazards.fleeScreensPerSecond * dt;
+      const step = screen * mech.hazards.fleeScreensPerSecond * dt;
+      if (h.flee === 'up') h.y += step;
+      else h.x += h.flee === 'right' ? step : -step;
       return;
     }
 
@@ -1174,6 +1207,12 @@ export class HazardField {
  * sack, a crab is a wide body with legs. Colour then reinforces it.
  *
  * `canEat` adds the reversal's marker, described where it is drawn below.
+ *
+ * `which` splits the two populations, and it is what lets a LEAVING creature be drawn dimmer: every alpha below is
+ * written per shape, so there is no one number to scale -- the caller draws the in-play ones into one layer and the
+ * leaving ones into another whose `alpha` is `hazards.fleeAlpha`. Same shapes, same colours, one pass each, and the
+ * dimming cannot drift from the drawing because it is the drawing, faded. The codex passes `in-play` and gets what
+ * the water shows.
  */
 export function paintHazards(
   g: Graphics,
@@ -1181,8 +1220,11 @@ export function paintHazards(
   laneWidth: number,
   elapsed: number,
   canEat: (kind: HazardKind) => boolean,
+  which: 'in-play' | 'leaving' = 'in-play',
 ): void {
   for (const h of field.hazards) {
+    // A creature is in exactly one of the two passes, so nothing is drawn twice and nothing is missed.
+    if (which === 'leaving' ? !h.flee : h.flee) continue;
     const r = laneWidth * h.radiusFraction;
     const x = h.x;
     const y = h.y;
@@ -1220,8 +1262,14 @@ export function paintHazards(
 
     switch (h.kind) {
       case 'fish': {
-        // Facing its direction of travel; the tail trails behind.
-        const dir = Math.sign(h.x - 0) || 1;
+        /**
+         * Facing its direction of travel; the tail trails behind.
+         *
+         * A fish that is LEAVING faces the way it is going, which is the one case where the direction is a fact
+         * rather than a guess: `flee` says 'left' or 'right' and the body has to agree with it, or the exit reads as
+         * a fish sliding backwards out of frame.
+         */
+        const dir = h.flee ? (h.flee === 'left' ? -1 : 1) : Math.sign(h.x - 0) || 1;
         g.ellipse(x, y, r * 1.5, r * 0.75).fill({ color: KIND_TUNING.fish.colour, alpha: 0.85 });
         g.moveTo(x - dir * r * 1.3, y)
           .lineTo(x - dir * r * 2.2, y - r * 0.6)
@@ -1437,3 +1485,4 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
