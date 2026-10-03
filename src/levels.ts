@@ -217,6 +217,22 @@ export interface Level {
    * config's `hazards.boss`, exactly as a fish's motion lives there and its spawn position lives in the level.
    */
   boss: BossSpec;
+  /**
+   * This level's water: a deep-to-shallow gradient, the surface bloom, and a mood tint over both.
+   *
+   * Per LEVEL because the six levels are six different places, and water colour is the cheapest way to say so. It used
+   * to be one hardcoded ramp, which made every level the same sea with different creatures in it.
+   */
+  palette: LevelPalette;
+}
+
+/** One level's water colours. `tintStrength` is how much of `tint` to mix over the gradient, 0..1. */
+export interface LevelPalette {
+  deep: number;
+  shallow: number;
+  bloom: number;
+  tint: number;
+  tintStrength: number;
 }
 
 /** One level's boss, as authored: where it arrives, how tough it is, and what it is called. */
@@ -406,7 +422,7 @@ const BLOCK_KEYS: readonly string[] = [
   'depth',
 ];
 
-const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'spawns'];
+const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'palette', 'spawns'];
 
 /** Throw with the offending place named, so a typo in the file is a message rather than a mystery. */
 function fail(where: string, message: string): never {
@@ -555,6 +571,22 @@ function expandBlock(block: SpawnBlock): LevelEntry[] {
 }
 
 /** The file, parsed and validated. Throws with the offending place named. */
+/**
+ * Read one colour from a level's palette, with a default.
+ *
+ * Accepts the same two spellings the config uses everywhere else (0xrrggbb or a "#rrggbb" string), because a level
+ * author writing a palette should not have to remember which of the two this particular field wants.
+ */
+function optColour(node: Record<string, unknown>, key: string, where: string, fallback: number): number {
+  const raw = node[key];
+  if (raw === undefined) return fallback;
+  const value = typeof raw === 'string' ? Number.parseInt(raw.replace('#', ''), 16) : raw;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 0xffffff) {
+    fail(where + '.' + key, 'should be a colour: 0xrrggbb or a "#rrggbb" string.');
+  }
+  return value;
+}
+
 function readLevels(text: string): { start: string; levels: Level[] } {
   let parsed: unknown;
   try {
@@ -595,6 +627,22 @@ function readLevels(text: string): { start: string; levels: Level[] } {
      * never arrive, and the level could never be completed. That is a config error that looks exactly like the game
      * hanging at the end of a level, so it is caught here with the numbers in the message.
      */
+    /**
+     * The palette: four colours and a strength.
+     *
+     * Defaulted rather than required, so a level written before palettes existed still loads -- and the default is the
+     * ramp this game shipped with, which is also a reasonable no-opinion answer.
+     */
+    const rawPalette = node['palette'];
+    const paletteNode = (rawPalette && typeof rawPalette === 'object' && !Array.isArray(rawPalette) ? rawPalette : {}) as Record<string, unknown>;
+    const palette: LevelPalette = {
+      deep: optColour(paletteNode, 'deep', `levels[${id}].palette`, 0x020710),
+      shallow: optColour(paletteNode, 'shallow', `levels[${id}].palette`, 0x2e8fc4),
+      bloom: optColour(paletteNode, 'bloom', `levels[${id}].palette`, 0xbff0ff),
+      tint: optColour(paletteNode, 'tint', `levels[${id}].palette`, 0xffffff),
+      tintStrength: optNum(paletteNode, 'tintStrength', `levels[${id}].palette`, 0, 0, 1),
+    };
+
     const rawBoss = node['boss'];
     if (rawBoss === null || typeof rawBoss !== 'object' || Array.isArray(rawBoss)) {
       fail(`levels["${id}"].boss`, 'is missing. Every level ends when its boss is defeated, so a level must name one.');
@@ -626,6 +674,7 @@ function readLevels(text: string): { start: string; levels: Level[] } {
         : { playerLeadLimit: optNum(node, 'playerLeadLimit', `levels["${id}"]`, 0, 0, 10000) }),
       ...(landmarks ? { landmarks } : {}),
       boss,
+      palette,
       entries,
       blocks,
     });
@@ -790,6 +839,8 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
+
 
 
 

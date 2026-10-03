@@ -2043,7 +2043,114 @@
   // 音频
   // ---------------------------------------------------------------------------------------------
   "audio": {
-    // 背景音乐（就是那个合成的水下环境音床）相对**音效**的音量。
+    // ---------------------------------------------------------------------------------------------
+    // 背景音乐：每关一段，**合成而不是文件**
+    // ---------------------------------------------------------------------------------------------
+    //
+    // 这个项目没有任何二进制素材：所有声音都是 WebAudio 现场合成的。六段音乐要是做成文件，体积会翻好几个
+    // 数量级，而且变成六件"改关卡列表时要同步维护"的东西。所以一段音乐是一份**配方**：调性、速度、波形、
+    // 和弦进行、琶音型。
+    //
+    // 三个数字决定一段音乐的"性格"：`rootHz` 调性（低=沉、高=亮）、`stepPerMinute` 琶音速度（慢=平静）、
+    // `cutoffHz` 低通截止（低=水下、闷，高=明亮、开阔）。**想换一关的气氛，改这四个数就够了。**
+    "music": {
+      // 音乐总音量（再乘以设置里的音量）。
+      "volume": 0.5,
+      // 每关一段。键是关卡的 id；没写的关卡就是没有音乐。
+      "tracks": {
+        // 第一关 黑烟囱墓场：压抑、安静、几乎没有光。低音区、极慢、闷。
+        "black-smokers": {
+          "rootHz": 55,
+          "stepPerMinute": 44,
+          "stepsPerChord": 8,
+          "chords": [[0, 3, 7], [-2, 2, 5], [-4, 0, 3], [-2, 2, 7]],
+          "pattern": [0, 1, 2, 1],
+          "wave": "triangle",
+          "padWave": "sine",
+          "arpGain": 0.16,
+          "padGain": 0.1,
+          "noteSeconds": 0.9,
+          "cutoffHz": 420,
+          "detuneCents": 7
+        },
+        // 第二关 沉船幽谷：昏暗但有灯、有反光金属，所以比第一关暖一点、亮一点。
+        "wreck-gorge": {
+          "rootHz": 65.4,
+          "stepPerMinute": 56,
+          "stepsPerChord": 6,
+          "chords": [[0, 4, 7], [-3, 0, 4], [2, 5, 9], [-1, 2, 7]],
+          "pattern": [0, 2, 1, 2],
+          "wave": "triangle",
+          "padWave": "sawtooth",
+          "arpGain": 0.15,
+          "padGain": 0.075,
+          "noteSeconds": 0.7,
+          "cutoffHz": 640,
+          "detuneCents": 9
+        },
+        // 第三关 发光水母林：蓝紫、飘、生物荧光。大调色彩 + 高一些的琶音，像在发光。
+        "jelly-forest": {
+          "rootHz": 87.3,
+          "stepPerMinute": 72,
+          "stepsPerChord": 8,
+          "chords": [[0, 4, 9], [2, 7, 11], [-3, 4, 7], [0, 5, 9]],
+          "pattern": [0, 1, 2, 1, 2, 0],
+          "wave": "sine",
+          "padWave": "triangle",
+          "arpGain": 0.17,
+          "padGain": 0.09,
+          "noteSeconds": 0.55,
+          "cutoffHz": 1500,
+          "detuneCents": 12
+        },
+        // 第四关 猎食者温跃层：开阔、有温差与折射。中音区、流动、稍快。
+        "thermocline": {
+          "rootHz": 73.4,
+          "stepPerMinute": 84,
+          "stepsPerChord": 6,
+          "chords": [[0, 5, 9], [3, 7, 10], [-2, 3, 7], [1, 5, 8]],
+          "pattern": [0, 2, 1, 0, 2, 1],
+          "wave": "triangle",
+          "padWave": "sawtooth",
+          "arpGain": 0.15,
+          "padGain": 0.07,
+          "noteSeconds": 0.42,
+          "cutoffHz": 1100,
+          "detuneCents": 8
+        },
+        // 第五关 风暴暗流：明亮却混乱。小调、有推进感、滤波器开得更大。
+        "storm-surge": {
+          "rootHz": 61.7,
+          "stepPerMinute": 96,
+          "stepsPerChord": 4,
+          "chords": [[0, 3, 7], [5, 8, 12], [-2, 3, 7], [0, 7, 10]],
+          "pattern": [0, 1, 2, 1],
+          "wave": "square",
+          "padWave": "sawtooth",
+          "arpGain": 0.11,
+          "padGain": 0.075,
+          "noteSeconds": 0.34,
+          "cutoffHz": 1700,
+          "detuneCents": 14
+        },
+        // 第六关 破晓海面：最终关，最亮、最上行。大调、最亮的滤波器。
+        "dawn-surface": {
+          "rootHz": 98,
+          "stepPerMinute": 80,
+          "stepsPerChord": 8,
+          "chords": [[0, 4, 7], [5, 9, 12], [7, 11, 14], [2, 7, 11]],
+          "pattern": [0, 1, 2, 1, 2, 1],
+          "wave": "sine",
+          "padWave": "triangle",
+          "arpGain": 0.16,
+          "padGain": 0.1,
+          "noteSeconds": 0.5,
+          "cutoffHz": 2400,
+          "detuneCents": 10
+        }
+      }
+    },
+    // --- 音效（下面这些直接挂主增益） -------------------------------------------
     //
     // 这是一个**独立的增益节点**，不是乘在主增益上。两个原因：
     //   1. 主增益承载的是**玩家的音量**，把它压小会连音效一起压小，而音效没人要求变轻
@@ -2124,6 +2231,7 @@
     "entryDepth": 0.72
   }
 }
+
 
 
 

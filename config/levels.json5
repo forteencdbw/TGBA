@@ -84,7 +84,14 @@
     {
       id: 'black-smokers',
       name: '黑烟囱墓场',
-
+      // 黑烟囱墓场：几乎没有自然光。黑 + 暗红（热液的余晖）+ 一点微弱的生物蓝光。
+      palette: {
+        deep: 0x03060a,
+        shallow: 0x101820,
+        bloom: 0x6f8fa8,
+        tint: 0x7a1f18,
+        tintStrength: 0.22
+      },
       scrollLength: 1500,
 
       boss: {
@@ -155,7 +162,14 @@
     {
       id: 'wreck-gorge',
       name: '沉船幽谷',
-
+      // 沉船幽谷：昏暗，但舱灯与反光金属让它更好辨认。褐绿 + 一点暖灯色。
+      palette: {
+        deep: 0x04090d,
+        shallow: 0x1d4a4a,
+        bloom: 0xbfe4d8,
+        tint: 0x6b4a2a,
+        tintStrength: 0.2
+      },
       scrollLength: 1100,
 
       boss: {
@@ -222,7 +236,14 @@
     {
       id: 'jelly-forest',
       name: '发光水母林',
-
+      // 发光水母林：中层海域，蓝紫 / 青 / 粉。
+      palette: {
+        deep: 0x0a0a24,
+        shallow: 0x4a6fd0,
+        bloom: 0xd8b8ff,
+        tint: 0x8a4fd0,
+        tintStrength: 0.3
+      },
       scrollLength: 1400,
 
       boss: {
@@ -281,7 +302,14 @@
     {
       id: 'thermocline',
       name: '猎食者温跃层',
-
+      // 猎食者温跃层：水体折射与温差，开阔、偏冷绿。
+      palette: {
+        deep: 0x04202a,
+        shallow: 0x2fa8b8,
+        bloom: 0xd8ffe8,
+        tint: 0x2f8f7a,
+        tintStrength: 0.16
+      },
       scrollLength: 1500,
 
       boss: {
@@ -339,7 +367,14 @@
     {
       id: 'storm-surge',
       name: '风暴暗流',
-
+      // 风暴暗流：接近海面但正在暴风雨。明亮的铅灰蓝，闪电感。
+      palette: {
+        deep: 0x0a1420,
+        shallow: 0x5f7f9f,
+        bloom: 0xffffff,
+        tint: 0x3a4a5f,
+        tintStrength: 0.24
+      },
       scrollLength: 1600,
 
       boss: {
@@ -400,7 +435,14 @@
     {
       id: 'dawn-surface',
       name: '破晓海面',
-
+      // 破晓海面：阳光穿透水层。暖金 + 浅青，是全场最亮的一关。
+      palette: {
+        deep: 0x10304a,
+        shallow: 0x7fd0e8,
+        bloom: 0xffe0a8,
+        tint: 0xffb46b,
+        tintStrength: 0.18
+      },
       scrollLength: 1700,
 
       boss: {
@@ -454,4 +496,5 @@
     },
   ],
 }
+
 

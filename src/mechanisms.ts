@@ -968,7 +968,27 @@ export interface Mechanisms {
     };
   };
   /** Audio levels that are not the player's own volume. */
+  /**
+   * Per-level background music: a bus volume and one synth recipe per level.
+   *
+   * A recipe rather than a file (see `src/music.ts`): this project has no binary assets, and a track described by four
+   * numbers is one the level list can be edited against without leaving the config.
+   */
+  music: {
+    volume: number;
+    tracks: Record<string, MusicTrackConfig>;
+  };
   audio: {
+    /**
+     * Per-level background music: a bus volume and one synth recipe per level.
+     *
+     * A recipe rather than a file (see src/music.ts): this project has no binary assets, and a track described by
+     * four numbers is one the level list can be edited against without leaving the config.
+     */
+    music: {
+      volume: number;
+      tracks: Record<string, MusicTrackConfig>;
+    };
     /**
      * The background bed's level relative to the one-shot sounds.
      *
@@ -1003,6 +1023,22 @@ export interface Mechanisms {
     insideMarginRatio: number;
     entryDepth: number;
   };
+}
+
+/** One level's music, as the config writes it. See `src/music.ts` for what each field does to the sound. */
+export interface MusicTrackConfig {
+  rootHz: number;
+  stepPerMinute: number;
+  stepsPerChord: number;
+  chords: number[][];
+  pattern: number[];
+  wave: 'sine' | 'square' | 'sawtooth' | 'triangle';
+  padWave: 'sine' | 'square' | 'sawtooth' | 'triangle';
+  arpGain: number;
+  padGain: number;
+  noteSeconds: number;
+  cutoffHz: number;
+  detuneCents: number;
 }
 
 /** How a dropped pickup is painted. Radii are fractions of the lane width. */
@@ -1595,6 +1631,54 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: isColour,
     describe: 'a colour, either 0xrrggbb or "#rrggbb"',
   })),
+  { path: 'audio.music.volume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1' },
+  {
+    path: 'audio.music.tracks',
+    check: (v) =>
+      v !== null &&
+      typeof v === 'object' &&
+      !Array.isArray(v) &&
+      Object.values(v as Record<string, unknown>).every((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        const waveOk = (w: unknown) => w === 'sine' || w === 'square' || w === 'sawtooth' || w === 'triangle';
+        return (
+          typeof r.rootHz === 'number' &&
+          r.rootHz > 20 &&
+          r.rootHz < 2000 &&
+          typeof r.stepPerMinute === 'number' &&
+          r.stepPerMinute > 4 &&
+          r.stepPerMinute <= 600 &&
+          typeof r.stepsPerChord === 'number' &&
+          Number.isInteger(r.stepsPerChord) &&
+          r.stepsPerChord >= 1 &&
+          r.stepsPerChord <= 32 &&
+          Array.isArray(r.chords) &&
+          r.chords.length >= 1 &&
+          r.chords.every((c) => Array.isArray(c) && c.length >= 1 && c.every((n) => typeof n === 'number')) &&
+          Array.isArray(r.pattern) &&
+          r.pattern.length >= 1 &&
+          r.pattern.every((n) => typeof n === 'number' && Number.isInteger(n) && n >= 0) &&
+          waveOk(r.wave) &&
+          waveOk(r.padWave) &&
+          typeof r.arpGain === 'number' &&
+          r.arpGain >= 0 &&
+          r.arpGain <= 1 &&
+          typeof r.padGain === 'number' &&
+          r.padGain >= 0 &&
+          r.padGain <= 1 &&
+          typeof r.noteSeconds === 'number' &&
+          r.noteSeconds > 0.02 &&
+          r.noteSeconds <= 8 &&
+          typeof r.cutoffHz === 'number' &&
+          r.cutoffHz >= 80 &&
+          r.cutoffHz <= 12000 &&
+          typeof r.detuneCents === 'number' &&
+          Math.abs(r.detuneCents) <= 100
+        );
+      }),
+    describe: 'an object of level id to a music recipe (rootHz, stepPerMinute, stepsPerChord, chords, pattern, wave, padWave, arpGain, padGain, noteSeconds, cutoffHz, detuneCents)',
+  },
   { path: 'audio.musicVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity-like level between 0 and 1' },
   { path: 'audio.bulletHitVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1; 0 mutes the bullet hit' },
   { path: 'audio.bulletFireVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1; 0 mutes the shot' },
@@ -2049,6 +2133,9 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
+
 
 
 

@@ -192,6 +192,18 @@ export class GameAudio {
   }
 
   /**
+   * The game's audio context and master bus, for the music to hang off.
+   *
+   * Handed out rather than re-created so there is ONE context, ONE place that knows about the browser's gesture rule,
+   * and ONE volume control: the settings slider already moves this master, so the music follows it for free.
+   * `null` until the first gesture, which is the signal to the music that it may not make a sound yet.
+   */
+  musicBus(): { ctx: AudioContext; destination: AudioNode } | null {
+    if (!this.ctx || !this.master) return null;
+    return { ctx: this.ctx, destination: this.master };
+  }
+
+  /**
    * Push the effective master gain: zero when muted, the player's volume otherwise.
    *
    * The single place the two are combined. Computing it at each call site is how "muted" and "quiet" end up
@@ -497,5 +509,6 @@ export class GameAudio {
 
 /** A single shared instance: audio is global state, and two contexts would fight over the device. */
 export const audio = new GameAudio();
+
 
 

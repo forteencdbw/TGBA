@@ -1,7 +1,7 @@
 import { Application, Container, FillGradient, Graphics, Text } from 'pixi.js';
 import { LATERAL_DAMPING, VIEW } from './config';
 import { mech } from './mechanisms';
-import { DEPTH_TOTAL } from './levels';
+import { DEPTH_TOTAL, LEVEL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Player } from './player';
 import { computeViewport, designScale, type Viewport } from './viewport';
@@ -351,10 +351,19 @@ function paintMargin(g: Graphics, x: number, width: number, height: number, mirr
  * bloom. Clamping here means no future caller can reproduce that, whatever it passes.
  */
 function waterColour(worldY: number, depth: number): number {
-  const deep = { r: 0x02, g: 0x07, b: 0x10 };
-  const shallow = { r: 0x2e, g: 0x8f, b: 0xc4 };
+  /**
+   * The level's own water, not one global ramp.
+   *
+   * Every level names four colours (see `LevelPalette`): the seabed, the top of its climb, the light coming down from
+   * the surface, and a mood tint over both. The span is the LEVEL's length rather than a constant, which it was before
+   * -- a level shorter than the first one never reached its own shallow colour, so the deepest levels looked like the
+   * first one seen through a slightly different filter.
+   */
+  const palette = LEVEL.palette;
+  const deep = { r: (palette.deep >> 16) & 0xff, g: (palette.deep >> 8) & 0xff, b: palette.deep & 0xff };
+  const shallow = { r: (palette.shallow >> 16) & 0xff, g: (palette.shallow >> 8) & 0xff, b: palette.shallow & 0xff };
 
-  const t = Math.min(Math.max(worldY / DEPTH_TOTAL, 0), 1);
+  const t = Math.min(Math.max(worldY / Math.max(1, LEVEL.scrollLength), 0), 1);
   const eased = Math.pow(t, 1.15);
 
   let r = deep.r + (shallow.r - deep.r) * eased;
@@ -364,9 +373,29 @@ function waterColour(worldY: number, depth: number): number {
   // Surface bloom over the last 55m, on top of the gradient. Kept narrow and subtle: a wider,
   // stronger bloom washed out most of the screen whenever the camera was anywhere near the top.
   const bloom = Math.max(0, Math.min(1, 1 - depth / 55));
-  r += (0xbf - r) * bloom * 0.3;
-  g += (0xf0 - g) * bloom * 0.3;
-  b += (0xff - b) * bloom * 0.3;
+  const br = (palette.bloom >> 16) & 0xff;
+  const bg = (palette.bloom >> 8) & 0xff;
+  const bb = palette.bloom & 0xff;
+  r += (br - r) * bloom * 0.3;
+  g += (bg - g) * bloom * 0.3;
+  b += (bb - b) * bloom * 0.3;
+
+  /**
+   * The mood tint, over everything.
+   *
+   * A separate channel from the gradient on purpose: the gradient says how DEEP this is and the tint says what KIND of
+   * water it is -- black and red for a smoker field, violet for the jellyfish forest, warm gold for the dawn surface.
+   * Mixing it here rather than folding it into the two end colours also means a level can change its mood without
+   * re-doing its depth ramp.
+   */
+  if (palette.tintStrength > 0) {
+    const tr = (palette.tint >> 16) & 0xff;
+    const tg = (palette.tint >> 8) & 0xff;
+    const tb = palette.tint & 0xff;
+    r += (tr - r) * palette.tintStrength;
+    g += (tg - g) * palette.tintStrength;
+    b += (tb - b) * palette.tintStrength;
+  }
 
   const channel = (value: number): number => Math.max(0, Math.min(255, Math.round(value)));
   return (channel(r) << 16) | (channel(g) << 8) | channel(b);
@@ -951,6 +980,8 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+
+
 
 
 

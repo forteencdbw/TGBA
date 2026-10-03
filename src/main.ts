@@ -24,6 +24,7 @@ import { OBSTACLE_KINDS, mech } from './mechanisms';
 import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
+import { Music, type MusicTrack } from './music';
 import { APP_VERSION, buildLabel, GIT_DIRTY, GIT_HASH } from './version';
 import { demote, initialStageState, recordAbsorb, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
@@ -87,6 +88,14 @@ class Game {
   private readonly finishBanner = makeLabel('击败 BOSS  ·  通关', 0xeaf9ff, mech.hud.resultsCard.size);
   /** The gear button and the pause panel it opens. */
   private readonly settings = new SettingsUi();
+  /**
+   * The level's music.
+   *
+   * Starts and stops with the RUN rather than with the page: the menu is silent, each level has its own recipe (see
+   * config/mechanics.json5's music.tracks), and the settings volume applies to it through the same master bus as
+   * every effect.
+   */
+  private readonly music = new Music();
   /** The main menu, shown before a run and after exiting to it. */
   private readonly menu = new MainMenu();
   /**
@@ -660,6 +669,11 @@ class Game {
   /** Test hook: the run banner's current text, so a probe can read the feedback the player got. */
   get bannerTextRef(): string {
     return this.runBanner.text;
+  }
+
+  /** Test hook: the level music, so a probe can read whether a track is running and which. */
+  get musicRef(): Music {
+    return this.music;
   }
 
   /** Test hook: the run's conductive charge (LEVEL 3), 0 to `hazards.charge.max`. */
@@ -2067,6 +2081,7 @@ class Game {
      * player cannot leave). Everything the old rule needed -- a length, a finish line, a countdown to it -- is gone
      * with it.
      */
+    this.music.update(dt);
     this.updateBoss();
     /**
      * The chart is redrawn from the run's own numbers every frame rather than being pushed on change.
@@ -3152,6 +3167,14 @@ class Game {
     // The boss bar goes with the run it belonged to. Without this it hangs there through the next birth animation,
     // showing the previous level's boss at whatever health it died at -- a bar for a fight that is not happening.
     this.hud.setBoss(null);
+    /**
+     * The level's music.
+     *
+     * Set HERE rather than in the level-select code so every route into a level gets it: the menu, the level pills, a
+     * restart from the settings panel and the automatic handoff from the level before. A track that only started from
+     * one of those would be a level that is silent depending on how the player got there.
+     */
+    this.startLevelMusic();
     // The chart follows the run, not the save: see `levelsClearedInRun`. `startRun` without a carry is a fresh run, so
     // the chart goes back to zero with it; the transition path sets the count itself before calling in.
     if (!carryScore) this.levelsClearedInRun = levelIndex(LEVEL.id);
@@ -3319,6 +3342,7 @@ class Game {
 
   /** Leave the level and show the main menu. */
   private exitToMenu(): void {
+    this.music.stop();
     this.settings.setOpen(false);
     this.phase = 'menu';
     this.touch.releaseAll();
@@ -3350,6 +3374,20 @@ class Game {
     } else {
       this.menu.setLevelNote('');
     }
+  }
+
+  /**
+   * Point the music at the current level's recipe, and make sure the context exists to play it.
+   *
+   * `musicBus()` is null until the first user gesture, so this is also where the music is told "not yet" -- it holds
+   * the track and starts the moment the context appears, which is what `update` checks.
+   */
+  private startLevelMusic(): void {
+    const bus = audio.musicBus();
+    if (bus) this.music.attach(bus.ctx, bus.destination);
+    const track = (mech.audio.music.tracks as Record<string, MusicTrack | undefined>)[LEVEL.id];
+    this.music.setVolume(audio.getVolume() * mech.audio.music.volume);
+    this.music.setTrack(track ?? null);
   }
 
   private enterFromMenu(typeId: string): void {
@@ -5394,6 +5432,11 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
 
 
 
