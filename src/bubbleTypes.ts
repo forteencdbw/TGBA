@@ -56,10 +56,15 @@ export type ControlId =
   /** Tap to spend the whole rage gauge as a shockwave. The volatile bubble's other verb. */
   | 'burst';
 
-export type BubbleTypeId = 'devour' | 'angry';
+export type BubbleTypeId = 'devour' | 'angry' | 'plain';
 
-/** Which palette paints the bubble. See `bubbleLook`. */
-export type LookSource = 'growthStage' | 'rage';
+/**
+ * Which palette paints the bubble. See `bubbleLook`.
+ *
+ * `plain` is not a growth palette with different numbers: the plain bubble's colours do not follow ANY state, because
+ * it has no state worth advertising -- see `hitsToPop` and the config's note on the palette.
+ */
+export type LookSource = 'growthStage' | 'rage' | 'plain';
 
 export interface BubbleType {
   id: BubbleTypeId;
@@ -105,6 +110,26 @@ export interface BubbleType {
    */
   swallowsHazards: boolean;
   /**
+   * How many hits this type SURVIVES, at any size, or null for the volumetric rule.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THIS IS A TYPE PROPERTY RATHER THAN A NUMBER IN THE CONFIG
+   * ---------------------------------------------------------------------------------------------
+   * `null` is every bubble that has shipped so far, and it means what the game has always meant: hit points ARE
+   * volume, one hit costs `volume.hitCost`, so growing is what buys the right to be hit again. That is the devour
+   * bubble's reward for eating and the volatile bubble's consolation for having no stomach.
+   *
+   * A NUMBER replaces that rule with a count: this type takes that many hits and pops, whatever it has grown to. The
+   * plain bubble is the reason it exists -- its whole design is that a touch is fatal and that nothing it does changes
+   * that -- and it belongs beside `swallowsHazards` rather than in `mechanics.json5` because it is not a balance knob,
+   * it is what the character IS. A type is not a preset of the game's rules; it is allowed to have a different one.
+   *
+   * The consequence is worth stating: for a type with a fixed count, growing is PURE COST -- a bigger hitbox and a
+   * slower bubble for no extra survivability. That is coherent (a plain bubble wants to stay small) but it is a real
+   * design consequence, not a rounding error.
+   */
+  hitsToPop: number | null;
+  /**
    * Whether this type has a resource the HUD reports, and what to call it.
    *
    * Null for the devour bubble: it has no second meter, and inventing one would be inventing a mechanic. The
@@ -114,10 +139,12 @@ export interface BubbleType {
 }
 
 /**
- * The two types, in menu order.
+ * The bubble types, in menu order.
  *
  * The devour bubble is first because it is the game's original design and the simpler one to learn: eat, grow, and
- * pay for it with speed. The volatile bubble is second, and reads as the advanced option.
+ * pay for it with speed. The volatile bubble is second, and reads as the advanced option. The plain bubble is last:
+ * it is the one with nothing to learn, and putting it between the two that have mechanics would make the menu read as
+ * a difficulty list with a gap in it.
  */
 export const BUBBLE_TYPES: readonly BubbleType[] = [
   {
@@ -138,6 +165,7 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
      */
     firesBullets: true,
     resource: null,
+    hitsToPop: null,
   },
   {
     id: 'angry',
@@ -171,6 +199,47 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
      */
     firesBullets: true,
     resource: { label: '怒气' },
+    hitsToPop: null,
+  },
+  {
+    id: 'plain',
+    name: '普通气泡',
+    tagline: '什么都不会，一滴血 —— 碰到就破',
+    hint: 'WASD / 方向键移动   ·   右侧按钮：技能（捡到才有）',
+    /**
+     * The skill button, and nothing else.
+     *
+     * Not a compromise: `skill` is the button every type has because every type can CARRY a skill, and a carried skill
+     * is an item the level handed over rather than an ability of the character. What this type has none of is the
+     * verbs -- no suction field, no spit, no digest, no charge, no burst -- which is what "no special abilities" means
+     * when the alternative reading would leave a collected skill unusable, and a pickup that does nothing is worse
+     * than no pickup at all.
+     */
+    controls: ['skill'],
+    look: 'plain',
+    /**
+     * No stomach, and therefore no over-eating fuse either.
+     *
+     * The same answer as the volatile bubble, for a stronger reason: this bubble has no verb that could get a
+     * swallowed creature back OUT, and the repo's rule is that nothing swallows without an exit.
+     */
+    swallowsHazards: false,
+    /**
+     * The gun stays on, and it is the one thing standing between this type and a game with no decisions in it.
+     *
+     * With one hit point and no verbs, every creature is a lethal obstacle and the only move is to run; the gun is
+     * what makes distance a resource the player can spend. It is also the game's default weapon rather than an
+     * ability of a character, so leaving it off would not make the type plainer -- it would make it a different game.
+     */
+    firesBullets: true,
+    resource: null,
+    /**
+     * ONE hit, whatever it grows to.
+     *
+     * The literal reading of the design, and the reason `hitsToPop` exists: the volumetric rule would quietly give a
+     * grown plain bubble more lives, which is the one thing this type is not allowed to have.
+     */
+    hitsToPop: 1,
   },
 ];
 

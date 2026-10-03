@@ -572,6 +572,23 @@ export interface Mechanisms {
    * `look` holds the geometry the four rage stages share and `appearance` holds only what changes with rage, so
    * retuning the glow means editing one number rather than four.
    */
+  /**
+   * The plain bubble's palette: the hue carriers, and nothing else.
+   *
+   * Only three numbers, because only three things are the bubble's HUE -- the rim, the outer glow and the HUD's state
+   * dot. The radius, the inner ring and every alpha still come from the growth stages: the plain bubble grows and eats
+   * the same speed tiers as the devour bubble, and what it lacks is a state worth colouring for.
+   *
+   * Its hit points (one, at any size) are NOT here: that is what the character IS, so it lives on the type in
+   * `src/bubbleTypes.ts` beside `swallowsHazards`.
+   */
+  plain: {
+    look: {
+      rim: number;
+      glow: number;
+      hudColor: number;
+    };
+  };
   angry: {
     rage: {
       max: number;
@@ -809,6 +826,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     path: `score.${event}`,
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000,
     describe: 'points for this event, between 0 and 100000; 0 takes the event out of the score',
+  })),
+  ...['rim', 'glow', 'hudColor'].map((key) => ({
+    path: `plain.look.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or a "#rrggbb" string',
   })),
   { path: 'hud.resultsCard.size', check: (v) => typeof v === 'number' && v >= 10 && v <= 60, describe: 'a font size between 10 and 60' },
   { path: 'hud.resultsCard.yRatio', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 0.9, describe: 'a fraction of the canvas height between 0.05 and 0.9' },
@@ -1500,6 +1522,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 

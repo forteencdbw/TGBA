@@ -992,4 +992,62 @@ test.describe('bubble types', () => {
     expect(aim.locked.x, 'and the aim must LOCK at that direction once the finger is let go').toBeLessThan(-0.5);
     expect(Math.abs(aim.locked.y), 'with no drift sideways').toBeLessThan(0.3);
   });
+
+  /**
+   * The plain bubble: ONE hit point at any size.
+   *
+   * The rule the type exists for, and the one a volumetric reading would silently break: hit points are normally the
+   * bubble's volume, so a plain bubble that had grown would quietly gain lives and stop being the fragile one. So the
+   * test drives a contact at three sizes -- the starting volume, a middling one and one near the cap -- and asserts
+   * the same outcome at all three.
+   */
+  test('the plain bubble pops to a single contact, whatever it has grown to', async ({ page }) => {
+    for (const volume of [1, 3, 6]) {
+      const outcome = await page.evaluate(
+        async ([id, size]) => {
+          const g = (window as unknown as {
+            __GB: {
+              game: {
+                debugStartRunWithType: (t: string) => void;
+                debugSetSteadyCruise: () => void;
+                debugSpawnHazardOnPlayer: (k: string) => void;
+                hazardsRef: { hazards: { id: number; x: number; y: number }[] };
+                diagnostics: { phase: string; volume: number; invulnerable: number; hitsSurvived: number; stats: { hits: number } };
+              };
+              player: { x: number; y: number; volume: number };
+              camera: { viewport: { laneWidthMeters: number } };
+            };
+          }).__GB;
+          g.game.debugStartRunWithType(id);
+          g.game.debugSetSteadyCruise();
+          g.game.hazardsRef.hazards.length = 0;
+          g.player.volume = size as number;
+          g.player.x = 0.5;
+          // Wait out the birth invulnerability, or the contact is simply ignored.
+          const untilVulnerable = performance.now();
+          while (g.game.diagnostics.invulnerable > 0 && performance.now() - untilVulnerable < 15_000) {
+            await new Promise((r) => requestAnimationFrame(r));
+          }
+          const before = { hits: g.game.diagnostics.stats.hits, survived: g.game.diagnostics.hitsSurvived };
+
+          g.game.debugSpawnHazardOnPlayer('fish');
+          const fish = g.game.hazardsRef.hazards[g.game.hazardsRef.hazards.length - 1]!;
+          const lane = g.camera.viewport.laneWidthMeters;
+          // HOLD it in contact: the fish chases, and pinning it removes the timing from the question.
+          const started = performance.now();
+          while (performance.now() - started < 4000 && g.game.diagnostics.phase === 'playing') {
+            fish.x = g.player.x * lane;
+            fish.y = g.player.y;
+            await new Promise((r) => requestAnimationFrame(r));
+          }
+          return { phase: g.game.diagnostics.phase, hits: g.game.diagnostics.stats.hits - before.hits, survived: before.survived };
+        },
+        ['plain', volume] as const,
+      );
+      console.log(`plain at volume ${volume}: ${JSON.stringify(outcome)}`);
+      expect(outcome.survived, 'the type must report ONE hit point, not volume/hitCost').toBe(1);
+      expect(outcome.hits, 'one contact, one hit').toBe(1);
+      expect(outcome.phase, 'and one hit has to end the run').not.toBe('playing');
+    }
+  });
 });

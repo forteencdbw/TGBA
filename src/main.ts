@@ -2553,8 +2553,22 @@ class Game {
      * and the silt talent's resistance still applies to every point of it.
      */
     const hitPoints = 1 + (this.compressing ? mech.digest.extraHitPoints : 0);
-    for (let i = 0; i < hitPoints; i++) {
-      this.player.volume = shrinkFromHit(this.player.volume, this.player.shrinkResistance);
+    /**
+     * A type whose hit points are a COUNT rather than a volume.
+     *
+     * The volumetric rule above is the devour bubble's reward for eating and the volatile bubble's consolation for
+     * having no stomach; a type that declares `hitsToPop` has neither and takes that many hits at ANY size. The plain
+     * bubble is the one that does, and its design is exactly that a touch is fatal and nothing it does changes that.
+     *
+     * Setting the volume to zero rather than branching to a second death: the pop check below is the same one every
+     * other hit goes through, so only the AMOUNT of damage has a second rule, not the dying.
+     */
+    if (this.bubbleType.hitsToPop !== null) {
+      this.player.volume = 0;
+    } else {
+      for (let i = 0; i < hitPoints; i++) {
+        this.player.volume = shrinkFromHit(this.player.volume, this.player.shrinkResistance);
+      }
     }
 
     // Decide from the POST-hit volume: asking whether the current volume can survive one more hit
@@ -3908,6 +3922,8 @@ class Game {
       hasCharge: boolean;
       /** Whether it can swallow a creature at all. False means contact is damage, never a meal. */
       swallowsHazards: boolean;
+      /** Hits this type survives at any size, or null when hit points are the bubble's volume. */
+      hitsToPop: number | null;
     };
     /** The volatile bubble's resource. Always present; always zero for the devour bubble. */
     rage: {
@@ -4214,6 +4230,7 @@ class Game {
         hasCharge: hasControl(this.bubbleType, 'charge'),
         /** Whether it can swallow a creature at all. False means contact is damage, never a meal. */
         swallowsHazards: this.bubbleType.swallowsHazards,
+        hitsToPop: this.bubbleType.hitsToPop,
       },
       rage: {
         value: +this.rage.rage.toFixed(2),
@@ -4237,7 +4254,14 @@ class Game {
       },
       phase: this.phase,
       volume: this.player.volume,
-      hitsSurvived: hitsSurvived(this.player.volume),
+      /**
+       * How many hits this bubble can still take.
+       *
+       * The TYPE's rule comes first, not the volume's: a type that declares `hitsToPop` has that many hits whatever it
+       * has grown to, so reporting `hitsSurvived(volume)` for the plain bubble would say "6" about a bubble that dies
+       * to one touch -- and a probe-facing number that lies is worse than no number.
+       */
+      hitsSurvived: this.bubbleType.hitsToPop ?? hitsSurvived(this.player.volume),
       invulnerable: this.invulnerable,
       bubbles: this.field.bubbles.length,
       lastEaten: this.lastEaten,
@@ -4627,6 +4651,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 

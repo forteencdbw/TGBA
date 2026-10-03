@@ -70,6 +70,20 @@ export function bubbleLook(type: BubbleType, stage: number, rage: number): Bubbl
     };
   }
   const grown = stageAppearance(stage);
+  /**
+   * The plain bubble: the growth stage's SHAPE, one flat set of hues.
+   *
+   * The two palettes above are state readouts -- the devour bubble's colour says which speed tier it is in, the
+   * volatile bubble's says how angry it is. The plain bubble has neither a tier worth advertising nor a meter, and a
+   * palette that changed for no reason would be a lie about the game state. So it is colourless: the same bubble at
+   * stage 1 and at stage 4, growing and slowing exactly like the devour bubble.
+   *
+   * Derived by OVERRIDE rather than by a parallel table, so the plain bubble cannot drift out of sync with the growth
+   * stages: if a stage's alpha or ring changes, this type gets it too, and only the hue is its own.
+   */
+  if (type.look === 'plain') {
+    return { ...grown, rim: mech.plain.look.rim, glow: mech.plain.look.glow, hudColor: mech.plain.look.hudColor, shake: 0, swell: 0 };
+  }
   return { ...grown, shake: 0, swell: 0 };
 }
 
@@ -108,10 +122,16 @@ export function bubbleShake(look: BubbleLook, elapsed: number): number {
 
 /** The colour the HUD should label this type's state with. */
 export function bubbleStateColor(type: BubbleType, stage: number, rage: number): number {
-  return type.look === 'rage' ? rageColor(rage) : (mech.stages.appearance[Math.min(stage - 1, mech.stages.appearance.length - 1)]?.hudColor ?? 0xffffff);
+  if (type.look === 'rage') return rageColor(rage);
+  // The plain bubble's dot is its fixed hue, not the stage's: the dot says "which bubble", and the name beside it
+  // already says "which stage".
+  if (type.look === 'plain') return mech.plain.look.hudColor;
+  return mech.stages.appearance[Math.min(stage - 1, mech.stages.appearance.length - 1)]?.hudColor ?? 0xffffff;
 }
 
 /** The name of the state the HUD should show: the growth stage, or the rage stage. */
 export function bubbleStateName(type: BubbleType, stage: number, rage: number): string {
-  return type.look === 'rage' ? rageStageName(rage) : (mech.stages.appearance[Math.min(stage - 1, mech.stages.appearance.length - 1)]?.name ?? '');
+  if (type.look === 'rage') return rageStageName(rage);
+  // The growth stage for the plain bubble too: it really does advance through them, and they really do cost it speed.
+  return mech.stages.appearance[Math.min(stage - 1, mech.stages.appearance.length - 1)]?.name ?? '';
 }

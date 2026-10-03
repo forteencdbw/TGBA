@@ -368,14 +368,25 @@ function typeFacts(type: BubbleType): readonly CodexFact[] {
     },
     {
       label: '颜色',
-      value: type.look === 'rage' ? `随怒气：${mech.angry.appearance.map((a) => a.name).join(' → ')}` : `随成长阶段：${mech.stages.appearance.map((a) => a.name).join(' → ')}`,
+      value:
+        type.look === 'rage'
+          ? `随怒气：${mech.angry.appearance.map((a) => a.name).join(' → ')}`
+          : type.look === 'plain'
+            ? '不随任何东西：没有状态可以显示'
+            : `随成长阶段：${mech.stages.appearance.map((a) => a.name).join(' → ')}`,
     },
   ];
   // The bubble's own numbers, identical for every type, because they are facts about BEING a bubble.
   facts.push(
     { label: '开局体积', value: num(mech.volume.start, 1) },
     { label: '上限', value: num(mech.volume.max, 1) },
-    { label: '一次受击', value: `-${num(mech.volume.hitCost, 1)}（固定值，与当前体积无关）` },
+    {
+      label: '一次受击',
+      value:
+        type.hitsToPop !== null
+          ? `直接爆开：血量固定 ${type.hitsToPop} 点，与体积无关`
+          : `-${num(mech.volume.hitCost, 1)}（固定值，与当前体积无关）`,
+    },
     { label: '无敌时间', value: `${num(mech.hazards.invulnerableSeconds, 1)}s` },
   );
   /**
@@ -589,6 +600,25 @@ const BUBBLE_PROSE: Record<BubbleTypeId, BubbleProse> = {
         ],
       },
     ],
+  },
+  /**
+   * The plain bubble: no features at all, and the card says so.
+   *
+   * An empty `features` list is the honest documentation of a type whose design IS the absence of mechanics. Giving it
+   * a feature card would mean either inventing an ability or writing a card about nothing, and the tab's whole
+   * structure says that a card is a mechanic.
+   */
+  plain: {
+    self: {
+      tagline: '一滴血，什么都不会 —— 只有一把枪',
+      glyph: 'player',
+      notes: [
+        '血量是**恒定的 1 点**，不随体积增长：碰到任何敌人就破裂，不管已经长到多大。',
+        '所以对它来说**长大是纯代价**——判定框更大、速度更慢，换不到任何抗打能力。',
+        '它没有吸附、没有胃袋、没有喷吐与消化；捡到的技能仍然可以用（技能是关卡给的东西，不是这个气泡的能力）。',
+      ],
+    },
+    features: [],
   },
 };
 
