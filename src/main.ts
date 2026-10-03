@@ -48,6 +48,15 @@ const SEEDS = ['鱼屁泡', '汽水泡', '深海淤泥泡'] as const;
 
 const INTRO_SECONDS = 1.6;
 /**
+ * Where the bubble comes from, and where it settles, as fractions of the visible window.
+ *
+ * Below the bottom edge and level with the middle, so the entrance reads as swimming up into the level -- the same
+ * gesture the level's END makes in reverse, when the bubble flies off the top and the next level begins with it
+ * arriving from underneath.
+ */
+const INTRO_START_SCREEN_Y = -0.18;
+const INTRO_END_SCREEN_Y = 0.5;
+/**
  * The surface finish: slow-motion splash, a held beat, then the pop.
  *
  * Longer than the death burst (1.5s). Death is a mistake and should get out of the way; reaching the
@@ -1990,9 +1999,22 @@ class Game {
 
     switch (this.phase) {
       case 'intro': {
+        /**
+         * Rising into the level from below the screen.
+         *
+         * Driven by the phase timer rather than by a velocity, so the arrival takes exactly `INTRO_SECONDS` whatever the
+         * frame rate did -- and eased, so it decelerates into position instead of stopping dead at the bottom edge. The
+         * controls are off (this is not `playing`), which is what makes it an entrance rather than a movement.
+         */
         this.phaseTimer -= dt;
         this.elapsed += dt;
-        if (this.phaseTimer <= 0) this.phase = 'playing';
+        const t = Math.min(1, Math.max(0, 1 - this.phaseTimer / INTRO_SECONDS));
+        const eased = 1 - (1 - t) * (1 - t);
+        this.player.screenY = INTRO_START_SCREEN_Y + (INTRO_END_SCREEN_Y - INTRO_START_SCREEN_Y) * eased;
+        if (this.phaseTimer <= 0) {
+          this.player.screenY = INTRO_END_SCREEN_Y;
+          this.phase = 'playing';
+        }
         return;
       }
       case 'cleared': {
@@ -3216,6 +3238,9 @@ class Game {
    */
   private startRun(carryScore = false): void {
     this.player.reset();
+    // The arrival begins below the screen; the intro walks it up. Set here rather than inside the intro so that where a
+    // run starts lives in one place with everything else that resets.
+    this.player.screenY = INTRO_START_SCREEN_Y;
     /**
      * Back to stage 1, and push its speed into the player.
      *
@@ -3246,6 +3271,9 @@ class Game {
     // The boss bar goes with the run it belonged to. Without this it hangs there through the next birth animation,
     // showing the previous level's boss at whatever health it died at -- a bar for a fight that is not happening.
     this.summary.hide();
+    // A new level starts with no results card: it belongs to the run that ended, not to this one.
+    this.finishBanner.alpha = 0;
+    this.finishBanner.text = '';
     this.hud.setBoss(null);
     /**
      * The level's music.
@@ -3423,6 +3451,13 @@ class Game {
   /** Leave the level and show the main menu. */
   private exitToMenu(): void {
     this.music.stop();
+    /**
+     * The summary panel goes with the run.
+     *
+     * Without this, its own button "did nothing": the menu was shown BEHIND the panel, so the press worked and the
+     * screen looked identical. A panel with one button has to leave when that button is pressed.
+     */
+    this.summary.hide();
     this.settings.setOpen(false);
     this.phase = 'menu';
     this.touch.releaseAll();
@@ -3832,9 +3867,24 @@ class Game {
     // Both banners decay in render; `step` only seeds their alpha, because a transient message
     // that is set and faded in the same frame would never be visible.
     const decay = dt * 0.6;
-    this.finishBanner.alpha = this.phase === 'burst' && this.finishBanner.alpha > 0
-      ? Math.max(0, this.finishBanner.alpha - decay)
-      : this.finishBanner.alpha;
+    /**
+     * The results card fades out, and is DROPPED the moment the run moves on.
+     *
+     * It used to fade only while the phase was `burst`, which meant a card left over from a death stayed on screen for
+     * the whole of the next level if that level began from a phase it did not recognise -- and with the transition flow
+     * there now are such phases. Anything that is not a run-ending burst clears it outright: a stale score floating over
+     * a live level is worse than no card at all.
+     */
+    const cardBelongs = this.phase === 'burst' && this.runComplete === false && this.pendingLevel === null;
+    this.finishBanner.alpha = cardBelongs
+      ? Math.min(1, this.finishBanner.alpha)
+      : this.finishBanner.alpha > 0
+        ? Math.max(0, this.finishBanner.alpha - decay * 3)
+        : 0;
+    if (this.finishBanner.alpha <= 0.01) {
+      this.finishBanner.alpha = 0;
+      if (!cardBelongs) this.finishBanner.text = '';
+    }
     this.runBanner.alpha = Math.max(0, this.runBanner.alpha - dt * 0.28);
     if (this.finishBanner.alpha <= 0.01 && this.phase !== 'burst') this.finishBanner.alpha = 0;
 
@@ -4174,7 +4224,15 @@ class Game {
   private drawBubble(): void {
     const viewport = this.camera.viewport;
     // Intro: the bubble is born at the seabed and inflates.
-    const growth = this.phase === 'intro' ? 1 - Math.max(0, this.phaseTimer) / INTRO_SECONDS : 1;
+    /**
+     * The intro is an ARRIVAL, not an inflation.
+     *
+     * It used to scale the bubble up from a quarter of its size, which said "a new bubble is being born". The run now
+     * ENDS each level by flying the bubble off the top of the screen, so the matching entrance is the same gesture the
+     * other way round: it comes up from below the bottom edge and settles into place. `growth` stays at 1 -- the bubble
+     * is already the size it is -- and the motion comes from `screenY` in `stepIntro`.
+     */
+    const growth = 1;
     const eased = growth * growth * (3 - 2 * growth); // smoothstep
 
     // Burst: the bubble expands and fades instead of vanishing.
@@ -5541,6 +5599,9 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
 
 
 
