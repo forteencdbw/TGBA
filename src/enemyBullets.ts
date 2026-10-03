@@ -29,6 +29,15 @@
 import { Graphics } from 'pixi.js';
 import { mech } from './config';
 
+/**
+ * The silhouettes a round can have.
+ *
+ * `bolt` is the default: a pellet with a short tail. `spike` is the urchin's -- longer, narrower, and pointed along
+ * the direction of travel, which is both what a spine looks like and what makes a FAST round legible: a fast pellet is
+ * a dot that appears, and a fast spike is a line that says which way it is going.
+ */
+export type BulletShape = 'bolt' | 'spike';
+
 export interface EnemyBullet {
   x: number;
   y: number;
@@ -38,6 +47,13 @@ export interface EnemyBullet {
   age: number;
   /** Which kind fired it, so a kind's rounds can be told apart and drawn after it. */
   kind: string;
+  /**
+   * How this round is drawn, copied from its shooter's row at spawn.
+   *
+   * Copied rather than looked up while painting, because a row can be edited live and a round already in the water
+   * should keep the shape it was fired with -- otherwise tuning a creature's look would redraw every round in flight.
+   */
+  shape: BulletShape;
 }
 
 /** What the field needs from the world to advance and resolve its rounds. */
@@ -114,6 +130,7 @@ export class EnemyBulletField {
         vy: Math.sin(angle) * speed,
         age: 0,
         kind,
+        shape: row.shape ?? 'bolt',
       });
       this.fired++;
     }
@@ -170,13 +187,44 @@ export function paintEnemyBullets(g: Graphics, field: EnemyBulletField, laneWidt
   const cfg = mech.enemyBullets;
   const r = laneWidth * cfg.radiusRatio;
   for (const b of field.bullets) {
-    // A short tail along the direction of travel, so a slow round still reads as moving.
     const speed = Math.hypot(b.vx, b.vy) || 1;
+    const ux = b.vx / speed;
+    const uy = b.vy / speed;
+    if (b.shape === 'spike') {
+      /**
+       * A SPIKE: a long thin diamond pointed the way it is going.
+       *
+       * Length rather than size, because that is what distinguishes the urchin's fire from the others at a glance --
+       * and because a fast round needs a shape that reads as motion. The needle is drawn from the tip backwards, so
+       * the point leads and the round looks like it is thrown rather than dropped.
+       */
+      const long = r * 3.4;
+      const wide = r * 0.85;
+      // Perpendicular, for the two barbs.
+      const px = -uy;
+      const py = ux;
+      g.moveTo(b.x + ux * long, b.y + uy * long)
+        .lineTo(b.x + px * wide, b.y + py * wide)
+        .lineTo(b.x - ux * long * 0.6, b.y - uy * long * 0.6)
+        .lineTo(b.x - px * wide, b.y - py * wide)
+        .closePath()
+        .fill({ color: cfg.coreColour, alpha: 1 });
+      g.moveTo(b.x + ux * long, b.y + uy * long)
+        .lineTo(b.x + px * wide, b.y + py * wide)
+        .lineTo(b.x - ux * long * 0.6, b.y - uy * long * 0.6)
+        .lineTo(b.x - px * wide, b.y - py * wide)
+        .closePath()
+        .stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha, width: Math.max(1, r * 0.3) });
+      continue;
+    }
+    // A short tail along the direction of travel, so a slow round still reads as moving.
     const tail = Math.min(r * 3.2, speed * 0.02);
-    g.moveTo(b.x - (b.vx / speed) * tail, b.y - (b.vy / speed) * tail)
+    g.moveTo(b.x - ux * tail, b.y - uy * tail)
       .lineTo(b.x, b.y)
       .stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha * 0.45, width: Math.max(1, r * 0.7) });
     g.circle(b.x, b.y, r * 1.35).fill({ color: cfg.rimColour, alpha: cfg.rimAlpha * 0.35 });
     g.circle(b.x, b.y, r).fill({ color: cfg.coreColour, alpha: 1 });
   }
 }
+
+

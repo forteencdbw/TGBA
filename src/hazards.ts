@@ -62,6 +62,13 @@ export interface HazardEffect {
    * caller never has to look the creature up again -- by the time it reads this, the creature may be gone.
    */
   shot?: { x: number; y: number };
+  /**
+   * A detonation in the water, at this position and this radius.
+   *
+   * Carried as an effect for the usual reason -- the field decides what happened and the caller decides what it looks
+   * like -- and because the blast is the one thing in this module that is neither contact damage nor a state change.
+   */
+  blast?: { x: number; y: number; radius: number };
 }
 
 /**
@@ -136,6 +143,14 @@ export interface Hazard {
   } | null;
   /** Seconds before this creature may lunge again. Counted down whether or not it is hunting. */
   chargeRest: number;
+  /**
+   * The bomb fish's EXTERNAL fuse, or null when it is not lit.
+   *
+   * A second fuse on purpose, and a separate field rather than a reuse of `fuse`: the bomb fish has three lives -- one
+   * hunting in the water, one burning down inside a stomach, one flying as a grenade -- and they are three different
+   * clocks. `fuse` is the crab's launch wind-up; the stomach's runs on the swallowed ITEM, in `src/spit.ts`.
+   */
+  blastFuse: number | null;
   /**
    * Seconds until this creature may fire again, for the kinds that shoot.
    *
@@ -364,8 +379,8 @@ export function stomachEffect(kind: HazardKind): StomachEffect {
     case 'bombfish':
       return {
         ...NO_STOMACH_EFFECT,
-        fuseSeconds: mech.hazards.bombfishFuseSeconds,
-        detonationHitPoints: mech.hazards.bombfishDetonationHitPoints,
+        fuseSeconds: mech.hazards.bombfish.stomachFuseSeconds,
+        detonationHitPoints: mech.hazards.bombfish.detonationHitPoints,
       };
     case 'eel':
       return {
@@ -389,7 +404,7 @@ export function stomachEffect(kind: HazardKind): StomachEffect {
  * whole reason to swallow one on purpose: you are trading a lit fuse for a grenade.
  */
 export function blastRadiusFraction(kind: HazardKind): number {
-  return kind === 'bombfish' ? mech.hazards.bombfishBlastRadiusRatio : 0;
+  return kind === 'bombfish' ? mech.hazards.bombfish.grenadeBlastRadiusRatio : 0;
 }
 
 /**
@@ -589,7 +604,9 @@ export class HazardField {
       squashed: 0,
       gripping: false,
       gripSeconds: 0,
-      fuse: kind === 'bombfish' ? mech.hazards.bombfishFuseSeconds : 0,
+      // The crab's launch fuse. The bomb fish's own fuses are lastFuse (outside) and the stomach's, which lives
+      // on the swallowed item rather than on the hazard.
+      fuse: 0,
       fired: false,
       armed: false,
       fed: 0,
@@ -599,6 +616,7 @@ export class HazardField {
       maxHealth: health,
       flee: null,
       charge: null,
+      blastFuse: null,
       // No random head start here: a test-spawned creature is placed ON the player to be observed, and a random
       // rest would make "did it lunge" a coin flip in the one place determinism matters most.
       chargeRest: 0,
@@ -653,6 +671,18 @@ export class HazardField {
     if (hazard.health > 0) {
       this.damaged++;
       return 'damaged';
+    }
+    /**
+     * A BOMB does not run: it goes off.
+     *
+     * Zero hit points on a bomb fish means the fuse is lit where it floats, which is the trade the player is making
+     * when they shoot one -- they cannot disarm it, only choose where it happens. Everything else is unchanged: the
+     * blast is resolved by `update` on the next frame, through the same effect a lit fuse produces.
+     */
+    if (hazard.kind === 'bombfish') {
+      hazard.blastFuse = 0;
+      this.fled++;
+      return 'fled';
     }
     hazard.flee = FLEE_DIRECTIONS[Math.floor(Math.random() * FLEE_DIRECTIONS.length)]!;
     this.fled++;
@@ -858,6 +888,36 @@ export class HazardField {
     }
 
     /**
+     * DETONATIONS, resolved before the cull so a bomb that went off this frame is retired as part of it.
+     *
+     * The fuse is ticked here rather than in `advance` because this is where the player's distance is already in hand
+     * and where every other consequence of a creature's behaviour is turned into an effect. A blast that catches the
+     * player pushes the same `damage` effect a collision would, so it goes through the one damage path the game has --
+     * with the invulnerability window, the hit sound and the death all exactly as they are everywhere else.
+     *
+     * Shooting one dead counts: `hit` sets the fuse to zero, so a bomb killed at range explodes where it floats. That
+     * is the whole trade of shooting it -- you do not disarm it, you choose WHERE it goes off.
+     */
+    const detonating = new Set<number>();
+    for (const h of this.hazards) {
+      if (h.blastFuse === null) continue;
+      h.blastFuse -= dt;
+      if (h.blastFuse > 0) continue;
+      detonating.add(h.id);
+      const cfg = mech.hazards.bombfish;
+      const radius = ctx.laneWidth * cfg.blastRadiusRatio;
+      const gap = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
+      effects.push({
+        kind: h.kind,
+        broke: true,
+        blast: { x: h.x, y: h.y, radius },
+        // The radius is measured centre to centre, which at this scale is the honest reading: the bubble's own body is
+        // a fifth of a lane at its largest, and a blast that spared it for standing at the edge would look wrong.
+        damage: gap <= radius ? cfg.blastDamage : 0,
+      });
+    }
+
+    /**
      * Retire what has left the working area, plus a trash bag that has been torn open, plus anything EATEN.
      *
      * `eaten` is a set rather than a flag on the hazard because the effects list is the only channel back to the
@@ -865,7 +925,7 @@ export class HazardField {
      */
     const eatenIds = new Set(effects.filter((e) => e.eaten).map((e) => e.eaten!.id));
     this.hazards = this.hazards.filter((h) => {
-      if (eatenIds.has(h.id)) return false;
+      if (eatenIds.has(h.id) || detonating.has(h.id)) return false;
       const inside = h.y > ctx.min - 80 && h.y < ctx.max + 120;
       /**
        * A creature leaving through a SIDE needs retiring on the X axis, because the band above is a y test only.
@@ -1060,6 +1120,7 @@ export class HazardField {
       maxHealth: health,
       flee: null,
       charge: null,
+      blastFuse: null,
       // A random head start, so a shoal does not lunge in unison.
       chargeRest: Math.random() * (mech.charges.chargers[kind]?.cooldownSeconds ?? 0),
       // And a random offset on the trigger finger, so a colony does not volley.
@@ -1327,14 +1388,29 @@ export class HazardField {
       }
       case 'bombfish': {
         /**
-         * Swims down at a steady pace with a lazy weave, and notably does NOT come for the player.
+         * A HOMING time bomb, not a drifting temptation.
          *
-         * A temptation has to be avoidable: if it hunted, the choice would be made for the player and the side
-         * effect would land as a punishment rather than as a price. The weave is there so it takes a little
-         * steering to line one up when you decide you want it.
+         * It used to swim down with a lazy weave and pointedly not come for the player: a temptation has to be
+         * avoidable, or the choice to swallow one is made for you. That reasoning still holds for the REVERSAL -- and
+         * the reversal is still available -- but the creature's role in the water changed: it now closes on the
+         * bubble, and the counterplay is to shoot it (which sets it off where it stands) or to outrun the fuse.
+         *
+         * It re-aims every frame, which is the opposite of the charge's committed curve and deliberate: a bomb that
+         * cannot be out-turned, only out-run and out-shot.
          */
-        h.y -= base * 0.34 * dt;
-        h.x += Math.sin(h.phase * 1.1 + h.seed) * 5 * dt;
+        const cfg = mech.hazards.bombfish;
+        const dx = ctx.playerX - h.x;
+        const dy = ctx.playerY - h.y;
+        const gap = Math.hypot(dx, dy);
+        const step = cfg.seekSpeedFactor * ctx.laneWidth;
+        if (gap > 1e-3) {
+          // Apportioned between the axes, so it arrives from wherever it is rather than sliding sideways first.
+          h.x += (dx / gap) * step * dt;
+          h.y += (dy / gap) * step * dt;
+        }
+        // The current still drags it down; the hunt is on top of that, not instead of it.
+        h.y -= base * 0.15 * dt;
+        if (h.blastFuse === null && gap <= cfg.armMeters) h.blastFuse = cfg.fuseSeconds;
         break;
       }
       case 'eel': {
@@ -1626,10 +1702,26 @@ export function paintHazards(
         /**
          * A round, heavy fish with a stub of fuse, which is the whole joke: it looks like a bomb.
          *
-         * The fuse is NOT drawn burning here, because while it is loose there is no fuse -- it starts when the
-         * player swallows it, and the countdown is shown on the player's own bubble (see `Game.drawStomach`).
-         * Drawing a spark on a drifting bomb fish would promise a timer that is not running.
+         * The stub is NOT drawn burning: it has no timer of its own. While it hunts, the timer is the ARMING ring
+         * below; while it is inside the player, the countdown is drawn on the bubble (see `Game.drawStomach`).
          */
+        /**
+         * A LIT FUSE, drawn around the body: a ring that closes in as the clock runs out.
+         *
+         * The same language the crab's launch arc uses -- a threat states its own timing, so the player never has to
+         * guess whether this one is about to go off. Inside the case rather than as a general overlay because only one
+         * kind has an external fuse.
+         */
+        if (h.blastFuse !== null) {
+          const total = Math.max(0.01, mech.hazards.bombfish.fuseSeconds);
+          const left = Math.max(0, Math.min(1, h.blastFuse / total));
+          const pulse = 0.75 + 0.25 * Math.sin(elapsed * 22);
+          g.circle(x, y, r * (1.3 + 1.6 * (1 - left))).stroke({
+            color: KIND_TUNING.bombfish.colour,
+            alpha: (0.35 + 0.5 * (1 - left)) * pulse,
+            width: Math.max(1, r * 0.22),
+          });
+        }
         g.ellipse(x, y, r * 1.25, r * 1.1).fill({ color: KIND_TUNING.bombfish.colour, alpha: 0.9 });
         // A stubby tail, so it still reads as a fish rather than as a ball.
         g.moveTo(x - r * 1.1, y)
@@ -1743,6 +1835,13 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
+
+
+
+
+
 
 
 

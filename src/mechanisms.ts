@@ -300,6 +300,8 @@ export interface Mechanisms {
         spreadRadians: number;
         /** Hit points a round takes off. */
         damage: number;
+        /** How the round is drawn. Defaults to `bolt` when a row leaves it out. */
+        shape?: 'bolt' | 'spike';
       }
     >;
     /** A creature only opens fire from inside this distance, so nothing arrives from off screen. */
@@ -345,6 +347,28 @@ export interface Mechanisms {
     trailAlpha: number;
   };
   hazards: {
+    /**
+     * The bomb fish, in all three of its roles: hunting outside, a lit fuse inside, a grenade when spat.
+     *
+     * One group because they are one creature's behaviour, and because a reader looking for "how long until the bomb
+     * fish goes off" should not have to know whether that is a stomach number or an ocean one.
+     */
+    bombfish: {
+      /** Toward the player, in lane widths per second. Kept below the player's own lateral speed, so it can be fled. */
+      seekSpeedFactor: number;
+      /** Inside this distance it lights its fuse. */
+      armMeters: number;
+      /** The fuse, in seconds: the player's last chance to leave or to shoot it. */
+      fuseSeconds: number;
+      /** Damage radius of the blast, as a fraction of the lane width. */
+      blastRadiusRatio: number;
+      blastDamage: number;
+      /** The fuse while it is IN the stomach, and what that costs. */
+      stomachFuseSeconds: number;
+      detonationHitPoints: number;
+      /** Blast radius when a SPAT one hits something: the grenade's payoff. */
+      grenadeBlastRadiusRatio: number;
+    };
     slowFactor: number;
     slowSeconds: number;
     /**
@@ -374,9 +398,8 @@ export interface Mechanisms {
      * tier, which follows from the reversal rule rather than being a second rule.
      */
     urchinDrainPerSecond: number;
-    bombfishFuseSeconds: number;
-    bombfishDetonationHitPoints: number;
-    bombfishBlastRadiusRatio: number;
+
+
     /** The eel: how often it shocks, and for how long. Zero duration disables the side effect entirely. */
     eelShockPeriodSeconds: number;
     eelShockSeconds: number;
@@ -876,6 +899,7 @@ function isShooterTable(v: unknown): boolean {
   return rows.every((row) => {
     if (row === null || typeof row !== 'object') return false;
     const r = row as Record<string, unknown>;
+    if (r.shape !== undefined && r.shape !== 'bolt' && r.shape !== 'spike') return false;
     return fields.every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number) && (r[k] as number) >= 0);
   });
 }
@@ -1086,6 +1110,14 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'collectables.riseSpeedExponent', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'collectables.wobbleMin', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'collectables.wobbleMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.wobbleMin') as number), describe: 'at least wobbleMin' },
+  { path: 'hazards.bombfish.seekSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
+  { path: 'hazards.bombfish.armMeters', check: (v) => typeof v === 'number' && v >= 10 && v <= 600, describe: 'metres between 10 and 600' },
+  { path: 'hazards.bombfish.fuseSeconds', check: (v) => typeof v === 'number' && v > 0.2 && v <= 15, describe: 'seconds above 0.2 and at most 15' },
+  { path: 'hazards.bombfish.blastRadiusRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction of the lane width between 0 and 1' },
+  { path: 'hazards.bombfish.blastDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
+  { path: 'hazards.bombfish.stomachFuseSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'hazards.bombfish.detonationHitPoints', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  { path: 'hazards.bombfish.grenadeBlastRadiusRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
   { path: 'hazards.slowFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a number above 0 and at most 1' },
   { path: 'hazards.slowSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'hazards.health', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0), describe: 'an object of hazard kind to hit points, e.g. { fish: 3, jelly: 0 }; 0 means the bullets pass through' },
@@ -1099,9 +1131,9 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.trashDrainPerSecond', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.trashMinGripSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.urchinDrainPerSecond', check: (v) => typeof v === 'number' && v >= 0, describe: 'hit points per second, 0 or more; 0 makes the urchin harmless once swallowed' },
-  { path: 'hazards.bombfishFuseSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'seconds, 0 or more; 0 makes a swallowed bomb fish inert' },
-  { path: 'hazards.bombfishDetonationHitPoints', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of hit points, 0 or more' },
-  { path: 'hazards.bombfishBlastRadiusRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1.5, describe: 'a fraction of the lane width between 0 and 1.5; 0 makes its ammunition an ordinary pellet' },
+
+
+
   { path: 'hazards.eelShockPeriodSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
   { path: 'hazards.eelShockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10; 0 disables the eel\'s loss of control' },
   { path: 'hazards.rotDigestScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier between 0 and 2; 1 means the rot does not slow digestion' },
@@ -1757,6 +1789,10 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
+
+
 
 
 

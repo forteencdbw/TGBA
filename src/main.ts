@@ -247,6 +247,13 @@ class Game {
   private burst: { radius: number; seconds: number; kills: number; pushes: number } | null = null;
   /** Monotonic count of bursts fired, so a probe can prove the press reached the verb. */
   private bursts = 0;
+  /**
+   * Detonations still being drawn: where, how big, and how long ago.
+   *
+   * A short-lived list rather than a single slot, because two bombs can go off in the same frame (a fuse and a
+   * shot-dead one), and because the effect's whole job is to outlive the creature that made it.
+   */
+  private explosions: { x: number; y: number; radius: number; age: number }[] = [];
 
   /** Whether a slam is in its window right now: the charge has been released and the window has not run out. */
   private get onSlam(): boolean {
@@ -630,6 +637,11 @@ class Game {
    * Exposed next to `gunStreamsRef` because the two upgrades multiply: a probe checking the rate has to know both the
    * tier and the number of rows to know what the stream it is counting was supposed to be.
    */
+  /** Test hook: the enemies' rounds, so a probe can read the shape and speed of what a creature fires. */
+  get enemyBulletsRef(): EnemyBulletField {
+    return this.enemyBullets;
+  }
+
   get rateTierRef(): number {
     return this.rateTier;
   }
@@ -2248,6 +2260,28 @@ class Game {
        * bigger and slower, so going without it would mean the reward for a successful reversal is immediately
        * being hit by whatever was next to it.
        */
+      /**
+       * A DETONATION: the shockwave, the sound, and whatever the blast caught.
+       *
+       * Handled before the reversal below because a bomb that goes off is not a meal, and because the damage must go
+       * through `takeHit` like every other hit -- the blast is a source, not a second damage system.
+       */
+      if (e.blast) {
+        this.explosions.push({ x: e.blast.x, y: e.blast.y, radius: e.blast.radius, age: 0 });
+        audio.play('pop');
+        this.lastComedyBeat = { what: e.kind, at: this.elapsed };
+        /**
+         * The blast hurts the player, through the ordinary hit path.
+         *
+         * `e.damage` is 0 when the bubble was outside the radius: the field measures that (it has the player's
+         * position), and reporting a zero rather than omitting the effect is what lets the shockwave still be drawn
+         * for a blast that missed -- the player needs to see the thing that nearly got them.
+         */
+        if ((e.damage ?? 0) > 0) {
+          this.takeHit();
+          if (this.phase !== 'playing') return;
+        }
+      }
       if (e.eaten) {
         const beforeEating = this.player.volume;
         this.player.volume = growByAbsorbing(this.player.volume, massFromEating(e.kind));
@@ -2560,6 +2594,7 @@ class Game {
       charge: null,
       chargeRest: 0,
       shootTimer: 0,
+      blastFuse: null,
     };
   }
 
@@ -3526,6 +3561,28 @@ class Game {
 
     // A skill lying in the water: a diamond, distinct from every collectable, with a halo so it
     // reads as "pick me up" rather than as another bubble.
+    /**
+     * Detonations, drawn as an expanding ring that fades.
+     *
+     * Drawn in the world with everything else, from a list that ages itself: the creature is gone by now, so this is
+     * the only thing left to say "that was a bomb, and it was that big".
+     */
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      const boom = this.explosions[i]!;
+      boom.age += 1 / 60;
+      const t = Math.min(1, boom.age / 0.45);
+      if (t >= 1) {
+        this.explosions.splice(i, 1);
+        continue;
+      }
+      g.circle(boom.x, boom.y, boom.radius * (0.25 + 0.75 * t)).stroke({
+        color: 0xffb44a,
+        alpha: 0.85 * (1 - t),
+        width: Math.max(1, boom.radius * 0.16 * (1 - t)),
+      });
+      g.circle(boom.x, boom.y, boom.radius * (0.15 + 0.5 * t)).fill({ color: 0xffe9a8, alpha: 0.28 * (1 - t) });
+    }
+
     for (const p of this.pickupDrops) {
       const look = mech.pickups[p.kind];
       const r = laneWidth * look.radiusRatio;
@@ -4945,6 +5002,10 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
 
 
 

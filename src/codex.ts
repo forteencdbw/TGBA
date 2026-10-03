@@ -152,18 +152,21 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
   },
   {
     kind: 'bombfish',
-    tagline: '吃下去就是一颗手雷，代价是引信',
+    tagline: '追着你过来的定时炸弹：打爆它，炸弹就在原地炸',
     notes: [
-      '在胃袋里从吞下那一刻开始倒计时，到点在里面炸开：扣血，而且它那份质量一起炸掉、不产出任何等级。',
+      '在外面它会朝你的气泡靠近，进入距离就点燃引信、开始倒计时（头上会套一圈越来越紧的环，那就是倒计时）。',
+      '**打爆它不等于拆弹**：血打空它就在**原地**炸开，所以远距离打爆是唯一安全的拆法，贴脸打爆等于自爆。',
+      '在胃袋里从吞下那一刻开始另一条倒计时，到点在里面炸开：扣血，而且它那份质量一起炸掉、不产出任何等级。',
       '吐出去是范围击退——这是"值得吃"的那一半理由。',
-      '轮廓上的标记会在引信快到时开始闪，那是它唯一的预警。',
     ],
   },
   {
     kind: 'urchin',
-    tagline: '吃下去就一直放血，直到它离开',
+    tagline: '会放尖刺的硬壳：打得跑，但要十几发',
     notes: [
-      '它的账单按时间算，所以带着它压缩是最糟的选择：压缩期间受伤翻倍。',
+      '它现在会**朝你发射尖刺**——比其它敌人的子弹都快，所以它的威胁是"远处也得躲"，不是"别碰"。',
+      '血量给到 15：这是全游戏最厚的一只，打跑它的代价是时间，而时间是这局里最贵的东西。',
+      '吃下去就一直放血直到它离开：它的账单按时间算，所以带着它压缩是最糟的选择（压缩期间受伤翻倍）。',
       '质量给得比水母还重，弹药也硬——否则没有人会有理由碰它。',
     ],
   },
@@ -213,6 +216,13 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
   if (charger) {
     const how = charger.approach === 'side' ? '从侧面横扫过来' : '按一条固定曲线撞过来';
     threat.push(`冲锋：进入 ${num(charger.triggerMeters, 0)}m 蓄势 ${num(charger.telegraphSeconds, 2)}s，${how}`);
+  }
+  if (kind === 'bombfish') {
+    const bomb = mech.hazards.bombfish;
+    threat.push(
+      `追踪：${num(bomb.seekSpeedFactor, 2)} 泳道/秒朝你靠近 · 进入 ${num(bomb.armMeters, 0)}m 点燃引信 ${num(bomb.fuseSeconds, 1)}s · 爆炸半径 ${num(bomb.blastRadiusRatio * 100, 0)}% 泳道`,
+    );
+    threat.push('打爆它 = 原地爆炸（远距离打爆才安全）');
   }
   const gun = mech.enemyBullets.shooters[kind];
   if (gun) {
@@ -883,5 +893,6 @@ export function iconColour(entry: CodexEntry): number {
     }
   }
 }
+
 
 
