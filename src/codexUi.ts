@@ -533,6 +533,8 @@ export class CodexUi {
           health: hazardHealth(kind),
           maxHealth: hazardHealth(kind),
           flee: null,
+          charge: null,
+          chargeRest: 0,
         },
       ];
       // Not edible and drawn at rest: the card shows the CREATURE, not the state of the water it happens to be in.
@@ -887,4 +889,5 @@ function inside(rect: Rect, x: number, y: number): boolean {
 function diamond(g: Graphics, cx: number, cy: number, r: number): void {
   g.moveTo(cx, cy - r).lineTo(cx + r, cy).lineTo(cx, cy + r).lineTo(cx - r, cy).closePath();
 }
+
 

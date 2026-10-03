@@ -2391,6 +2391,8 @@ class Game {
       health,
       maxHealth: health,
       flee: null,
+      charge: null,
+      chargeRest: 0,
     };
   }
 
@@ -3821,6 +3823,8 @@ class Game {
       active: number;
       /** How many are leaving because the gun finished them, rather than being eaten or having drifted off. */
       leaving: number;
+      /** Lunges committed this run, monotonic: a charge is over in under a second. */
+      charges: number;
       byKind: Record<string, number>;
       comedyBeats: number;
       lastBeat: { what: HazardKind; at: number } | null;
@@ -4114,6 +4118,7 @@ class Game {
         active: this.hazards.hazards.length,
         /** How many are on their way out because the gun finished them: `fleeing`, not dead. */
         leaving: this.hazards.hazards.filter((h) => h.flee).length,
+        charges: this.hazards.charges,
         byKind: this.hazards.hazards.reduce<Record<string, number>>((acc, h) => {
           acc[h.kind] = (acc[h.kind] ?? 0) + 1;
           return acc;
@@ -4716,6 +4721,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 

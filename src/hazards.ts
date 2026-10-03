@@ -102,6 +102,33 @@ export interface Hazard {
   /** Fish: seconds left before it can eat again, so a split is not instantaneous. */
   digest: number;
   /**
+   * A LUNGE in progress, or null.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY IT IS A STATE RATHER THAN A VELOCITY
+   * ---------------------------------------------------------------------------------------------
+   * The same reason `entry` and `flee` are: a charge has to REPLACE the kind's own motion while it lasts, or a fish
+   * would keep steering toward the player on top of the curve and the curve would stop being a curve. It is also what
+   * makes the move readable -- the player is dodging ONE committed path, not an opponent that can correct mid-flight,
+   * which is the difference between a bullet-hell pattern and an unfair homing attack.
+   *
+   * The path is a quadratic Bezier: `from` is where the creature was when it committed, `to` is where the PLAYER was
+   * at that instant, and the control point is the midpoint pushed sideways by `bow`. Aiming at where the player WAS is
+   * the whole dodge window -- see `mech.charges`.
+   */
+  charge: {
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    /** Perpendicular offset of the control point, in metres: signed, so two fish can bow opposite ways. */
+    bow: number;
+    /** Seconds since the commitment. The telegraph is the first `telegraphSeconds` of it. */
+    elapsed: number;
+  } | null;
+  /** Seconds before this creature may lunge again. Counted down whether or not it is hunting. */
+  chargeRest: number;
+  /**
    * Set while it is still ARRIVING from a screen edge, and null once it is in the water.
    *
    * ---------------------------------------------------------------------------------------------
@@ -506,6 +533,13 @@ export class HazardField {
    * answerable.
    */
   grabs = 0;
+  /**
+   * Lunges committed this run.
+   *
+   * Monotonic, like the other counters: a charge lasts well under a second, so sampling a boolean afterwards proves
+   * nothing about whether it happened.
+   */
+  charges = 0;
   baits = 0;
   /**
    * Hazards EATEN, monotonic for the same reason as the others.
@@ -549,6 +583,10 @@ export class HazardField {
       health,
       maxHealth: health,
       flee: null,
+      charge: null,
+      // No random head start here: a test-spawned creature is placed ON the player to be observed, and a random
+      // rest would make "did it lunge" a coin flip in the one place determinism matters most.
+      chargeRest: 0,
     };
     this.hazards.push(hazard);
     return hazard;
@@ -559,6 +597,7 @@ export class HazardField {
     this.hazards = [];
     this.spawnTimer = 0;
     this.grabs = 0;
+    this.charges = 0;
     this.baits = 0;
     this.eaten = 0;
     this.splits = 0;
@@ -992,6 +1031,9 @@ export class HazardField {
       health,
       maxHealth: health,
       flee: null,
+      charge: null,
+      // A random head start, so a shoal does not lunge in unison.
+      chargeRest: Math.random() * mech.charges.cooldownSeconds,
     };
   }
 
@@ -1074,6 +1116,78 @@ export class HazardField {
       h.entry = null;
     }
 
+    /**
+     * ---------------------------------------------------------------------------------------------
+     * THE LUNGE: a committed curve, and the telegraph that makes it fair
+     * ---------------------------------------------------------------------------------------------
+     * Placed after the arrival state (a creature still swimming in has not committed to anything) and before the
+     * kind's own motion, because a charge REPLACES that motion -- see the field's docblock for why.
+     *
+     * The wind-up is not decoration. A creature that instantly snapped onto the player would be a hit the player
+     * could only have avoided by not being there, and this game's contract is that things are visible before they
+     * matter. So the first `telegraphSeconds` of a charge is spent holding station with the curve drawn on screen,
+     * and that IS the dodge window.
+     */
+    if (h.charge) {
+      const cfg = mech.charges;
+      h.charge.elapsed += dt;
+      if (h.charge.elapsed < cfg.telegraphSeconds) {
+        // Winding up: it holds position in the water (the current still carries it down with everything else).
+        h.y -= base * dt;
+        return;
+      }
+      const t = Math.min(1, (h.charge.elapsed - cfg.telegraphSeconds) / Math.max(0.05, cfg.travelSeconds));
+      const { fromX, fromY, toX, toY, bow } = h.charge;
+      /**
+       * A quadratic Bezier through a bowed control point.
+       *
+       * The control point is the midpoint pushed PERPENDICULAR to the path by `bow` metres, which is what turns a
+       * straight lunge into something whose direction has to be read. Evaluated from `t` rather than accumulated per
+       * frame, so the path is identical whatever the frame rate did -- the same reasoning as the score popups' rise.
+       */
+      const midX = (fromX + toX) / 2;
+      const midY = (fromY + toY) / 2;
+      const span = Math.hypot(toX - fromX, toY - fromY) || 1;
+      const ctrlX = midX + (-(toY - fromY) / span) * bow;
+      const ctrlY = midY + ((toX - fromX) / span) * bow;
+      const u = 1 - t;
+      h.x = u * u * fromX + 2 * u * t * ctrlX + t * t * toX;
+      h.y = u * u * fromY + 2 * u * t * ctrlY + t * t * toY;
+      if (t >= 1) {
+        h.charge = null;
+        h.chargeRest = cfg.cooldownSeconds;
+      }
+      return;
+    }
+
+    /**
+     * Committing to a lunge.
+     *
+     * The rest timer runs whatever the creature is doing, so a fish that has just charged cannot commit again the
+     * moment it drifts back into range.
+     *
+     * The aim point is the player's position AT THIS INSTANT and never updates: that is the difference between a
+     * pattern to dodge and a homing attack, and it is why everything the player does during the wind-up counts.
+     */
+    if (mech.charges.kinds.includes(h.kind)) {
+      h.chargeRest = Math.max(0, h.chargeRest - dt);
+      const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
+      if (h.chargeRest <= 0 && dist <= mech.charges.triggerMeters) {
+        // Bow away from wherever the creature is relative to the player, so two fish on opposite sides curve apart
+        // rather than tracing the same line.
+        const side = h.x < ctx.playerX ? 1 : -1;
+        h.charge = {
+          fromX: h.x,
+          fromY: h.y,
+          toX: ctx.playerX,
+          toY: ctx.playerY,
+          bow: side * mech.charges.bowRatio * dist,
+          elapsed: 0,
+        };
+        this.charges++;
+        return;
+      }
+    }
     switch (h.kind) {
       case 'fish': {
         // The bait timer is the only thing that breaks the chase.
@@ -1258,6 +1372,48 @@ export function paintHazards(
         alpha: mech.consumption.marker.blockedAlpha,
         width: Math.max(1, r * mech.consumption.marker.widthRatio),
       });
+    }
+
+    /**
+     * A LUNGE, drawn before the creature so the warning reads as something moving through the water rather than as a
+     * label attached to the fish.
+     *
+     * The same curve the motion uses, sampled into a polyline (Pixi has no partial `quadraticCurveTo`). While the
+     * creature is winding up, the WHOLE path plus a ring at the aim point is drawn: that is the promise of where it
+     * will go, and it is what makes aiming at where the player was a fair thing to do. Once it has committed, only
+     * the travelled part is drawn, as a trail -- the warning has been delivered and what is left to show is the move.
+     */
+    if (h.charge) {
+      const cfg = mech.charges;
+      const { fromX, fromY, toX, toY, bow, elapsed: chargeAge } = h.charge;
+      const midX = (fromX + toX) / 2;
+      const midY = (fromY + toY) / 2;
+      const span = Math.hypot(toX - fromX, toY - fromY) || 1;
+      const ctrlX = midX + (-(toY - fromY) / span) * bow;
+      const ctrlY = midY + ((toX - fromX) / span) * bow;
+      const winding = chargeAge < cfg.telegraphSeconds;
+      const head = winding ? 1 : Math.min(1, (chargeAge - cfg.telegraphSeconds) / Math.max(0.05, cfg.travelSeconds));
+      const STEPS = 12;
+      g.moveTo(fromX, fromY);
+      for (let i = 1; i <= STEPS; i++) {
+        const t = (i / STEPS) * head;
+        const u = 1 - t;
+        g.lineTo(u * u * fromX + 2 * u * t * ctrlX + t * t * toX, u * u * fromY + 2 * u * t * ctrlY + t * t * toY);
+      }
+      // A pulse while winding up, so a still line reads as a countdown rather than as scenery.
+      const pulse = 0.7 + 0.3 * Math.sin(elapsed * 18);
+      g.stroke({
+        color: winding ? cfg.telegraphColour : cfg.trailColour,
+        alpha: (winding ? cfg.telegraphAlpha : cfg.trailAlpha) * (winding ? pulse : 1),
+        width: Math.max(1, r * 0.18),
+      });
+      if (winding) {
+        g.circle(toX, toY, r * 0.7 * pulse).stroke({
+          color: cfg.telegraphColour,
+          alpha: cfg.telegraphAlpha * 0.8,
+          width: Math.max(1, r * 0.14),
+        });
+      }
     }
 
     switch (h.kind) {
@@ -1485,4 +1641,9 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
+
+
+
 

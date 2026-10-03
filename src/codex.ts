@@ -201,6 +201,17 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
   const mass = mech.consumption.mass[kind] ?? 0;
   const impact = spitImpact(kind);
   const blast = blastRadiusFraction(kind);
+  /**
+   * What this creature does to you beyond touching you, DERIVED from the config.
+   *
+   * A card that listed only the contact rules would be wrong for the kinds that lunge -- "it bumps into you" badly
+   * undersells a fish that telegraphs a curve and commits to it. Derived rather than authored for the usual reason:
+   * a card that can disagree with the game is worse than a card with nothing on it.
+   */
+  const threat: string[] = [];
+  if (mech.charges.kinds.includes(kind)) {
+    threat.push(`冲锋：进入 ${num(mech.charges.triggerMeters, 0)}m 蓄势 ${num(mech.charges.telegraphSeconds, 2)}s，按一条固定曲线撞过来`);
+  }
   return {
     id: `enemy:${kind}`,
     category: 'enemy',
@@ -213,6 +224,7 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
       { label: '质量', value: num(mass) },
       { label: '弹药', value: `${num(impact)}× 击退${blast > 0 ? ' · 命中爆炸' : ''}` },
       { label: '体内', value: insideText(kind) },
+      ...(threat.length ? [{ label: '攻击方式', value: threat.join('；') }] : []),
     ],
     notes,
     icon: { kind: 'hazard', hazard: kind },

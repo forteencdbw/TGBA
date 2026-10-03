@@ -268,6 +268,28 @@ export interface Mechanisms {
     wobbleMin: number;
     wobbleMax: number;
   };
+  /**
+   * The charging lunge: a creature that hunts aims at where the player was, telegraphs the curve, and commits.
+   *
+   * The curve is fixed at the moment the wind-up starts, which is what makes it fair: the player always gets a
+   * window, and the only answer is to MOVE during it. A curve rather than a straight line because a straight line is
+   * answered by "stand aside" at a glance, while a bowed one has to be read.
+   */
+  charges: {
+    /** Which kinds lunge. Every entry is cross-checked against the real hazard kinds at load. */
+    kinds: string[];
+    triggerMeters: number;
+    /** The player's reaction window, in seconds. */
+    telegraphSeconds: number;
+    travelSeconds: number;
+    /** Bow of the curve as a fraction of the charge distance. 0 is a straight line. */
+    bowRatio: number;
+    cooldownSeconds: number;
+    telegraphColour: number;
+    telegraphAlpha: number;
+    trailColour: number;
+    trailAlpha: number;
+  };
   hazards: {
     slowFactor: number;
     slowSeconds: number;
@@ -856,6 +878,22 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     path: `score.${event}`,
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000,
     describe: 'points for this event, between 0 and 100000; 0 takes the event out of the score',
+  })),
+  { path: 'charges.kinds', check: (v) => Array.isArray(v) && v.length >= 1 && v.every((k) => typeof k === 'string' && k.length > 0), describe: 'a non-empty array of hazard kind names' },
+  { path: 'charges.triggerMeters', check: (v) => typeof v === 'number' && v >= 20 && v <= 1200, describe: 'metres between 20 and 1200' },
+  { path: 'charges.telegraphSeconds', check: (v) => typeof v === 'number' && v >= 0.1 && v <= 4, describe: 'seconds between 0.1 and 4' },
+  { path: 'charges.travelSeconds', check: (v) => typeof v === 'number' && v >= 0.1 && v <= 4, describe: 'seconds between 0.1 and 4' },
+  { path: 'charges.bowRatio', check: (v) => typeof v === 'number' && v >= -1.5 && v <= 1.5, describe: 'a fraction between -1.5 and 1.5; 0 is a straight line' },
+  { path: 'charges.cooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30' },
+  ...['telegraphColour', 'trailColour'].map((key) => ({
+    path: `charges.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or a "#rrggbb" string',
+  })),
+  ...['telegraphAlpha', 'trailAlpha'].map((key) => ({
+    path: `charges.${key}`,
+    check: (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1,
+    describe: 'an opacity between 0 and 1',
   })),
   { path: 'score.popups.riseEase', check: (v) => typeof v === 'number' && v > 0.05 && v <= 6, describe: 'an exponent above 0.05 and at most 6' },
   { path: 'score.popups.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
@@ -1474,6 +1512,21 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
 }
 
 /**
+ * Every kind named as a charger or a shooter must be a real creature.
+ *
+ * The failure this prevents is quiet in both directions: a typo in `charges.kinds` means nothing ever charges and the
+ * feature looks broken, and a kind that was renamed leaves a name behind that nobody notices. Neither has a symptom
+ * on screen, so it has to be a boot error.
+ */
+{
+  const kinds = Object.keys(mech.consumption.mass);
+  const unknown = mech.charges.kinds.filter((k) => !kinds.includes(k));
+  if (unknown.length) {
+    fail(`charges.kinds names something that is not a hazard kind: ${unknown.join(', ')}`);
+  }
+}
+
+/**
  * The rage stages must be ordered, start at 0, and stay under the maximum.
  *
  * A list out of order would make `rageStageFor` return whichever row happened to be last rather than the highest
@@ -1565,6 +1618,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 
