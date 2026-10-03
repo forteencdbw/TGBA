@@ -411,6 +411,9 @@ class Game {
     this.settings.onOpen = () => this.openSettings();
     this.settings.onClose = () => this.closeSettings();
     this.settings.onRestart = () => this.restartLevel();
+    this.settings.onInfiniteHealth = (on) => {
+      this.infiniteHealth = on;
+    };
     this.settings.onExit = () => this.exitToMenu();
     this.menu.onStart = (typeId) => this.enterFromMenu(typeId);
     this.menu.onCodex = () => this.enterCodex();
@@ -749,6 +752,14 @@ class Game {
   private rateTier = 1;
   /** Whether this run's boss has arrived. Per run, like everything else about a run. */
   private bossSpawned = false;
+  /**
+   * The infinite-health cheat, as set in the settings panel.
+   *
+   * Applied in TWO places rather than one, because the bubble can be killed in two ways: a HIT (`takeHit`, which is
+   * every collision, bullet and blast) and a DRAIN (an urchin or a trash bag bleeding the volume away). Guarding only
+   * the first would leave a cheat that works until the player swallows the wrong thing.
+   */
+  private infiniteHealth = false;
   /**
    * LEVEL 3's conductive charge, and the bubble is the capacitor.
    *
@@ -2880,6 +2891,14 @@ class Game {
    * the debug forge all arrive here.
    */
   private takeHit(): void {
+    /**
+     * The cheat: nothing happens at all.
+     *
+     * Not "the health is restored afterwards" -- that would still fire the hit sound, still flash, and still kill the
+     * player for the frame in between. Returning here means an invulnerable bubble really is indistinguishable from one
+     * that was never touched.
+     */
+    if (this.infiniteHealth) return;
     this.stats.hits++;
     audio.play('hit');
     this.invulnerable = tuning.invulnerableSeconds;
@@ -3046,6 +3065,9 @@ class Game {
    * everything in this game) without a player being executed for missing a button.
    */
   private punishOverload(): void {
+    // The cheat covers the overload too: it is a third way to lose the bubble, and a cheat that only blocks collisions
+    // would still let the player kill themselves by overeating.
+    if (this.infiniteHealth) return;
     const before = this.player.volume;
     let hits = 0;
     for (let i = 0; i < mech.angry.overload.punishHits; i++) {
@@ -5260,6 +5282,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 

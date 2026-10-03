@@ -47,6 +47,9 @@ export class SettingsUi {
   private readonly panelBg = new Graphics();
   private readonly title: Text;
   private readonly volumeLabel: Text;
+  /** The cheat section's heading, and the toggle itself. */
+  private readonly cheatLabel: Text;
+  private readonly cheatButton: Button;
   private readonly sliderTrack = new Graphics();
   private readonly sliderFill = new Graphics();
   private readonly sliderKnob = new Graphics();
@@ -73,6 +76,13 @@ export class SettingsUi {
   onClose: () => void = () => {};
   /** Called when restart is pressed. */
   onRestart: () => void = () => {};
+  /**
+   * The cheat switch: infinite health.
+   *
+   * A callback like the rest of the panel, so the panel never has to know what health IS -- the game applies it. Off by
+   * default and never persisted: a cheat that survives a reload is a cheat somebody leaves on by accident.
+   */
+  onInfiniteHealth: (on: boolean) => void = () => {};
   /** Called when exit-to-menu is pressed. */
   onExit: () => void = () => {};
 
@@ -82,6 +92,8 @@ export class SettingsUi {
   private slider = { x: 0, y: 0, w: 0, h: 0 };
   /** 0..1, the value the slider currently shows. */
   private volume = 0.8;
+  /** Whether the cheat is on. Kept here so the panel can draw its own state. */
+  private infiniteHealth = false;
   /** The pointer dragging the slider, or null. */
   private sliderPointer: number | null = null;
   /** The HUD scale from the last layout, so a redraw from a pointer handler needs no viewport. */
@@ -104,6 +116,15 @@ export class SettingsUi {
     this.volumeLabel = mkText('', 0xbfe9ff, 15);
     this.closeButton = this.mkButton('×', () => this.setOpen(false));
 
+    /**
+     * The cheats section.
+     *
+     * Its own heading rather than another row of the settings list, because a cheat is not a setting: it changes what
+     * the game IS rather than how it looks or sounds, and it should be findable without reading the whole panel.
+     */
+    this.cheatLabel = mkText('作弊 / CHEATS', 0xffb46b, 13);
+    this.cheatButton = this.mkButton('无限血量：关', () => this.setInfiniteHealth(!this.infiniteHealth));
+
     this.restartButton = this.mkButton('重开本关', () => this.onRestart());
     this.exitButton = this.mkButton('退出到主菜单', () => this.onExit());
     // Both simply close. Saving is instantaneous -- the volume is already applied -- and the pair exists
@@ -112,10 +133,12 @@ export class SettingsUi {
     this.saveButton = this.mkButton('保存', () => this.setOpen(false));
     this.cancelButton = this.mkButton('取消', () => this.setOpen(false));
 
-    this.panel.addChild(this.panelBg, this.title, this.volumeLabel, this.sliderTrack, this.sliderFill, this.sliderKnob);
+    this.panel.addChild(this.panelBg, this.title, this.volumeLabel, this.sliderTrack, this.sliderFill, this.sliderKnob, this.cheatLabel);
     this.panel.addChild(
       this.closeButton.bg,
       this.closeButton.label,
+      this.cheatButton.bg,
+      this.cheatButton.label,
       this.restartButton.bg,
       this.restartButton.label,
       this.exitButton.bg,
@@ -145,7 +168,7 @@ export class SettingsUi {
 
   /** All buttons, so the pointer handlers can walk them without repeating the list three times. */
   private buttons(): Button[] {
-    return [this.closeButton, this.restartButton, this.exitButton, this.saveButton, this.cancelButton];
+    return [this.closeButton, this.cheatButton, this.restartButton, this.exitButton, this.saveButton, this.cancelButton];
   }
 
   private onPressOf(button: Button): () => void {
@@ -168,6 +191,25 @@ export class SettingsUi {
     this.redraw();
     if (open && !wasOpen) this.onOpen();
     if (!open && wasOpen) this.onClose();
+  }
+
+  /**
+   * Turn the infinite-health cheat on or off.
+   *
+   * One place that sets the state, redraws and tells the game, so the button, a keyboard shortcut added later and a
+   * probe all take the same path -- and the label can never disagree with what the game is doing.
+   */
+  setInfiniteHealth(on: boolean, notify = true): void {
+    this.infiniteHealth = on;
+    this.cheatButton.label.text = on ? '无限血量：开' : '无限血量：关';
+    this.cheatButton.label.style.fill = on ? 0xffd479 : 0xeaf9ff;
+    this.redraw();
+    if (notify) this.onInfiniteHealth(on);
+  }
+
+  /** Whether the cheat is on, as the panel shows it. */
+  get infiniteHealthOn(): boolean {
+    return this.infiniteHealth;
   }
 
   /** Reflect the actual volume without firing the callback, e.g. when the game state changes. */
@@ -228,12 +270,19 @@ export class SettingsUi {
     const closeSize = 34 * s;
     this.place(this.closeButton, this.panelRect.x + w - closeSize - 12 * s, this.panelRect.y + 12 * s, closeSize, closeSize, s);
 
+    // The cheats section: a heading and one wide toggle, above the run controls.
+    this.cheatLabel.scale.set(s);
+    this.cheatLabel.anchor.set(0, 0.5);
+    this.cheatLabel.x = this.panelRect.x + 24 * s;
+    this.cheatLabel.y = this.panelRect.y + 156 * s;
+
     // Restart and exit stacked, then save and cancel side by side along the bottom.
     const rowH = 42 * s;
     const rowW = w - 48 * s;
     const rowX = this.panelRect.x + 24 * s;
-    this.place(this.restartButton, rowX, this.panelRect.y + 158 * s, rowW, rowH, s);
-    this.place(this.exitButton, rowX, this.panelRect.y + 158 * s + rowH + 12 * s, rowW, rowH, s);
+    this.place(this.cheatButton, rowX, this.panelRect.y + 172 * s, rowW, rowH, s);
+    this.place(this.restartButton, rowX, this.panelRect.y + 172 * s + rowH + 14 * s, rowW, rowH, s);
+    this.place(this.exitButton, rowX, this.panelRect.y + 172 * s + (rowH + 14 * s) * 2, rowW, rowH, s);
 
     const gap = 12 * s;
     const halfW = (rowW - gap) / 2;
@@ -290,6 +339,18 @@ export class SettingsUi {
     for (const b of this.buttons()) {
       const primary = b === this.saveButton;
       const danger = b === this.exitButton;
+      /**
+       * The cheat toggle draws its own state rather than only its label: ON reads as a filled warm button, which is
+       * visible from across the panel and cannot be mistaken for the run controls above and below it.
+       */
+      if (b === this.cheatButton) {
+        b.bg.clear();
+        b.bg
+          .roundRect(b.x, b.y, b.w, b.h, 10 * s)
+          .fill({ color: this.infiniteHealth ? 0x4a3418 : 0x16293f, alpha: 0.95 })
+          .stroke({ color: this.infiniteHealth ? 0xffb46b : 0x5fa8cc, alpha: 0.8, width: 1.2 * s });
+        continue;
+      }
       b.bg.clear();
       b.bg
         .roundRect(b.x, b.y, b.w, b.h, 10 * s)
@@ -490,3 +551,7 @@ function mkText(text: string, colour: number, size: number): Text {
   label.resolution = 2;
   return label;
 }
+
+
+
+
