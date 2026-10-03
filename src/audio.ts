@@ -33,7 +33,23 @@
 /** Events worth a sound. Kept small: a game this busy needs few, distinct cues, not many. */
 import { mech } from './mechanisms';
 
-export type SoundEvent = 'absorb' | 'hit' | 'pop' | 'surface' | 'skill' | 'slow' | 'crab' | 'fart';
+export type SoundEvent =
+  | 'absorb'
+  | 'hit'
+  | 'pop'
+  | 'surface'
+  | 'skill'
+  | 'slow'
+  | 'crab'
+  | 'fart'
+  /**
+   * A small-bubble round landing on a creature.
+   *
+   * Its own cue rather than a quiet `hit`, because it says something different: `hit` is "that was done to ME"
+   * and this is "I am doing that to IT". The gun fires several times a second, so this is the shortest and
+   * highest sound in the game -- it has to register without ever crowding the mix.
+   */
+  | 'bulletHit';
 
 export class GameAudio {
   private ctx: AudioContext | null = null;
@@ -317,9 +333,14 @@ export class GameAudio {
    */
   play(event: SoundEvent, intensity = 0.5): void {
     if (!this.ctx || !this.master || !this.enabled) return;
-    // Throttle identical cues: a swarm of fish can trigger many hits in one frame, and stacking them
-    // clips into a click.
-    const minGap = event === 'absorb' ? 0.045 : 0.09;
+    /**
+     * Throttle identical cues: a swarm of fish can trigger many hits in one frame, and stacking them
+     * clips into a click.
+     *
+     * `bulletHit` is throttled hardest of all, and that is not a detail: several rounds can land in the same
+     * frame on a swarm, and a gun that fired four cues at once would be a click, not a sound.
+     */
+    const minGap = event === 'absorb' ? 0.045 : event === 'bulletHit' ? 0.05 : 0.09;
     const previous = this.lastPlayed.get(event) ?? -1;
     if (this.now - previous < minGap) return;
     this.lastPlayed.set(event, this.now);
@@ -364,6 +385,21 @@ export class GameAudio {
         // Deliberately silly: a low buzz with a wobble. The talent is a joke and should sound like one.
         this.tone(90, 0.34, 0.34, 'sawtooth', t, 0.62);
         this.tone(120, 0.3, 0.2, 'square', t, 0.5);
+        break;
+      case 'bulletHit':
+        /**
+         * A dry, high tick: a bead of water cracking against something.
+         *
+         * Two parts, both of them tiny -- a short square pip that rises slightly, and a 30ms band-passed noise
+         * click for the "crack". The rise is what keeps it from sounding like a metronome at four rounds a second:
+         * each hit chirps UP, which reads as impact rather than as a repeating beep.
+         *
+         * `level` is the caller's, and the caller gets it from `audio.bulletHitVolume` in the config, because how
+         * loud this one is matters more than for any other cue: it is the only sound in the game that plays several
+         * times a second, so it is also the only one that can ruin the mix single-handed.
+         */
+        this.tone(1050, 0.045, 0.09 + level * 0.07, 'square', t, 1.5);
+        this.burst(0.028, 3200, 0.05 + level * 0.06, t);
         break;
     }
   }

@@ -582,6 +582,14 @@ export interface Mechanisms {
      * game goes".
      */
     musicVolume: number;
+    /**
+     * How loud one small-bubble round landing on a creature is.
+     *
+     * In the config rather than beside the other synthesis numbers because it is the one cue that fires several
+     * times a second: its level decides whether the mix holds together, which makes it a balance value rather than
+     * a sound-design one.
+     */
+    bulletHitVolume: number;
   };
   emergence: {
     fishPerceptionBaseMeters: number;
@@ -968,6 +976,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     describe: 'a colour, either 0xrrggbb or "#rrggbb"',
   })),
   { path: 'audio.musicVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity-like level between 0 and 1' },
+  { path: 'audio.bulletHitVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1; 0 mutes the bullet hit' },
   { path: 'obstacles.health', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to hit points' },
   { path: 'obstacles.radius', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to a radius fraction' },
   {
@@ -1402,3 +1411,4 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+

@@ -94,3 +94,26 @@ Measured: 30 exits gave `{up: 8, left: 9, right: 13}`; each direction moves on e
 for a side); a side exit is out of the field 0.30 s of game time after it starts; and a frozen side-by-side
 picture has the leaving fish's peak brightness at 121 against the normal fish's 197 on the same background, with
 the same shape and colours.
+
+### Follow-up (same day): a sound when a round lands on a creature
+
+Requested: a hit sound for the small-bubble bullets.
+
+- A new cue, `bulletHit`, rather than a quiet `hit`: `hit` is the dull low thud of being hurt ("that was done to
+  ME"), and this is the opposite ("I am doing that to IT"). It is the shortest and highest sound in the game --
+  a 45 ms square pip that chirps UP (so four a second reads as impact rather than as a metronome) plus a 28 ms
+  band-passed noise click -- because it is the only cue that fires several times a second and the only one that can
+  ruin the mix on its own. It also gets the hardest throttle in `play()` (0.05 s), for the frame where several
+  rounds land on a swarm at once.
+- `BulletField.update` now returns `{ hits, drivenOff }` for that frame. The module still plays nothing itself:
+  fields report and the game reacts, the same split `HazardField` uses with its effects list. A round stopped by
+  scenery is in the field's own `hits` counter and NOT in the return value, which is what keeps a crate silent.
+- `audio.bulletHitVolume` (0.5) is the one number the owner tunes, and it is the only one-shot level in the config
+  group: this cue's loudness is a balance decision rather than a sound-design one. The hit that drives a creature
+  off plays the same cue at 1.4x, which is the "that one is done" beat without giving the gun a second voice.
+
+Measured by spying on the audio module the page actually loaded (`/src/audio.ts?t=…`, not the bare path -- Vite
+keys modules by full URL, so the bare one is a second instance with its own empty state):
+
+    a fish in the line of fire   [bulletHit 0.5, bulletHit 0.5, bulletHit 0.7]
+    a crate in the way           [] while four rounds were blocked

@@ -81,9 +81,16 @@ export class BulletField {
    *
    * The order is the same one the spit's projectiles use, and for the same reason: rounds move first, so a hit is
    * resolved where the round actually is this frame rather than where it was last frame.
+   *
+   * @return what landed on a CREATURE this frame, so the caller can give it a sound. Counted here rather than read
+   *   off the monotonic totals below, because a reaction wants "something connected just now" and a running total
+   *   cannot answer that. A round stopped by scenery is in `hits` and NOT in the return value: a crate does not
+   *   bleed, and an impact tick for it would say otherwise.
    */
-  update(dt: number, ctx: BulletContext): void {
+  update(dt: number, ctx: BulletContext): { hits: number; drivenOff: number } {
     const cfg = mech.bullets;
+    let landed = 0;
+    let drivenOff = 0;
 
     if (ctx.armed && cfg.perSecond > 0) {
       /**
@@ -129,8 +136,10 @@ export class BulletField {
           const dy = h.y - b.y;
           if (dx * dx + dy * dy > reach * reach) continue;
           // The hit is applied through the hazard field, which owns what it means to be driven off.
-          ctx.hazards.hit(h, cfg.damage);
+          const outcome = ctx.hazards.hit(h, cfg.damage);
           this.hits++;
+          landed++;
+          if (outcome === 'fled') drivenOff++;
           spent = true;
           break;
         }
@@ -141,6 +150,8 @@ export class BulletField {
         this.bullets.splice(i, 1);
       }
     }
+
+    return { hits: landed, drivenOff };
   }
 
   private spawn(ctx: BulletContext): void {

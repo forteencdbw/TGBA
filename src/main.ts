@@ -944,7 +944,7 @@ class Game {
    */
   private updateBullets(dt: number, laneWidth: number, min: number, max: number): void {
     const playerRadius = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
-    this.bullets.update(dt, {
+    const shots = this.bullets.update(dt, {
       min,
       max,
       laneWidth,
@@ -962,6 +962,21 @@ class Game {
       hazards: this.hazards,
       obstacles: this.obstacles,
     });
+
+    /**
+     * The one bit of feedback the gun needs a sound for.
+     *
+     * A round is small and gone in a frame, so without a tick the player cannot tell "I am hitting it" from "I am
+     * missing" at four rounds a second -- the counters say it, but nobody reads counters while dodging. Only hits
+     * on a CREATURE count: `shots.hits` excludes the rounds a crate stopped, because scenery does not bleed.
+     *
+     * The hit that drives a creature off is played louder, which is the "that one is done" beat -- the same cue
+     * rather than a second sound, so the gun keeps one voice.
+     */
+    if (shots.hits > 0) {
+      const volume = mech.audio.bulletHitVolume;
+      audio.play('bulletHit', shots.drivenOff > 0 ? Math.min(1, volume * 1.4) : volume);
+    }
   }
 
   private updateProjectiles(dt: number, laneWidth: number, min: number, max: number): void {
