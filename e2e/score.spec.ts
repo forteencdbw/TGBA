@@ -44,7 +44,7 @@ test.describe('the score', () => {
     await quietRun(page);
     const s = await score(page);
     expect(s.value, 'a fresh run has no points').toBe(0);
-    expect(s.byEvent, 'and an empty ledger').toEqual({ drivenOff: 0, skill: 0, eaten: 0, surface: 0 });
+    expect(s.byEvent, 'and an empty ledger').toEqual({ drivenOff: 0, absorb: 0, skill: 0, eaten: 0, surface: 0 });
     // The string the SCREEN shows, not a re-derivation of the format: a display bug has to be visible to this test.
     expect(s.hud).toBe('分数 0');
     await expectNoErrors(errors);
@@ -115,7 +115,7 @@ test.describe('the score', () => {
       .toBe(true);
     const finished = await score(page);
     expect(finished.value, 'and finishing pays the surface bonus').toBe(price.drivenOff + price.skill + price.eaten + price.surface);
-    expect(finished.byEvent).toEqual({ drivenOff: 1, skill: 1, eaten: 1, surface: 1 });
+    // Per event rather than the whole object: collectable bubbles drift in, and with bsorb in the table an exact\n    // object would make this test fail for a bubble the level happened to put in the way.\n    expect(finished.byEvent.drivenOff).toBe(1);\n    expect(finished.byEvent.skill).toBe(1);\n    expect(finished.byEvent.eaten).toBe(1);\n    expect(finished.byEvent.surface).toBe(1);
     // The best is taken at the END of the run, so it has to include everything that run earned.
     expect(finished.endingBest, 'the session best sees the whole run').toBe(finished.value);
     await expectNoErrors(errors);
@@ -208,3 +208,4 @@ test.describe('the score', () => {
     await expectNoErrors(errors);
   });
 });
+

@@ -17,6 +17,9 @@
  * ---------------------------------------------------------------------------------------------
  *   drivenOff  a creature driven off by the gun. The gun's payoff: without points, shooting is a way to make the
  *              water emptier and nothing else, and the ammo-free weapon has no cost to weigh against it.
+ *   absorb     a collectable bubble absorbed. For the types that grow, growth is already the reward and this is
+ *              the config's business whether they are paid twice; for a type that CANNOT grow it is the only
+ *              reward there is, which is why the event exists at all.
  *   skill      a special item collected. The level's one pure reward, and the only pickup that is a decision to
  *              reach for rather than something in the way.
  *   eaten      a creature SWALLOWED. The reversal is the game's signature act and its most dangerous one -- it is
@@ -32,10 +35,10 @@
 import { mech } from './config';
 
 /** Every way a run can earn points. The names are the config's keys. */
-export type ScoreEvent = 'drivenOff' | 'skill' | 'eaten' | 'surface';
+export type ScoreEvent = 'drivenOff' | 'absorb' | 'skill' | 'eaten' | 'surface';
 
 export class Score {
-  private counts: Record<ScoreEvent, number> = { drivenOff: 0, skill: 0, eaten: 0, surface: 0 };
+  private counts: Record<ScoreEvent, number> = { drivenOff: 0, absorb: 0, skill: 0, eaten: 0, surface: 0 };
   private total = 0;
 
   /** Points on the board right now. */
@@ -79,6 +82,7 @@ export class Score {
    */
   reset(): void {
     this.total = 0;
-    this.counts = { drivenOff: 0, skill: 0, eaten: 0, surface: 0 };
+    this.counts = { drivenOff: 0, absorb: 0, skill: 0, eaten: 0, surface: 0 };
   }
 }
+

@@ -619,6 +619,16 @@ export class Hud {
   }
 
   /**
+   * The state line under the headline, exactly as the player reads it.
+   *
+   * Exposed for the same reason as the headline: "the plain bubble promises a next stage it can never reach" is a
+   * claim about THIS string, and a probe that re-derived it would pass while the screen said something else.
+   */
+  get sublineText(): string {
+    return this.subline.text;
+  }
+
+  /**
    * The debug readout, exactly as the player reads it.
    *
    * Same reasoning as the headline: the build line is only useful if it is really on the screen, and a test that
@@ -710,6 +720,8 @@ export class Hud {
       name: string;
       absorbedInStage: number;
       neededForNext: number | null;
+      /** False for a type that does not grow from absorbing at all, which has no next stage to count toward. */
+      grows: boolean;
       tierBonus: number;
       /**
        * A second resource, for a bubble type that has one: its label, its readout, and its colour.
@@ -734,11 +746,17 @@ export class Hud {
      *
      * At the top stage it shows the name alone rather than a fake "complete" bar -- there is nothing left to
      * earn, and the interesting information becomes the fact that the bubble is now at its slowest.
+     *
+     * A type that does not grow gets neither count. It would sit at "0/12" for a whole run -- a countdown to
+     * something that cannot happen -- and "满" would be worse, because it would say the bubble had finished a
+     * progression it never took part in.
      */
     const stageText =
-      (stage.neededForNext === null
-        ? `${stage.name} ${stage.stage}阶 满`
-        : `${stage.name} ${stage.stage}阶 ${stage.absorbedInStage}/${stage.neededForNext}`) +
+      (!stage.grows
+        ? `${stage.name} 不成长`
+        : stage.neededForNext === null
+          ? `${stage.name} ${stage.stage}阶 满`
+          : `${stage.name} ${stage.stage}阶 ${stage.absorbedInStage}/${stage.neededForNext}`) +
       (stage.tierBonus > 0 ? `  吞阶+${stage.tierBonus}` : '');
     this.subline.text = tags
       ? `距海面 / TO SURFACE (m)   ·   ${stageText}   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
@@ -844,3 +862,4 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+

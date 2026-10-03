@@ -2525,26 +2525,42 @@ class Game {
       if (dx * dx + dy * dy > reach * reach) continue;
 
       if (playerR >= bubbleR * 0.92) {
-        // Big enough: absorb it. The cue's pitch rises with the bubble's size, so a big one announces
-        // itself without any UI.
-        this.player.volume = growByAbsorbing(this.player.volume, b.volume);
-        this.stats.absorbed++;
         /**
-         * Count toward the next growth stage, and react if that promoted the bubble.
+         * Absorbed -- and what that PAYS depends on whether this type grows at all.
          *
-         * The promotion is the caller's to handle: `recordAbsorb` only knows the numbers. Growing is the moment
-         * the player becomes slower, so it gets a brief invulnerability and a cue -- without the grace period,
-         * getting bigger would immediately mean taking a hit, which reads as the game punishing the player for
-         * doing well.
+         * For the devour and volatile bubbles, growth is the reward: bubbles are food, food is volume, and volume is
+         * hit points as well as hitbox. For a type that declares `growsByAbsorbing: false` the same act pays in
+         * POINTS and the bubble stays exactly the size it was -- growing would buy it nothing (its hit points are a
+         * fixed count) and cost it a bigger hitbox, a slower bubble and the stage penalty on top. So the bubble is
+         * still removed and still pays; only the currency differs.
+         *
+         * The stage counter is deliberately not touched in that branch either: advancing it would apply the growth
+         * stages' speed penalties to a bubble that never grew, which is a cost with no matching benefit.
          */
-        if (recordAbsorb(this.stage)) {
-          this.player.stageSpeedMultiplier = this.stage.speedMultiplier;
-          this.invulnerable = Math.max(this.invulnerable, mech.stages.growInvulnerableSeconds);
-          this.runBanner.text = `${stageName(this.stage.stage)}  ·  ${this.stage.stage} 阶段  ·  速度 ×${this.stage.speedMultiplier.toFixed(2)}`;
-          this.runBanner.alpha = 1;
-          this.bannerSeen = true;
-          audio.play('skill');
+        const grows = this.bubbleType.growsByAbsorbing;
+        if (grows) {
+          this.player.volume = growByAbsorbing(this.player.volume, b.volume);
+          /**
+           * Count toward the next growth stage, and react if that promoted the bubble.
+           *
+           * The promotion is the caller's to handle: `recordAbsorb` only knows the numbers. Growing is the moment
+           * the player becomes slower, so it gets a brief invulnerability and a cue -- without the grace period,
+           * getting bigger would immediately mean taking a hit, which reads as the game punishing the player for
+           * doing well.
+           */
+          if (recordAbsorb(this.stage)) {
+            this.player.stageSpeedMultiplier = this.stage.speedMultiplier;
+            this.invulnerable = Math.max(this.invulnerable, mech.stages.growInvulnerableSeconds);
+            this.runBanner.text = `${stageName(this.stage.stage)}  ·  ${this.stage.stage} 阶段  ·  速度 ×${this.stage.speedMultiplier.toFixed(2)}`;
+            this.runBanner.alpha = 1;
+            this.bannerSeen = true;
+            audio.play('skill');
+          }
+        } else {
+          const points = this.score.award('absorb');
+          if (points > 0) this.scorePopups.add(b.x, b.y, points, this.camera);
         }
+        this.stats.absorbed++;
         eaten++;
         audio.play('absorb', Math.min(1, bubbleR / Math.max(1e-6, playerR)));
         this.field.bubbles.splice(i, 1);
@@ -3055,6 +3071,13 @@ class Game {
         stage: this.stage.stage,
         name: stageName(this.stage.stage),
         absorbedInStage: this.stage.absorbedInStage,
+        /**
+         * Whether this type grows at all, which the HUD needs to read the counter honestly.
+         *
+         * Without it the subline would show "幼泡 1阶 0/12" for a whole plain-bubble run: a countdown to something
+         * that cannot happen, since that type does not grow.
+         */
+        grows: this.bubbleType.growsByAbsorbing,
         neededForNext: this.stage.neededForNext,
         tierBonus: this.tierBonus,
         /**
@@ -3947,6 +3970,8 @@ class Game {
       name: string;
       absorbedInStage: number;
       neededForNext: number | null;
+      /** False for a type that does not grow from absorbing: it has no next stage to count toward. */
+      grows: boolean;
       speedMultiplier: number;
       appearance: StageAppearance;
       radiusFraction: number;
@@ -4240,6 +4265,7 @@ class Game {
          */
         name: stageName(this.stage.stage),
         absorbedInStage: this.stage.absorbedInStage,
+        grows: this.bubbleType.growsByAbsorbing,
         neededForNext: this.stage.neededForNext,
         speedMultiplier: this.stage.speedMultiplier,
         /**
@@ -4690,6 +4716,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 

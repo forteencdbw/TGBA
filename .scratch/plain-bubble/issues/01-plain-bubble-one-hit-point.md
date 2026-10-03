@@ -63,3 +63,36 @@ same contact on the devour bubble is a meal instead, which is what makes the rul
 ## Comments
 
 - 2026-10: requested as "新增一个气泡类型：普通气泡，没有特殊能力，只有一滴血，被敌人碰到了就死亡".
+
+### Follow-up: a bug report -- it could devour, and it grew
+
+Reported: the plain bubble also has the devouring ability, which it should not have; and its volume should not grow
+either, absorbing a bubble should only score.
+
+The GROWTH half was real and is fixed by `BubbleType.growsByAbsorbing` (false for the plain bubble). It was absorbed
+exactly like the devour bubble: volume up, stage counter up, speed penalty on. That meant it was quietly playing the
+devour bubble's game -- eat, grow, survive more hits -- while its whole design is that one touch is fatal at any size;
+and since its hit points are a fixed count, growth bought it nothing and cost it a bigger hitbox and a slower bubble.
+Now absorbing still removes the bubble and still pays, but pays in `score.absorb` (5) instead of size: no volume, no
+stage, no speed change. The HUD says so too -- the state line reads "幼泡 不成长" rather than "0/12", because a
+progress bar that can never advance is a promise about something that cannot happen.
+
+The SWALLOWING half did not reproduce, and the measurement is worth recording rather than the claim: with the plain
+bubble at the volume CAP (10) and each hazard held in contact on every frame, `canEatHazardForTest` was false for all
+nine kinds and `hazards.eaten` stayed at 0 for all nine -- contact dealt damage (or the kind's own effect: the jelly's
+slow, the trash bag's grip) instead. `swallowsHazards: false` gates `canSwallow`, which is the single predicate both
+the reversal collision and the edibility marker read, so there is no second path into the stomach; and the class of
+bug it would be is exactly the one the repo's invariant guards -- nothing swallows without a verb to get it back out,
+and this type has no verbs at all.
+
+The most likely reading of what was seen is the absorb itself: a collectable bubble vanishing into the plain bubble
+looks exactly like the devour bubble eating, and that WAS the growth bug. If a CREATURE is still seen going inside
+it, the kind and the volume would pin it down in one run.
+
+Measured after the fix (six small collectables absorbed, one at a time):
+
+    plain    volume 1 -> 1      stage 幼泡 -> 幼泡   speed 1 -> 1     score 0 -> 30   ledger absorb 6
+    devour   volume 1 -> 2.2    stage 幼泡 -> 幼泡   speed 1 -> 1     score 0 -> 0    ledger absorb 0
+
+The devour bubble is deliberately untouched: for a type that grows, growth already IS the reward, and paying twice for
+one act is a balance change nobody asked for. `score.absorb` is read only by the branch that cannot pay in size.

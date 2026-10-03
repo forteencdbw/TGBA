@@ -138,6 +138,7 @@ export interface Mechanisms {
    */
   score: {
     drivenOff: number;
+    absorb: number;
     skill: number;
     eaten: number;
     surface: number;
@@ -851,7 +852,7 @@ const CODEX_COLOURS = [
 export const OBSTACLE_KINDS = ['crate', 'coral', 'wall', 'net'] as const;
 
 const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string }[] = [
-  ...['drivenOff', 'skill', 'eaten', 'surface'].map((event) => ({
+  ...['drivenOff', 'absorb', 'skill', 'eaten', 'surface'].map((event) => ({
     path: `score.${event}`,
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000,
     describe: 'points for this event, between 0 and 100000; 0 takes the event out of the score',
@@ -1564,6 +1565,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 

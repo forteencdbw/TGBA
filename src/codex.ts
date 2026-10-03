@@ -390,13 +390,24 @@ function typeFacts(type: BubbleType): readonly CodexFact[] {
     { label: '无敌时间', value: `${num(mech.hazards.invulnerableSeconds, 1)}s` },
   );
   /**
-   * The growth stages are speed tiers for BOTH types -- the type only changes what the COLOUR follows -- so they are
-   * one fact about being a bubble rather than a card of their own on the volatile bubble's side.
+   * The growth stages are speed tiers for every type that grows -- the type only changes what the COLOUR follows --
+   * so they are one fact about being a bubble rather than a card of their own on the volatile bubble's side.
+   *
+   * A type that does NOT grow gets the fact that replaces them instead. It is derived from the type rather than
+   * authored, because a card that listed "absorb 12 to promote" for a bubble that can never be promoted would be the
+   * codex teaching the wrong game.
    */
-  facts.push({
-    label: '成长阶段',
-    value: `吸收 ${mech.stages.absorbToStage2} / ${mech.stages.absorbToStage3} 颗晋升 · 速度 ${mech.stages.speedMultiplier.map((m) => `×${num(m)}`).join(' → ')}`,
-  });
+  facts.push(
+    type.growsByAbsorbing
+      ? {
+          label: '成长阶段',
+          value: `吸收 ${mech.stages.absorbToStage2} / ${mech.stages.absorbToStage3} 颗晋升 · 速度 ${mech.stages.speedMultiplier.map((m) => `×${num(m)}`).join(' → ')}`,
+        }
+      : {
+          label: '成长',
+          value: `不会长大：吸收一个泡泡 +${num(mech.score.absorb, 1)} 分，体积和速度始终不变`,
+        },
+  );
   return facts;
 }
 
@@ -614,7 +625,7 @@ const BUBBLE_PROSE: Record<BubbleTypeId, BubbleProse> = {
       glyph: 'player',
       notes: [
         '血量是**恒定的 1 点**，不随体积增长：碰到任何敌人就破裂，不管已经长到多大。',
-        '所以对它来说**长大是纯代价**——判定框更大、速度更慢，换不到任何抗打能力。',
+        '它也**不会长大**：吸收一个泡泡只是加分，体积和速度从头到尾不变——所以它不存在"变大变慢"这件事。',
         '它没有吸附、没有胃袋、没有喷吐与消化；捡到的技能仍然可以用（技能是关卡给的东西，不是这个气泡的能力）。',
       ],
     },

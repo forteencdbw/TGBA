@@ -251,7 +251,7 @@ export interface GameHandle {
      */
     bullets: { perSecond: number; damage: number; radiusRatio: number; speedPerSecond: number; lifeSeconds: number };
     /** What each scoring event is worth, so a spec asserts the CONFIG's prices rather than numbers written into it. */
-    score: { drivenOff: number; skill: number; eaten: number; surface: number };
+    score: { drivenOff: number; absorb: number; skill: number; eaten: number; surface: number };
   };
   /** The lateral authority this display resolved to. */
   lateralSnapshot: { keyboardSpeed: number; laneWidth: number };
@@ -395,5 +395,6 @@ export async function absorbUntilStage(page: Page, target: number): Promise<void
 
   expect(reached.stage, `the bubble should reach stage ${target}`).toBe(target);
 }
+
 
 

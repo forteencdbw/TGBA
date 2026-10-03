@@ -130,6 +130,25 @@ export interface BubbleType {
    */
   hitsToPop: number | null;
   /**
+   * Whether ABSORBING a collectable bubble makes this type grow.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * TRUE IS THE GAME'S ORIGINAL RULE, AND FALSE IS A CHARACTER THAT DOES NOT HAVE IT
+   * ---------------------------------------------------------------------------------------------
+   * Growth is what "devouring" means for the first bubble: bubbles are food, food is volume, and volume is both your
+   * hit points and your hitbox. The volatile bubble keeps it because it has to gather SOMETHING by touching it --
+   * "poor at precise collecting" is its weakness, not "cannot collect at all".
+   *
+   * The plain bubble does not, and that is the whole of its design: it has one hit point at any size, so growing
+   * would buy it nothing and cost it everything (a bigger hitbox, a slower bubble, and a stage penalty on top). A
+   * type that cannot get anything out of food does not eat food -- it collects it, and gets points. So absorbing
+   * still removes the bubble and still pays, and what it pays in is `score.absorb` instead of size.
+   *
+   * Deliberately NOT a config number, for the same reason as `swallowsHazards`: this is not a balance knob, it is
+   * whether the character grows at all. Its PRICE is the config's business.
+   */
+  growsByAbsorbing: boolean;
+  /**
    * Whether this type has a resource the HUD reports, and what to call it.
    *
    * Null for the devour bubble: it has no second meter, and inventing one would be inventing a mechanic. The
@@ -166,6 +185,7 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
     firesBullets: true,
     resource: null,
     hitsToPop: null,
+    growsByAbsorbing: true,
   },
   {
     id: 'angry',
@@ -200,6 +220,7 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
     firesBullets: true,
     resource: { label: '怒气' },
     hitsToPop: null,
+    growsByAbsorbing: true,
   },
   {
     id: 'plain',
@@ -240,6 +261,14 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
      * grown plain bubble more lives, which is the one thing this type is not allowed to have.
      */
     hitsToPop: 1,
+    /**
+     * And no growth at all: absorbing a bubble removes it and pays points, and the bubble stays the size it was.
+     *
+     * The bug this fixes: it grew like the devour bubble, which meant it was quietly playing the devour bubble's
+     * game -- eat, grow, take more hits -- while its whole design is that one touch is fatal at any size. Growing
+     * gave it nothing and cost it a bigger hitbox and a slower bubble.
+     */
+    growsByAbsorbing: false,
   },
 ];
 
@@ -267,3 +296,4 @@ export function hasControl(type: BubbleType, control: ControlId): boolean {
 export function hasVerb(type: BubbleType, verb: 'suction' | 'spit' | 'compress' | 'charge' | 'burst'): boolean {
   return type.controls.includes(verb);
 }
+
