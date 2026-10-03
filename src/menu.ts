@@ -194,16 +194,6 @@ export class MainMenu {
     // canvas rather than just the lane: the menu is not part of the water.
     this.backdrop.rect(0, 0, viewport.width, viewport.height).fill({ color: 0x030a17, alpha: 1 });
 
-    this.title.scale.set(s);
-    this.title.anchor.set(0.5, 0.5);
-    this.title.x = cx;
-    this.title.y = viewport.height * 0.3;
-
-    this.subtitle.scale.set(s);
-    this.subtitle.anchor.set(0.5, 0.5);
-    this.subtitle.x = cx;
-    this.subtitle.y = viewport.height * 0.3 + 30 * s;
-
     const w = Math.min(laneWidth * cfg.buttonWidthRatio, cfg.buttonMaxWidth * s);
     const h = cfg.buttonHeight * s;
     const top = viewport.height * 0.55;
@@ -225,6 +215,19 @@ export class MainMenu {
     this.placeTypeLabels();
 
     /**
+     * The tagline is placed HERE, before the level grid, because the grid is measured upward from it.
+     *
+     * It used to be placed after the grid, which meant the anchoring read whatever `y` the previous layout had left
+     * behind -- and on the first layout that is zero, which is why the unlock note ended up at the top of the canvas.
+     */
+    this.tagline.style.fontSize = cfg.taglineSize;
+    this.tagline.scale.set(s);
+    this.tagline.anchor.set(0.5, 0.5);
+    this.tagline.x = cx;
+    this.tagline.y = typeTop - cfg.taglineGap * s - cfg.taglineSize * s;
+    this.taglineDirty = true;
+
+    /**
      * The level row: where the level line used to be, above the bubble types.
      *
      * It replaces that line rather than joining it, because the line could only report the current level and the row
@@ -235,7 +238,37 @@ export class MainMenu {
      * headings: which water, which bubble, go.
      */
     const levelH = cfg.levelRowHeight * s;
-    const levelTop = this.subtitle.y + cfg.levelRowTopGap * s;
+    /**
+     * The top block is placed from the BOTTOM UP, and that is the fix for a second overlap.
+     *
+     * The title, subtitle and level grid used to hang from `height * 0.3` and grow downward while the tagline and the
+     * buttons were anchored to the bottom. One row of level pills fitted in the space between; two rows did not, and
+     * the extra row pushed the grid and its note line into the tagline -- which is what the owner saw, on a desktop
+     * window where the menu has less vertical room than a phone.
+     *
+     * Placing upward from the tagline means the two halves can never meet: whatever the grid's height is, the heading
+     * above it moves up by the same amount. The only thing that gives is the title's own margin, which is why it is
+     * clamped rather than allowed off the top of the canvas.
+     */
+    const perRow = Math.max(1, Math.min(this.levels.length, Math.floor(1 / Math.max(0.05, cfg.levelMinWidthRatio))));
+    const rows = Math.max(1, Math.ceil(this.levels.length / perRow));
+    const noteLineH = cfg.levelTextSize * s;
+    const noteY = this.tagline.y - (cfg.taglineSize * s) / 2 - cfg.levelRowGap * s * 2 - noteLineH;
+    const gridHeight = rows * levelH + (rows - 1) * cfg.levelRowGap * s;
+    let levelTop = noteY - cfg.levelRowGap * s - gridHeight;
+
+    this.subtitle.scale.set(s);
+    this.subtitle.anchor.set(0.5, 0.5);
+    this.subtitle.x = cx;
+    this.subtitle.y = levelTop - cfg.levelRowTopGap * s;
+
+    this.title.scale.set(s);
+    this.title.anchor.set(0.5, 0.5);
+    this.title.x = cx;
+    this.title.y = Math.max(36 * s, this.subtitle.y - 30 * s);
+    // If the title hit the ceiling, the subtitle follows it down rather than the two overlapping.
+    if (this.title.y > this.subtitle.y - 30 * s) this.subtitle.y = this.title.y + 30 * s;
+    if (this.subtitle.y > levelTop - cfg.levelRowTopGap * s) levelTop = this.subtitle.y + cfg.levelRowTopGap * s;
     /**
      * The level pills WRAP, and that is a fix rather than a nicety.
      *
@@ -247,8 +280,6 @@ export class MainMenu {
      * bottom of the stack does not move because it is anchored to the buttons -- the grid grows DOWNWARD from the
      * subtitle, which is the direction the rest of the menu's headings already read.
      */
-    const perRow = Math.max(1, Math.min(this.levels.length, Math.floor(1 / Math.max(0.05, cfg.levelMinWidthRatio))));
-    const rows = Math.max(1, Math.ceil(this.levels.length / perRow));
     const rowStep = levelH + cfg.levelRowGap * s;
     // One row's worth of pills is at most this wide, so two levels on a desktop do not become two enormous bars.
     const maxRowW = Math.min(w, perRow * w * cfg.levelMaxWidthRatio);
@@ -267,15 +298,9 @@ export class MainMenu {
     this.levelLine.text = this.levelNote;
     this.levelLine.style.fill = this.levelNoteHighlight ? cfg.levelUnlockColour : cfg.levelNoteColour;
     this.levelLine.x = cx;
-    // One gap below the LAST row of pills, whatever the grid's shape turned out to be.
-    this.levelLine.y = levelTop + (rows - 1) * rowStep + levelH + cfg.levelRowGap * s;
+    // One gap below the LAST row of pills -- the same line the top block was measured upward from, so the two cannot disagree.
+    this.levelLine.y = noteY;
 
-    this.tagline.style.fontSize = cfg.taglineSize;
-    this.tagline.scale.set(s);
-    this.tagline.anchor.set(0.5, 0.5);
-    this.tagline.x = cx;
-    this.tagline.y = typeTop - cfg.taglineGap * s - cfg.taglineSize * s;
-    this.taglineDirty = true;
 
     for (const [rect, label] of [
       [this.primaryRect, this.primaryLabel],
@@ -675,5 +700,8 @@ function mk(text: string, colour: number, size: number): Text {
   label.resolution = 2;
   return label;
 }
+
+
+
 
 
