@@ -610,11 +610,18 @@ function mkGraphics(): Graphics {
   return g;
 }
 
+/**
+ * A menu label.
+ *
+ * The family is the configured UI font, and it has to be one that carries the Chinese glyphs itself: Pixi measures
+ * the line box from the FIRST family in the list while Chinese is drawn by the fallback font, so a Latin-only
+ * monospace first clips the tops of every character. See `config/mechanics.json5`.
+ */
 function mk(text: string, colour: number, size: number): Text {
   const label = new Text({
     text,
     style: {
-      fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+      fontFamily: mech.text.fontFamily,
       fontSize: size,
       fill: colour,
       fontWeight: 'bold',

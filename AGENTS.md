@@ -4,27 +4,19 @@
 
 These are standing instructions from the project owner. They override the defaults below them.
 
-### Do NOT run the full regression suite unless explicitly asked
+### Compiling is the bar: run NO tests unless explicitly asked
 
-`pnpm test` runs the whole Playwright suite across both projects. **Do not run it on your own initiative** — not
-before a commit, not "to be safe", not after a change that looks risky.
+The owner is iterating quickly and tests **manually**. A change is done when it compiles.
 
-What to do instead:
+- `pnpm typecheck` after a change; `pnpm build` too when the change could affect the bundle.
+- Then commit. **Do not run Playwright at all** — not one spec file, not "just the ones the change touches", not
+  the full suite, not before a commit, not after a change that looks risky.
+- A targeted measurement or a screenshot is still fine when it answers a question the compiler cannot, but the
+  owner's own manual run is what decides whether something works.
+- `pnpm test` / `pnpm exec playwright test ...` are for when the owner **asks** for them, or for a release.
 
-- `pnpm typecheck` plus `pnpm build` after any change.
-- Run **only the spec files your change touches** (`pnpm exec playwright test e2e/wheel.spec.ts`), and only when
-  the change actually needs exercising.
-- A targeted measurement or a screenshot is usually worth more than a broad run.
-- Save the full suite for when the owner asks for it, or for a release.
-
-**"Only the specs your change touches" is not a loophole for running most of them.** A broad run of six or eight
-spec files is the full suite wearing a hat, and the six-minute tax comes back the same way. If a change looks like
-it needs that much coverage, that is a reason to **say so and ask**, not a licence to decide alone. Two or three
-targeted files is the normal shape of a change; more than that means the change was too wide, or the question is
-worth a sentence to the owner first.
-
-The suite is not slow because it is thorough; it is slow because it drives a real-time simulation serially. A
-6-minute tax on every edit is a tax on how much gets edited.
+This supersedes the earlier "run only the specs your change touches" guidance. The suite drives a real-time
+simulation serially, so any run is minutes of waiting for a verdict the owner is going to re-check by hand anyway.
 
 ### Bump the version on every change
 

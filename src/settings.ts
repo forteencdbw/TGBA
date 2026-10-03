@@ -1,4 +1,5 @@
 import { Container, Graphics, Text } from 'pixi.js';
+import { mech } from './mechanisms';
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
 
@@ -469,11 +470,17 @@ function rectOf(b: Button): { x: number; y: number; w: number; h: number } {
   return { x: b.x, y: b.y, w: b.w, h: b.h };
 }
 
+/**
+ * A panel label, in the configured UI font.
+ *
+ * The family has to carry the Chinese glyphs itself -- see the note in `config/mechanics.json5` on why a
+ * Latin-only monospace first clips the top of every Chinese character.
+ */
 function mkText(text: string, colour: number, size: number): Text {
   const label = new Text({
     text,
     style: {
-      fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+      fontFamily: mech.text.fontFamily,
       fontSize: size,
       fill: colour,
       fontWeight: 'bold',

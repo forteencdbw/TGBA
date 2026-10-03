@@ -77,11 +77,24 @@ export class Camera {
   }
 }
 
-export function makeLabel(text: string, colour: number, size: number, weight: 'normal' | 'bold' = 'bold'): Text {
+/**
+ * A HUD label, in the game's UI font.
+ *
+ * The family comes from `mech.text.fontFamily` rather than being written here, and that is not cosmetic: see the
+ * config's note on Pixi measuring the line box from the FIRST family while Chinese glyphs come from a fallback.
+ * Pass `mech.text.monoFontFamily` for ASCII-only text whose column alignment needs a monospace face.
+ */
+export function makeLabel(
+  text: string,
+  colour: number,
+  size: number,
+  weight: 'normal' | 'bold' = 'bold',
+  family: string = mech.text.fontFamily,
+): Text {
   const label = new Text({
     text,
     style: {
-      fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+      fontFamily: family,
       fontSize: size,
       fill: colour,
       fontWeight: weight,
@@ -418,7 +431,14 @@ export class Hud {
     this.resourceLabel.anchor.set(0.5, 0);
     this.resourceLabel.visible = false;
 
-    this.debug = makeLabel('', 0x7fc4e8, 11, 'normal');
+    /**
+     * The debug readout, the one label that stays monospace.
+     *
+     * Its lines align their values into columns with spaces, which only reads as columns in a monospace face -- and
+     * it is pure ASCII, so it never touches the CJK fallback that forced the rest of the UI onto a different stack.
+     * See `config/mechanics.json5`.
+     */
+    this.debug = makeLabel('', 0x7fc4e8, 11, 'normal', mech.text.monoFontFamily);
     this.debug.alpha = 0.8;
 
     this.root.addChild(this.gauge, this.resourceGauge, this.headline, this.subline, this.resourceLabel, this.debug);

@@ -129,6 +129,19 @@ export interface StageConfig {
 }
 
 export interface Mechanisms {
+  /**
+   * The two font stacks every label in the game is built from.
+   *
+   * `fontFamily` must name a font that HAS the Chinese glyphs first, and that is not a style preference: Pixi
+   * measures the line box from the FIRST family (it measures `|ÉqÅM`) while the Chinese glyphs are drawn by
+   * whatever fallback font supplies them. Put a Latin-only monospace first and the measured ascent is shorter
+   * than the glyphs, so the tops of the characters are clipped by the text's own canvas. See the config file.
+   */
+  text: {
+    fontFamily: string;
+    /** ASCII-only text whose column alignment depends on a monospace face: the debug readout. */
+    monoFontFamily: string;
+  };
   stages: StageConfig;
   volume: {
     start: number;
@@ -686,6 +699,16 @@ const CODEX_COLOURS = [
 export const OBSTACLE_KINDS = ['crate', 'coral', 'wall', 'net'] as const;
 
 const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string }[] = [
+  {
+    path: 'text.fontFamily',
+    check: (v) => typeof v === 'string' && v.trim().length > 0,
+    describe: 'a CSS font-family list, with a font that has the Chinese glyphs FIRST',
+  },
+  {
+    path: 'text.monoFontFamily',
+    check: (v) => typeof v === 'string' && v.trim().length > 0,
+    describe: 'a CSS font-family list for ASCII-only text (the debug readout)',
+  },
   { path: 'stages.speedMultiplier', check: (v) => Array.isArray(v) && v.length >= 2 && v.every((n) => typeof n === 'number'), describe: 'an array of at least two numbers' },
   { path: 'stages.minSpeedMultiplier', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a number above 0 and at most 1' },
   { path: 'stages.absorbToStage2', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
