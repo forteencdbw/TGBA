@@ -1061,7 +1061,7 @@ export class HazardField {
       flee: null,
       charge: null,
       // A random head start, so a shoal does not lunge in unison.
-      chargeRest: Math.random() * mech.charges.cooldownSeconds,
+      chargeRest: Math.random() * (mech.charges.chargers[kind]?.cooldownSeconds ?? 0),
       // And a random offset on the trigger finger, so a colony does not volley.
       shootTimer: Math.random() / Math.max(0.01, mech.enemyBullets.shooters[kind]?.perSecond ?? 1),
     };
@@ -1159,11 +1159,25 @@ export class HazardField {
      * and that IS the dodge window.
      */
     if (h.charge) {
-      const cfg = mech.charges;
+      const row = mech.charges.chargers[h.kind];
+      // A kind that stopped being a charger mid-run (the config changed under it) simply finishes the lunge it is on.
+      const cfg = row ?? { telegraphSeconds: 0.75, travelSeconds: 0.55, cooldownSeconds: 2.2, bowRatio: 0.3, triggerMeters: 300, approach: 'dive' as const };
       h.charge.elapsed += dt;
       if (h.charge.elapsed < cfg.telegraphSeconds) {
-        // Winding up: it holds position in the water (the current still carries it down with everything else).
-        h.y -= base * dt;
+        /**
+         * Winding up.
+         *
+         * A `dive` charger holds station (the current still carries it down with everything else). A `side` charger
+         * spends the wind-up MOVING to its flank, which is what the owner of this feature asked for and what makes
+         * the attack legible: the player watches it slide out to the side and then come across, rather than being
+         * teleported there.
+         */
+        if (cfg.approach === 'side') {
+          const slide = Math.min(1, dt / Math.max(0.05, cfg.telegraphSeconds - h.charge.elapsed + dt));
+          h.x += (h.charge.fromX - h.x) * slide * 3;
+          h.y += (h.charge.fromY - h.y) * slide * 3;
+        }
+        h.y -= base * dt * (cfg.approach === 'side' ? 0.2 : 1);
         return;
       }
       const t = Math.min(1, (h.charge.elapsed - cfg.telegraphSeconds) / Math.max(0.05, cfg.travelSeconds));
@@ -1199,19 +1213,34 @@ export class HazardField {
      * The aim point is the player's position AT THIS INSTANT and never updates: that is the difference between a
      * pattern to dodge and a homing attack, and it is why everything the player does during the wind-up counts.
      */
-    if (mech.charges.kinds.includes(h.kind)) {
+    const charger = mech.charges.chargers[h.kind];
+    if (charger) {
       h.chargeRest = Math.max(0, h.chargeRest - dt);
       const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
-      if (h.chargeRest <= 0 && dist <= mech.charges.triggerMeters) {
-        // Bow away from wherever the creature is relative to the player, so two fish on opposite sides curve apart
-        // rather than tracing the same line.
-        const side = h.x < ctx.playerX ? 1 : -1;
+      if (h.chargeRest <= 0 && dist <= charger.triggerMeters) {
+        /**
+         * Where the lunge STARTS, which is what separates the two approaches.
+         *
+         * `dive` starts where the creature is. `side` starts at a flank: just outside the nearer lane edge, level with
+         * the player, so the path sweeps ACROSS the lane instead of down it. The body is not teleported there -- the
+         * wind-up slides it over (see the motion above) -- so the flank position is a place the player watched it go.
+         *
+         * The bow is away from whichever side the creature is on, so two of them on opposite sides curve apart rather
+         * than tracing the same line.
+         */
+        const onLeft = h.x < ctx.playerX;
+        // Just outside the edge rather than well off it: the body has to stay VISIBLE at the flank, or the wind-up reads
+        // as the creature having left the game and the warning line having no author.
+        const flank = onLeft ? -ctx.laneWidth * 0.04 : ctx.laneWidth * 1.04;
+        const fromX = charger.approach === 'side' ? flank : h.x;
+        const fromY = charger.approach === 'side' ? ctx.playerY + ctx.laneWidth * 0.1 : h.y;
+        const span = Math.hypot(ctx.playerX - fromX, ctx.playerY - fromY);
         h.charge = {
-          fromX: h.x,
-          fromY: h.y,
+          fromX,
+          fromY,
           toX: ctx.playerX,
           toY: ctx.playerY,
-          bow: side * mech.charges.bowRatio * dist,
+          bow: (onLeft ? 1 : -1) * charger.bowRatio * span,
           elapsed: 0,
         };
         this.charges++;
@@ -1450,14 +1479,16 @@ export function paintHazards(
      */
     if (h.charge) {
       const cfg = mech.charges;
+      const row = cfg.chargers[h.kind];
+      const window = row?.telegraphSeconds ?? 0.75;
       const { fromX, fromY, toX, toY, bow, elapsed: chargeAge } = h.charge;
       const midX = (fromX + toX) / 2;
       const midY = (fromY + toY) / 2;
       const span = Math.hypot(toX - fromX, toY - fromY) || 1;
       const ctrlX = midX + (-(toY - fromY) / span) * bow;
       const ctrlY = midY + ((toX - fromX) / span) * bow;
-      const winding = chargeAge < cfg.telegraphSeconds;
-      const head = winding ? 1 : Math.min(1, (chargeAge - cfg.telegraphSeconds) / Math.max(0.05, cfg.travelSeconds));
+      const winding = chargeAge < window;
+      const head = winding ? 1 : Math.min(1, (chargeAge - window) / Math.max(0.05, row?.travelSeconds ?? 0.55));
       const STEPS = 12;
       g.moveTo(fromX, fromY);
       for (let i = 1; i <= STEPS; i++) {
@@ -1509,12 +1540,18 @@ export function paintHazards(
         const squash = 1 + h.squashed * 0.5;
         g.ellipse(x, y, r * squash, r * (1 / squash)).fill({ color: KIND_TUNING.jelly.colour, alpha: 0.55 });
         g.ellipse(x, y, r * squash, r * (1 / squash)).stroke({ color: KIND_TUNING.jelly.colour, alpha: 0.95, width: Math.max(1, r * 0.12) });
-        // Tentacles trail DOWNWARD behind it.
+        /**
+         * Tentacles trail DOWNWARD behind it -- which means SMALLER world y, not larger.
+         *
+         * `toScreenY` is `cy - (worldY - camera.y) * scale`, so up the screen is +y in world metres. The tentacles were
+         * drawn at `y + r * 0.8 .. y + r * 2.3`, i.e. above the dome, and the jellyfish read as a creature standing on
+         * its tentacles. They hang from the underside of the bell now.
+         */
         for (let i = -2; i <= 2; i++) {
           const tx = x + (i / 2) * r * 0.6;
           const wob = Math.sin(h.phase * 2.4 + i) * r * 0.35;
-          g.moveTo(tx, y + r * 0.8)
-            .lineTo(tx + wob, y + r * 2.3)
+          g.moveTo(tx, y - r * 0.8)
+            .lineTo(tx + wob, y - r * 2.3)
             .stroke({ color: KIND_TUNING.jelly.colour, alpha: 0.5, width: Math.max(1, r * 0.1) });
         }
         break;
@@ -1706,6 +1743,10 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
+
+
 
 
 

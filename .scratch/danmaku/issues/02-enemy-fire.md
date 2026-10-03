@@ -62,3 +62,36 @@ halves are independent, so either can be turned off without touching the other.
 ## Comments
 
 - 2026-10: requested as "…另一种方式是敌人也会发射子弹，玩家需要躲避子弹".
+
+### Follow-up: the jellyfish becomes a SIDE charger, loses its gun, and gets a health bar
+
+Requested: the jellyfish is an enemy, it can be driven off by attacks, it does not shoot, it charges in from the side,
+and its tentacles should hang down rather than up.
+
+Four changes, three of them config:
+
+  health          `hazards.health.jelly` 0 -> 2. It was immune to the player's gun, which made it scenery with a slow
+                  effect; it is a target now, and being shootable is its counterweight for being harder to dodge.
+  gun             removed from `enemyBullets.shooters`. A kind absent from that table does not shoot, so this is a
+                  deletion rather than a switch.
+  lunge           `charges.kinds` became `charges.chargers`, a TABLE keyed by kind, because the interesting part is
+                  that two creatures threaten in two directions: `approach: 'dive'` (the fish) or `'side'` (the
+                  jelly). A name list could not say that.
+  tentacles       a real bug, and the owner spotted it: they were drawn at `y + r * 0.8 .. y + r * 2.3`, and since
+                  `toScreenY` is `cy - (worldY - camera.y) * scale`, +y is UP the screen. So the jellyfish was drawn
+                  standing on its tentacles. They hang from the underside of the bell now.
+
+`side` is not a teleport. The wind-up spends its time sliding the body to a flank just outside the lane edge, and the
+lunge then sweeps ACROSS from there to where the player was -- so the flank is a place the player watched it go, and
+the visible telegraph line is the warning. The flank is 4% outside the edge rather than well off it, because a body
+that has left the screen reads as the creature having left the game.
+
+Measured (412x915):
+
+  jelly health            2, and the gun drives it off: one non-fatal hit then `fled` -- exactly two hit points
+  a jelly alone for 5s    0 rounds fired
+  its lunge               start x = 404 with the lane 361 wide, i.e. OFF LANE; 223m of horizontal travel against
+                          36m of vertical -- it really does come across rather than down
+
+Also updated: the codex derives its "attack method" line per kind from these tables, so the jelly's card now says it
+charges from the side instead of firing, with no prose to keep in sync.

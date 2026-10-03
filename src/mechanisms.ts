@@ -304,15 +304,27 @@ export interface Mechanisms {
    * answered by "stand aside" at a glance, while a bowed one has to be read.
    */
   charges: {
-    /** Which kinds lunge. Every entry is cross-checked against the real hazard kinds at load. */
-    kinds: string[];
-    triggerMeters: number;
-    /** The player's reaction window, in seconds. */
-    telegraphSeconds: number;
-    travelSeconds: number;
-    /** Bow of the curve as a fraction of the charge distance. 0 is a straight line. */
-    bowRatio: number;
-    cooldownSeconds: number;
+    /**
+     * Who lunges, and how -- one row per kind, so two creatures can threaten in two directions.
+     *
+     * A table rather than a name list because the interesting part is that they differ: the fish dives from where it
+     * is, and the jellyfish sweeps in from the SIDE, which asks the player for a different dodge. Every row is
+     * cross-checked against the real hazard kinds at load.
+     */
+    chargers: Record<
+      string,
+      {
+        triggerMeters: number;
+        /** The player's reaction window, in seconds. */
+        telegraphSeconds: number;
+        travelSeconds: number;
+        /** Bow of the curve as a fraction of the charge distance. 0 is a straight line. */
+        bowRatio: number;
+        cooldownSeconds: number;
+        /** `dive` comes straight from where the creature is; `side` retreats to the flank and sweeps across. */
+        approach: 'dive' | 'side';
+      }
+    >;
     telegraphColour: number;
     telegraphAlpha: number;
     trailColour: number;
@@ -795,6 +807,27 @@ function isNumberTable(v: unknown): v is Record<string, number> {
  * infinite cadence. Both fail as "the game feels broken" rather than as an error message, which is the shape this
  * project turns into a boot failure everywhere else.
  */
+/**
+ * True if every row of the chargers table is a complete, sane row.
+ *
+ * The same reasoning as the shooters table: a row missing its `telegraphSeconds` would lunge with no warning at all,
+ * and one missing `travelSeconds` would divide by zero into an instant teleport onto the player. Both read as "that
+ * was unfair" rather than as an error, which is exactly the class of failure this project makes a boot error.
+ */
+function isChargerTable(v: unknown): boolean {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const rows = Object.values(v as Record<string, unknown>);
+  if (rows.length === 0) return false;
+  const numbers = ['triggerMeters', 'telegraphSeconds', 'travelSeconds', 'cooldownSeconds'] as const;
+  return rows.every((row) => {
+    if (row === null || typeof row !== 'object') return false;
+    const r = row as Record<string, unknown>;
+    if (!numbers.every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number) && (r[k] as number) >= 0)) return false;
+    if (typeof r.bowRatio !== 'number' || !Number.isFinite(r.bowRatio) || Math.abs(r.bowRatio) > 2) return false;
+    return r.approach === 'dive' || r.approach === 'side';
+  });
+}
+
 function isShooterTable(v: unknown): boolean {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
   const rows = Object.values(v as Record<string, unknown>);
@@ -934,12 +967,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'enemyBullets.coreColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
   { path: 'enemyBullets.rimColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
   { path: 'enemyBullets.rimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  { path: 'charges.kinds', check: (v) => Array.isArray(v) && v.length >= 1 && v.every((k) => typeof k === 'string' && k.length > 0), describe: 'a non-empty array of hazard kind names' },
-  { path: 'charges.triggerMeters', check: (v) => typeof v === 'number' && v >= 20 && v <= 1200, describe: 'metres between 20 and 1200' },
-  { path: 'charges.telegraphSeconds', check: (v) => typeof v === 'number' && v >= 0.1 && v <= 4, describe: 'seconds between 0.1 and 4' },
-  { path: 'charges.travelSeconds', check: (v) => typeof v === 'number' && v >= 0.1 && v <= 4, describe: 'seconds between 0.1 and 4' },
-  { path: 'charges.bowRatio', check: (v) => typeof v === 'number' && v >= -1.5 && v <= 1.5, describe: 'a fraction between -1.5 and 1.5; 0 is a straight line' },
-  { path: 'charges.cooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30' },
+  { path: 'charges.chargers', check: (v) => isChargerTable(v), describe: 'an object of hazard kind to { triggerMeters, telegraphSeconds, travelSeconds, bowRatio, cooldownSeconds, approach }' },
   ...['telegraphColour', 'trailColour'].map((key) => ({
     path: `charges.${key}`,
     check: isColour,
@@ -1575,9 +1603,9 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
  */
 {
   const kinds = Object.keys(mech.consumption.mass);
-  const unknown = mech.charges.kinds.filter((k) => !kinds.includes(k));
+  const unknown = Object.keys(mech.charges.chargers).filter((k) => !kinds.includes(k));
   if (unknown.length) {
-    fail(`charges.kinds names something that is not a hazard kind: ${unknown.join(', ')}`);
+    fail(`charges.chargers names something that is not a hazard kind: ${unknown.join(', ')}`);
   }
 }
 
@@ -1673,6 +1701,9 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
+
 
 
 

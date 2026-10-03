@@ -209,8 +209,10 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
    * a card that can disagree with the game is worse than a card with nothing on it.
    */
   const threat: string[] = [];
-  if (mech.charges.kinds.includes(kind)) {
-    threat.push(`冲锋：进入 ${num(mech.charges.triggerMeters, 0)}m 蓄势 ${num(mech.charges.telegraphSeconds, 2)}s，按一条固定曲线撞过来`);
+  const charger = mech.charges.chargers[kind];
+  if (charger) {
+    const how = charger.approach === 'side' ? '从侧面横扫过来' : '按一条固定曲线撞过来';
+    threat.push(`冲锋：进入 ${num(charger.triggerMeters, 0)}m 蓄势 ${num(charger.telegraphSeconds, 2)}s，${how}`);
   }
   const gun = mech.enemyBullets.shooters[kind];
   if (gun) {
