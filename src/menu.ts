@@ -222,15 +222,7 @@ export class MainMenu {
     const typeTop = top - cfg.typeRowGap * s - typeH;
     const slot = w / Math.max(1, this.types.length);
     this.typeRects = this.types.map((_, i) => ({ x: this.primaryRect.x + i * slot, y: typeTop, w: slot, h: typeH }));
-    for (const [i, label] of this.typeLabels.entries()) {
-      const rect = this.typeRects[i];
-      if (!rect) continue;
-      label.style.fontSize = cfg.typeTextSize;
-      label.scale.set(s);
-      label.anchor.set(0.5, 0.5);
-      label.x = rect.x + rect.w / 2;
-      label.y = rect.y + rect.h / 2;
-    }
+    this.placeTypeLabels();
 
     /**
      * The level row: where the level line used to be, above the bubble types.
@@ -250,15 +242,7 @@ export class MainMenu {
     const levelSlot = levelW / Math.max(1, this.levels.length);
     const levelLeft = cx - levelW / 2;
     this.levelRects = this.levels.map((_, i) => ({ x: levelLeft + i * levelSlot, y: levelTop, w: levelSlot, h: levelH }));
-    for (const [i, label] of this.levelLabels.entries()) {
-      const rect = this.levelRects[i];
-      if (!rect) continue;
-      label.style.fontSize = cfg.levelTextSize;
-      label.scale.set(s);
-      label.anchor.set(0.5, 0.5);
-      label.x = rect.x + rect.w / 2;
-      label.y = rect.y + rect.h / 2;
-    }
+    this.placeLevelLabels();
 
     this.levelLine.scale.set(s);
     this.levelLine.anchor.set(0.5, 0.5);
@@ -297,6 +281,42 @@ export class MainMenu {
     this.versionLine.y = viewport.height - 14 * s;
 
     this.draw(s);
+  }
+
+  /**
+   * Put each type label in its button, and each level label in its pill.
+   *
+   * `layout` calls both, and so do `setTypes` and `setLevels`. That second call is the point: a list handed in is
+   * rebuilt from scratch (the NUMBER of buttons is part of the layout), and a label that has just been created sits at
+   * the origin -- which put the names of the levels in the top-left corner of the canvas with the pills left blank
+   * until the next resize. Placement belongs with the rebuild, not only with a resize.
+   *
+   * The rects come from the last real layout, so a rebuild before the first one places nothing and the layout that
+   * follows does it. `this.scale` is that layout's scale, for the same reason `update` uses it.
+   */
+  private placeTypeLabels(): void {
+    for (const [i, label] of this.typeLabels.entries()) {
+      const rect = this.typeRects[i];
+      if (!rect) continue;
+      label.style.fontSize = mech.menu.typeTextSize;
+      label.scale.set(this.scale);
+      label.anchor.set(0.5, 0.5);
+      label.x = rect.x + rect.w / 2;
+      label.y = rect.y + rect.h / 2;
+    }
+  }
+
+  /** See `placeTypeLabels`. */
+  private placeLevelLabels(): void {
+    for (const [i, label] of this.levelLabels.entries()) {
+      const rect = this.levelRects[i];
+      if (!rect) continue;
+      label.style.fontSize = mech.menu.levelTextSize;
+      label.scale.set(this.scale);
+      label.anchor.set(0.5, 0.5);
+      label.x = rect.x + rect.w / 2;
+      label.y = rect.y + rect.h / 2;
+    }
   }
 
   update(dt: number): void {
@@ -445,6 +465,8 @@ export class MainMenu {
     }
     if (!types.some((t) => t.id === this.selectedTypeId)) this.selectedTypeId = types[0]?.id ?? '';
     this.taglineDirty = true;
+    // The rebuilt labels start at the origin; put them back in their buttons.
+    this.placeTypeLabels();
   }
 
   /**
@@ -470,6 +492,9 @@ export class MainMenu {
     if (!levels.some((l) => l.id === this.selectedLevelId)) {
       this.selectedLevelId = levels.find((l) => !l.locked)?.id ?? '';
     }
+    // The rebuilt labels start at the origin; put them back in their pills. This is the path a level PICK takes,
+    // so without it the names of the levels jumped to the top-left corner of the canvas and the pills went blank.
+    this.placeLevelLabels();
     this.draw(this.scale);
   }
 
