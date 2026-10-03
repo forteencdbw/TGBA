@@ -116,7 +116,7 @@ export interface Diagnostics {
    * The ledger is reported as well as the total because "the score is 350" cannot say which act paid, and checking
    * that the surface bonus landed is a question about one event rather than about the sum.
    */
-  score: { value: number; best: number; byEvent: Record<string, number> };
+  score: { value: number; best: number; byEvent: Record<string, number>; popups: number };
   /**
    * The stomach and what is in flight.
    *
@@ -395,4 +395,5 @@ export async function absorbUntilStage(page: Page, target: number): Promise<void
 
   expect(reached.stage, `the bubble should reach stage ${target}`).toBe(target);
 }
+
 

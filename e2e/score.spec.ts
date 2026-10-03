@@ -121,6 +121,71 @@ test.describe('the score', () => {
     await expectNoErrors(errors);
   });
 
+  /**
+   * The floating numbers: at the event, drifting UP, gone by the time the config says.
+   *
+   * "Up" is asserted in SCREEN pixels, which is the point of the whole design: a popup anchored to a world position
+   * drifts down with the current, and a number that sinks is not a number that drifts. The pickup is placed off to the
+   * side of the bubble so "at the event" is distinguishable from "at the player".
+   */
+  test('the score floats up where it was earned, and expires', async ({ page }) => {
+    const errors = watchForErrors(page);
+    await quietRun(page);
+
+    const placed = await page.evaluate(() => {
+      const g = (window as unknown as {
+        __GB: {
+          game: { skillPickup: { id: null; x: number; y: number } | null; scorePopupsRef: { count: number; lastText: string | null }; score: { popups: { lifeSeconds: number } } };
+          player: { x: number; y: number };
+          camera: { viewport: { laneWidthMeters: number }; toScreenX: (x: number) => number; toScreenY: (y: number) => number };
+        };
+      }).__GB;
+      const lane = g.camera.viewport.laneWidthMeters;
+      // Inside the pickup's reach (~33 m) and off to the side, so the two positions cannot be confused.
+      const x = g.player.x * lane + 20;
+      const y = g.player.y + 8;
+      g.game.skillPickup = { id: null, x, y };
+      return {
+        itemX: g.camera.toScreenX(x),
+        itemY: g.camera.toScreenY(y),
+        bubbleX: g.camera.toScreenX(g.player.x * lane),
+        life: g.game.score.popups.lifeSeconds,
+      };
+    });
+
+    await expect.poll(async () => page.evaluate(() => (window as unknown as { __GB: { game: { scorePopupsRef: { count: number } } } }).__GB.game.scorePopupsRef.count), {
+      message: 'collecting a special item has to float a number',
+      timeout: 10_000,
+    }).toBeGreaterThan(0);
+
+    const first = await page.evaluate(() => {
+      const g = (window as unknown as { __GB: { game: { scorePopupsRef: { lastText: string | null; root: { children: { x: number; y: number }[] } } } } }).__GB.game.scorePopupsRef;
+      const label = g.root.children[0]!;
+      return { text: g.lastText, x: label.x, y: label.y };
+    });
+    const price = (await prices(page)).skill;
+    expect(first.text, 'the number is the points, not the score').toBe(`+${price}`);
+    expect(Math.abs(first.x - placed.itemX), 'it appears where the ITEM was').toBeLessThan(6);
+    expect(Math.abs(first.x - placed.bubbleX), 'and not where the bubble is').toBeGreaterThan(10);
+
+    // It rises: sampled on the screen, not in the world.
+    await page.waitForTimeout(600);
+    const later = await page.evaluate(() => {
+      const g = (window as unknown as { __GB: { game: { scorePopupsRef: { root: { children: { y: number }[] } } } } }).__GB.game.scorePopupsRef;
+      return g.root.children[0]?.y ?? null;
+    });
+    expect(later, 'it must still be alive').not.toBeNull();
+    expect(later!, 'and it must have moved UP the screen, not down').toBeLessThan(first.y);
+
+    // And it is gone by the time it said it would be.
+    await page.waitForTimeout(placed.life * 1000);
+    expect(
+      await page.evaluate(() => (window as unknown as { __GB: { game: { scorePopupsRef: { count: number } } } }).__GB.game.scorePopupsRef.count),
+      'nothing may outlive its life',
+    ).toBe(0);
+    await expectNoErrors(errors);
+  });
+
   test('a new run starts at zero and keeps the best', async ({ page }) => {
     const errors = watchForErrors(page);
     await quietRun(page);

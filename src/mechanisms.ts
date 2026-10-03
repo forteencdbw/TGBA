@@ -141,6 +141,23 @@ export interface Mechanisms {
     skill: number;
     eaten: number;
     surface: number;
+    /**
+     * The floating numbers that appear where points were earned.
+     *
+     * Presentation rather than rules, and a sibling of the prices rather than a separate group: those four are what a
+     * run is worth, and these are how the player finds out that something just paid.
+     */
+    popups: {
+      lifeSeconds: number;
+      /** Design pixels of upward drift over that life. */
+      risePx: number;
+      size: number;
+      colour: number;
+      /** Fraction of the life held at full brightness before the fade starts. */
+      fadeFrom: number;
+      /** Ceiling on popups in flight: a guard against a scoring loop, not a budget to spend. */
+      max: number;
+    };
   };
   /**
    * Where the depth gauge sits, and how far in from the edge.
@@ -827,6 +844,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000,
     describe: 'points for this event, between 0 and 100000; 0 takes the event out of the score',
   })),
+  { path: 'score.popups.lifeSeconds', check: (v) => typeof v === 'number' && v > 0.2 && v <= 12, describe: 'seconds above 0.2 and at most 12' },
+  { path: 'score.popups.risePx', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
+  { path: 'score.popups.size', check: (v) => typeof v === 'number' && v >= 8 && v <= 48, describe: 'a font size between 8 and 48' },
+  { path: 'score.popups.colour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
+  { path: 'score.popups.fadeFrom', check: (v) => typeof v === 'number' && v >= 0 && v < 1, describe: 'a fraction of the life, at least 0 and below 1' },
+  { path: 'score.popups.max', check: (v) => typeof v === 'number' && v >= 1 && v <= 200, describe: 'a whole number of popups between 1 and 200' },
   ...['rim', 'glow', 'hudColor'].map((key) => ({
     path: `plain.look.${key}`,
     check: isColour,
@@ -1522,6 +1545,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 

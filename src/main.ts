@@ -10,6 +10,7 @@ import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TA
 import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
 import { audio } from './audio';
 import { Score } from './score';
+import { ScorePopups } from './scorePopups';
 import { canEatHazard, hazardMass, massFromEating, volumeTier } from './consumption';
 import { MainMenu } from './menu';
 import { CodexUi } from './codexUi';
@@ -366,7 +367,9 @@ class Game {
     // The flash sits directly over the water but UNDER the HUD, so the depth readout stays legible
     // through it -- the player should still be able to see where they got to during the white-out.
     this.flash.visible = false;
-    this.app.stage.addChild(this.scene.root, this.flash, this.hud.root, this.touch.root);
+    // The score popups sit over the water and under the flash and the HUD: they belong to the event they mark, not
+    // to the interface, but they are readouts and nothing the player steers by may be drawn over them.
+    this.app.stage.addChild(this.scene.root, this.scorePopups.root, this.flash, this.hud.root, this.touch.root);
 
     this.finishBanner.anchor.set(0.5);
     this.finishBanner.alpha = 0;
@@ -605,6 +608,16 @@ class Game {
   /** Test hook: the touch layer, so a probe can read where a drag is aiming. */
   get touchRef(): TouchControls {
     return this.touch;
+  }
+
+  /**
+   * Test hook: the floating score numbers.
+   *
+   * Exposed for the same reason as the rest: "where did the number appear" is the whole of this feature, and a probe
+   * that could only count them could not tell a popup at the pickup from a popup in the corner.
+   */
+  get scorePopupsRef(): ScorePopups {
+    return this.scorePopups;
   }
 
   /** Test hook: the HUD, so a probe can read the number the player actually sees. */
@@ -983,9 +996,16 @@ class Game {
       const volume = mech.audio.bulletHitVolume;
       audio.play('bulletHit', shots.drivenOff > 0 ? Math.min(1, volume * 1.4) : volume);
     }
-    // Points for the kill, told apart from the hit: the ledger is meant to show which act paid, not just that the
-    // gun was busy.
-    if (shots.drivenOff > 0) this.score.award('drivenOff', shots.drivenOff);
+    /**
+     * Points for the kill, told apart from the hit: the ledger is meant to show which act paid, not just that the
+     * gun was busy. One floating number per creature, AT the creature -- a swarm driven off in one frame is several
+     * events and reads as several numbers, which is the truth of what happened.
+     */
+    if (shots.drivenOff > 0) {
+      const points = this.score.award('drivenOff', shots.drivenOff);
+      // Divided by the count so the numbers on screen add up to what the ledger recorded, whatever the config says.
+      for (const at of shots.driven) this.scorePopups.add(at.x, at.y, points / shots.drivenOff, this.camera);
+    }
   }
 
   private updateProjectiles(dt: number, laneWidth: number, min: number, max: number): void {
@@ -1421,6 +1441,8 @@ class Game {
    * ledger of what paid it.
    */
   private readonly score = new Score();
+  /** The numbers that float where points were earned. See src/scorePopups.ts. */
+  private readonly scorePopups = new ScorePopups();
   /** White-out flash driven by the surface breach, 1 -> 0. */
   private splash = 0;
   /** Whether the current burst is a SURFACE finish rather than a death. */
@@ -1570,6 +1592,7 @@ class Game {
 
     this.scene.layout(viewport);
     this.hud.layout(viewport);
+    this.scorePopups.layout(viewport);
     this.hud.setWorldMetrics(viewport.laneWidthMeters, viewport.visibleDepthMeters);
     this.touch.layout(viewport.left, viewport.laneWidthPx, screenW, screenH);
     this.settings.layout(viewport);
@@ -1968,8 +1991,9 @@ class Game {
       const skill = pickup.id ?? (SKILLS[Math.floor(Math.random() * SKILLS.length)] ?? SKILLS[0]).id;
       this.grantSkill(skill);
       // A special item is worth points because it is the level's one pure reward: everything else in the water is
-      // either an obstacle or something that hurts.
-      this.score.award('skill');
+      // either an obstacle or something that hurts. It floats up from WHERE IT WAS PICKED UP, which is this feature's
+      // own example of what the numbers are for.
+      this.scorePopups.add(pickup.x, pickup.y, this.score.award('skill'), this.camera);
       this.skillPickup = null;
     }
   }
@@ -2063,8 +2087,10 @@ class Game {
         this.player.volume = growByAbsorbing(this.player.volume, massFromEating(e.kind));
         this.stats.absorbed++;
         // The reversal pays: it is the game's signature act and the one that costs the most (the bubble gets bigger
-        // and slower for it), so a score that ignored it would price the safe play above the interesting one.
-        this.score.award('eaten');
+        // and slower for it), so a score that ignored it would price the safe play above the interesting one. The
+        // number appears at the BUBBLE, which is where the creature was when it was swallowed -- a contact is a
+        // touching distance, so the difference is a radius.
+        this.scorePopups.add(this.player.x * laneWidth, this.player.y, this.score.award('eaten'), this.camera);
         this.invulnerable = Math.max(this.invulnerable, mech.consumption.eatInvulnerableSeconds);
         /**
          * What was swallowed goes into the stomach, carrying THE VOLUME IT ACTUALLY ADDED.
@@ -2736,8 +2762,10 @@ class Game {
     this.projectiles.length = 0;
     // Nor with the previous run's rounds in the air, which would be free shots nobody asked for.
     this.bullets.reset();
-    // The score is the RUN's number, so it starts at zero with everything else that belongs to a run.
+    // The score is the RUN's number, so it starts at zero with everything else that belongs to a run -- including
+    // the numbers still floating on screen from the previous one.
     this.score.reset();
+    this.scorePopups.clear();
     this.spitCooldown = 0;
     this.spitHits = 0;
     /**
@@ -2953,7 +2981,7 @@ class Game {
     this.surfaced = true;
     this.stats.ended++;
     // Before `recordBest`, so the best this run leaves behind includes the bonus it just earned.
-    this.score.award('surface');
+    this.scorePopups.add(this.player.x * this.camera.viewport.laneWidthMeters, this.player.y, this.score.award('surface'), this.camera);
     this.recordBest();
     audio.play('surface');
     this.splash = 1;
@@ -3020,6 +3048,9 @@ class Game {
     if (!fullScreenPage) {
       // The score, once per frame and only when it has moved -- see `Hud.setScore`.
       this.hud.setScore(this.score.value);
+      // The numbers floating where the points were earned. Cleared rather than frozen while a page is up: a popup
+      // that resumes its three seconds after the menu closes would be a number with no event left to explain it.
+      this.scorePopups.update(dt);
       this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled, {
         stage: this.stage.stage,
         name: stageName(this.stage.stage),
@@ -3060,6 +3091,14 @@ class Game {
     // The gear must not be reachable while a full-screen page is up, and the panel goes with it.
     this.settings.root.visible = !fullScreenPage;
     this.settings.update();
+    /**
+     * Nothing of the run is on screen under a full-screen page, and the floating numbers go with it.
+     *
+     * Cleared rather than hidden: a popup that resumed its three seconds after the menu closed would be a number with
+     * no event left on screen to explain it, three seconds stale.
+     */
+    this.scorePopups.root.visible = !fullScreenPage;
+    if (fullScreenPage) this.scorePopups.clear();
     this.menu.root.visible = inMenu;
     if (inMenu) this.menu.update(dt);
     // The codex draws nothing per frame: a tab press, a page turn and a resize each schedule their own redraw.
@@ -3899,7 +3938,7 @@ class Game {
      * question about one event rather than about the sum. Counts rather than points: the points are derivable from
      * the config, and reporting them would be reporting the config a second time.
      */
-    score: { value: number; best: number; byEvent: Record<string, number> };
+    score: { value: number; best: number; byEvent: Record<string, number>; popups: number };
     /** A skill lying in the water. `id` is null until collected, since it is rolled at pickup. */
     skillPickup: { id: string | null; y: number } | null;
     activeSkill: { id: string; remaining: number } | null;
@@ -4187,7 +4226,7 @@ class Game {
        */
       audio: { muted: this.audioMuted, running: audio.isRunning },
       ending: { surfaced: this.surfaced, splash: +this.splash.toFixed(3), bestClimbed: Math.round(this.bestClimbed), bestVolume: +this.bestVolume.toFixed(2), bestScore: this.bestScore },
-      score: { value: this.score.value, best: this.bestScore, byEvent: { ...this.score.ledger } },
+      score: { value: this.score.value, best: this.bestScore, byEvent: { ...this.score.ledger }, popups: this.scorePopups.count },
       skillPickup: this.skillPickup ? { id: this.skillPickup.id, y: +this.skillPickup.y.toFixed(1) } : null,      /** Active effect timers, so a skill that lasts can be observed while it runs. */
       activeSkill: this.player.skillId ? { id: this.player.skillId, remaining: +this.player.skillRemaining.toFixed(2) } : null,
       /** The bubble's growth stage: its speed tier, and how far into the next one it is. */
@@ -4419,7 +4458,7 @@ class Game {
      * in the state that path would have: a probe that swallowed something and then found the score unmoved would be
      * right to call it a bug, and the ledger is meant to be checkable for each event.
      */
-    this.score.award('eaten');
+    this.scorePopups.add(this.player.x * this.camera.viewport.laneWidthMeters, this.player.y, this.score.award('eaten'), this.camera);
     return gained;
   }
 
@@ -4651,6 +4690,10 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
 
 
 

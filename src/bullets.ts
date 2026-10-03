@@ -82,16 +82,19 @@ export class BulletField {
    * The order is the same one the spit's projectiles use, and for the same reason: rounds move first, so a hit is
    * resolved where the round actually is this frame rather than where it was last frame.
    *
-   * @return what landed on a CREATURE this frame, and how many rounds left the muzzle, so the caller can give both
-   *   a sound. Counted here rather than read off the monotonic totals below, because a reaction wants "something
-   *   connected just now" and a running total cannot answer that. A round stopped by scenery is in `hits` and NOT in
-   *   the return value: a crate does not bleed, and an impact tick for it would say otherwise.
+   * The return value is what the CALLER needs to react to this frame, and it is split by kind rather than summed for
+   * the same reason `HazardField` reports effects instead of applying them: a sound wants to know that something
+   * connected, a floating number wants to know WHERE, and a score wants to know that a creature was finished rather
+   * than merely hit. A round stopped by scenery is in `hits` and in none of the others -- a crate does not bleed, and
+   * it is not worth points.
    */
-  update(dt: number, ctx: BulletContext): { hits: number; drivenOff: number; fired: number } {
+  update(dt: number, ctx: BulletContext): { hits: number; drivenOff: number; fired: number; driven: readonly { x: number; y: number }[] } {
     const cfg = mech.bullets;
     let landed = 0;
     let drivenOff = 0;
     let fired = 0;
+    /** Positions of creatures finished this frame, for whatever the caller wants to draw there. */
+    const driven: { x: number; y: number }[] = [];
 
     if (ctx.armed && cfg.perSecond > 0) {
       /**
@@ -141,7 +144,10 @@ export class BulletField {
           const outcome = ctx.hazards.hit(h, cfg.damage);
           this.hits++;
           landed++;
-          if (outcome === 'fled') drivenOff++;
+          if (outcome === 'fled') {
+            drivenOff++;
+            driven.push({ x: h.x, y: h.y });
+          }
           spent = true;
           break;
         }
@@ -153,7 +159,7 @@ export class BulletField {
       }
     }
 
-    return { hits: landed, drivenOff, fired };
+    return { hits: landed, drivenOff, fired, driven };
   }
 
   private spawn(ctx: BulletContext): void {

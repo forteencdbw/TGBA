@@ -69,6 +69,39 @@ Measured: with the wrap, a three-line card on a 412x915 phone renders 331 label-
 
 No page errors anywhere in that sequence.
 
+### Follow-up (same request): the score floats up where it was earned
+
+Requested: when the player scores, show the value drifting at the place it was earned -- a special item, for
+instance, shows its points where it was picked up -- and have it disappear after three seconds.
+
+`src/scorePopups.ts`: a pooled set of Pixi `Text`s, one per event, carrying the SCREEN position of the event plus an
+age. `score.popups` in the config holds the life (3s), the rise, the size, the colour, the point in the life where the
+fade starts, and a cap.
+
+**Anchored to the event's screen position, converted ONCE, and that is the interesting decision.** The first version
+kept the world position and converted every frame, which is the "correct" thing for something that belongs to the
+water -- and it was measured wrong: the current runs at 25 m/s, so over the three seconds of life it drags a screen
+object 85px down, while the popup's own rise is 35px up. Net: the number SANK 33px. A number that sinks does not
+drift, and the drift is the thing that catches the eye. So the popup is pinned to where the event was at the instant
+it happened and rises from there.
+
+The size follows `designScale` (screen furniture), not `viewport.scale` (the water): a number whose job is to be read
+must not grow because a metre happens to be worth more pixels on a wide window -- the same bug the buttons had.
+
+Labels are pooled rather than created per event (each Pixi `Text` is a canvas and a texture), and at the cap the
+OLDEST popup is retired rather than the new one refused: the newest number is the one the player is looking for.
+
+One popup per creature driven off, at that creature, rather than one per frame's total -- a swarm finished in one
+frame is several events and reads as several numbers.
+
+Measured:
+
+    pickup at screen (229, 448), bubble at x=206
+    the popup says "+50" at (228.8, 447.1)
+    over its life: y 447 -> 441 -> 436 -> 431 -> 425 -> 419 (UP the screen), alpha 1, 1, 0.88, 0.61, 0.27, gone
+    driving a fish off floats "+25"
+    a new run: 0 popups left
+
 ## Comments
 
 - 2026-10: requested as "现在新增积分系统，常驻展示在屏幕顶部，击败小鱼、拾取特殊道具等会获得分数".
