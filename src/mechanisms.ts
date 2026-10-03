@@ -789,6 +789,8 @@ export interface Mechanisms {
     levelTextSize: number;
     levelNoteSize: number;
     levelMaxWidthRatio: number;
+    /** The narrowest a level pill may be, as a fraction of the menu width. Decides how many fit per row. */
+    levelMinWidthRatio: number;
     levelSelectedFill: number;
     levelSelectedStroke: number;
     levelSelectedTextColour: number;
@@ -1513,6 +1515,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'menu.levelRowTopGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 600, describe: 'a number between 0 and 600' },
   { path: 'menu.levelTextSize', check: (v) => typeof v === 'number' && v > 4 && v <= 60, describe: 'a number above 4 and at most 60' },
   { path: 'menu.levelNoteSize', check: (v) => typeof v === 'number' && v > 4 && v <= 60, describe: 'a number above 4 and at most 60' },
+  { path: 'menu.levelMinWidthRatio', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 1, describe: 'a fraction of the menu width between 0.05 and 1' },
   { path: 'menu.levelMaxWidthRatio', check: (v) => typeof v === 'number' && v > 0.05 && v <= 1, describe: 'a fraction above 0.05 and at most 1' },
   ...[
     'typeSelectedFill',
@@ -2005,6 +2008,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 

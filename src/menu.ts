@@ -236,12 +236,30 @@ export class MainMenu {
      */
     const levelH = cfg.levelRowHeight * s;
     const levelTop = this.subtitle.y + cfg.levelRowTopGap * s;
-    // Each level gets an equal share of a row that is at most this wide -- so two levels do not become two enormous
-    // bars on a desktop window, and five still fit across a phone.
-    const levelW = Math.min(w, Math.max(1, this.levels.length) * w * cfg.levelMaxWidthRatio);
-    const levelSlot = levelW / Math.max(1, this.levels.length);
-    const levelLeft = cx - levelW / 2;
-    this.levelRects = this.levels.map((_, i) => ({ x: levelLeft + i * levelSlot, y: levelTop, w: levelSlot, h: levelH }));
+    /**
+     * The level pills WRAP, and that is a fix rather than a nicety.
+     *
+     * They used to be one row of equal shares: with three levels that reads fine, and with six -- one per level the
+     * game now has -- every pill became a third of its own name's width and the names drew on top of each other. The
+     * row is a CHOICE, so the labels have to be readable; a pill nobody can read is not a choice.
+     *
+     * So: as many per row as fit at `levelMinWidthRatio` of the menu, then the next row below, each row centred. The
+     * bottom of the stack does not move because it is anchored to the buttons -- the grid grows DOWNWARD from the
+     * subtitle, which is the direction the rest of the menu's headings already read.
+     */
+    const perRow = Math.max(1, Math.min(this.levels.length, Math.floor(1 / Math.max(0.05, cfg.levelMinWidthRatio))));
+    const rows = Math.max(1, Math.ceil(this.levels.length / perRow));
+    const rowStep = levelH + cfg.levelRowGap * s;
+    // One row's worth of pills is at most this wide, so two levels on a desktop do not become two enormous bars.
+    const maxRowW = Math.min(w, perRow * w * cfg.levelMaxWidthRatio);
+    this.levelRects = this.levels.map((_, i) => {
+      const row = Math.floor(i / perRow);
+      const inRow = Math.min(perRow, this.levels.length - row * perRow);
+      const rowW = Math.min(maxRowW, inRow * w * cfg.levelMaxWidthRatio);
+      const slot = rowW / inRow;
+      const col = i - row * perRow;
+      return { x: cx - rowW / 2 + col * slot, y: levelTop + row * rowStep, w: slot, h: levelH };
+    });
     this.placeLevelLabels();
 
     this.levelLine.scale.set(s);
@@ -249,7 +267,8 @@ export class MainMenu {
     this.levelLine.text = this.levelNote;
     this.levelLine.style.fill = this.levelNoteHighlight ? cfg.levelUnlockColour : cfg.levelNoteColour;
     this.levelLine.x = cx;
-    this.levelLine.y = levelTop + levelH + cfg.levelRowGap * s;
+    // One gap below the LAST row of pills, whatever the grid's shape turned out to be.
+    this.levelLine.y = levelTop + (rows - 1) * rowStep + levelH + cfg.levelRowGap * s;
 
     this.tagline.style.fontSize = cfg.taglineSize;
     this.tagline.scale.set(s);
@@ -656,3 +675,5 @@ function mk(text: string, colour: number, size: number): Text {
   label.resolution = 2;
   return label;
 }
+
+

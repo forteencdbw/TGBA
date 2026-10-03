@@ -1574,6 +1574,10 @@
     "levelNoteSize": 11,
     // 一格关卡能占的最大宽度比例（关卡多了会平分整行，但不能挤成一条）。
     "levelMaxWidthRatio": 0.3,
+
+    // 每颗关卡药丸至少占菜单宽度的这个比例。**它决定一行放几颗**：0.3 → 一行 3 颗（6 关就是两行）。
+    // 调小 = 一行塞更多（名字更挤），调大 = 更早换行。
+    "levelMinWidthRatio": 0.3,
     "levelSelectedFill": 0x2f6f8f,
     "levelSelectedStroke": 0xd8fbff,
     "levelSelectedTextColour": 0xeafcff,
@@ -2089,6 +2093,7 @@
     "entryDepth": 0.72
   }
 }
+
 
 
 
