@@ -180,8 +180,6 @@ export interface Mechanisms {
    * different places would be a config that can put a label off the lane.
    */
   hud: {
-    /** How far the level's signpost labels sit from the lane's left edge, in design pixels. */
-    landmarkInset: number;
     /** The boss health bar across the top, shown only while a boss is alive. */
     bossBar: {
       y: number;
@@ -1109,7 +1107,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hud.score.size', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
   { path: 'hud.score.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hud.score.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  { path: 'hud.landmarkInset', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
   { path: 'hud.bossBar.y', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
   { path: 'hud.bossBar.widthRatio', check: (v) => typeof v === 'number' && v > 0.1 && v <= 1, describe: 'a fraction of the canvas width above 0.1 and at most 1' },
   { path: 'hud.bossBar.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },
@@ -1842,6 +1839,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 

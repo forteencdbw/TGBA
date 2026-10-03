@@ -1,5 +1,5 @@
 import { Application, Graphics } from 'pixi.js';
-import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest, type Landmark } from './background';
+import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, type EntrySide, type Level, type LevelEntry } from './levels';
 import { Progression } from './progress';
@@ -40,7 +40,6 @@ import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius, drain
  */
 // The HUD's signposts come from the level, so a new level states its own pacing instead of
 // inheriting another level's depths. See `src/levels.ts`.
-const LANDMARKS: readonly Landmark[] = LEVEL.landmarks ?? [];
 
 /** The three ways a bubble can be born (design round 5). Effects land in D4; here it is flavour. */
 const SEEDS = ['鱼屁泡', '汽水泡', '深海淤泥泡'] as const;
@@ -83,7 +82,7 @@ class Game {
   private readonly input = new Input();
   private readonly camera = new Camera();
   private readonly scene = new WorldLayer();
-  private readonly hud = new Hud(LANDMARKS);
+  private readonly hud = new Hud();
   private readonly touch = new TouchControls(this.input);
   private readonly finishBanner = makeLabel('击败 BOSS  ·  通关', 0xeaf9ff, mech.hud.resultsCard.size);
   /** The gear button and the pause panel it opens. */
@@ -1746,6 +1745,26 @@ class Game {
     // CJK lines have few spaces to break at, so a break has to be allowed inside a run of characters.
     this.finishBanner.style.breakWords = true;
     this.finishBanner.style.wordWrapWidth = (screenW * mech.hud.resultsCard.widthRatio) / viewport.scale;
+
+    /**
+     * The run banner is CENTRED and wrapped.
+     *
+     * It was never positioned at all: an anchor of 0.5 with no x or y puts it at the canvas origin, so half of every
+     * message hung off the left edge of the screen. The owner's screenshot of a clipped line is what that looks like --
+     * the banner has always been drawn there, and it took a run with a lot of banners for it to be obvious.
+     *
+     * Just under the stage line, not floating over the canvas: these are messages ABOUT the run (an event announced,
+     * an upgrade taken), and the state they explain is the HUD block directly above them.
+     */
+    const bannerScale = designScale(screenW, screenH);
+    this.runBanner.scale.set(bannerScale);
+    this.runBanner.x = screenW / 2;
+    // Just under the stage line, inside the HUD block rather than floating over the debug readout below it.
+    this.runBanner.y = 56 * bannerScale;
+    this.runBanner.style.align = 'center';
+    this.runBanner.style.wordWrap = true;
+    this.runBanner.style.breakWords = true;
+    this.runBanner.style.wordWrapWidth = (screenW * 0.92) / bannerScale;
 
     // The flash covers the canvas in SCREEN space, so it must be rebuilt whenever the canvas changes.
     this.flash.clear();
@@ -5101,6 +5120,11 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
 
 
 

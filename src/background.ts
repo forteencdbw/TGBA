@@ -386,7 +386,6 @@ import { buildLabel } from './version';
 export class Hud {
   readonly root = new Container();
 
-  private readonly headline: Text;
   private readonly subline: Text;
   /** The second resource's readout, for a bubble type that has one. Hidden otherwise. */
   private readonly resourceLabel: Text;
@@ -414,7 +413,6 @@ export class Hud {
   private shownBossFraction = -1;
   /** What the label currently shows, so a per-frame update does not rebuild a string that has not changed. */
   private shownScore = -1;
-  private readonly landmarkLabels: Text[] = [];
   /**
    * The HUD's own scale, set by `layout`.
    *
@@ -436,10 +434,7 @@ export class Hud {
   private talentLabel = '';
   private skillLabel = '';
 
-  constructor(private readonly landmarks: readonly Landmark[]) {
-    this.headline = makeLabel('500', 0xeaf9ff, 40);
-    this.headline.anchor.set(0.5, 0);
-    this.headline.y = 22;
+  constructor() {
 
     this.subline = makeLabel('', 0x7fc4e8, 11);
     this.subline.anchor.set(0.5, 0);
@@ -479,7 +474,6 @@ export class Hud {
 
     this.root.addChild(
       this.resourceGauge,
-      this.headline,
       this.subline,
       this.resourceLabel,
       this.scoreLabel,
@@ -488,12 +482,15 @@ export class Hud {
       this.debug,
     );
 
-    for (const mark of landmarks) {
-      const label = makeLabel(mark.label, 0xffd479, 11);
-      label.anchor.set(1, 0.5);
-      this.landmarkLabels.push(label);
-      this.root.addChild(label);
-    }
+    /**
+     * The level's signpost LABELS are gone.
+     *
+     * They were three small yellow words pinned down the left edge (鱼群 / 气泡潮 / 爆发), naming sections of the level
+     * the player is in the middle of. Two reasons they went: the level already ANNOUNCES each of them with a banner at
+     * the moment it happens, which is where the player is looking; and a permanent list of section names down the edge
+     * reads as a menu, not as a view of the water. `landmarks` itself is still level data -- it is what fires those
+     * announcements.
+     */
   }
 
   layout(viewport: Viewport): void {
@@ -561,30 +558,8 @@ export class Hud {
     this.bossName.x = viewport.width / 2;
     this.bossName.y = mech.hud.bossBar.y * s - mech.hud.bossBar.nameOffset * s;
 
-    /**
-     * The level's signposts, anchored to the LANE's left edge.
-     *
-     * They used to hang off the progress bar, which is gone. They still read INWARD from the edge (left-anchored, so
-     * the text grows into the lane) because that is the only way the whole label stays on screen at a small width.
-     */
-    const landmarkX = viewport.left + mech.hud.landmarkInset * s;
 
-    for (const [i, label] of this.landmarkLabels.entries()) {
-      const mark = this.landmarks[i];
-      if (!mark) continue;
-      const t = mark.depth / DEPTH_TOTAL;
-      label.scale.set(s);
-      /**
-       * The labels always read INWARD from the bar, so moving the gauge does not push them off the lane.
-       *
-       * Anchored at the bar's inner edge and growing away from it: to the left of a right-hand bar, to the right of a
-       * left-hand one. The anchor has to flip with the side, or a left-hand gauge would have its labels hanging out of
-       * the lane where nobody could see them.
-       */
-      label.anchor.set(0, 0.5);
-      label.x = landmarkX;
-      label.y = 110 * s + (1 - t) * (viewport.height - 156 * s);
-    }
+
   }
 
   /** Which birth type to show under the headline. */
@@ -677,15 +652,6 @@ export class Hud {
     this.skillLabel = name ? `${name} ×${uses}` : '';
   }
 
-  /**
-   * The headline number, exactly as the player reads it.
-   *
-   * Exposed because a bug report in terms of "it says 130" can only be checked against the string the
-   * HUD actually shows, not against a re-derivation that might disagree with it.
-   */
-  get headlineText(): string {
-    return this.headline.text;
-  }
 
   /**
    * The state line under the headline, exactly as the player reads it.
@@ -920,6 +886,11 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+
+
+
+
+
 
 
 
