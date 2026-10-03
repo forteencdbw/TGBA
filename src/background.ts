@@ -486,22 +486,43 @@ export class Hud {
     this.resourceLabel.y = this.subline.y + 16 * s;
 
     this.debug.scale.set(s * 0.9);
-    // Pinned to the column edge, but never so far left that it runs off a narrow desktop window.
-    this.debug.x = Math.max(6, viewport.left + 3 * s);
+    /**
+     * Pinned to the column edge, but never so far left that it runs off a narrow desktop window.
+     *
+     * Shifted clear of the gauge when the gauge is on the left: the readout is nine lines of small text starting at
+     * the top of the lane, and the bar would run straight through its first characters.
+     */
+    const gaugeOnLeft = mech.hud.gaugeSide === 'left';
+    this.debug.x = Math.max(6, viewport.left + (gaugeOnLeft ? mech.hud.gaugeEdgeInset + mech.hud.gaugeWidth + 4 : 3) * s);
     this.debug.y = 132 * s;
 
     const barTop = 110 * s;
     const barBottom = viewport.height - 46 * s;
-    const barW = 9 * s;
-    // Inside the column's right edge, so the gauge belongs to the lane rather than the letterbox.
-    this.barGeometry = { barX: right - 14 * s - barW, barTop, barBottom, barW };
+    const barW = mech.hud.gaugeWidth * s;
+    /**
+     * The gauge belongs to the LANE rather than to the letterbox, so it sits inside the lane's edge -- whichever edge
+     * the config names. Left is the current answer because the whole right edge is the button column now: two pieces
+     * of screen furniture competing for the same strip is how a thumb ends up grabbing the wrong thing.
+     */
+    const barX = gaugeOnLeft
+      ? viewport.left + mech.hud.gaugeEdgeInset * s
+      : right - mech.hud.gaugeEdgeInset * s - barW;
+    this.barGeometry = { barX, barTop, barBottom, barW };
 
     for (const [i, label] of this.landmarkLabels.entries()) {
       const mark = this.landmarks[i];
       if (!mark) continue;
       const t = mark.depth / DEPTH_TOTAL;
       label.scale.set(s);
-      label.x = this.barGeometry.barX - 4 * s;
+      /**
+       * The labels always read INWARD from the bar, so moving the gauge does not push them off the lane.
+       *
+       * Anchored at the bar's inner edge and growing away from it: to the left of a right-hand bar, to the right of a
+       * left-hand one. The anchor has to flip with the side, or a left-hand gauge would have its labels hanging out of
+       * the lane where nobody could see them.
+       */
+      label.anchor.set(gaugeOnLeft ? 0 : 1, 0.5);
+      label.x = gaugeOnLeft ? barX + barW + 4 * s : barX - 4 * s;
       label.y = barBottom - t * (barBottom - barTop);
     }
   }

@@ -130,6 +130,35 @@ export interface StageConfig {
 
 export interface Mechanisms {
   /**
+   * Where the depth gauge sits, and how far in from the edge.
+   *
+   * A SIDE rather than two sets of coordinates, because the gauge and its landmark labels are one object: the labels
+   * are anchored to the bar's inner edge, so moving the bar has to move them, and a config that could put the two in
+   * different places would be a config that can put a label off the lane.
+   */
+  hud: {
+    gaugeSide: 'left' | 'right';
+    /** Design pixels from that edge of the lane. */
+    gaugeEdgeInset: number;
+    gaugeWidth: number;
+  };
+  /**
+   * The touch buttons: one vertical column on the right edge of the lane.
+   *
+   * All of them in a column rather than split between the corners, which frees the whole left and middle of the
+   * screen for the steering drag -- a finger never has to dodge a button, and the buttons never sit under the bubble.
+   * Every value is design pixels (scaled by `designScale`) except the cap, which is a fraction of the lane.
+   */
+  touch: {
+    buttonRadius: number;
+    /** Ceiling on the radius as a fraction of the lane width, for lanes too narrow for the design size. */
+    buttonMaxRadiusRatio: number;
+    rightInset: number;
+    bottomInset: number;
+    /** Edge-to-edge gap between two buttons in the column. */
+    buttonGap: number;
+  };
+  /**
    * The two font stacks every label in the game is built from.
    *
    * `fontFamily` must name a font that HAS the Chinese glyphs first, and that is not a style preference: Pixi
@@ -740,6 +769,14 @@ const CODEX_COLOURS = [
 export const OBSTACLE_KINDS = ['crate', 'coral', 'wall', 'net'] as const;
 
 const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string }[] = [
+  { path: 'hud.gaugeSide', check: (v) => v === 'left' || v === 'right', describe: "'left' or 'right'" },
+  { path: 'hud.gaugeEdgeInset', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
+  { path: 'hud.gaugeWidth', check: (v) => typeof v === 'number' && v >= 2 && v <= 40, describe: 'design pixels between 2 and 40' },
+  { path: 'touch.buttonRadius', check: (v) => typeof v === 'number' && v >= 16 && v <= 80, describe: 'design pixels between 16 and 80' },
+  { path: 'touch.buttonMaxRadiusRatio', check: (v) => typeof v === 'number' && v > 0.03 && v < 0.45, describe: 'a fraction of the lane width, above 0.03 and below 0.45' },
+  { path: 'touch.rightInset', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
+  { path: 'touch.bottomInset', check: (v) => typeof v === 'number' && v >= 0 && v <= 120, describe: 'design pixels between 0 and 120' },
+  { path: 'touch.buttonGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'design pixels between 0 and 60' },
   {
     path: 'text.fontFamily',
     check: (v) => typeof v === 'string' && v.trim().length > 0,
@@ -1414,5 +1451,6 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 

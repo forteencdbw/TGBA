@@ -124,7 +124,7 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
     id: 'devour',
     name: '吞噬气泡',
     tagline: '吃掉一切，越大越强 —— 代价是越来越难躲',
-    hint: 'WASD / 方向键移动   ·   吸附：按住右下   ·   喷吐：K   ·   消化：按住 L',
+    hint: 'WASD / 方向键移动   ·   右侧按钮（下→上）：技能/吸附 · 喷吐 · 消化',
     controls: ['skill', 'suction', 'spit', 'compress'],
     look: 'growthStage',
     // The original design: the reversal IS the mechanic, and both exits are one button away.
@@ -143,7 +143,7 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
     id: 'angry',
     name: '暴躁气泡',
     tagline: '挨打积怒，把怒气撞出去 —— 怒气不看体积，一次爆干净',
-    hint: 'WASD / 方向键移动   ·   蓄力：按住右下，松手冲撞   ·   爆破：K / 左下   ·   技能：轻点右下',
+    hint: 'WASD / 方向键移动   ·   右侧按钮（下→上）：技能 · 蓄力冲撞（按住再松手）· 爆破',
     /**
      * No stomach, no suction field, and neither of the stomach's verbs.
      *

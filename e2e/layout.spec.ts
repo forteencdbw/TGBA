@@ -61,11 +61,18 @@ test.describe('layout holds at any canvas size', () => {
      *
      * This is the shape of the real bug: the skill button was placed at `canvasWidth - 76 * scale`, which on a
      * 2560px window is 2485px -- past the right edge, so the player simply did not have a skill button.
+     *
+     * The SHORT window is here for the other half of the same mistake, found later: the button sizes were derived
+     * from `viewport.scale`, and a 915x412 landscape phone resolves that to 2.49 px per metre, which made the
+     * buttons 95px across and pushed the column off the top of the screen (the compress button landed at y = -147).
+     * A size that grows with the world zoom is wrong on tall windows AND on wide ones.
      */
     for (const size of [
       { width: 412, height: 915 },
       { width: 2560, height: 1440 },
       { width: 900, height: 700 },
+      { width: 915, height: 412 },
+      { width: 360, height: 640 },
     ]) {
       await page.setViewportSize(size);
       // Give the resize handler and one layout pass a moment.

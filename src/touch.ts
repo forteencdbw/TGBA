@@ -2,6 +2,7 @@ import { Container, Graphics } from 'pixi.js';
 import { mech } from './config';
 import type { Input } from './input';
 import type { ControlId } from './bubbleTypes';
+import { designScale } from './viewport';
 
 /** The field's accent colour, read from the config each frame so a live edit is visible immediately. */
 function suctionFieldColor(): number {
@@ -466,8 +467,16 @@ export class TouchControls {
    *   The controls are laid out against the LANE, not the canvas. On a wide desktop window the lane is a centred
    *   portrait column with water either side, so placing a control at `canvasWidth - 76 * scale` put it off the
    *   screen entirely -- a control the player simply does not have.
+   *
+   * The size comes from `designScale` of the CANVAS, derived here rather than passed in.
+   *
+   * It used to be handed `viewport.scale`, which is how many pixels a WORLD METRE occupies -- and on a short window
+   * that number is large for the opposite reason a wide one is: a 915x412 landscape phone gave 2.49 px per metre, so
+   * the buttons came out at 95px radius and the column ran off the top of the screen (the compress button sat at
+   * y = -147). The HUD had the same bug and the same fix. Deriving it here means there is no parameter to pass wrong.
    */
-  layout(laneLeft: number, laneWidth: number, canvasWidth: number, canvasHeight: number, scale: number): void {
+  layout(laneLeft: number, laneWidth: number, canvasWidth: number, canvasHeight: number): void {
+    const scale = designScale(canvasWidth, canvasHeight);
     this.scale = scale;
     /**
      * Remembered for the drag, which is the one control with no geometry of its own.
@@ -483,51 +492,65 @@ export class TouchControls {
     this.surface.rect(0, 0, canvasWidth, canvasHeight).fill({ color: 0xffffff, alpha: 0.001 });
 
     /**
-     * The skill button sits low and to the RIGHT within the lane, where a thumb rests without covering the
-     * bubble, and clear of the middle so a drag never starts on it.
-     */
-    const buttonRadius = Math.min(38 * scale, laneWidth * 0.13);
-    this.skillButton = {
-      x: laneLeft + laneWidth - buttonRadius - 12 * scale,
-      y: canvasHeight - buttonRadius - 22 * scale,
-      radius: buttonRadius,
-    };
-    // The spit button mirrors it on the LEFT, at the same height, so the two are one gesture apart.
-    this.spitButton = {
-      x: laneLeft + buttonRadius + 12 * scale,
-      y: canvasHeight - buttonRadius - 22 * scale,
-      radius: buttonRadius,
-    };
-    /**
-     * The compress button stacks above the spit button.
+     * EVERY action button, in one vertical column on the right edge of the lane.
      *
-     * `compressScale` shrinks it, so the left column reads as one reflex action (spit) with a second, more
-     * deliberate one above it (compress). The gap is proportional to the button rather than fixed, so the two
-     * cannot overlap on a narrow lane.
+     * ---------------------------------------------------------------------------------------------
+     * WHY A COLUMN RATHER THAN THE CORNERS
+     * ---------------------------------------------------------------------------------------------
+     * Movement is a drag from anywhere (see the class comment), so the left and the middle of the screen are the
+     * steering area. Putting every button on ONE edge leaves that area whole: a thumb never has to dodge a control to
+     * grab the water, the buttons never sit under the bubble, and their positions never change between runs of the
+     * same type -- which is what makes them findable without looking.
+     *
+     * The two-corner layout this replaces had the same buttons, but it spent both bottom corners on them and left the
+     * player steering in the gap between.
+     *
+     * ---------------------------------------------------------------------------------------------
+     * THE ORDER IS FIXED, AND IT IS BOTTOM-UP BY HOW OFTEN A VERB IS WANTED
+     * ---------------------------------------------------------------------------------------------
+     * Skill (which is also the type's HOLD: the suction field or the charge wind-up) is always at the bottom, where a
+     * thumb rests; then spit or burst, the second reflex; then compress, the considered one, on top. A type that does
+     * not have a control simply leaves its slot empty rather than shifting the others, so `spit` is in the same place
+     * in every run that has one -- muscle memory survives a bubble swap.
      */
-    const compressRadius = buttonRadius * COMPRESS_BUTTON_SCALE;
-    this.compressButton = {
-      x: this.spitButton.x,
-      y: this.spitButton.y - buttonRadius - compressRadius - 10 * scale,
-      radius: compressRadius,
+    const cfg = mech.touch;
+    const buttonRadius = Math.min(cfg.buttonRadius * scale, laneWidth * cfg.buttonMaxRadiusRatio);
+    const columnX = laneLeft + laneWidth - cfg.rightInset * scale - buttonRadius;
+    const gap = cfg.buttonGap * scale;
+    let cursorY = canvasHeight - cfg.bottomInset * scale;
+
+    /** Place one button on the column and return its rect, advancing the cursor upward. */
+    const stack = (radius: number): { x: number; y: number; radius: number } => {
+      // Centred on the column's axis, so a smaller button (compress) reads as part of the same column rather than as
+      // one shoved against the edge.
+      const button = { x: columnX, y: cursorY - radius, radius };
+      cursorY = button.y - radius - gap;
+      return button;
     };
+
+    this.skillButton = stack(buttonRadius);
     /**
-     * The charge button takes the RIGHT slot, where the devour bubble's suction button sits.
+     * The charge WIND-UP shares the skill's button rather than getting its own.
      *
-     * Same place and same size, deliberately: a player who has learned "my deliberate verb is under my left thumb"
-     * should not have to relearn it because they picked the other bubble. What changes is the shape inside it --
-     * outward spikes rather than inward ticks -- which says "this one pushes" instead of "this one pulls".
-     */
-    /**
-     * The charge WIND-UP shares this button rather than getting its own.
-     *
-     * The devour bubble already puts two meanings on this control -- tap for the skill, hold for the field -- and
-     * the volatile bubble does the same with the charge. Two separate buttons in one corner would be two thumb
-     * targets a few pixels apart on a phone, for two verbs that are never wanted at once.
+     * The devour bubble already puts two meanings on this control -- tap for the skill, hold for the field -- and the
+     * volatile bubble does the same with the charge. Two separate buttons would be two thumb targets a few pixels
+     * apart for two verbs that are never wanted at once.
      */
     this.chargeButton = { ...this.skillButton };
-    // The burst button mirrors the charge: the spit slot for the type that has no spit.
+
+    // The spit and the burst share a slot, because no type has both: one is the devour bubble's second reflex and the
+    // other is the volatile bubble's.
+    this.spitButton = stack(buttonRadius);
     this.burstButton = { ...this.spitButton };
+
+    /**
+     * The compress button on top, and smaller.
+     *
+     * `COMPRESS_BUTTON_SCALE` says "this one is the considered action": spitting is the reflex and digesting is a
+     * decision, so the sizes tell a thumb which is which before it reads anything. The gap is proportional to the
+     * buttons rather than fixed, so the column cannot fold onto itself on a narrow lane.
+     */
+    this.compressButton = stack(buttonRadius * COMPRESS_BUTTON_SCALE);
     this.update();
   }
 

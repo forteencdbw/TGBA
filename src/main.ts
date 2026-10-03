@@ -1552,7 +1552,7 @@ class Game {
     this.scene.layout(viewport);
     this.hud.layout(viewport);
     this.hud.setWorldMetrics(viewport.laneWidthMeters, viewport.visibleDepthMeters);
-    this.touch.layout(viewport.left, viewport.laneWidthPx, screenW, screenH, viewport.scale);
+    this.touch.layout(viewport.left, viewport.laneWidthPx, screenW, screenH);
     this.settings.layout(viewport);
     this.menu.layout(viewport);
     this.codex.layout(viewport);
@@ -2871,7 +2871,6 @@ class Game {
       this.camera.viewport.laneWidthPx,
       this.app.renderer.screen.width,
       this.app.renderer.screen.height,
-      this.camera.viewport.scale,
     );
   }
 
@@ -4567,6 +4566,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 
