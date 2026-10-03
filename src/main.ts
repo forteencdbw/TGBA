@@ -25,6 +25,7 @@ import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
+import { RunSummary } from './summary';
 import { APP_VERSION, buildLabel, GIT_DIRTY, GIT_HASH } from './version';
 import { demote, initialStageState, recordAbsorb, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
 import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
@@ -52,7 +53,7 @@ const INTRO_SECONDS = 1.6;
  * Longer than the death burst (1.5s). Death is a mistake and should get out of the way; reaching the
  * surface is the thing the whole run was for, so it gets a moment to land.
  */
-const SURFACE_SECONDS = 2.6;
+// (The win no longer uses a held burst: `defeatBoss` holds the bubble while the flourish plays, then flies it out.)
 
 /** Slow-motion pop after the bubble is destroyed, before the next run starts. */
 const BURST_SECONDS = 1.5;
@@ -96,6 +97,10 @@ class Game {
    * every effect.
    */
   private readonly music = new Music();
+  /** The end-of-run panel, shown once the last level's bubble has left the water. */
+  private readonly summary = new RunSummary();
+  /** Seconds of play across the whole RUN, which is what the summary reports -- lapsed is per level. */
+  private elapsedTotal = 0;
   /** The main menu, shown before a run and after exiting to it. */
   private readonly menu = new MainMenu();
   /**
@@ -217,7 +222,21 @@ class Game {
    *   paused   the settings panel is open; the whole simulation is frozen
    *   codex    the bestiary page is open, reached from the menu
    */
-  private phase: 'menu' | 'intro' | 'playing' | 'burst' | 'paused' | 'codex' = 'menu';
+  /**
+   * cleared and scend are the two halves of finishing a level: hold still while the flourish plays, then fly up
+   * and off the top of the screen. urst is still a DEATH -- the pop and the white-out -- and that difference is the
+   * point: winning used to look exactly like losing.
+   */
+  private phase:
+    | 'menu'
+    | 'intro'
+    | 'playing'
+    | 'burst'
+    | 'cleared'
+    | 'ascend'
+    | 'summary'
+    | 'paused'
+    | 'codex' = 'menu';
   /**
    * Which bubble the current run is: chosen on the main menu, fixed for the run.
    *
@@ -362,7 +381,7 @@ class Game {
   }
   private phaseTimer = INTRO_SECONDS;
   /** The phase to restore when the settings panel closes. */
-  private phaseBeforePause: 'intro' | 'playing' | 'burst' = 'playing';
+  private phaseBeforePause: 'intro' | 'playing' | 'burst' | 'cleared' | 'ascend' | 'summary' = 'playing';
   /**
    * The bubble's growth stage: which speed tier it is in, and how far into the next one.
    *
@@ -411,7 +430,8 @@ class Game {
      * Order matters here rather than being incidental: the settings panel has to cover the HUD and the water,
      * and the menu has to cover the settings gear while it is showing.
      */
-    this.app.stage.addChild(this.settings.root, this.menu.root, this.codex.root);
+    this.app.stage.addChild(this.settings.root, this.menu.root, this.codex.root, this.summary.root);
+    this.summary.onMenu = () => this.exitToMenu();
     this.settings.setVolume(audio.getVolume());
     this.settings.setOpen(false);
     // The game opens on the menu, so the gear must not be showing behind it.
@@ -576,6 +596,7 @@ class Game {
       this.codex.handlePointerDown(x, y);
       return;
     }
+    if (this.summary.handlePointerDown(x, y)) return;
     if (this.settings.handlePointerDown(pointerId, x, y)) return;
     if (this.phase === 'paused') return;
     this.touch.onPointerDown(pointerId, x, y);
@@ -608,6 +629,8 @@ class Game {
     }
     // The codex fires on press, so a release has nothing left to do -- but it must still not reach the water.
     if (this.phase === 'codex') return;
+    // The summary panel owns the screen while it is up: its one button is the only thing a release can mean.
+    if (this.summary.handlePointerUp(at.x, at.y)) return;
     if (this.settings.handlePointerUp(pointerId, at.x, at.y)) return;
     if (this.phase === 'paused') return;
     this.touch.onPointerUp(pointerId);
@@ -669,6 +692,11 @@ class Game {
   /** Test hook: the run banner's current text, so a probe can read the feedback the player got. */
   get bannerTextRef(): string {
     return this.runBanner.text;
+  }
+
+  /** Test hook: the end-of-run summary panel. */
+  get summaryRef(): RunSummary {
+    return this.summary;
   }
 
   /** Test hook: the level music, so a probe can read whether a track is running and which. */
@@ -782,6 +810,8 @@ class Game {
    * instantly would throw the player into a new level mid-flash with the victory banner still on screen.
    */
   private pendingLevel: string | null = null;
+  /** Metres the bubble has risen since the level was cleared, for the departure sequence. */
+  private ascendMetres = 0;
   private runComplete = false;
   /**
    * How many levels this RUN has cleared, which is what the progress chart draws.
@@ -1800,6 +1830,7 @@ class Game {
     this.finishBanner.scale.set(viewport.scale);
     this.finishBanner.x = screenW / 2;
     this.finishBanner.y = screenH * mech.hud.resultsCard.yRatio;
+    this.summary.layout(screenW, screenH);
     this.finishBanner.style.wordWrap = true;
     // CJK lines have few spaces to break at, so a break has to be allowed inside a run of characters.
     this.finishBanner.style.breakWords = true;
@@ -1964,6 +1995,44 @@ class Game {
         if (this.phaseTimer <= 0) this.phase = 'playing';
         return;
       }
+      case 'cleared': {
+        /**
+         * Holding still while the flourish plays.
+         *
+         * Nothing happens here on purpose: no input (this is not `playing`), no damage, and the bubble does not drift --
+         * the current keeps moving the world, which is enough to show that time is passing. The player is meant to have
+         * a moment to notice they won.
+         */
+        this.phaseTimer -= dt;
+        if (this.phaseTimer > 0) return;
+        this.phase = 'ascend';
+        this.ascendMetres = 0;
+        return;
+      }
+      case 'ascend': {
+        const band = this.camera.viewport.visibleDepthMeters;
+        /**
+         * Off the top of the screen, and then out of the level.
+         *
+         * Driven by distance travelled rather than by time, so the departure looks the same on any canvas: it rises
+         * `ascendScreensPerSecond` screens' worth per second until it has cleared the top of the view by its own
+         * radius, then the level is handed over.
+         */
+        /**
+         * The rise is driven through the player's SCREEN fraction, not through its world y.
+         *
+         * `player.y` is derived from the camera every frame -- the bubble is held at a screen position and the world
+         * moves under it -- so writing to `y` was overwritten before it could be drawn, and the departure was invisible
+         * (measured: 11m of a 600m climb). `screenY` is the thing the frame actually reads, so that is what goes up.
+         * 1.0 is the top edge; the sequence ends once it is a fifth of a screen past it.
+         */
+        this.player.screenY = Math.min(1.4, this.player.screenY + (mech.audio.ascendScreensPerSecond * dt));
+        this.ascendMetres += band * mech.audio.ascendScreensPerSecond * dt;
+        if (this.player.screenY < 1.15) return;
+        this.finishLevelAndContinue();
+        return;
+      }
+      case 'summary':
       case 'burst': {
         // Slow motion: the pop plays out before the run resets, so death has some weight.
         this.phaseTimer -= dt;
@@ -1975,6 +2044,7 @@ class Game {
          * level again (a death, or a restart asked for from the settings panel), or -- on the final level -- the run's
          * own end, which is what the results card shows.
          */
+        if (this.phase === 'summary') return;
         if (this.pendingLevel) {
           const nextId = this.pendingLevel;
           this.pendingLevel = null;
@@ -1985,6 +2055,7 @@ class Game {
         return;
       }
       case 'playing':
+        this.elapsedTotal += dt;
         break;
     }
 
@@ -3161,11 +3232,20 @@ class Game {
     // The enemies' rounds go with them: a new bubble that starts inside a wall of the last run's fire would be a
     // death the player cannot connect to anything they did.
     this.enemyBullets.reset();
-    // And the gun goes back to one row and the first rate tier: both upgrades belong to the run that earned them.
-    this.gunStreams = 1;
-    this.rateTier = 1;
+    /**
+     * The gun's rows and rate tier are the RUN's, like the score.
+     *
+     * They used to reset on every `startRun`, which was right while a run was one level. Walking into the next level is
+     * the same run continuing, so the upgrades the player earned come with them -- otherwise clearing a level would
+     * punish the player by taking away the thing that let them clear it. A death still starts from nothing.
+     */
+    if (!carryScore) {
+      this.gunStreams = 1;
+      this.rateTier = 1;
+    }
     // The boss bar goes with the run it belonged to. Without this it hangs there through the next birth animation,
     // showing the previous level's boss at whatever health it died at -- a bar for a fight that is not happening.
+    this.summary.hide();
     this.hud.setBoss(null);
     /**
      * The level's music.
@@ -3548,11 +3628,19 @@ class Game {
    * surface; it was about having finished it. What changed is what finishes it.
    */
   private defeatBoss(): void {
-    this.phase = 'burst';
-    // Longer than a death: winning is a reward, not a failure, and the design asks for a beat of held breath before
-    // the pop.
-    this.phaseTimer = SURFACE_SECONDS;
-    this.surfaced = true;
+    /**
+     * WINNING NO LONGER LOOKS LIKE DYING.
+     *
+     * This used to set the same `burst` phase a death uses -- the pop, the white-out, the results card -- which meant
+     * the game's biggest moment was rendered as its worst one. Now the bubble simply HOLDS: control is off (no phase
+     * but `playing` accepts input), a flourish plays over the music, and when it finishes the bubble rises and leaves
+     * the level the way it came in.
+     *
+     * The flourish's length is read from the same numbers the synth plays, so "the music finished" and "the bubble
+     * goes" cannot disagree.
+     */
+    this.phase = 'cleared';
+    this.phaseTimer = this.music.playSting(mech.audio.clearSting.notes, mech.audio.clearSting.gapSeconds) + mech.audio.clearHoldSeconds;
     this.stats.ended++;
     // Before `recordBest`, so the best this run leaves behind includes the bonus it just earned.
     this.scorePopups.add(this.player.x * this.camera.viewport.laneWidthMeters, this.player.y, this.score.award('boss'), this.camera);
@@ -3590,14 +3678,35 @@ class Game {
      */
     const index = levelIndex(LEVEL.id);
     const next = LEVELS[index + 1];
-    if (!next) this.runBanner.text += '  ·  全部 ' + LEVELS.length + ' 关通关  ·  总分 ' + this.score.value;
-    if (next) {
-      this.pendingLevel = next.id;
-      this.levelsClearedInRun = index + 1;
-    } else {
-      // No next level: the run is over, and the ending is the one the last level has always had.
-      this.runComplete = true;
+    this.levelsClearedInRun = index + 1;
+    if (next) this.pendingLevel = next.id;
+    else this.runComplete = true;
+  }
+
+  /**
+   * The bubble has left the top of the screen: hand over to the next level, or to the end of the run.
+   *
+   * This is the ONLY place a win moves the run on, which is what makes the sequence reliable: hold, flourish, rise,
+   * leave -- and then one of two destinations, decided by whether there is a level after this one.
+   */
+  private finishLevelAndContinue(): void {
+    if (this.pendingLevel) {
+      const nextId = this.pendingLevel;
+      this.pendingLevel = null;
+      this.enterLevel(nextId, true);
+      return;
     }
+    // The last level: the run is over, and the summary is what says so.
+    this.runComplete = true;
+    this.phase = 'summary';
+    this.music.stop();
+    this.summary.show({
+      score: this.score.value,
+      levels: this.levelsClearedInRun,
+      total: LEVELS.length,
+      seconds: this.elapsedTotal,
+      best: this.bestScore,
+    });
   }
 
   /**
@@ -5432,6 +5541,15 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
+
+
+
+
 
 
 

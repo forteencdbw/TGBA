@@ -101,6 +101,22 @@ export class Music {
     if (this.playing) this.fadeTo(this.volume);
   }
 
+  /**
+   * Play a one-off flourish over the top of the music, and report how long it lasts.
+   *
+   * Returned rather than assumed: the level-cleared sequence waits for the flourish to FINISH before the bubble flies
+   * off, so the two must agree about its length, and they agree by the caller reading the same number the synth does.
+   */
+  playSting(notes: number[], gapSeconds: number): number {
+    const ctx = this.ctx;
+    if (!ctx || !this.filter || notes.length === 0) return 0;
+    const root = this.track?.rootHz ?? 110;
+    notes.forEach((semitone, i) => {
+      this.blipAt(root * Math.pow(2, semitone / 12), gapSeconds * 1.8, 0.2, 'triangle', 0, ctx.currentTime + i * gapSeconds);
+    });
+    return notes.length * gapSeconds;
+  }
+
   /** Stop the music, e.g. on the menu. */
   stop(): void {
     this.playing = false;
@@ -168,6 +184,11 @@ export class Music {
    * note's length is a config value: a pad that ended abruptly would click.
    */
   private blip(hz: number, seconds: number, gain: number, wave: OscillatorType, detune: number): void {
+    this.blipAt(hz, seconds, gain, wave, detune, this.ctx?.currentTime ?? 0);
+  }
+
+  /** The same note, at a chosen time, so a flourish can be scheduled as a phrase rather than fired all at once. */
+  private blipAt(hz: number, seconds: number, gain: number, wave: OscillatorType, detune: number, at: number): void {
     const ctx = this.ctx;
     if (!ctx || !this.filter || gain <= 0.0001) return;
     const osc = ctx.createOscillator();
@@ -175,7 +196,7 @@ export class Music {
     osc.frequency.value = hz;
     osc.detune.value = detune;
     const env = ctx.createGain();
-    const now = ctx.currentTime;
+    const now = Math.max(at, ctx.currentTime);
     const attack = Math.min(0.08, seconds * 0.2);
     env.gain.setValueAtTime(0, now);
     env.gain.linearRampToValueAtTime(gain, now + attack);
@@ -192,3 +213,4 @@ export class Music {
     this.bus.gain.setTargetAtTime(value, this.ctx.currentTime, 0.35);
   }
 }
+

@@ -978,7 +978,31 @@ export interface Mechanisms {
     volume: number;
     tracks: Record<string, MusicTrackConfig>;
   };
+  /** The end-of-run summary panel, shown once all levels are cleared. */
+  summary: {
+    maxWidth: number;
+    maxHeight: number;
+    scoreSize: number;
+    scoreColour: number;
+    lineSize: number;
+    lineColour: number;
+    panelColour: number;
+    panelRimColour: number;
+    scrimColour: number;
+    scrimAlpha: number;
+    buttonColour: number;
+    buttonLabel: string;
+  };
   audio: {
+    /** The level-cleared flourish: what it plays, and how long the sequence waits for it. */
+    clearSting: {
+      notes: number[];
+      gapSeconds: number;
+    };
+    /** Extra beat after the flourish before the bubble starts to rise, in seconds. */
+    clearHoldSeconds: number;
+    /** How fast the bubble flies off the top of the screen when a level is cleared, in screen heights per second. */
+    ascendScreensPerSecond: number;
     /**
      * Per-level background music: a bus volume and one synth recipe per level.
      *
@@ -1631,6 +1655,22 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: isColour,
     describe: 'a colour, either 0xrrggbb or "#rrggbb"',
   })),
+  { path: 'audio.clearSting.notes', check: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 12 && v.every((n) => typeof n === 'number' && Math.abs(n) <= 36), describe: 'a list of 1 to 12 semitone offsets from the track root' },
+  { path: 'audio.clearSting.gapSeconds', check: (v) => typeof v === 'number' && v >= 0.03 && v <= 2, describe: 'seconds between 0.03 and 2' },
+  { path: 'audio.clearHoldSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 5, describe: 'seconds between 0 and 5' },
+  { path: 'audio.ascendScreensPerSecond', check: (v) => typeof v === 'number' && v > 0.05 && v <= 6, describe: 'screen heights per second above 0.05 and at most 6' },
+  { path: 'summary.maxWidth', check: (v) => typeof v === 'number' && v >= 120 && v <= 2000, describe: 'design pixels between 120 and 2000' },
+  { path: 'summary.maxHeight', check: (v) => typeof v === 'number' && v >= 120 && v <= 2000, describe: 'design pixels between 120 and 2000' },
+  { path: 'summary.scoreSize', check: (v) => typeof v === 'number' && v >= 12 && v <= 120, describe: 'a font size between 12 and 120' },
+  { path: 'summary.scoreColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'summary.lineSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
+  { path: 'summary.lineColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'summary.panelColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'summary.panelRimColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'summary.scrimColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'summary.scrimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'summary.buttonColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'summary.buttonLabel', check: (v) => typeof v === 'string' && v.length >= 1, describe: 'a non-empty label' },
   { path: 'audio.music.volume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1' },
   {
     path: 'audio.music.tracks',
@@ -2133,6 +2173,10 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
+
+
 
 
 
