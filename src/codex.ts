@@ -134,8 +134,13 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
   },
   {
     kind: 'jelly',
-    tagline: '减速，扭动可以缩短',
-    notes: ['惩罚是关于"气泡在哪"的，所以减速画在气泡身上，不在状态栏里。', '它优先追最大的气泡——强者先被针对。'],
+    tagline: '碰到就减速 + 掉血，而且它会蓄势冲锋',
+    notes: [
+      '碰到它既**减速**又**掉血**：只有减速的话，碰到水母比碰到鱼更划算，而一只又慢又躲不开的漂浮物绝不能是这样。',
+      '惩罚是关于"气泡在哪"的，所以减速画在气泡身上，不在状态栏里。',
+      '它的冲锋从**自己当前的位置**起跳，弧线是它"从侧面扫过来"的全部来源——不再先走到某个位置再跳。',
+      '它优先追最大的气泡——强者先被针对。',
+    ],
   },
   {
     kind: 'trash',
@@ -893,6 +898,7 @@ export function iconColour(entry: CodexEntry): number {
     }
   }
 }
+
 
 
 

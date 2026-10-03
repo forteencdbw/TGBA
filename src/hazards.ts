@@ -821,7 +821,21 @@ export class HazardField {
         }
         case 'jelly': {
           if (ctx.invulnerable) break;
-          effects.push({ kind: 'jelly', slowSeconds: tuning.hazardSlowSeconds, slowFactor: tuning.hazardSlowFactor, broke: false });
+          /**
+           * A sting: it SLOWS you AND costs a hit point.
+           *
+           * The slow is what the jellyfish is for -- it is the creature that punishes being in the wrong place at the
+           * wrong time -- but on its own it made touching one strictly better than touching a fish, which is the one
+           * thing a slow, unavoidable drifter must not be. It costs blood now, and the slow is what makes the cost
+           * hurt: you are wounded AND clumsy in the second that follows.
+           */
+          effects.push({
+            kind: 'jelly',
+            damage: mech.hazards.jellyContactDamage,
+            slowSeconds: tuning.hazardSlowSeconds,
+            slowFactor: tuning.hazardSlowFactor,
+            broke: false,
+          });
           // COMEDY: being bunted squashes it.
           h.squashed = 1;
           h.y -= r * 1.5;
@@ -1222,23 +1236,12 @@ export class HazardField {
     if (h.charge) {
       const row = mech.charges.chargers[h.kind];
       // A kind that stopped being a charger mid-run (the config changed under it) simply finishes the lunge it is on.
-      const cfg = row ?? { telegraphSeconds: 0.75, travelSeconds: 0.55, cooldownSeconds: 2.2, bowRatio: 0.3, triggerMeters: 300, approach: 'dive' as const };
+      const cfg = row ?? { telegraphSeconds: 0.75, travelSeconds: 0.55, cooldownSeconds: 2.2, bowRatio: 0.3, triggerMeters: 300 };
       h.charge.elapsed += dt;
       if (h.charge.elapsed < cfg.telegraphSeconds) {
-        /**
-         * Winding up.
-         *
-         * A `dive` charger holds station (the current still carries it down with everything else). A `side` charger
-         * spends the wind-up MOVING to its flank, which is what the owner of this feature asked for and what makes
-         * the attack legible: the player watches it slide out to the side and then come across, rather than being
-         * teleported there.
-         */
-        if (cfg.approach === 'side') {
-          const slide = Math.min(1, dt / Math.max(0.05, cfg.telegraphSeconds - h.charge.elapsed + dt));
-          h.x += (h.charge.fromX - h.x) * slide * 3;
-          h.y += (h.charge.fromY - h.y) * slide * 3;
-        }
-        h.y -= base * dt * (cfg.approach === 'side' ? 0.2 : 1);
+        // Winding up: it holds station while the current carries it down with everything else. It does NOT reposition:
+        // the lunge begins wherever it happens to be standing (see the commit below for why).
+        h.y -= base * dt;
         return;
       }
       const t = Math.min(1, (h.charge.elapsed - cfg.telegraphSeconds) / Math.max(0.05, cfg.travelSeconds));
@@ -1280,25 +1283,21 @@ export class HazardField {
       const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
       if (h.chargeRest <= 0 && dist <= charger.triggerMeters) {
         /**
-         * Where the lunge STARTS, which is what separates the two approaches.
+         * The lunge starts WHERE THE CREATURE IS.
          *
-         * `dive` starts where the creature is. `side` starts at a flank: just outside the nearer lane edge, level with
-         * the player, so the path sweeps ACROSS the lane instead of down it. The body is not teleported there -- the
-         * wind-up slides it over (see the motion above) -- so the flank position is a place the player watched it go.
+         * An earlier version had the jellyfish slide out to a flank during its wind-up, so that it "came in from the
+         * side". It read as a glitch, and the owner said so: the creature visibly travelled to a spot and only then
+         * jumped, which looks like two moves rather than one attack. What makes a charge come in from the side is the
+         * CURVE -- the bow below -- not a staging position.
          *
          * The bow is away from whichever side the creature is on, so two of them on opposite sides curve apart rather
          * than tracing the same line.
          */
         const onLeft = h.x < ctx.playerX;
-        // Just outside the edge rather than well off it: the body has to stay VISIBLE at the flank, or the wind-up reads
-        // as the creature having left the game and the warning line having no author.
-        const flank = onLeft ? -ctx.laneWidth * 0.04 : ctx.laneWidth * 1.04;
-        const fromX = charger.approach === 'side' ? flank : h.x;
-        const fromY = charger.approach === 'side' ? ctx.playerY + ctx.laneWidth * 0.1 : h.y;
-        const span = Math.hypot(ctx.playerX - fromX, ctx.playerY - fromY);
+        const span = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
         h.charge = {
-          fromX,
-          fromY,
+          fromX: h.x,
+          fromY: h.y,
           toX: ctx.playerX,
           toY: ctx.playerY,
           bow: (onLeft ? 1 : -1) * charger.bowRatio * span,
@@ -1835,6 +1834,8 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
 
 
 

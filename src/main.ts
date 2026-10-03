@@ -254,6 +254,15 @@ class Game {
    * shot-dead one), and because the effect's whole job is to outlive the creature that made it.
    */
   private explosions: { x: number; y: number; radius: number; age: number }[] = [];
+  /**
+   * Screen shake, in seconds remaining and pixels of amplitude.
+   *
+   * Applied to the STAGE rather than to the water or the world, because it is not "the sea is moving" -- it is "that
+   * one landed on you", and the HUD shaking with everything else is what makes it read as the screen rather than as a
+   * camera. Small on purpose: it has to feel like weight, not like a reason to lose track of where you are. The player
+   * is still dodging while it runs.
+   */
+  private shake = { seconds: 0, total: 0, pixels: 0 };
 
   /** Whether a slam is in its window right now: the charge has been released and the window has not run out. */
   private get onSlam(): boolean {
@@ -2270,6 +2279,16 @@ class Game {
         this.explosions.push({ x: e.blast.x, y: e.blast.y, radius: e.blast.radius, age: 0 });
         audio.play('pop');
         this.lastComedyBeat = { what: e.kind, at: this.elapsed };
+        // The shake is the loudness of the thing: a blast is the only event in the game that moves the SCREEN.
+        const shake = mech.hazards.bombfish;
+        if (shake.blastShakePixels > 0 && shake.blastShakeSeconds > 0) {
+          const screen = this.app.renderer.screen;
+          this.shake = {
+            seconds: shake.blastShakeSeconds,
+            total: shake.blastShakeSeconds,
+            pixels: shake.blastShakePixels * designScale(screen.width, screen.height),
+          };
+        }
         /**
          * The blast hurts the player, through the ordinary hit path.
          *
@@ -3254,6 +3273,21 @@ class Game {
   }
 
   private render(dt: number): void {
+    /**
+     * The screen shake, applied before anything is drawn.
+     *
+     * Two offsets that do not divide each other, so it reads as a rattle rather than as a sway, scaled by what is left
+     * of the duration so it ends where it started -- at zero. Snapping back to centre at the end would be the one part
+     * of a shake the eye notices.
+     */
+    if (this.shake.seconds > 0) {
+      this.shake.seconds = Math.max(0, this.shake.seconds - dt);
+      const fade = this.shake.seconds / Math.max(0.001, this.shake.total);
+      const amp = this.shake.pixels * fade;
+      this.app.stage.position.set(Math.sin(this.elapsed * 61) * amp, Math.cos(this.elapsed * 47) * amp);
+    } else if (this.app.stage.x !== 0 || this.app.stage.y !== 0) {
+      this.app.stage.position.set(0, 0);
+    }
     this.scene.update(this.camera, this.player, dt, this.scrolled);
 
     /**
@@ -5002,6 +5036,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 

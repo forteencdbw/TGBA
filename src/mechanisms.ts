@@ -363,6 +363,9 @@ export interface Mechanisms {
       /** Damage radius of the blast, as a fraction of the lane width. */
       blastRadiusRatio: number;
       blastDamage: number;
+      /** Design pixels of screen shake at the moment of the blast, and how long it lasts. 0 turns it off. */
+      blastShakePixels: number;
+      blastShakeSeconds: number;
       /** The fuse while it is IN the stomach, and what that costs. */
       stomachFuseSeconds: number;
       detonationHitPoints: number;
@@ -371,6 +374,8 @@ export interface Mechanisms {
     };
     slowFactor: number;
     slowSeconds: number;
+    /** Hit points a jellyfish sting costs, on top of the slow. */
+    jellyContactDamage: number;
     /**
      * How many bullet hits each kind of creature takes before it flees.
      *
@@ -886,8 +891,7 @@ function isChargerTable(v: unknown): boolean {
     if (row === null || typeof row !== 'object') return false;
     const r = row as Record<string, unknown>;
     if (!numbers.every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number) && (r[k] as number) >= 0)) return false;
-    if (typeof r.bowRatio !== 'number' || !Number.isFinite(r.bowRatio) || Math.abs(r.bowRatio) > 2) return false;
-    return r.approach === 'dive' || r.approach === 'side';
+    return typeof r.bowRatio === 'number' && Number.isFinite(r.bowRatio) && Math.abs(r.bowRatio) <= 2;
   });
 }
 
@@ -1115,9 +1119,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.bombfish.fuseSeconds', check: (v) => typeof v === 'number' && v > 0.2 && v <= 15, describe: 'seconds above 0.2 and at most 15' },
   { path: 'hazards.bombfish.blastRadiusRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction of the lane width between 0 and 1' },
   { path: 'hazards.bombfish.blastDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
+  { path: 'hazards.bombfish.blastShakePixels', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'design pixels between 0 and 40; 0 disables the shake' },
+  { path: 'hazards.bombfish.blastShakeSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'seconds between 0 and 2' },
   { path: 'hazards.bombfish.stomachFuseSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.bombfish.detonationHitPoints', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'hazards.bombfish.grenadeBlastRadiusRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
+  { path: 'hazards.jellyContactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10; 0 makes a jellyfish a pure slow again' },
   { path: 'hazards.slowFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a number above 0 and at most 1' },
   { path: 'hazards.slowSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'hazards.health', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0), describe: 'an object of hazard kind to hit points, e.g. { fish: 3, jelly: 0 }; 0 means the bullets pass through' },
@@ -1789,6 +1796,9 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
+
+
 
 
 
