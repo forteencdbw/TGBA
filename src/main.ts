@@ -4507,6 +4507,8 @@ class Game {
    */
   private bubbleSprite: Sprite | null = null;
   private bubbleSpriteFor = '';
+  /** Whether a load for \ubbleSpriteFor\ is in flight, so one name never builds two sprites. */
+  private bubbleSpritePending = false;
 
   /**
    * Load (once) and place the player's picture for this frame. See `playerBubble` in the config.
@@ -4523,20 +4525,57 @@ class Game {
       if (this.bubbleSprite) this.bubbleSprite.visible = false;
       return false;
     }
-    if (!this.bubbleSprite || this.bubbleSpriteFor !== cfg.image) {
+    /**
+     * ONE attempt per image name, tracked by a flag rather than by `bubbleSprite` being set.
+     *
+     * The first version keyed on the sprite itself, which is null until the picture finishes loading -- so every frame in
+     * between started ANOTHER load and added ANOTHER sprite. They all eventually arrived at the correct size except the
+     * ones that had already been positioned while the camera was still being set up, and those stayed on screen for ever
+     * as the giant bubble at the left edge the owner photographed. A pending flag makes the invariant the obvious one:
+     * one name, one sprite.
+     */
+    if (!this.bubbleSpritePending && this.bubbleSpriteFor !== cfg.image) {
+      this.bubbleSpritePending = true;
       this.bubbleSpriteFor = cfg.image;
       this.bubbleSprite?.destroy();
       this.bubbleSprite = null;
       const image = new Image();
+      /**
+       * `await decode()` BEFORE building the texture, and this is the whole bug that made the bubble enormous.
+       *
+       * `Texture.from(image)` on an element whose data has arrived but whose dimensions are not yet known produces a
+       * texture of ZERO width -- and the next line, `sprite.width = size`, divides by exactly that, so the sprite's scale
+       * became enormous and the picture filled half the screen. The pixelated edges in the owner's screenshot are a
+       * 512-wide picture magnified by a runaway scale, which is what pointed at this rather than at the size maths (the
+       * maths was right: the probe measured a 30px sprite while the screen showed a giant, and a measurement that
+       * disagrees with the screen is measuring something else).
+       *
+       * `decode()` resolves only when the bitmap is fully decoded and its size is known, and it rejects on a broken file,
+       * so both the failure and the size are handled by the one call.
+       */
       image.onload = () => {
-        const sprite = new Sprite(Texture.from(image));
-        sprite.anchor.set(0.5);
-        sprite.eventMode = 'none';
-        // The same parent as the drawn bubble, so it lives in world coordinates like everything else in the water.
-        this.bubble.parent?.addChildAt(sprite, this.bubble.parent.getChildIndex(this.bubble));
-        this.bubbleSprite = sprite;
+        void image
+          .decode()
+          .then(() => {
+            const texture = Texture.from(image);
+            if (texture.width <= 0 || texture.height <= 0) return;
+            const sprite = new Sprite(texture);
+            sprite.anchor.set(0.5);
+            sprite.eventMode = 'none';
+            // The same parent as the drawn bubble, so it lives in world coordinates like everything else in the water.
+            this.bubble.parent?.addChildAt(sprite, this.bubble.parent.getChildIndex(this.bubble));
+            this.bubbleSprite = sprite;
+            this.bubbleSpritePending = false;
+          })
+          .catch(() => {
+            this.bubbleSpritePending = false;
+            console.warn('[bubble] could not decode ' + cfg.image);
+          });
       };
-      image.onerror = () => console.warn('[bubble] could not load ' + cfg.image);
+      image.onerror = () => {
+        this.bubbleSpritePending = false;
+        console.warn('[bubble] could not load ' + cfg.image);
+      };
       const url = assetUrl(cfg.image);
       if (url) image.src = url;
     }
@@ -4548,8 +4587,12 @@ class Game {
     sprite.alpha = cfg.imageAlpha * alpha;
     sprite.tint = cfg.imageTint;
     const size = radius * 2 * cfg.imageScale;
-    sprite.width = size;
-    sprite.height = size;
+    if (sprite.texture.width <= 0) return false;
+    const scale = size / sprite.texture.width;
+    if (!Number.isFinite(scale) || scale <= 0) return false;
+    // Scale rather than width/height: width divides by the texture's own size, which is how a zero-width texture
+    // became an enormous sprite in the first place.
+    sprite.scale.set(scale);
     return true;
   }
 
@@ -5737,6 +5780,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 
