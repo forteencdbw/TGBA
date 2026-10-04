@@ -1474,7 +1474,14 @@ export class HazardField {
    */
   private applyKnock(h: Hazard, impact?: { x: number; y: number }): void {
     const cfg = mech.hitKnockback;
-    if (cfg.meters <= 0 || cfg.seconds <= 0) return;
+    /**
+     * Per-creature multiplier, and there is exactly one creature that needs one: the boss holds station instead of
+     * riding the current, so the same metres move a hovering giant rather than nudging something already drifting --
+     * which reads as a shove. `hazards.boss.knockbackScale` is that judgement, and setting it to 0 makes the boss
+     * immune to recoil (the flash is then the whole of its hit feedback).
+     */
+    const meters = cfg.meters * (h.kind === 'boss' ? Math.max(0, mech.hazards.boss.knockbackScale) : 1);
+    if (meters <= 0 || cfg.seconds <= 0) return;
     let dirX = 0;
     let dirY = 1;
     if (impact) {
@@ -1488,7 +1495,7 @@ export class HazardField {
         dirY = dy / len;
       }
     }
-    h.knock = { dirX, dirY, meters: cfg.meters, seconds: cfg.seconds, elapsed: 0 };
+    h.knock = { dirX, dirY, meters, seconds: cfg.seconds, elapsed: 0 };
   }
 
   /**

@@ -439,6 +439,14 @@ export interface Mechanisms {
       hitFlashSeconds: number;
       weakPointWidthRatio: number;
       hitFlashColour: number;
+      /**
+       * What multiplies `hitKnockback.meters` when the BOSS is shot.
+       *
+       * A per-kind knob rather than a table, because it is the only creature that does not ride the current: everything
+       * else is shoved inside a drift it was already making, while a shove on the boss moves a hovering giant -- the same
+       * metres read as a much bigger event, which is why its default is half.
+       */
+      knockbackScale: number;
     };
     /** LEVEL 1's signature: the black smoker's lethal column. */
     vent: {
@@ -1873,6 +1881,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hitFlash.radiusScale', check: (v) => typeof v === 'number' && v > 0.2 && v <= 3, describe: 'a multiplier above 0.2 and at most 3' },
   { path: 'hitKnockback.meters', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'metres of recoil per landed hit, between 0 and 200; 0 turns the knockback off' },
   { path: 'hitKnockback.seconds', check: (v) => typeof v === 'number' && v > 0.01 && v <= 2, describe: 'seconds above 0.01 and at most 2, over which the recoil is spent' },
+  { path: 'hazards.boss.knockbackScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier on hitKnockback.meters between 0 and 2; the boss holds station, so 0.5 is a nudge rather than a shove' },
   { path: 'playerBubble.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string for the drawn bubble' },
   { path: 'playerBubble.imageAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'playerBubble.imageTint', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
