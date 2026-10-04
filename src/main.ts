@@ -2109,7 +2109,17 @@ class Game {
     // 0, which is the LOUDEST setting, so the bed kept playing through the whole results sequence.
     // One-shots (the pop, the splash) still fire; only the continuous bed stops.
     audio.tick(dt);
-    audio.setDepth(this.player.depth, DEPTH_TOTAL, this.phase === 'playing');
+    /**
+     * The depth-reactive ambient bed is GONE, by request.
+     *
+     * It was a synthesised noise bed that rose with depth, and the owner's note is that it is exactly what it looked
+     * like on paper: a background sound that gets LOUDER the deeper the run goes, with no way to turn it down except the
+     * master volume (which takes the effects with it). The per-level music now carries the atmosphere instead, and it is
+     * music rather than a rising wash -- one thing doing the job beats two, one of which fights the player.
+     *
+     * `audio.setDepth` and the bed itself are left in `src/audio.ts` but unused: an experiment that failed is cheaper to
+     * delete than to argue about, and this one is one call to bring back if the silence turns out to be worse.
+     */
 
     /**
      * The charge verb, immediately BEFORE the player moves.
@@ -2295,8 +2305,20 @@ class Game {
      * scroll speed, because the world keeps moving underneath it.
      */
     const pathSpec = entry.path ? LEVEL.paths?.[entry.path] : undefined;
+    /**
+     * The spline, already advanced to this member's place in the string.
+     *
+     * lapsed starts at the member's offset rather than at zero, so a string is spread ALONG its curve from the first
+     * frame -- which is what makes it read as one creature after another instead of a single creature drawn six times.
+     */
     const path: Hazard['path'] = pathSpec
-      ? { points: pathSpec.points, seconds: pathSpec.seconds, elapsed: 0, startX: spawnX, startY: spawnY }
+      ? {
+          points: pathSpec.points,
+          seconds: pathSpec.seconds,
+          elapsed: pathSpec.seconds * Math.min(0.95, Math.max(0, entry.pathOffset ?? 0)),
+          startX: spawnX,
+          startY: spawnY,
+        }
       : null;
     const hazard = this.makeHazard(entry.kind as HazardKind, spawnX, spawnY, entering, undefined, path);
     this.hazards.hazards.push(hazard);
@@ -5618,6 +5640,9 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
 
 
 

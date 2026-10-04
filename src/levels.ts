@@ -71,7 +71,15 @@ export interface LevelEntry {
   /** The named spline this entry follows, if any. See `PathSpec`. */
   path?: string;
   /**
-   * Lateral position as a fraction of the play area width.
+   * How far along that spline this entry starts, 0..1.
+   *
+   * A string is spaced along its curve by THIS rather than by when each member happens to spawn. The timeline stagger
+   * cannot do it: members that spawn in the same frame (a level reached by teleport, a fast scroll) start together and
+   * stay locked together for the whole crossing, which is the pile the owner saw. Spacing by index is deterministic and
+   * depends on neither the frame rate nor the scroll speed.
+   */
+  pathOffset?: number;
+  /**
    *
    * A fraction rather than metres so a lane stays a lane on every display: the play area's width
    * follows the canvas, so an absolute x would drift off-screen on a narrow phone.
@@ -598,6 +606,7 @@ function expandBlock(block: SpawnBlock): LevelEntry[] {
       Array.from({ length: n }, (_, i) => ({
         ...place.one(block.at + i * stagger, block.kind, block.x, block.sizes?.[i % Math.max(1, block.sizes?.length ?? 1)]),
         path: block.path as string,
+        pathOffset: n > 1 ? i / n : 0,
       })),
     );
   }
@@ -939,6 +948,7 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
 
 
 

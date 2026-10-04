@@ -1519,7 +1519,15 @@ export class HazardField {
      * The aim point is the player's position AT THIS INSTANT and never updates: that is the difference between a
      * pattern to dodge and a homing attack, and it is why everything the player does during the wind-up counts.
      */
-    const charger = mech.charges.chargers[h.kind];
+    /**
+     * A creature on a PATH may SHOOT but never CHARGE.
+     *
+     * A charge is a committed curve aimed at the player, and a path is a committed curve the level author aimed: letting
+     * both run at once means the authored shape is abandoned the moment the player comes near, so the string that was
+     * supposed to sweep across the screen instead turns and dives. Guns stay on -- a fish that shoots while it weaves is
+     * still the shape the level asked for, plus pressure.
+     */
+    const charger = h.path ? undefined : mech.charges.chargers[h.kind];
     if (charger) {
       h.chargeRest = Math.max(0, h.chargeRest - dt);
       const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
@@ -2522,6 +2530,7 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
 
 
 
