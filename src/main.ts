@@ -3,7 +3,7 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeL
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, selectLevel, type EntrySide, type Level, type LevelEntry } from './levels';
 import { Progression } from './progress';
-import { blastRadiusFraction, HazardField, hazardHealth, KIND_TUNING, hazardTuning, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
+import { blastRadiusFraction, HazardField, hazardHealth, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
 import { BulletField, paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
@@ -719,6 +719,11 @@ class Game {
   }
 
   /** Test hook: open the codex, for probing its pages. */
+  /** Test hook: the last lure geometries the painter computed, newest last. */
+  codexLureProbeRef(): unknown {
+    return LURE_PROBE.slice(-3);
+  }
+
   /** Test hooks for the codex's preview: its state, a card's rect, and its own pointer path. */
   get codexStateRef(): { visible: readonly string[] } {
     return this.codex.state;
@@ -5926,6 +5931,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 

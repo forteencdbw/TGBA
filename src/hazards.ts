@@ -1993,28 +1993,28 @@ function paintLure(
   lure: NonNullable<NonNullable<typeof mech.hazardArt[string]>['lure']>,
   elapsed: number,
 ): void {
-  const pulse = lure.pulseMin + (lure.pulseMax - lure.pulseMin) * (0.5 + 0.5 * Math.sin(elapsed * lure.pulsePerSecond * Math.PI * 2));
+  const safe = (v: number, fallback: number): number => (Number.isFinite(v) ? v : fallback);
+  const pulse =
+    safe(lure.pulseMin, 0.6) +
+    (safe(lure.pulseMax, 1.2) - safe(lure.pulseMin, 0.6)) * (0.5 + 0.5 * Math.sin(safe(elapsed, 0) * safe(lure.pulsePerSecond, 1) * Math.PI * 2));
   /**
    * The stem has an ANGLE, because the art already draws the rod.
    *
    * A picture of an anglerfish comes with its lure; what it does not come with is the light. So the code adds the glow and
    * the angle and length are there to point it at the tip of whatever rod the artist drew -- two numbers, no re-export.
    */
-  const angle = (lure.stemAngle * Math.PI) / 180;
-  const dirX = Math.sin(angle);
-  const dirY = Math.cos(angle);
-  const baseX = x + dirX * r * lure.stemFrom;
-  const baseY = y + dirY * r * lure.stemFrom;
-  const tipX = baseX + dirX * r * lure.stemLength;
-  const tipY = baseY + dirY * r * lure.stemLength;
+  const { tipX, tipY, baseX, baseY } = lureTip(x, y, r, lure, isYFlipped(g));
+  LURE_PROBE.push({ x, y, r, tipX, tipY, angle: lure.stemAngle, glowRadius: lure.glowRadius });
   if (lure.stemWidth > 0) {
     g.moveTo(baseX, baseY)
       .lineTo(tipX, tipY)
       .stroke({ color: lure.stemColour, width: Math.max(0.5, r * lure.stemWidth) });
   }
   // Halo first, then the bulb on top of it: the light is what the eye should land on.
-  g.circle(tipX, tipY, r * lure.glowRadius).fill({ color: lure.glowColour, alpha: lure.glowAlpha * pulse });
-  g.circle(tipX, tipY, r * lure.bulbRadius).fill({ color: lure.bulbColour, alpha: Math.min(1, pulse) });
+  if (Number.isFinite(tipX) && Number.isFinite(tipY)) {
+    g.circle(tipX, tipY, r * safe(lure.glowRadius, 0.8)).fill({ color: lure.glowColour, alpha: safe(lure.glowAlpha, 0.5) * pulse });
+  }
+  g.circle(tipX, tipY, r * safe(lure.bulbRadius, 0.2)).fill({ color: lure.bulbColour, alpha: Math.min(1, pulse) });
 }
 
 /**
@@ -2086,6 +2086,47 @@ function pruneArtSprites(): void {
     }
   }
 }
+
+/**
+ * Where a lure's stem starts and its bulb sits.
+ *
+ * Extracted so the geometry can be MEASURED. "The glow is not visible" was answered twice by adjusting brightness, which is
+ * guessing; a function can be asked what it computed.
+ */
+export function lureTip(
+  x: number,
+  y: number,
+  r: number,
+  lure: { stemAngle: number; stemFrom: number; stemLength: number; glowRadius: number },
+  layerFlipped: boolean,
+): { baseX: number; baseY: number; tipX: number; tipY: number } {
+  /**
+   * Every number is defaulted before use, and that is the point of this function rather than a nicety.
+   *
+   * A missing key used to become NaN, and a Graphics asked to draw at NaN draws NOTHING -- no error, no warning, just an
+   * absent glow that three rounds of brightness tuning could not explain. `num` here is the difference between "the config
+   * is wrong" and "the feature is broken".
+   */
+  const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+  const angle = (num(lure.stemAngle, 0) * Math.PI) / 180;
+  const dirX = Math.sin(angle);
+  /**
+   * "Up" is not the same +y in both places the painter is used.
+   *
+   * The water draws into a Y-FLIPPED layer (world +y is up), so a positive y in the painter goes up the screen. The codex's
+   * icon layer is NOT flipped, so the same positive y goes DOWN -- which put the anglerfish's lure through its own belly,
+   * where it was invisible. Asking the layer rather than assuming is what the player bubble and the sprite both had to learn.
+   */
+  const dirY = Math.cos(angle) * (layerFlipped ? 1 : -1);
+  const from = num(lure.stemFrom, 0.3);
+  const length = num(lure.stemLength, 0.8);
+  const baseX = x + dirX * r * from;
+  const baseY = y + dirY * r * from;
+  return { baseX, baseY, tipX: baseX + dirX * r * length, tipY: baseY + dirY * r * length };
+}
+
+/** The last few lures drawn, for probes. */
+export const LURE_PROBE: { x: number; y: number; r: number; tipX: number; tipY: number; angle: number; glowRadius: number }[] = [];
 
 export function paintHazards(
   g: Graphics,
@@ -2723,6 +2764,9 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
+
 
 
 

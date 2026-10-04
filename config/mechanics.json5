@@ -700,18 +700,20 @@
       "alpha": 1,
       // **触角发光**：沿鱼身上方画一根细线，末端一颗光点，亮度随时间呼吸。
       "lure": {
-        // 线的起点（0 = 敌人中心，1 = 一个半径以外），以及它向上延伸多少个"鱼高"。
-        // 线的起点（0 = 敌人中心，1 = 一个半径以外）与角度（0 = 正上方，正数向右倾）。`n        // 图里那条触角本身已经画在左上方，所以用角度和长度把光点对到它的尖端。`n        "stemAngle": -28,`n        "stemFrom": 0.35,
-        "stemLength": 0.78,
-        "stemWidth": 0.05,
+        // 线的起点（0 = 敌人中心，1 = 一个半径以外）与角度（0 = 正上方，正数向右倾）。
+        // 图里那条触角本身画在左上方，所以用角度和长度把光点对到它的尖端。
+        "stemAngle": -40,
+        "stemFrom": 0.35,
+        "stemLength": 0.6,
+        "stemWidth": 0.03,
         "stemColour": 0x2a2f45,
         // 光点半径（相对鱼半径）与颜色。
-        "bulbRadius": 0.16,
+        "bulbRadius": 0.085,
         "bulbColour": 0xfff3c0,
         // 光晕半径、颜色与不透明度。
-        "glowRadius": 0.85,
+        "glowRadius": 0.3,
         "glowColour": 0x9fe8ff,
-        "glowAlpha": 0.55,
+        "glowAlpha": 0.42,
         // 呼吸：每秒几次、最亮/最暗的倍率。
         "pulsePerSecond": 1.2,
         "pulseMin": 0.55,
@@ -2400,6 +2402,7 @@
     "entryDepth": 0.72
   }
 }
+
 
 
 
