@@ -286,6 +286,15 @@ export class CodexUi {
    * A press fires its action IMMEDIATELY rather than on release, matching the menu's start button: these controls are
    * large, deliberate and never held, so press-to-fire is what a player expects from a list of buttons.
    */
+  /**
+   * Turn to the next page. Exists for probes and for a keyboard route later; the pointer path uses the pager buttons.
+   */
+  nextPageForTest(): void {
+    const pages = pageCount(this.category, this.perPage);
+    this.page = Math.min(pages - 1, this.page + 1);
+    this.redraw();
+  }
+
   handlePointerDown(x: number, y: number): boolean {
     for (const tab of this.tabs) {
       if (!inside(tab.rect, x, y)) continue;
@@ -898,6 +907,7 @@ function inside(rect: Rect, x: number, y: number): boolean {
 function diamond(g: Graphics, cx: number, cy: number, r: number): void {
   g.moveTo(cx, cy - r).lineTo(cx + r, cy).lineTo(cx, cy + r).lineTo(cx - r, cy).closePath();
 }
+
 
 
 

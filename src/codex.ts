@@ -211,6 +211,43 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
       '最重的一种，击退也强：它值得吃，只是很难甩掉。',
     ],
   },
+  /**
+   * The five creatures the levels after the first one introduced.
+   *
+   * They were missing from the book entirely, which is worse than a thin description: the codex is the only place a player
+   * can find out what a thing does, so a creature that is not in it is a creature with no rules as far as anyone reading is
+   * concerned. Ordered by the level that introduces them, like the rest.
+   */
+  {
+    kind: 'angler',
+    tagline: '深海鱼：触角发光，看准了才冲锋',
+    notes: [
+      '它的发光触角是这一关唯一的光源——**那个亮点在告诉你它在哪里**，也在告诉你它看得见你。',
+      '血量比小鱼小虾厚得多（见上面的血量），所以不要指望随手几发就赶走它：它是要被"处理"的敌人，不是路过的杂兵。',
+      '冲锋走的是和别的冲锋者一样的固定曲线：它从**当前所在位置**起跳、弧线是"从侧面扫过来"的全部来源，所以看到征兆就往弧线的外侧走。',
+    ],
+  },
+  {
+    kind: 'torpedo',
+    tagline: '直线冲刺，被打中就当场炸开',
+    notes: ['它的路径是直的，所以躲它靠的是**提前横移**，而不是等它靠近。', '打爆它在原地炸——距离太近等于自己踩上去。'],
+  },
+  {
+    kind: 'zapper',
+    tagline: '被打中会放电，电环会连累近处的水母',
+    notes: ['打它是要付代价的：那圈电是你开火换来的。', '它周围的同类会被一起带进电环里——所以它既可能是麻烦，也可能是机会。'],
+  },
+  {
+    kind: 'foam',
+    tagline: '打不掉的泡沫：可以穿过，但会挡视线',
+    notes: ['它不吃子弹，绕开就行——**在这里花时间是唯一真正的损失**。'],
+  },
+  {
+    kind: 'rain',
+    tagline: '从上往下压的水流：把你按回去',
+    notes: ['它不造成接触伤害，但会**持续把你往下压**——上升的节奏被打断就是它的作用。'],
+  },
+
 ];
 
 function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[]): CodexEntry {

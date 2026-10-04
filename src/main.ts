@@ -719,6 +719,11 @@ class Game {
   }
 
   /** Test hook: open the codex, for probing its pages. */
+  /** Test hook: turn the codex page. */
+  codexNextPageRef(): void {
+    this.codex.nextPageForTest();
+  }
+
   openCodexRef(): void {
     this.debugOpenCodexForTest();
   }
@@ -5904,6 +5909,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 
