@@ -761,6 +761,8 @@ export interface Mechanisms {
     imageTint: number;
     /** A multiplier on the drawn radius, for art with padding around the ball. */
     imageScale: number;
+    /** Degrees clockwise. The world container is Y-flipped and that is compensated for; this is on top of it. */
+    imageRotation: number;
     keepDetails: boolean;
   };
   codex: {
@@ -1752,6 +1754,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'playerBubble.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string for the drawn bubble' },
   { path: 'playerBubble.imageAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'playerBubble.imageTint', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'playerBubble.imageRotation', check: (v) => typeof v === 'number' && v >= -360 && v <= 360, describe: 'degrees between -360 and 360' },
   { path: 'playerBubble.imageScale', check: (v) => typeof v === 'number' && v > 0.1 && v <= 4, describe: 'a multiplier above 0.1 and at most 4' },
   { path: 'playerBubble.keepDetails', check: (v) => typeof v === 'boolean', describe: 'true or false' },
   { path: 'codex.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 4, describe: 'a whole number of columns between 1 and 4' },

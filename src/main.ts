@@ -27,6 +27,19 @@ import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
 import { Sprite, Texture } from 'pixi.js';
 import { assetUrl } from './assets';
+
+/**
+ * Whether the chain of parents above `node` flips the Y axis.
+ *
+ * The world is drawn with world +y UP and screen +y down, so somewhere above every sprite there is a negative Y scale --
+ * but not necessarily on the sprite's own parent, which is why checking one level (as this first did) reported "not
+ * flipped" for a sprite that plainly was. The product of the chain is the honest answer.
+ */
+function worldYIsFlipped(node: import('pixi.js').Container): boolean {
+  let scaleY = 1;
+  for (let at: import('pixi.js').Container | null = node.parent; at; at = at.parent) scaleY *= at.scale.y;
+  return scaleY < 0;
+}
 import { RunSummary } from './summary';
 import { APP_VERSION, buildLabel, GIT_DIRTY, GIT_HASH } from './version';
 import { demote, initialStageState, recordAbsorb, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
@@ -4590,9 +4603,17 @@ class Game {
     if (sprite.texture.width <= 0) return false;
     const scale = size / sprite.texture.width;
     if (!Number.isFinite(scale) || scale <= 0) return false;
+    /**
+     * The world container is Y-FLIPPED (world +y is up, screen +y is down), so a picture placed in it comes out mirrored.
+     * The drawn bubble is symmetric top to bottom, so nothing ever showed it; a picture with a highlight does, and the
+     * owner saw it as "the rotation is wrong". Counter-flipping the sprite's own Y makes the art upright, and
+     * `imageRotation` is then free to be exactly what it says -- the picture's own angle.
+     */
+    const flip = worldYIsFlipped(sprite) ? -1 : 1;
+    sprite.scale.set(scale, scale * flip);
+    sprite.rotation = (cfg.imageRotation * Math.PI) / 180;
     // Scale rather than width/height: width divides by the texture's own size, which is how a zero-width texture
     // became an enormous sprite in the first place.
-    sprite.scale.set(scale);
     return true;
   }
 
@@ -5780,6 +5801,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 
