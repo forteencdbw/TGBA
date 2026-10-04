@@ -150,6 +150,11 @@ export class WorldLayer {
   get backdropLoaded(): boolean {
     return this.backdrop?.isLoaded ?? false;
   }
+
+  /** Why the level's backdrop failed to load, if it did. */
+  get backdropError(): string {
+    return this.backdrop?.error ?? '';
+  }
   /** The canvas the backdrop was last sized against, so a level change mid-run still sizes it. */
   private lastCanvasWidth = 0;
   private lastCanvasHeight = 0;
@@ -1076,6 +1081,7 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+
 
 
 

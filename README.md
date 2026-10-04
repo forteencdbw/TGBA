@@ -479,6 +479,29 @@ playing → cleared → ascend → intro（下一关）
 
 实测：第一关带 2 排枪 + 第 2 档射速通关 → 进入第二关后**仍是 2 排 / 第 2 档** ✓、分数 200 → 1200 ✓、阶段序列 `playing → cleared → ascend → intro` ✓；打通第六关 → 阶段 `summary`、面板打开、总分 1100 ✓
 
+### 图片资源怎么管（换成中文名，手动替换即可）
+
+**放哪儿**：`src/assets/levels/`，文件名用**中文**，按关卡命名：
+
+```
+src/assets/levels/黑烟囱墓场-最远景.jpg
+```
+
+**怎么引用**：关卡文件里写**文件名本身**（不是路径）：
+
+```json5
+// config/levels.json5 → levels["black-smokers"]
+backdrop: { image: '黑烟囱墓场-最远景.jpg', speedFactor: 0.03, heightScreens: 1.15, alpha: 0.62, tint: 0x8f6a7a }
+```
+
+**怎么换图**：把同名文件覆盖掉就行——**不用改代码、不用改配置**。开发时刷新页面即可；名字打错或没有这个文件时，控制台会**列出所有可用的文件名**，不会静默失败。
+
+**为什么不是 `public/`**：一开始放在 `public/levels/` 用路径引用，结果 `Assets.load` 报 `InvalidStateError: The source image could not be decoded`——而那张图用 `<img>` 加载同样的 URL 也失败，**请求还是 200**。也就是说"200 + 解码失败"这个组合把人往"文件坏了"的方向带，实际是**非 ASCII 路径**的问题。
+
+改成 `import.meta.glob` 静态导入之后从根上解决：图片在**构建时**被读入，产出**ASCII 哈希名 + 正确的 content-type**，而配置里保留**你认识的那个名字**。dev 与线上都实测 `loaded: true` ✓（构建产物：`黑烟囱墓场-最远景-BjCiyhNL.jpg`）。
+
+（顺便把失败原因**报出来**而不是吞掉：这是给人手动换的文件，`loaded: false` 必须能看出是哪张图、为什么。）
+
 ### 最远景改到**水后面**，水暂时全部隐藏
 
 按你的判断改了图层：**图在水后面**（`WorldLayer.root` 的第一个孩子 → `backdrop → gradient → margins → world`）。要让这一点成立，图必须是**屏幕坐标**——因为水体渐变是一个屏幕空间的填充，世界坐标的精灵会被摄像机变换、从它下面滑出去。所以图现在按**像素**定尺寸，滚动也是 `scrolled × speedFactor × 像素每米` 换算一次。
@@ -1209,6 +1232,7 @@ pwsh -File scripts\install-pwsh-path.ps1
 
 > 机器 PATH 里那条失效的 7.6.4 条目已经无害（目录不存在，只是拖慢一点点路径查找），
 > 但它归 `Machine` 作用域，**需要管理员**才能清理。脚本只报告、不修改。
+
 
 
 

@@ -19,7 +19,40 @@
  * accumulator, and it cannot drift, stall, or disagree after a teleport. Motes that fall outside the visible band are
  * wrapped by the tile height, which is what makes a finite number of particles cover an endless climb.
  */
-import { Assets, Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { Container, Graphics, Sprite, Texture } from 'pixi.js';
+/**
+ * Every level image, as a URL, baked in by Vite at build time.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY AN IMPORT RATHER THAN A PATH IN `public/`
+ * ---------------------------------------------------------------------------------------------
+ * The pictures are meant to be replaced BY HAND, so they are named in Chinese after the level they belong to -- and a
+ * file in `public/` is served by its own path, which means the URL carries those characters. That failed in a way worth
+ * recording: the request came back 200, and the browser refused the bytes with "the source image could not be decoded"
+ * (Pixi's loader said the same thing first, which is what sent me looking at the file rather than at the URL).
+ *
+ * Importing them through Vite solves it at the root: the file is read at build time, emitted with an ASCII hashed name
+ * and the right content type, and the config keeps referring to it by the NAME THE OWNER KNOWS. Replacing a file with
+ * the same name is therefore still the whole workflow -- no code change, no config change.
+ */
+const LEVEL_IMAGES = import.meta.glob('./assets/levels/*.{jpg,jpeg,png,webp}', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+/** Resolve a level's `backdrop.image` (a bare filename) to the URL Vite emitted for it. */
+function imageUrl(name: string): string {
+  const key = './assets/levels/' + name;
+  const url = LEVEL_IMAGES[key];
+  if (!url) {
+    console.warn(
+      '[backdrop] no image called "' + name + '". Available: ' + Object.keys(LEVEL_IMAGES).map((k) => k.replace('./assets/levels/', '')).join(', '),
+    );
+    return '';
+  }
+  return url;
+}
 import { mech } from './mechanisms';
 
 /** One layer's live state: its graphics and its particles, in metres. */
@@ -39,6 +72,8 @@ export class Backdrop {
   /** Two copies of the image, so the wrap can never show a gap: together they are 2.3 screens tall. */
   private sprites: Sprite[] = [];
   private loaded = false;
+  /** Why the picture failed to load, if it did. Empty when it worked. */
+  private loadError = '';
   private canvasWidth = 0;
   private canvasHeight = 0;
   /** The lane's width in metres, for sizing the image across the play area rather than the whole canvas. */
@@ -52,30 +87,64 @@ export class Backdrop {
      * A missing or corrupt backdrop must leave a playable level with its water and its parallax layers, not a black
      * screen: the picture is the farthest thing on screen, and the game cannot depend on the farthest thing.
      */
-    void Assets.load<Texture>(spec.image)
-      .then((texture) => {
-        for (let i = 0; i < 2; i++) {
-          const sprite = new Sprite(texture);
-          // Anchored at its top edge and centred horizontally: the scroll offset is then the image's top, which is the
-          // simplest thing to wrap.
-          sprite.anchor.set(0.5, 0);
-          sprite.alpha = spec.alpha;
-          sprite.tint = spec.tint;
-          sprite.eventMode = 'none';
-          this.root.addChild(sprite);
-          this.sprites.push(sprite);
-        }
-        this.loaded = true;
-        // The canvas was already laid out before the texture arrived: size it now, or it draws at zero height.
-        this.applyLayout();
-      })
-      .catch(() => {
-        this.loaded = false;
-      });
+    /**
+     * ncodeURId because the asset names are CHINESE.
+     *
+     * The files are meant to be replaced by hand, so they are named after the level they belong to rather than after an
+     * English slug -- which means the URL carries non-ASCII characters. Browsers encode those on the way out, but doing
+     * it here keeps the request identical on every browser and keeps a space or a # in a future filename from quietly
+     * truncating the path.
+     */
+    /**
+     * Loaded as a plain `<img>`, NOT through Pixi's asset loader.
+     *
+     * Two reasons, and the first is a bug this hit: `Assets.load` reported
+     * `InvalidStateError: The source image could not be decoded` for a JPEG that the browser then rendered happily from
+     * an `<img>` with the same URL -- so the loader's own decode path was the problem, not the file. The second is that
+     * these files are meant to be replaced BY HAND: an image element fails in the ordinary browser way, and the message
+     * below names the file.
+     */
+    const image = new Image();
+    image.decoding = 'async';
+    image.onload = () => {
+      const texture = Texture.from(image);
+      for (let i = 0; i < 2; i++) {
+        const sprite = new Sprite(texture);
+        // Anchored at its top edge and centred horizontally: the scroll offset is then the image's top edge.
+        sprite.anchor.set(0.5, 0);
+        sprite.alpha = spec.alpha;
+        sprite.tint = spec.tint;
+        sprite.eventMode = 'none';
+        this.root.addChild(sprite);
+        this.sprites.push(sprite);
+      }
+      this.loaded = true;
+      this.loadError = '';
+      this.applyLayout();
+    };
+    image.onerror = () => {
+      this.loaded = false;
+      this.loadError = 'the image could not be loaded';
+      console.warn('[backdrop] could not load ' + spec.image);
+    };
+    // `encodeURI`ed because the asset names are Chinese: the files are named after the level they belong to, so the URL
+    // carries non-ASCII characters, and a filename with a space or a `#` must not quietly truncate the path.
+    const url = imageUrl(spec.image);
+    if (!url) {
+      this.loadError = 'no such image: ' + spec.image;
+      return;
+    }
+    image.src = url;
+
   }
 
   get isLoaded(): boolean {
     return this.loaded;
+  }
+
+  /** The load failure's message, for the debug readout and for probes. */
+  get error(): string {
+    return this.loadError;
   }
 
   /** Sized against the canvas: the image spans the full width and `heightScreens` of the height. */
@@ -216,6 +285,10 @@ export class Parallax {
     }
   }
 }
+
+
+
+
 
 
 

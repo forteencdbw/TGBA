@@ -708,6 +708,11 @@ class Game {
     return this.scene.backdropLoaded;
   }
 
+  /** Test hook: the backdrop's load failure, if any. */
+  get backdropErrorRef(): string {
+    return this.scene.backdropError;
+  }
+
   /** Test hook: the parallax field, so a probe can read each layer's offset. */
   get parallaxRef(): { layerOffsetsRef: number[] } {
     return this.scene.parallax;
@@ -5651,6 +5656,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 
