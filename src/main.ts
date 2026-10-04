@@ -4097,7 +4097,7 @@ class Game {
     // `canEat` is the same function the collision uses, asked again here to draw the edibility marker. One
     // source of truth on purpose: a marker that promised food while the collision delivered a hit would be the
     // worst bug this feature could have, because it would punish the player for trusting what they saw.
-    paintHazards(g, this.hazards, laneWidth, this.elapsed, (kind) => this.canSwallow(kind), 'in-play');
+    paintHazards(g, this.hazards, laneWidth, this.elapsed, (kind) => this.canSwallow(kind), 'in-play', this.player.x * laneWidth);
 
     /**
      * The ones on their way out, in their own pass so they can be dimmed as a whole.
@@ -4110,7 +4110,7 @@ class Game {
     this.leaving.alpha = mech.hazards.fleeAlpha;
     const leavingG = this.leaving;
     leavingG.clear();
-    paintHazards(leavingG, this.hazards, laneWidth, this.elapsed, (kind) => this.canSwallow(kind), 'leaving');
+    paintHazards(leavingG, this.hazards, laneWidth, this.elapsed, (kind) => this.canSwallow(kind), 'leaving', this.player.x * laneWidth);
 
     /**
      * Obstacles, UNDER the hazards.

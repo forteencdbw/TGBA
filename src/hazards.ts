@@ -2152,6 +2152,13 @@ export function paintHazards(
   elapsed: number,
   canEat: (kind: HazardKind) => boolean,
   which: 'in-play' | 'leaving' = 'in-play',
+  /**
+   * Where the player is, so a creature can face it.
+   *
+   * Trailing and optional because the codex draws the same creatures with no player in the room: a card shows the picture as
+   * the artist drew it, unmirrored, which is what a reference page should do.
+   */
+  playerX = Number.NaN,
 ): void {
   ART_NOW += 1;
   if (which === 'in-play') pruneArtSprites();
@@ -2205,7 +2212,21 @@ export function paintHazards(
          * call, the right answer in each, which is what the preview needs and what a hard-coded sign cannot give.
          */
         const unit = size / texture.width;
-        sprite.scale.set(unit, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
+        /**
+         * FACING: mirrored when the creature's front does not already point at the player.
+         *
+         * The picture's front is `front` (the kind's own, or the global default). If the player is on the side the front
+         * already faces, nothing happens; otherwise the sprite is mirrored on X. X is a plain axis (unlike Y, which the world
+         * flips), so a negative X scale IS the mirror and nothing has to be undone.
+         */
+        const front = art.front ?? mech.hazardFront;
+        // No player (a codex card) means no turning: the picture is shown as drawn.
+        const knowsPlayer = Number.isFinite(playerX);
+        const playerIsLeft = playerX < h.x;
+        const wantFrontLeft = playerIsLeft;
+        const mirrored = knowsPlayer && (front === 'left') !== wantFrontLeft;
+        const facing = mirrored ? -1 : 1;
+        sprite.scale.set(unit * facing, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
         /**
          * The white flash, as a filter ON THE SPRITE.
          *

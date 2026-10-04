@@ -779,11 +779,20 @@ export interface Mechanisms {
    * A picture REPLACES the procedural body (it is the creature), and the parts the art does not carry -- the anglerfish's
    * glowing lure -- are drawn on top from this same block.
    */
+  /**
+   * Which side of a creature's PICTURE is its front. Left is the default; a kind may override it.
+   *
+   * A creature is drawn mirrored when its front does not already point at the player, so this is the one fact the game needs
+   * to know about a picture's orientation.
+   */
+  hazardFront: 'left' | 'right';
   hazardArt: Record<
     string,
     {
       move: string;
       charge?: string;
+      /** Overrides `hazardFront` for this kind. */
+      front?: 'left' | 'right';
       scale: number;
       alpha: number;
       lure?: {
