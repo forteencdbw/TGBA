@@ -479,7 +479,30 @@ playing → cleared → ascend → intro（下一关）
 
 实测：第一关带 2 排枪 + 第 2 档射速通关 → 进入第二关后**仍是 2 排 / 第 2 档** ✓、分数 200 → 1200 ✓、阶段序列 `playing → cleared → ascend → intro` ✓；打通第六关 → 阶段 `summary`、面板打开、总分 1100 ✓
 
-### 修复：灯笼鱼的发光（真相是 **NaN**）
+### 灯笼鱼参数在哪调（速查表）
+
+| 想改什么 | 去哪儿 | 键 |
+|---|---|---|
+| **贴图** | `src/assets/灯笼鱼-移动.png` / `灯笼鱼-冲锋.png` | 直接换文件（**不写扩展名也认**） |
+| 用哪两张图 / 大小 / 透明度 | `config/mechanics.json5` → `hazardArt.angler` | `move` `charge` `scale` `alpha` |
+| **血量** | 同上 → `hazards.health` | `angler`（现在 **10**） |
+| 质量（吃下去多重） | 同上 → `hazards.mass` | `angler` |
+| 可吃的档位 | 同上 → `consumption.edibleAtTier` | `angler` |
+| 被冲击波怎么处理 | 同上 → `angry.burst.hazardMode` | `angler` |
+| **体型（碰撞+绘制半径）** | `src/hazards.ts` → `KIND_TUNING` | `angler.radius`（0.045） |
+| **冲锋**（前摇/时长/冷却/弧线/触发距离） | `config/mechanics.json5` → `charges.chargers` | `angler` 那一行 |
+| **放在哪一关、哪个深度、从哪边进、几号** | `config/levels.json5` → 该关 `spawns` | `kind: 'angler'` 的行（`at` `x` `from` `count`） |
+| **全屏预览里显示多大** | `src/codexUi.ts`（画布短边 62%） | `drawPreview` 里的 `0.62` |
+
+**注意**：`hazards.health` / `mass` / `edibleAtTier` / `angry.burst.hazardMode` 这几张表**必须列出每一种敌人**（漏一行启动时报错并点名），所以加新敌人时要顺手补上。
+
+**体型是唯一还在代码里的数**（`KIND_TUNING.radius`，在 `src/hazards.ts`）——它和碰撞、绘制、图鉴卡片都相关，改它要重新构建。想让它也进配置的话说一声。
+
+### 去掉灯笼鱼的程序发光
+
+新的那张图里**已经带了光**，程序再画一层就是**两套光在打架**。所以把配置里的 `lure` 整块去掉了——**代码一直在，没有配置它就不画** ✓ 想重新打开：把 `"lure": { … }` 加回 `hazardArt.angler` 即可（键与含义见上表/上一节）。
+
+### （历史）修复：灯笼鱼的发光（真相是 NaN）
 
 你截图里的红框是对的，光本该在那里。**它一直没被画出来**，原因不是太暗、不是图层、也不是坐标空间（这三个我都白查了两轮）：
 
@@ -1459,6 +1482,7 @@ pwsh -File scripts\install-pwsh-path.ps1
 
 > 机器 PATH 里那条失效的 7.6.4 条目已经无害（目录不存在，只是拖慢一点点路径查找），
 > 但它归 `Machine` 作用域，**需要管理员**才能清理。脚本只报告、不修改。
+
 
 
 
