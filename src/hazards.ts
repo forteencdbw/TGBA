@@ -28,7 +28,7 @@
  */
 
 import { ColorMatrixFilter, Graphics, Sprite, Texture } from 'pixi.js';
-import { assetUrl } from './assets';
+import { assetUrl, isYFlipped } from './assets';
 import { mech, tuning } from './config';
 import { hazardMass } from './consumption';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
@@ -2121,7 +2121,13 @@ export function paintHazards(
           sprite = new Sprite(texture);
           sprite.anchor.set(0.5);
           sprite.eventMode = 'none';
-          g.parent?.addChild(sprite);
+          /**
+           * BEHIND the painter's own layer, so the lure the painter draws is over the picture rather than under it.
+           *
+           * Adding it after covered the glow with the fish: the light was drawn, and nobody could see it.
+           */
+          const parent = g.parent;
+          if (parent) parent.addChildAt(sprite, Math.max(0, parent.getChildIndex(g)));
           ART_SPRITES.set(h.id, sprite);
         }
         ART_SEEN.set(h.id, ART_NOW);
@@ -2134,7 +2140,14 @@ export function paintHazards(
         sprite.y = y;
         sprite.alpha = art.alpha * (h.flee ? mech.hazards.fleeAlpha : 1);
         // The world is Y-flipped, so the picture's own Y is negative to keep it upright -- see the player bubble.
-        sprite.scale.set(size / texture.width, -Math.abs(size / texture.width));
+        /**
+         * Upright in BOTH places, because the flip is asked of the parent chain rather than assumed.
+         *
+         * Negative Y in the water (whose world container is flipped) and positive in the codex (whose is not) -- the same
+         * call, the right answer in each, which is what the preview needs and what a hard-coded sign cannot give.
+         */
+        const unit = size / texture.width;
+        sprite.scale.set(unit, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
         /**
          * The white flash, as a filter ON THE SPRITE.
          *

@@ -709,9 +709,9 @@
         "bulbRadius": 0.16,
         "bulbColour": 0xfff3c0,
         // 光晕半径、颜色与不透明度。
-        "glowRadius": 0.5,
+        "glowRadius": 0.85,
         "glowColour": 0x9fe8ff,
-        "glowAlpha": 0.22,
+        "glowAlpha": 0.55,
         // 呼吸：每秒几次、最亮/最暗的倍率。
         "pulsePerSecond": 1.2,
         "pulseMin": 0.55,
@@ -2400,6 +2400,7 @@
     "entryDepth": 0.72
   }
 }
+
 
 
 

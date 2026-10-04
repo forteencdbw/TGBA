@@ -30,3 +30,19 @@ export function assetUrl(name: string): string {
   console.warn('[assets] no picture called "' + name + '". Available: ' + Object.keys(ASSETS).map((k) => k.replace('./assets/', '')).join(', '));
   return '';
 }
+
+/**
+ * Whether the chain of parents above \`node\` flips the Y axis.
+ *
+ * The world is drawn with world +y UP and screen +y down, so somewhere above every creature in the water there is a negative
+ * Y scale -- but not necessarily on its own parent, and NOT AT ALL in the codex, whose icon layer is a plain container. The
+ * product of the chain is the honest answer; checking one level reports "not flipped" for things that plainly are, and
+ * assuming the water's answer reports "flipped" for the codex, which is how the previewed anglerfish came out upside down.
+ */
+export function isYFlipped(node: { parent: unknown }): boolean {
+  let scaleY = 1;
+  for (let at = node.parent as { scale?: { y: number }; parent: unknown } | null; at; at = at.parent as never) {
+    scaleY *= at.scale?.y ?? 1;
+  }
+  return scaleY < 0;
+}
