@@ -884,6 +884,7 @@ export class HazardField {
     }
     if (hazard.health > 0) {
       this.damaged++;
+      HIT_EVENTS.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'hit', colour: KIND_TUNING[hazard.kind].colour });
       return 'damaged';
     }
     /**
@@ -896,6 +897,7 @@ export class HazardField {
     if (hazard.kind === 'bombfish') {
       hazard.blastFuse = 0;
       this.fled++;
+      HIT_EVENTS.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour });
       return 'fled';
     }
     /**
@@ -908,6 +910,8 @@ export class HazardField {
      */
     if (hazard.kind === 'boss') {
       this.killed++;
+      // The boss is the one thing that is KILLED rather than driven off, and it breaks like anything else.
+      HIT_EVENTS.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour });
       return 'killed';
     }
     hazard.flee = FLEE_DIRECTIONS[Math.floor(Math.random() * FLEE_DIRECTIONS.length)]!;
@@ -2287,6 +2291,19 @@ export function hazardArtSpriteForTest(id: number): Sprite | null {
 
 export const LURE_PROBE: { x: number; y: number; r: number; tipX: number; tipY: number; angle: number; glowRadius: number }[] = [];
 
+/**
+ * What just happened to whom, for the presentation to turn into particles.
+ *
+ * A queue rather than a callback because damage arrives from several places and this is the one funnel they all share: the
+ * simulation should not know what a spark is, and the renderer should not have to be told about bullets.
+ */
+/**
+ * The radius is a LANE FRACTION, not metres: the field does not know the lane's width, and the caller (which does) is the
+ * one that draws in world units. At the impact point when there is one, so a spark is where the bullet landed rather than
+ * where the creature's centre happens to be.
+ */
+export const HIT_EVENTS: { x: number; y: number; radiusFraction: number; kind: 'hit' | 'defeat'; colour: number }[] = [];
+
 export function paintHazards(
   g: Graphics,
   field: HazardField,
@@ -2970,6 +2987,8 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
 
 
 

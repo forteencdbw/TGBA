@@ -3,7 +3,7 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeL
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, selectLevel, type EntrySide, type Level, type LevelEntry } from './levels';
 import { Progression } from './progress';
-import { blastRadiusFraction, HazardField, hazardHealth, hazardArtSpriteForTest, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
+import { blastRadiusFraction, HazardField, hazardHealth, hazardArtSpriteForTest, HIT_EVENTS, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
 import { BulletField, paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
@@ -27,6 +27,7 @@ import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
 import { Sprite, Text as PixiText, Texture } from 'pixi.js';
 import { allAssetNames, assetUrl, preloadAssets } from './assets';
+import { ParticleField } from './particles';
 
 /**
  * Whether the chain of parents above `node` flips the Y axis.
@@ -157,6 +158,8 @@ class Game {
   private readonly bubble = new Graphics();
   /** The loading screen: a scrim, a progress track and bar, a label, and how far along the fetch is. */
   private readonly loadScrim = new Graphics();
+  /** Sparks and debris from hits, in world space. See `src/particles.ts`. */
+  private readonly hitParticles = new ParticleField();
   private readonly loadBar = new Graphics();
   private readonly loadLabel = new PixiText({
     text: '',
@@ -444,6 +447,8 @@ class Game {
     this.nominalSeconds = nominalAscentSeconds();
 
     this.scene.world.addChild(this.pickups, this.leaving, this.burstWave, this.bubble, this.particles);
+    // Over the water and under the HUD: a spark is part of the scene, not a readout.
+    this.scene.world.addChild(this.hitParticles.graphics);
     this.loadScrim.eventMode = 'none';
     this.loadBar.eventMode = 'none';
     this.loadLabel.eventMode = 'none';
@@ -777,6 +782,11 @@ class Game {
 
   openCodexRef(): void {
     this.debugOpenCodexForTest();
+  }
+
+  /** Test hook: how many particles are alive. */
+  get hitParticlesRef(): number {
+    return this.hitParticles.count;
   }
 
   /** Test hook: the bullet sprite pool. */
@@ -2221,6 +2231,23 @@ class Game {
       }
       case 'playing':
         this.elapsedTotal += dt;
+        /**
+         * The particles are drained and ticked HERE, where `dt` is in scope.
+         *
+         * A hit only happens while playing, so the phase is the honest place for it -- and the alternative was threading a
+         * delta into a draw call that does not otherwise need one. The radii arrive as lane fractions and become metres here,
+         * which is the only place that knows how wide the lane is.
+         */
+        for (const event of HIT_EVENTS.splice(0, HIT_EVENTS.length)) {
+          this.hitParticles.emit({
+            x: event.x,
+            y: event.y,
+            radius: event.radiusFraction * this.camera.viewport.laneWidthMeters,
+            kind: event.kind,
+            colour: event.colour,
+          });
+        }
+        this.hitParticles.update(dt);
         break;
     }
 
@@ -4291,6 +4318,8 @@ class Game {
      * every frame.
      */
     const bulletArt = this.syncBulletSprites(g, laneWidth);
+    this.hitParticles.draw();
+
     if (!bulletArt) paintBullets(g, this.bullets, laneWidth);
 
     /**
@@ -6058,6 +6087,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 

@@ -846,6 +846,22 @@ export interface Mechanisms {
   >;
   /** The white flash anything shootable gives when a bullet lands: creatures AND breakable obstacles. */
   /** The loading screen shown between the menu and a level. */
+  /** Hit particles: sparks on a hit, a ring of debris on a defeat. */
+  particles: {
+    maxParticles: number;
+    hitCount: number;
+    hitSpeed: number;
+    hitLife: number;
+    hitSize: number;
+    defeatCount: number;
+    defeatSpeed: number;
+    defeatLife: number;
+    defeatSize: number;
+    defeatColour: number;
+    defeatJitter: number;
+    drag: number;
+    descentSpeed: number;
+  };
   loading: {
     scrimColour: number;
     scrimAlpha: number;
@@ -1900,6 +1916,19 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     },
     describe: 'an object of kind -> { move, charge?, scale, alpha, lure? }',
   },
+  { path: 'particles.maxParticles', check: (v) => typeof v === 'number' && v >= 0 && v <= 4000, describe: 'a count between 0 and 4000' },
+  { path: 'particles.hitCount', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a count between 0 and 200' },
+  { path: 'particles.hitSpeed', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres per second between 0 and 2000' },
+  { path: 'particles.hitLife', check: (v) => typeof v === 'number' && v > 0 && v <= 10, describe: 'seconds above 0 and at most 10' },
+  { path: 'particles.hitSize', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'metres between 0 and 200' },
+  { path: 'particles.defeatCount', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'a count between 0 and 400' },
+  { path: 'particles.defeatSpeed', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres per second between 0 and 2000' },
+  { path: 'particles.defeatLife', check: (v) => typeof v === 'number' && v > 0 && v <= 10, describe: 'seconds above 0 and at most 10' },
+  { path: 'particles.defeatSize', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'metres between 0 and 200' },
+  { path: 'particles.defeatColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'particles.defeatJitter', check: (v) => typeof v === 'number' && v >= 0 && v <= Math.PI * 2, describe: 'radians of jitter, at most a full turn' },
+  { path: 'particles.drag', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a per-frame retention above 0 and at most 1' },
+  { path: 'particles.descentSpeed', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres per second between 0 and 2000' },
   { path: 'loading.scrimColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'loading.scrimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'loading.trackColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
