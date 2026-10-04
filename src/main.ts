@@ -55,7 +55,7 @@ const INTRO_SECONDS = 1.6;
  * arriving from underneath.
  */
 const INTRO_START_SCREEN_Y = -0.18;
-const INTRO_END_SCREEN_Y = 0.5;
+const INTRO_END_SCREEN_Y = 0.25;
 /**
  * The surface finish: slow-motion splash, a held beat, then the pop.
  *
@@ -2287,7 +2287,18 @@ class Game {
       return;
     }
     // Everything left is a creature: the pickups, the collectables and the scenery have all returned above.
-    const hazard = this.makeHazard(entry.kind as HazardKind, spawnX, spawnY, entering);
+    /**
+     * A creature on a path carries the spline, anchored at where it spawned.
+     *
+     * The waypoints are level coordinates RELATIVE to the spawn point (`x` in lane fractions, `y` in metres above), so
+     * one authored weave can be placed anywhere in the level without being re-authored -- and the same path works at any
+     * scroll speed, because the world keeps moving underneath it.
+     */
+    const pathSpec = entry.path ? LEVEL.paths?.[entry.path] : undefined;
+    const path: Hazard['path'] = pathSpec
+      ? { points: pathSpec.points, seconds: pathSpec.seconds, elapsed: 0, startX: spawnX, startY: spawnY }
+      : null;
+    const hazard = this.makeHazard(entry.kind as HazardKind, spawnX, spawnY, entering, undefined, path);
     this.hazards.hazards.push(hazard);
   }
 
@@ -2801,7 +2812,14 @@ class Game {
    * The scripted events need this: `HazardField.spawn` picks a random kind and position for ambient
    * pressure, which is the opposite of what a scripted beat wants.
    */
-  private makeHazard(kind: HazardKind, x: number, y: number, entry: Hazard['entry'] = null, healthOverride?: number): Hazard {
+  private makeHazard(
+    kind: HazardKind,
+    x: number,
+    y: number,
+    entry: Hazard['entry'] = null,
+    healthOverride?: number,
+    path?: Hazard['path'],
+  ): Hazard {
     const radiusFraction = KIND_TUNING[kind].radius;
     /**
      * The boss's health is the LEVEL's, so it is passed in rather than read from `hazards.health`.
@@ -2845,6 +2863,7 @@ class Game {
       hitFlash: 0,
       discharge: 0,
       dischargeRest: 0,
+      path: path ?? null,
       foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
     };
   }
@@ -5599,6 +5618,11 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
+
 
 
 

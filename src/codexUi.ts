@@ -539,6 +539,7 @@ export class CodexUi {
           blastFuse: null,
           tint: null,
           hitFlash: 0,
+          path: null,
           discharge: 0,
           dischargeRest: 0,
           foamLife: 0,
@@ -896,6 +897,7 @@ function inside(rect: Rect, x: number, y: number): boolean {
 function diamond(g: Graphics, cx: number, cy: number, r: number): void {
   g.moveTo(cx, cy - r).lineTo(cx + r, cy).lineTo(cx, cy + r).lineTo(cx - r, cy).closePath();
 }
+
 
 
 

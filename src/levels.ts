@@ -68,6 +68,8 @@ export type EntrySide = 'top' | 'left' | 'right' | 'bottom';
 export interface LevelEntry {
   /** Metres of scroll at which this enters. */
   at: number;
+  /** The named spline this entry follows, if any. See `PathSpec`. */
+  path?: string;
   /**
    * Lateral position as a fraction of the play area width.
    *
@@ -155,6 +157,8 @@ export type Arrange = 'single' | 'line' | 'column' | 'spread' | 'barrier';
  * is one object in the water. One block becomes many entries, and that expansion is the whole point of the file.
  */
 export interface SpawnBlock {
+  /** Put this block's creatures on a named spline; `count` becomes a staggered string. */
+  path?: string;
   at: number;
   kind: SpawnKind;
   count: number;
@@ -196,6 +200,13 @@ export interface Level {
   entries: readonly LevelEntry[];
   /** The blocks the entries were expanded from, kept so a test can prove the file and the timeline agree. */
   blocks: readonly SpawnBlock[];
+  /**
+   * Put this block's creatures on a named spline.
+   *
+   * `count` then means "a string of this many", laid out along the path by its own `staggerMeters` rather than by the
+   * level's scroll: the creatures enter one after another and follow the same curve, which is the whole effect.
+   */
+  path?: string;
   /** Signposts, at depths from the surface, for the HUD. */
   landmarks?: readonly { depth: number; label: string }[];
   /**
@@ -218,12 +229,34 @@ export interface Level {
    */
   boss: BossSpec;
   /**
+   * Named SPLINES a spawn block can put its creatures on.
+   *
+   * The point of a path is a shape no single rule produces: a string of fish that enters from the right, weaves up and
+   * down inside the screen and leaves on the left. Each creature follows the SAME spline with a delay, which is what
+   * makes it a string rather than a shoal -- and because the world keeps scrolling underneath, the same path reads
+   * differently at different scroll speeds without being re-authored.
+   *
+   * Coordinates are relative to where the creature spawned: `x` is a lane fraction (below 0 and above 1 are off the
+   * screen, which is how entering and leaving work) and `y` is metres ABOVE that spawn point.
+   */
+  paths?: Record<string, PathSpec>;
+  /**
    * This level's water: a deep-to-shallow gradient, the surface bloom, and a mood tint over both.
    *
    * Per LEVEL because the six levels are six different places, and water colour is the cheapest way to say so. It used
    * to be one hardcoded ramp, which made every level the same sea with different creatures in it.
    */
   palette: LevelPalette;
+}
+
+/** A spline for creatures to follow, as written in the level file. */
+export interface PathSpec {
+  /** The waypoints, in order. At least two: a spline needs something to run through. */
+  points: { x: number; y: number }[];
+  /** Seconds to travel the whole spline. */
+  seconds: number;
+  /** Metres between one creature and the next on the same path, so a `count` becomes a string. */
+  staggerMeters: number;
 }
 
 /** One level's water colours. `tintStrength` is how much of `tint` to mix over the gradient, 0..1. */
@@ -404,6 +437,7 @@ const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom'];
 
 /** The keys a block may use. Anything else is an error rather than a silent no-op -- see `readBlock`. */
 const BLOCK_KEYS: readonly string[] = [
+  'path',
   'at',
   'kind',
   'count',
@@ -422,7 +456,7 @@ const BLOCK_KEYS: readonly string[] = [
   'depth',
 ];
 
-const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'palette', 'spawns'];
+const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'palette', 'paths', 'spawns'];
 
 /** Throw with the offending place named, so a typo in the file is a message rather than a mystery. */
 function fail(where: string, message: string): never {
@@ -533,6 +567,9 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
      */
     enterSpeed: optNum(node, 'enterSpeed', where, mech.spawning.enterSpeedMps, 1, 500),
     depth: optNum(node, 'depth', where, mech.spawning.entryDepth, 0, 1),
+    // The block's PATH, if it names one. Checked against the level's own path table later (the block is read before the
+    // level finishes parsing), so a typo here is reported once the table is known rather than silently ignored.
+    ...(typeof node['path'] === 'string' ? { path: node['path'] } : {}),
   };
 }
 
@@ -546,6 +583,24 @@ function expandBlock(block: SpawnBlock): LevelEntry[] {
   const side: Pick<LevelEntry, 'from' | 'enterSpeed' | 'depth'> =
     block.from === 'top' ? {} : { from: block.from, enterSpeed: block.enterSpeed, depth: block.depth };
   const tag = (entries: LevelEntry[]): LevelEntry[] => entries.map((e) => ({ ...e, ...side }));
+
+  /**
+   * A block on a PATH is a STRING: `count` creatures, each `staggerMeters` after the last.
+   *
+   * Expanded here rather than at spawn time so the whole string exists in the timeline like everything else -- which
+   * means the tools that reason about a level (the "what is on screen at 400m" question) keep working, and the stagger
+   * is authored in metres rather than in frames.
+   */
+  if (block.path) {
+    const stagger = PATH_STAGGER.get(block.path) ?? 0;
+    const n = Math.max(1, block.count);
+    return tag(
+      Array.from({ length: n }, (_, i) => ({
+        ...place.one(block.at + i * stagger, block.kind, block.x, block.sizes?.[i % Math.max(1, block.sizes?.length ?? 1)]),
+        path: block.path as string,
+      })),
+    );
+  }
 
   switch (block.arrange) {
     case 'single':
@@ -569,6 +624,15 @@ function expandBlock(block: SpawnBlock): LevelEntry[] {
       return tag(place.barrier(block.at, block.kind, block.count, block.gapAt, block.gapWidth));
   }
 }
+
+/**
+ * The stagger for each named path, in metres, as read from the file.
+ *
+ * A module-level map because `expandBlock` is a pure function of a BLOCK and the stagger is a property of the PATH the
+ * block names -- the alternative is threading the level's path table through every helper that expands a block, for one
+ * number. It is filled by `readLevels`, which runs before anything can ask for it.
+ */
+const PATH_STAGGER = new Map<string, number>();
 
 /** The file, parsed and validated. Throws with the offending place named. */
 /**
@@ -643,6 +707,41 @@ function readLevels(text: string): { start: string; levels: Level[] } {
       tintStrength: optNum(paletteNode, 'tintStrength', `levels[${id}].palette`, 0, 0, 1),
     };
 
+    /**
+     * The named paths, validated as they are read.
+     *
+     * A path with fewer than two points is not a spline and a path with a zero duration never finishes, and both would
+     * look like "the creatures I placed are not moving" rather than like a config error -- so both are refused here,
+     * with the level and the path named.
+     */
+    let paths: Record<string, PathSpec> | undefined;
+    if (node['paths'] !== undefined) {
+      const rawPaths = node['paths'];
+      if (rawPaths === null || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) {
+        fail(`levels[${id}].paths`, 'must be an object of path name to path.');
+      }
+      paths = {};
+      for (const [name, rawPath] of Object.entries(rawPaths as Record<string, unknown>)) {
+        const pathNode = (rawPath && typeof rawPath === 'object' && !Array.isArray(rawPath) ? rawPath : {}) as Record<string, unknown>;
+        const rawPoints = pathNode['points'];
+        if (!Array.isArray(rawPoints) || rawPoints.length < 2) {
+          fail(`levels[${id}].paths.${name}.points`, 'must be a list of at least two points, or there is no spline to follow.');
+        }
+        const points = rawPoints.map((raw, i) => {
+          const pt = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+          return {
+            x: reqNum(pt, 'x', `levels[${id}].paths.${name}.points[${i}]`, -20, 20),
+            y: reqNum(pt, 'y', `levels[${id}].paths.${name}.points[${i}]`, -100000, 100000),
+          };
+        });
+        paths[name] = {
+          points,
+          seconds: reqNum(pathNode, 'seconds', `levels[${id}].paths.${name}`, 0.1, 600),
+          staggerMeters: optNum(pathNode, 'staggerMeters', `levels[${id}].paths.${name}`, 0, 0, 100000),
+        };
+      }
+    }
+
     const rawBoss = node['boss'];
     if (rawBoss === null || typeof rawBoss !== 'object' || Array.isArray(rawBoss)) {
       fail(`levels["${id}"].boss`, 'is missing. Every level ends when its boss is defeated, so a level must name one.');
@@ -675,6 +774,7 @@ function readLevels(text: string): { start: string; levels: Level[] } {
       ...(landmarks ? { landmarks } : {}),
       boss,
       palette,
+      ...(paths ? { paths } : {}),
       entries,
       blocks,
     });
@@ -839,6 +939,13 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
+
+
+
+
+
+
 
 
 

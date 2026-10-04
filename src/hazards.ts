@@ -225,6 +225,13 @@ export interface Hazard {
    * that absorbs ten rounds in a row has to say so every single time, or the player cannot tell hits from misses.
    */
   hitFlash: number;
+  /**
+   * A spline this creature is following, or null.
+   *
+   * The points are a REFERENCE to the level's own table, not a copy: a level with a hundred fish on one path still has
+   * one spline in memory.
+   */
+  path: { points: readonly { x: number; y: number }[]; seconds: number; elapsed: number; startX: number; startY: number } | null;
   /** LEVEL 6's foam: how long it has left before it breaks up. */
   foamLife: number;
   /** Seconds left of a zapper's discharge ring, and its cooldown. Both per instance: a shoal does not fire in unison. */
@@ -557,6 +564,32 @@ export function hazardHealth(kind: HazardKind): number {
  */
 const FLEE_DIRECTIONS = ['up', 'left', 'right'] as const;
 
+/**
+ * A point on a Catmull-Rom spline through `points`, at `t` in 0..1.
+ *
+ * Catmull-Rom rather than a Bézier chain because it INTERPOLATES: the curve passes exactly through every waypoint, which
+ * is what "move along these points" means. A Bézier would only be pulled toward them, so an author asking for a fish to
+ * pass the middle of the screen would get one that passed near it.
+ */
+function pathPoint(points: readonly { x: number; y: number }[], t: number): { x: number; y: number } {
+  const n = points.length;
+  if (n === 0) return { x: 0, y: 0 };
+  if (n === 1) return points[0]!;
+  const span = (n - 1) * Math.min(1, Math.max(0, t));
+  const i = Math.min(n - 2, Math.floor(span));
+  const u = span - i;
+  // The four control points, clamped at the ends: a path that is not closed has to borrow its neighbours' reflections.
+  const p0 = points[Math.max(0, i - 1)]!;
+  const p1 = points[i]!;
+  const p2 = points[i + 1]!;
+  const p3 = points[Math.min(n - 1, i + 2)]!;
+  const u2 = u * u;
+  const u3 = u2 * u;
+  const axis = (a: number, b: number, c: number, d: number): number =>
+    0.5 * (2 * b + (c - a) * u + (2 * a - 5 * b + 4 * c - d) * u2 + (-a + 3 * b - 3 * c + d) * u3);
+  return { x: axis(p0.x, p1.x, p2.x, p3.x), y: axis(p0.y, p1.y, p2.y, p3.y) };
+}
+
 export interface HazardContext {
   /** Visible world y range, so spawns appear just above the top of the screen. */
   min: number;
@@ -713,6 +746,7 @@ export class HazardField {
       charge: null,
       blastFuse: null,
       hitFlash: 0,
+      path: null,
       discharge: 0,
       dischargeRest: 0,
       foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
@@ -1338,6 +1372,7 @@ export class HazardField {
       charge: null,
       blastFuse: null,
       hitFlash: 0,
+      path: null,
       discharge: 0,
       dischargeRest: 0,
       foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
@@ -1514,6 +1549,41 @@ export class HazardField {
         return;
       }
     }
+    /**
+     * A creature on a PATH is placed on it, and nothing else moves it.
+     *
+     * Handled before the per-kind switch rather than as a case inside it, because a path is not a kind of movement -- it
+     * is an instruction that overrides whatever that kind would otherwise do. A fish told to swim a spline swims the
+     * spline: it does not also chase the player, which is what keeps an authored shape the shape that was authored.
+     *
+     * The curve is a Catmull-Rom through the waypoints, which is the spline that PASSES THROUGH its control points --
+     * the reason to author a path is to say "come through here", and a Bézier would only come near it.
+     */
+    if (h.path) {
+      h.path.elapsed += dt;
+      const t = Math.min(1, h.path.elapsed / Math.max(0.1, h.path.seconds));
+      const at = pathPoint(h.path.points, t);
+      const before = { x: h.x, y: h.y };
+      /**
+       * `x` is ABSOLUTE (a lane fraction from the lane's left edge), `y` is relative to the spawn.
+       *
+       * The asymmetry is deliberate. Where a thing IS on screen is what a path is for -- "come in at the right edge and
+       * leave past the left one" is a statement about the screen -- while its height is a statement about the level,
+       * where the only meaningful origin is the point it entered at. Adding the spawn's x to the path's x (as this
+       * first did) put a fish authored at x=1.25 at 2.25 lanes, which is what "the string never arrives" looks like.
+       */
+      h.x = at.x * ctx.laneWidth;
+      h.y = h.path.startY + at.y;
+      // The facing follows the tangent, so a fish swimming left is drawn swimming left.
+      if (Math.abs(h.x - before.x) > 0.001) h.seed = Math.sign(h.x - before.x) > 0 ? Math.abs(h.seed) : -Math.abs(h.seed);
+      /**
+       * The END of the path retires it, and only that: a path may start and finish outside the lane, so the usual cull
+       * would delete the whole string on the frame it spawned.
+       */
+      if (t >= 1) h.flee = 'up';
+      return;
+    }
+
     switch (h.kind) {
       case 'fish': {
         // The bait timer is the only thing that breaks the chase.
@@ -1830,7 +1900,14 @@ export class HazardField {
 
     // The hit flash decays with the creature's own clock, so it is a property of the body rather than of the frame.
     if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
-    h.x = Math.max(0, Math.min(ctx.laneWidth, h.x));
+    /**
+     * The clamp that keeps ordinary creatures in the lane, skipped for anything on a PATH.
+     *
+     * A path is placed on screen coordinates on purpose: entering past the right edge and leaving past the left one is
+     * the effect being authored, and clamping x to the lane pinned both ends to the edges -- the string arrived at the
+     * right-hand wall and stopped there instead of swimming in from outside it.
+     */
+    if (!h.path) h.x = Math.max(0, Math.min(ctx.laneWidth, h.x));
   }
 
   /**
@@ -2445,6 +2522,10 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
+
+
 
 
 
