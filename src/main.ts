@@ -718,6 +718,11 @@ class Game {
     return this.runBanner.text;
   }
 
+  /** Test hook: open the codex, for probing its pages. */
+  openCodexRef(): void {
+    this.debugOpenCodexForTest();
+  }
+
   /** Test hook: the bullet sprite pool. */
   get bulletSpritesRef(): Sprite[] {
     return this.bulletSprites;
@@ -5899,6 +5904,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 

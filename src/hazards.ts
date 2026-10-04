@@ -2034,6 +2034,10 @@ WHITE_OUT.matrix = [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0];
  * frame is the bug that has already cost this project two rounds.
  */
 const ART_SPRITES = new Map<number, Sprite>();
+/** When each pooled sprite was last asked for, for the time-based sweep. */
+const ART_SEEN = new Map<number, number>();
+/** A monotonic clock for the sweep, set by the painter on each pass. */
+let ART_NOW = 0;
 const ART_TEXTURES = new Map<string, Texture>();
 
 function artTexture(name: string): Texture | null {
@@ -2061,14 +2065,24 @@ function artTexture(name: string): Texture | null {
   return null;
 }
 
-/** Retire the sprites of creatures that are gone, so the pool tracks the water rather than growing for ever. */
-function pruneArtSprites(field: HazardField): void {
+/**
+ * Retire sprites that have not been used for a while, so the pool tracks the water rather than growing for ever.
+ *
+ * BY TIME, not by "is this hazard still in the field", and the difference matters: the codex draws its cards through this
+ * same painter with a one-object field it builds fresh each redraw, so an id-based sweep deleted the card's sprite on the
+ * very next frame -- the book would have shown the anglerfish's glow blinking out. A sprite that has not been asked for in a
+ * second belongs to nothing.
+ */
+const ART_SPRITE_TTL_SECONDS = 1;
+
+function pruneArtSprites(): void {
   if (ART_SPRITES.size === 0) return;
-  const live = new Set(field.hazards.map((h) => h.id));
+  const now = ART_NOW;
   for (const [id, sprite] of ART_SPRITES) {
-    if (!live.has(id)) {
+    if (now - ART_SEEN.get(id)! > ART_SPRITE_TTL_SECONDS) {
       sprite.destroy();
       ART_SPRITES.delete(id);
+      ART_SEEN.delete(id);
     }
   }
 }
@@ -2081,7 +2095,8 @@ export function paintHazards(
   canEat: (kind: HazardKind) => boolean,
   which: 'in-play' | 'leaving' = 'in-play',
 ): void {
-  if (which === 'in-play') pruneArtSprites(field);
+  ART_NOW += 1;
+  if (which === 'in-play') pruneArtSprites();
   for (const h of field.hazards) {
     // A creature is in exactly one of the two passes, so nothing is drawn twice and nothing is missed.
     if (which === 'leaving' ? !h.flee : h.flee) continue;
@@ -2108,6 +2123,9 @@ export function paintHazards(
           sprite.eventMode = 'none';
           g.parent?.addChild(sprite);
           ART_SPRITES.set(h.id, sprite);
+        }
+        ART_SEEN.set(h.id, ART_NOW);
+        if (false) {
         }
         const size = r * 2 * art.scale;
         sprite.texture = texture;
@@ -2692,6 +2710,7 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
 
 
 
