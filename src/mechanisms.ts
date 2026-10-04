@@ -786,6 +786,10 @@ export interface Mechanisms {
    * to know about a picture's orientation.
    */
   hazardFront: 'left' | 'right';
+  /** How long a creature keeps a facing before it may change its mind. */
+  hazardFacing: {
+    cooldownSeconds: number;
+  };
   hazardArt: Record<
     string,
     {

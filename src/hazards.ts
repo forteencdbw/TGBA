@@ -291,6 +291,14 @@ export interface Hazard {
    * the suction field, cannot hurt the player -- and leaves, in one of three directions picked when it decided.
    */
   flee: 'up' | 'left' | 'right' | 'down' | null;
+  /**
+   * The facing the creature has COMMITTED to, and how long before it may change: +1 keeps the picture as drawn, -1 mirrors it.
+   *
+   * Optional, and set on first use, because the alternative is teaching every spawn literal in three modules about a field only
+   * the painter writes -- see the commit for why that trade is not worth it for state that has exactly one owner.
+   */
+  facing?: number;
+  facingRest?: number;
 }
 
 /** Tunables for D3. Kept together because they are only meaningful as a set. */
@@ -1421,6 +1429,8 @@ export class HazardField {
      * to be running this frame.
      */
     if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
+    // The facing cooldown ticks here too: a charge returns early as well, and a creature that lunged must not freeze its facing.
+    if (h.facingRest !== undefined && h.facingRest > 0) h.facingRest = Math.max(0, h.facingRest - dt);
     const base = ctx.descentSpeed;
 
     /**
@@ -2242,8 +2252,22 @@ export function paintHazards(
         const exitSide = h.flee === 'left' ? 'left' : h.flee === 'right' ? 'right' : null;
         const playerIsLeft = playerX < h.x;
         const wantFrontLeft = exitSide ? exitSide === 'left' : playerIsLeft;
-        const mirrored = (front === 'left') !== wantFrontLeft;
-        const facing = mirrored ? -1 : 1;
+        /**
+         * The turn is COMMITTED for `cooldownSeconds`, which is the whole point of this block.
+         *
+         * A creature with the player almost exactly above or below it would otherwise re-decide every frame as the player
+         * drifts across its centre line, and the picture would strobe. The first decision is taken at once -- a creature
+         * entering the water should look at the player immediately -- and later ones wait their turn.
+         */
+        const wantFacing = ((front === 'left') !== wantFrontLeft) ? -1 : 1;
+        if (h.facing === undefined) {
+          h.facing = wantFacing;
+          h.facingRest = 0;
+        } else if (wantFacing !== h.facing && (h.facingRest ?? 0) <= 0) {
+          h.facing = wantFacing;
+          h.facingRest = mech.hazardFacing.cooldownSeconds;
+        }
+        const facing = h.facing;
         sprite.scale.set(unit * facing, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
         /**
          * The white flash, as a filter ON THE SPRITE.
