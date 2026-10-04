@@ -2228,10 +2228,21 @@ export function paintHazards(
          */
         const front = art.front ?? mech.hazardFront;
         // No player (a codex card) means no turning: the picture is shown as drawn.
-        const knowsPlayer = Number.isFinite(playerX);
+        // A missing player means no turning TOWARDS one -- but a creature leaving left still turns left (see below).
+        /**
+         * LEAVING beats LOOKING.
+         *
+         * A creature on its way out faces the way it is going: left if it exits left, right if it exits right. It stops
+         * tracking the player the moment it has decided to leave, because the player is no longer what it is reacting to --
+         * and a fish swimming off to the left while still staring right reads as a bug, not as a retreat.
+         *
+         * An exit UPWARDS keeps the facing it had: "up" says nothing about which way it is pointing, and flipping sideways
+         * while rising away would be a twitch nobody asked for.
+         */
+        const exitSide = h.flee === 'left' ? 'left' : h.flee === 'right' ? 'right' : null;
         const playerIsLeft = playerX < h.x;
-        const wantFrontLeft = playerIsLeft;
-        const mirrored = knowsPlayer && (front === 'left') !== wantFrontLeft;
+        const wantFrontLeft = exitSide ? exitSide === 'left' : playerIsLeft;
+        const mirrored = (front === 'left') !== wantFrontLeft;
         const facing = mirrored ? -1 : 1;
         sprite.scale.set(unit * facing, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
         /**
@@ -2801,6 +2812,8 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
 
 
 
