@@ -669,6 +669,12 @@ export interface Mechanisms {
    * two coexist because they cost different things -- a stomach slot versus nothing but time.
    */
   bullets: {
+    /** A file name in `src/assets/`, without its extension. Empty means the drawn dot. */
+    image: string;
+    imageAlpha: number;
+    imageTint: number;
+    /** A multiplier on the drawn radius, for art with padding around the ball. */
+    imageScale: number;
     /**
      * The fire-rate LADDER: the first entry is what a run starts at, and each rate pickup moves up one.
      *
@@ -1708,6 +1714,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'spit.trailWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a ratio between 0 and 1' },
   { path: 'spit.glowAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'spit.glowRadiusRatio', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a radius multiple of at least 1' },
+  { path: 'bullets.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string for the drawn dot' },
+  { path: 'bullets.imageAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'bullets.imageTint', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'bullets.imageScale', check: (v) => typeof v === 'number' && v > 0.1 && v <= 4, describe: 'a multiplier above 0.1 and at most 4' },
   { path: 'bullets.rateTiers', check: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 8 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 30), describe: 'a non-empty list of up to 8 rounds-per-second values between 0 and 30; the FIRST is what a run starts at' },
   { path: 'bullets.speedPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 8, describe: 'lane widths per second, above 0 and at most 8' },
   { path: 'bullets.radiusRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.1, describe: 'a fraction of the lane width, above 0.001 and at most 0.1' },

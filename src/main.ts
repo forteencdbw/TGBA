@@ -718,6 +718,11 @@ class Game {
     return this.runBanner.text;
   }
 
+  /** Test hook: the bullet sprite pool. */
+  get bulletSpritesRef(): Sprite[] {
+    return this.bulletSprites;
+  }
+
   /** Test hook: the raw bubble sprite, for measuring. */
   get bubbleSpriteRef2(): Sprite | null {
     return this.bubbleSprite;
@@ -4121,7 +4126,16 @@ class Game {
      * needs to read it; the two are on screen together constantly, so the order has to be decided rather than left
      * to whichever loop ran last.
      */
-    paintBullets(g, this.bullets, laneWidth);
+    /**
+     * The player's rounds: either the drawn dots or the supplied picture, never both.
+     *
+     * They go through the same "one name, one sprite" discipline as the bubble, but by POOL: a bullet is on screen for a
+     * fraction of a second and there are dozens of them, so a sprite is created the first time an id is seen and then kept
+     * for reuse. Creating one per frame is what made the bubble enormous twice over, and with bullets it would be that
+     * every frame.
+     */
+    const bulletArt = this.syncBulletSprites(g, laneWidth);
+    if (!bulletArt) paintBullets(g, this.bullets, laneWidth);
 
     /**
      * The enemies' rounds, drawn after the scenery so cover never hides what can kill you.
@@ -4519,9 +4533,93 @@ class Game {
    * be positioned in world coordinates like everything else in the water.
    */
   private bubbleSprite: Sprite | null = null;
+  /**
+   * One sprite per live bullet SLOT, reused.
+   *
+   * By index rather than by id, because a bullet has no id: they are interchangeable, so slot 3 being a different round
+   * this frame than last frame is invisible. What matters is that the pool never grows past the number of rounds on
+   * screen, which is what keeps this from being the "one sprite per frame" bug with bullets.
+   */
+  private readonly bulletSprites: Sprite[] = [];
+  private bulletTexture: Texture | null = null;
+  private bulletArtFor = '';
+  private bulletArtPending = false;
+
   private bubbleSpriteFor = '';
   /** Whether a load for \ubbleSpriteFor\ is in flight, so one name never builds two sprites. */
   private bubbleSpritePending = false;
+
+  /**
+   * Place one sprite per live bullet, and report whether the picture is being drawn at all.
+   *
+   * The texture is shared by every bullet and built once per image name, after `decode()` -- the same two traps as the
+   * bubble: a zero-width texture makes `width =` divide by zero, and rebuilding per frame leaves orphans on screen for
+   * ever. Bullets are pooled by id because they are created and destroyed constantly.
+   */
+  private syncBulletSprites(g: Graphics, laneWidth: number): boolean {
+    const cfg = mech.bullets;
+    if (!cfg.image) {
+      for (const sprite of this.bulletSprites) sprite.visible = false;
+      return false;
+    }
+    if (!this.bulletTexture && !this.bulletArtPending && this.bulletArtFor !== cfg.image) {
+      this.bulletArtFor = cfg.image;
+      this.bulletArtPending = true;
+      const image = new Image();
+      image.onload = () => {
+        void image
+          .decode()
+          .then(() => {
+            const texture = Texture.from(image);
+            if (texture.width > 0 && texture.height > 0) this.bulletTexture = texture;
+            this.bulletArtPending = false;
+          })
+          .catch(() => {
+            this.bulletArtPending = false;
+            console.warn('[bullets] could not decode ' + cfg.image);
+          });
+      };
+      image.onerror = () => {
+        this.bulletArtPending = false;
+        console.warn('[bullets] could not load ' + cfg.image);
+      };
+      const url = assetUrl(cfg.image);
+      if (url) image.src = url;
+    }
+    /**
+     * Until the picture is ready, the DOTS are drawn.
+     *
+     * Returning "handled" while the texture was still loading left the player firing nothing at all -- invisible rounds
+     * for as long as the load took, and for ever if it failed. The art is an upgrade to the rounds, not a precondition
+     * for them.
+     */
+    const texture = this.bulletTexture;
+    if (!texture) return false;
+    const size = laneWidth * mech.bullets.radiusRatio * 2 * cfg.imageScale;
+    // The world is Y-flipped, so the sprite's own Y is negative to keep the picture upright; see the bubble.
+    const scale = size / texture.width;
+    if (!Number.isFinite(scale) || scale <= 0) return true;
+    const list = this.bullets.bullets;
+    for (const [index, bullet] of list.entries()) {
+      let sprite = this.bulletSprites[index];
+      if (!sprite) {
+        sprite = new Sprite(texture);
+        sprite.anchor.set(0.5);
+        sprite.eventMode = 'none';
+        // The same container the drawn round goes into, so it inherits exactly the transform the dots had.
+        g.parent?.addChildAt(sprite, g.parent.getChildIndex(g));
+        this.bulletSprites[index] = sprite;
+      }
+      sprite.visible = true;
+      sprite.x = bullet.x;
+      sprite.y = bullet.y;
+      sprite.alpha = cfg.imageAlpha;
+      sprite.tint = cfg.imageTint;
+      sprite.scale.set(scale, -Math.abs(scale));
+    }
+    for (let i = list.length; i < this.bulletSprites.length; i++) this.bulletSprites[i]!.visible = false;
+    return true;
+  }
 
   /**
    * Load (once) and place the player's picture for this frame. See `playerBubble` in the config.
@@ -5801,6 +5899,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 
