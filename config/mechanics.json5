@@ -704,7 +704,7 @@
         // 图里那条触角本身画在左上方，所以用角度和长度把光点对到它的尖端。
         "stemAngle": -40,
         "stemFrom": 0.35,
-        "stemLength": 0.6,
+        "stemLength": 0,
         "stemWidth": 0.03,
         "stemColour": 0x2a2f45,
         // 光点半径（相对鱼半径）与颜色。
