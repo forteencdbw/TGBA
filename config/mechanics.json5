@@ -697,6 +697,14 @@
   "hazardFront": "left",
 
   "hazardArt": {
+    // 盲虾：第一关的常客，靠水流漂，不会追人。
+    "shrimp": {
+      // 如果这张图的正面在右边，把这里改成 "right" 就对了。
+      "front": "left",
+      "move": "盲虾",
+      "scale": 1.4,
+      "alpha": 1
+    },
     "angler": {
       // 这张图的正面在左边（头朝左）。玩家的气泡在它右边时，它会被镜像过来面对玩家。
       "front": "left",

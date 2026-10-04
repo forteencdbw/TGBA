@@ -248,6 +248,23 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
     notes: ['它不造成接触伤害，但会**持续把你往下压**——上升的节奏被打断就是它的作用。'],
   },
 
+
+  /**
+   * The blind shrimp: in the game since the first level, and never written into the book.
+   *
+   * It is the least dangerous thing in level 1 and that is exactly why it belongs here: a reader who has been killed by a
+   * crab, a jellyfish and a bomb fish will still want to know what the small drifting one does, and "nothing, it is food"
+   * is a useful thing to be told once rather than learned by flinching.
+   */
+  {
+    kind: 'shrimp',
+    tagline: '盲虾：随水流漂，不会追你',
+    notes: [
+      '它没有感官，所以不会因为你变大而过来——**第一关里唯一可以放心忽略的活物**。',
+      '它仍然是会动的食物：吃下去算体积，但**不提供任何额外收益**，所以饿了就吃，不饿就让开。',
+      '数量多、体型小，是"随手吃两口"的来源；真正要躲的东西从来不是它。',
+    ],
+  },
 ];
 
 function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[]): CodexEntry {
