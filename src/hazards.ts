@@ -925,6 +925,16 @@ export class HazardField {
     if (ctx.suction) this.applySuction(dt, ctx);
 
     for (const h of this.hazards) {
+      /**
+       * PER-FRAME STATE TICKS HERE, not inside `advance`.
+       *
+       * This loop runs for every live hazard whatever its behaviour is doing, and `advance` does not: it returns early for a
+       * charge, for a path follower, and -- measured -- for a creature that is leaving, which is how the facing cooldown came
+       * out as gaps of 0.61s and 6.64s instead of a flat 2s. Anything that must tick every frame belongs to the loop that
+       * runs every frame.
+       */
+      if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
+      if (h.facingRest !== undefined && h.facingRest > 0) h.facingRest = Math.max(0, h.facingRest - dt);
       this.advance(h, dt, ctx);
       /**
        * A creature's trigger finger, kept out of `advance` on purpose.
@@ -1428,9 +1438,6 @@ export class HazardField {
      * it once". A flash is a property of the BODY, so it belongs with the body's clock, not with whichever behaviour happens
      * to be running this frame.
      */
-    if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
-    // The facing cooldown ticks here too: a charge returns early as well, and a creature that lunged must not freeze its facing.
-    if (h.facingRest !== undefined && h.facingRest > 0) h.facingRest = Math.max(0, h.facingRest - dt);
     const base = ctx.descentSpeed;
 
     /**
@@ -2836,6 +2843,7 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
 
 
 
