@@ -2995,6 +2995,7 @@ class Game {
       blastFuse: null,
       tint: null,
       hitFlash: 0,
+      knock: null,
       discharge: 0,
       dischargeRest: 0,
       path: path ?? null,
@@ -3824,8 +3825,10 @@ class Game {
     audio.play('surface');
     for (const h of this.hazards.hazards) {
       if (!hit.has(h.id)) continue;
-      // Through `hit`, so the discharge is ordinary damage: health, the driven-off score and the popup all apply.
-      this.hazards.hit(h, cfg.chainDamage);
+      // Through `hit`, so the discharge is ordinary damage: health, the driven-off score, the popup and the knockback
+      // all apply. The impact point is the BUBBLE, because that is where the discharge came from -- so a chained zapper
+      // is pushed away from the player like everything else the player hits.
+      this.hazards.hit(h, cfg.chainDamage, { x: px, y: py });
       this.scorePopups.add(h.x, h.y, this.score.award('drivenOff'), this.camera);
     }
     if (cfg.chainSelfDamage > 0) this.takeHit();

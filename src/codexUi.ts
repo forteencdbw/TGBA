@@ -641,6 +641,8 @@ export class CodexUi {
           blastFuse: null,
           tint: null,
           hitFlash: 0,
+          // Nothing has shot it: the card draws the creature at rest.
+          knock: null,
           path: null,
           discharge: 0,
           dischargeRest: 0,

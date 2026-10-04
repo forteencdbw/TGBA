@@ -150,8 +150,9 @@ export class BulletField {
           const dx = h.x - b.x;
           const dy = h.y - b.y;
           if (dx * dx + dy * dy > reach * reach) continue;
-          // The hit is applied through the hazard field, which owns what it means to be driven off.
-          const outcome = ctx.hazards.hit(h, cfg.damage);
+          // The hit is applied through the hazard field, which owns what it means to be driven off -- and where the
+          // round was, so the recoil is along the line of the shot rather than along a fixed axis.
+          const outcome = ctx.hazards.hit(h, cfg.damage, { x: b.x, y: b.y });
           this.hits++;
           landed++;
           if (outcome === 'fled') {

@@ -227,6 +227,32 @@ export interface Hazard {
    */
   hitFlash: number;
   /**
+   * Recoil from being shot, or null.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY IT IS A STATE RATHER THAN A SHOVE WRITTEN INTO x/y
+   * ---------------------------------------------------------------------------------------------
+   * A shove cannot be a one-off displacement, because a displacement applied in one frame reads as a teleport at 60fps
+   * (the creature is simply somewhere else between two frames). It has to be spent over several frames, which means it
+   * has to survive until the next frame -- and anything that survives a frame is state this module owns.
+   *
+   * It is also NOT the same thing as `flee` or `charge`: those REPLACE the kind's own motion, while this one is added
+   * ON TOP of it. A fish that is knocked back is still swimming; it is just losing ground while it does. That is why it
+   * is applied after the kind's own motion rather than instead of it -- see `advance`.
+   *
+   * `dirX`/`dirY` is a unit vector pointing AWAY FROM THE IMPACT, so what the player sees is the round pushing the
+   * creature the way the round was going.
+   */
+  knock: {
+    dirX: number;
+    dirY: number;
+    /** Metres still to be covered in total, and how long the whole recoil lasts. */
+    meters: number;
+    seconds: number;
+    /** Seconds spent so far, which is what decays the speed. */
+    elapsed: number;
+  } | null;
+  /**
    * A spline this creature is following, or null.
    *
    * The points are a REFERENCE to the level's own table, not a copy: a level with a hundred fish on one path still has
@@ -767,6 +793,7 @@ export class HazardField {
       charge: null,
       blastFuse: null,
       hitFlash: 0,
+      knock: null,
       path: null,
       discharge: 0,
       dischargeRest: 0,
@@ -820,8 +847,13 @@ export class HazardField {
    *
    * The direction is rolled HERE, once, at the moment it turns: deciding per frame would have it leave in a
    * direction that changes every frame, which reads as a glitch rather than as a decision.
+   *
+   * @param impact where the hit landed, in world metres, if the caller knows. It sets the DIRECTION of the recoil
+   *   (away from where the round was), which is why it is worth passing: a round that lands slightly off-centre nudges
+   *   the creature slightly sideways, and the same shot at the same creature reads differently twice. Omitted, the
+   *   recoil is straight back up the screen.
    */
-  hit(hazard: Hazard, damage: number): 'immune' | 'damaged' | 'fled' | 'killed' {
+  hit(hazard: Hazard, damage: number, impact?: { x: number; y: number }): 'immune' | 'damaged' | 'fled' | 'killed' {
     // Immune covers both "this kind is not shootable" and "this one is already leaving": firing at something that
     // is on its way out should not keep re-triggering the same event, and it should certainly not re-roll its exit.
     if (hazard.maxHealth <= 0 || hazard.flee) return 'immune';
@@ -834,6 +866,12 @@ export class HazardField {
      * the hit feedback does.
      */
     hazard.hitFlash = mech.hitFlash.seconds;
+    /**
+     * And so is the RECOIL, for the same reason: this is the one place that knows a round connected, so it is the one
+     * place that can say "it got pushed". A new hit REPLACES whatever is left of the last one rather than adding to it,
+     * which is what keeps a burst of fire from launching a fish across the lane.
+     */
+    this.applyKnock(hazard, impact);
     /**
      * A ZAPPER fires when it is shot.
      *
@@ -1410,6 +1448,7 @@ export class HazardField {
       charge: null,
       blastFuse: null,
       hitFlash: 0,
+      knock: null,
       path: null,
       discharge: 0,
       dischargeRest: 0,
@@ -1423,12 +1462,84 @@ export class HazardField {
   }
 
   /**
+   * Load a creature's recoil from one landed hit.
+   *
+   * The direction is BACK THE WAY THE ROUND CAME -- away from the impact point -- so what the player sees is the shot
+   * pushing the creature the way the shot was going. Two things fall out of that for free: a round that lands
+   * off-centre also nudges the creature sideways, and no config value is needed to say which way is "back", because
+   * the impact itself says it.
+   *
+   * With no impact point (a chain discharge has no projectile) it is straight up the screen, which is where everything
+   * the player fires comes from.
+   */
+  private applyKnock(h: Hazard, impact?: { x: number; y: number }): void {
+    const cfg = mech.hazards.hitKnockback;
+    if (cfg.meters <= 0 || cfg.seconds <= 0) return;
+    let dirX = 0;
+    let dirY = 1;
+    if (impact) {
+      const dx = h.x - impact.x;
+      const dy = h.y - impact.y;
+      const len = Math.hypot(dx, dy);
+      // A round that landed exactly on the centre has no line to be pushed along, and normalising that would divide by
+      // zero, so the default stands.
+      if (len > 1e-3) {
+        dirX = dx / len;
+        dirY = dy / len;
+      }
+    }
+    h.knock = { dirX, dirY, meters: cfg.meters, seconds: cfg.seconds, elapsed: 0 };
+  }
+
+  /**
+   * Spend some of a creature's recoil, and end it when the time is up.
+   *
+   * The speed DECAYS LINEARLY to zero across the configured seconds, which is what makes the configured `meters` the
+   * distance actually travelled: with `v(t) = 2 * meters / seconds * (1 - t / seconds)`, the integral over the whole
+   * window is exactly `meters`. Reading the speed off the ELAPSED time rather than scaling a stored velocity by a
+   * per-frame factor is the same choice the lunge's curve makes -- the motion is a function of the time that has
+   * passed, so it comes out identical whatever the frame rate did.
+   *
+   * A hit that lands on top of an unfinished recoil therefore moves the creature LESS than `meters`: a fresh recoil
+   * replaces the old one and whatever distance it had left is lost. That is deliberate, and it is what keeps a burst of
+   * fire from walking a fish backwards across the lane -- two hits nudge it twice.
+   */
+  private advanceKnock(h: Hazard, dt: number): void {
+    const k = h.knock;
+    if (!k) return;
+    // Evaluated at the START of the step, so the frame the hit lands on moves at the full initial speed.
+    const left = Math.max(0, 1 - k.elapsed / k.seconds);
+    const speed = ((2 * k.meters) / k.seconds) * left;
+    h.x += k.dirX * speed * dt;
+    h.y += k.dirY * speed * dt;
+    k.elapsed += dt;
+    if (k.elapsed >= k.seconds) h.knock = null;
+  }
+
+  /**
+   * A creature's frame: its own motion, and then the recoil it is carrying.
+   *
+   * The recoil is applied LAST and ON TOP rather than written into the kind's own movement, and that ordering is the
+   * whole reason this is a wrapper. Two cases make it necessary:
+   *
+   *   - A creature on a PATH has its position SET from the spline every frame, so a shove added anywhere earlier in the
+   *     frame would be overwritten by the path in the same frame -- the hit would be invisible on exactly the authored
+   *     set pieces the level is built around.
+   *   - `advanceKind` RETURNS EARLY for a lunge, an arrival and a creature that is leaving. Five early returns is five
+   *     places that would each have to remember to move the recoil, and the fifth one would eventually be forgotten.
+   */
+  private advance(h: Hazard, dt: number, ctx: HazardContext): void {
+    this.advanceKind(h, dt, ctx);
+    this.advanceKnock(h, dt);
+  }
+
+  /**
    * Per-kind motion.
    *
    * All of them travel DOWN relative to the player, but none outruns the ascent: a hazard the player
    * cannot see coming is not a hazard, it is a coin flip.
    */
-  private advance(h: Hazard, dt: number, ctx: HazardContext): void {
+  private advanceKind(h: Hazard, dt: number, ctx: HazardContext): void {
     h.phase += dt;
     /**
      * The hit flash ticks HERE, before anything can return.
