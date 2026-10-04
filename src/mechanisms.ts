@@ -809,6 +809,9 @@ export interface Mechanisms {
     radiusScale: number;
   };
   codex: {
+    /** The full-screen preview's scrim. */
+    previewScrimColour: number;
+    previewScrimAlpha: number;
     columns: number;
     rows: number;
     margin: number;
@@ -1820,6 +1823,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'playerBubble.imageRotation', check: (v) => typeof v === 'number' && v >= -360 && v <= 360, describe: 'degrees between -360 and 360' },
   { path: 'playerBubble.imageScale', check: (v) => typeof v === 'number' && v > 0.1 && v <= 4, describe: 'a multiplier above 0.1 and at most 4' },
   { path: 'playerBubble.keepDetails', check: (v) => typeof v === 'boolean', describe: 'true or false' },
+  { path: 'codex.previewScrimColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'codex.previewScrimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'codex.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 4, describe: 'a whole number of columns between 1 and 4' },
   { path: 'codex.rows', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 6, describe: 'a whole number of rows between 1 and 6' },
   { path: 'codex.margin', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },

@@ -92,6 +92,15 @@ export class CodexUi {
   private grid = { left: 0, top: 0, cellW: 0, cellH: 0, gap: 0 };
   /** Canvas size from the last layout, so a press can be swallowed without a viewport. */
   private size = { width: 0, height: 0 };
+  /**
+   * The card being shown full screen, by index into the current page's cards, or null.
+   *
+   * An INDEX rather than a copy of the entry: the page is rebuilt on every turn and every layout, and a preview holding its
+   * own copy would happily keep showing something that is no longer in the book.
+   */
+  private preview: number | null = null;
+  /** The name under a full-screen preview. */
+  private readonly previewLabel = makeLabel('', mech.codex.titleColour, mech.codex.titleSize);
   private laidOut = false;
 
   /** Called when the player asks to leave. */
@@ -105,6 +114,10 @@ export class CodexUi {
     this.title = makeLabel('图鉴 / BESTIARY', cfg.titleColour, cfg.titleSize);
     this.pageLabel = makeLabel('', cfg.pageTextColour, cfg.pageTextSize);
     this.root.addChild(this.backdrop, this.chrome, this.icons, this.title, this.pageLabel);
+    this.previewLabel.eventMode = 'none';
+    this.previewLabel.visible = false;
+    // Added LAST so it is over the scrim the preview draws into `chrome`.
+    this.root.addChild(this.previewLabel);
 
     for (const c of CODEX_CATEGORIES) {
       const label = makeLabel(c.label, cfg.tabTextColour, cfg.tabTextSize);
@@ -295,10 +308,40 @@ export class CodexUi {
     this.redraw();
   }
 
+  /** Test hook: whether a preview is open. */
+  get previewForTest(): boolean {
+    return this.preview !== null;
+  }
+
+  /** Test hook: a card's rect by entry id, so a probe can tap the right one. */
+  cardRectForTest(id: string): Rect | null {
+    return this.cards.find((c) => c.entry.id === id)?.rect ?? null;
+  }
+
   handlePointerDown(x: number, y: number): boolean {
+    /**
+     * A preview swallows the next tap, wherever it lands.
+     *
+     * "Tap anywhere to close" rather than a close button: the thing fills the screen, so there is nowhere else to tap and a
+     * button would be one more thing to find for the one gesture that is already obvious.
+     */
+    if (this.preview !== null) {
+      this.preview = null;
+      this.redraw();
+      return true;
+    }
+
     for (const tab of this.tabs) {
       if (!inside(tab.rect, x, y)) continue;
       this.show(tab.id);
+      return true;
+    }
+
+    // A card opens its creature full screen.
+    for (const [i, card] of this.cards.entries()) {
+      if (!inside(card.rect, x, y)) continue;
+      this.preview = i;
+      this.redraw();
       return true;
     }
 
@@ -325,12 +368,53 @@ export class CodexUi {
   }
 
   /** Redraw everything: the chrome, the icons and the card text. Called on any change, never per frame. */
+  /** Hide or show everything that belongs to the PAGE rather than to a preview of one card on it. */
+  private setPageVisible(visible: boolean): void {
+    this.title.visible = visible;
+    this.pageLabel.visible = visible;
+    for (const label of this.tabLabels) label.visible = visible;
+    for (const label of this.buttonLabels) label.visible = visible;
+    for (const text of this.cardTexts) text.visible = visible;
+  }
+
   private redraw(): void {
     const cfg = mech.codex;
     const s = this.scale;
     const g = this.chrome;
     g.clear();
     this.icons.clear();
+
+    /**
+     * A preview replaces the page, and returns before the page is rebuilt.
+     *
+     * The card list is deliberately NOT rebuilt: the index refers to the cards already on this page, and rebuilding would
+     * re-derive them from the category and page for no reason while the player is looking at one of them. Everything else on
+     * the page is hidden rather than destroyed -- it is all still there when the preview closes.
+     */
+    if (this.preview !== null) {
+      const card = this.cards[this.preview];
+      if (!card) {
+        this.preview = null;
+      } else {
+        this.setPageVisible(false);
+        const box = Math.min(this.size.width, this.size.height) * 0.62;
+        g.rect(0, 0, this.size.width, this.size.height).fill({ color: cfg.previewScrimColour, alpha: cfg.previewScrimAlpha });
+        const cx = this.size.width / 2;
+        const cy = this.size.height / 2 - box * 0.05;
+        this.drawIconInto(card, box, cx, cy);
+        this.previewLabel.text = card.entry.name;
+        this.previewLabel.style.fill = cfg.titleColour;
+        this.previewLabel.style.fontSize = cfg.titleSize;
+        this.previewLabel.scale.set(s);
+        this.previewLabel.anchor.set(0.5, 0);
+        this.previewLabel.x = cx;
+        this.previewLabel.y = cy + box / 2 + 20 * s;
+        this.previewLabel.visible = true;
+        return;
+      }
+    }
+    this.setPageVisible(true);
+    this.previewLabel.visible = false;
 
     this.rebuildCards();
 
@@ -497,11 +581,20 @@ export class CodexUi {
    */
   private drawIcon(card: Card, s: number): void {
     const cfg = mech.codex;
-    const g = this.icons;
-    const pad = cfg.cardPad * s;
     const box = cfg.iconSize * s;
-    const cx = card.rect.x + pad + box / 2;
-    const cy = card.rect.y + pad + box / 2;
+    const pad = cfg.cardPad * s;
+    this.drawIconInto(card, box, card.rect.x + pad + box / 2, card.rect.y + pad + box / 2);
+  }
+
+  /**
+   * The icon itself, wherever it is wanted and however big.
+   *
+   * Separated from the card for the full-screen preview, which is this same call with a bigger box. That is the whole reason
+   * the preview shows the anglerfish's glow: the lure is drawn by the painter, so anything that renders the creature renders
+   * its light, and there is no second renderer to fall out of step.
+   */
+  private drawIconInto(card: Card, box: number, cx: number, cy: number): void {
+    const g = this.icons;
     const colour = iconColour(card.entry);
     const icon = card.entry.icon;
 
@@ -907,6 +1000,7 @@ function inside(rect: Rect, x: number, y: number): boolean {
 function diamond(g: Graphics, cx: number, cy: number, r: number): void {
   g.moveTo(cx, cy - r).lineTo(cx + r, cy).lineTo(cx, cy + r).lineTo(cx - r, cy).closePath();
 }
+
 
 
 

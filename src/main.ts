@@ -719,6 +719,23 @@ class Game {
   }
 
   /** Test hook: open the codex, for probing its pages. */
+  /** Test hooks for the codex's preview: its state, a card's rect, and its own pointer path. */
+  get codexStateRef(): { visible: readonly string[] } {
+    return this.codex.state;
+  }
+
+  codexCardRectRef(id: string): { x: number; y: number; w: number; h: number } | null {
+    return this.codex.cardRectForTest(id);
+  }
+
+  get codexPreviewRef(): boolean {
+    return this.codex.previewForTest;
+  }
+
+  handlePointerDownRef(id: number, x: number, y: number): void {
+    this.handlePointerDown(id, x, y);
+  }
+
   /** Test hook: turn the codex page. */
   codexNextPageRef(): void {
     this.codex.nextPageForTest();
@@ -5909,6 +5926,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 
