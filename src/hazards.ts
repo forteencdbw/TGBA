@@ -1473,7 +1473,7 @@ export class HazardField {
    * the player fires comes from.
    */
   private applyKnock(h: Hazard, impact?: { x: number; y: number }): void {
-    const cfg = mech.hazards.hitKnockback;
+    const cfg = mech.hitKnockback;
     if (cfg.meters <= 0 || cfg.seconds <= 0) return;
     let dirX = 0;
     let dirY = 1;

@@ -566,19 +566,6 @@ export interface Mechanisms {
      * does NOT kill the creature -- see `fleeSpeedFactor` and `HazardField`'s flee state.
      */
     health: Record<string, number>;
-    /**
-     * Being SHOT knocks a creature back a little.
-     *
-     * Expressed as a TOTAL DISTANCE in metres, like `spit.knockbackMeters` and unlike the crab's launch: the thing the
-     * player is judging is "how far did that push it", and a distance says that directly. The recoil is spent over
-     * `seconds`, so the two numbers together decide whether it reads as a nudge or as a shove.
-     */
-    hitKnockback: {
-      /** Metres of recoil per landed hit. 0 turns it off: a hit is then only the flash. */
-      meters: number;
-      /** How long that distance takes to be covered. */
-      seconds: number;
-    };
     /** How fast a creature that has had enough leaves, in SCREEN HEIGHTS per second: see the config's note. */
     fleeScreensPerSecond: number;
     /** How visible a creature is while it leaves, 0..1. The same drawing, dimmed, rather than a second palette. */
@@ -847,6 +834,23 @@ export interface Mechanisms {
     colour: number;
     alpha: number;
     radiusScale: number;
+  };
+  /**
+   * Being SHOT knocks a creature back a little.
+   *
+   * Top level beside `hitFlash` rather than inside `hazards`, because the two are halves of one thing -- what a landed
+   * hit does to the creature -- and the config file keeps them side by side for that reason. Everything inside
+   * `hazards` is a property of a KIND of creature; this is a property of being hit.
+   *
+   * Expressed as a TOTAL DISTANCE in metres, like `spit.knockbackMeters` and unlike the crab's launch: the thing the
+   * player is judging is "how far did that push it", and a distance says that directly. The recoil is spent over
+   * `seconds`, so the two numbers together decide whether it reads as a nudge or as a shove.
+   */
+  hitKnockback: {
+    /** Metres of recoil per landed hit. 0 turns it off: a hit is then only the flash. */
+    meters: number;
+    /** How long that distance takes to be covered. */
+    seconds: number;
   };
   codex: {
     /** The full-screen preview's scrim. */
@@ -1715,8 +1719,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.slowFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a number above 0 and at most 1' },
   { path: 'hazards.slowSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'hazards.health', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0), describe: 'an object of hazard kind to hit points, e.g. { fish: 3, jelly: 0 }; 0 means the bullets pass through' },
-  { path: 'hazards.hitKnockback.meters', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'metres of recoil between 0 and 200; 0 turns the knockback off' },
-  { path: 'hazards.hitKnockback.seconds', check: (v) => typeof v === 'number' && v > 0.01 && v <= 2, describe: 'seconds above 0.01 and at most 2, over which the recoil is spent' },
   { path: 'hazards.fleeScreensPerSecond', check: (v) => typeof v === 'number' && v > 0.05 && v <= 8, describe: 'screen heights per second, above 0.05 and at most 8; 0.9 is about a second to leave the screen' },
   { path: 'hazards.fleeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1 for a creature that is leaving' },
   { path: 'hazards.crabLaunchMps', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
@@ -1869,6 +1871,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hitFlash.colour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'hitFlash.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'hitFlash.radiusScale', check: (v) => typeof v === 'number' && v > 0.2 && v <= 3, describe: 'a multiplier above 0.2 and at most 3' },
+  { path: 'hitKnockback.meters', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'metres of recoil per landed hit, between 0 and 200; 0 turns the knockback off' },
+  { path: 'hitKnockback.seconds', check: (v) => typeof v === 'number' && v > 0.01 && v <= 2, describe: 'seconds above 0.01 and at most 2, over which the recoil is spent' },
   { path: 'playerBubble.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string for the drawn bubble' },
   { path: 'playerBubble.imageAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'playerBubble.imageTint', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
