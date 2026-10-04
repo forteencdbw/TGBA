@@ -1412,6 +1412,15 @@ export class HazardField {
    */
   private advance(h: Hazard, dt: number, ctx: HazardContext): void {
     h.phase += dt;
+    /**
+     * The hit flash ticks HERE, before anything can return.
+     *
+     * It used to tick at the end, and the charge branch (and the path branch) return early -- so a creature that was hit and
+     * then lunged stayed white for the whole lunge, which reads as "this one is permanently flashing" rather than as "I hit
+     * it once". A flash is a property of the BODY, so it belongs with the body's clock, not with whichever behaviour happens
+     * to be running this frame.
+     */
+    if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
     const base = ctx.descentSpeed;
 
     /**
@@ -1926,8 +1935,6 @@ export class HazardField {
       }
     }
 
-    // The hit flash decays with the creature's own clock, so it is a property of the body rather than of the frame.
-    if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
     /**
      * The clamp that keeps ordinary creatures in the lane, skipped for anything on a PATH.
      *
