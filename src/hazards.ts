@@ -546,6 +546,18 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   /** Dark slate teal, drawn as a flat slick rather than a body: it is a substance, not a creature. */
   oil: { radius: 0.066, colour: 0x2f4f4a, spin: 0.1 },
 };
+/**
+ * The table above is the DEFAULT; the config's `hazards.radius` overrides it, kind by kind.
+ *
+ * Merged here rather than read at every call site because the radius is used in at least four places (collision, the water
+ * painter, the codex card and the burst) and four reads of the same number is four chances for three of them to be updated.
+ * One merge at load, and every reader gets the configured value without knowing there is a config.
+ */
+for (const kind of Object.keys(KIND_TUNING) as HazardKind[]) {
+  const configured = mech.hazards.radius[kind];
+  if (typeof configured === 'number' && configured > 0) KIND_TUNING[kind].radius = configured;
+}
+
 
 /**
  * How many bullet hits this kind takes before it leaves. From the config, one row per kind.

@@ -489,14 +489,14 @@ playing → cleared → ascend → intro（下一关）
 | 质量（吃下去多重） | 同上 → `hazards.mass` | `angler` |
 | 可吃的档位 | 同上 → `consumption.edibleAtTier` | `angler` |
 | 被冲击波怎么处理 | 同上 → `angry.burst.hazardMode` | `angler` |
-| **体型（碰撞+绘制半径）** | `src/hazards.ts` → `KIND_TUNING` | `angler.radius`（0.045） |
+| **体型（碰撞+绘制半径+图鉴卡片）** | `config/mechanics.json5` → `hazards.radius` | `angler`（现在 **0.09** = 原来 0.045 的 **2 倍**） |
 | **冲锋**（前摇/时长/冷却/弧线/触发距离） | `config/mechanics.json5` → `charges.chargers` | `angler` 那一行 |
 | **放在哪一关、哪个深度、从哪边进、几号** | `config/levels.json5` → 该关 `spawns` | `kind: 'angler'` 的行（`at` `x` `from` `count`） |
 | **全屏预览里显示多大** | `src/codexUi.ts`（画布短边 62%） | `drawPreview` 里的 `0.62` |
 
 **注意**：`hazards.health` / `mass` / `edibleAtTier` / `angry.burst.hazardMode` 这几张表**必须列出每一种敌人**（漏一行启动时报错并点名），所以加新敌人时要顺手补上。
 
-**体型是唯一还在代码里的数**（`KIND_TUNING.radius`，在 `src/hazards.ts`）——它和碰撞、绘制、图鉴卡片都相关，改它要重新构建。想让它也进配置的话说一声。
+**体型现在也在配置里了**（`hazards.radius`）：它同时决定**碰撞、绘制大小和图鉴卡片里的大小**，所以只留一处来源；改完**刷新即可，不用重新构建**。代码里的 `KIND_TUNING` 退化成**默认值**——配置里没写的种类就用默认，写了就覆盖。实测：灯笼鱼 `radiusFraction` = **0.09**（原来的 2 倍）✓，小鱼仍是 0.035 ✓。
 
 ### 去掉灯笼鱼的程序发光
 
@@ -1482,6 +1482,7 @@ pwsh -File scripts\install-pwsh-path.ps1
 
 > 机器 PATH 里那条失效的 7.6.4 条目已经无害（目录不存在，只是拖慢一点点路径查找），
 > 但它归 `Machine` 作用域，**需要管理员**才能清理。脚本只报告、不修改。
+
 
 
 

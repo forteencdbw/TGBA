@@ -399,6 +399,8 @@ export interface Mechanisms {
     trailAlpha: number;
   };
   hazards: {
+    /** Per-kind radius as a fraction of the lane width: collision, drawing and the codex card all read this. */
+    radius: Record<string, number>;
     /**
      * The bomb fish, in all three of its roles: hunting outside, a lit fuse inside, a grenade when spat.
      *
@@ -1594,6 +1596,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     describe: 'exactly four layers (farthest first), each { speedFactor, count, sizeRatio, colour, alpha }',
   },
   { path: 'collectables.wobbleMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.wobbleMin') as number), describe: 'at least wobbleMin' },
+  { path: 'hazards.radius', check: (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && Object.values(v as Record<string, unknown>).every((n) => typeof n === 'number' && n > 0.001 && n <= 0.5), describe: 'an object of kind -> radius fraction between 0.001 and 0.5' },
   { path: 'hazards.vent.radiusRatio', check: (v) => typeof v === 'number' && v > 0.01 && v <= 0.5, describe: 'a fraction of the lane width above 0.01 and at most 0.5' },
   { path: 'hazards.vent.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 50, describe: 'hit points between 0 and 50' },
   { path: 'hazards.vent.periodSeconds', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 60, describe: 'seconds between 0.5 and 60' },
