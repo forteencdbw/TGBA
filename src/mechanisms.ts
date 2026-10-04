@@ -817,6 +817,18 @@ export interface Mechanisms {
     }
   >;
   /** The white flash anything shootable gives when a bullet lands: creatures AND breakable obstacles. */
+  /** The loading screen shown between the menu and a level. */
+  loading: {
+    scrimColour: number;
+    scrimAlpha: number;
+    trackColour: number;
+    barColour: number;
+    barHeight: number;
+    maxWidth: number;
+    label: string;
+    textColour: number;
+    textSize: number;
+  };
   hitFlash: {
     seconds: number;
     colour: number;
@@ -1829,6 +1841,15 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     },
     describe: 'an object of kind -> { move, charge?, scale, alpha, lure? }',
   },
+  { path: 'loading.scrimColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'loading.scrimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'loading.trackColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'loading.barColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'loading.barHeight', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },
+  { path: 'loading.maxWidth', check: (v) => typeof v === 'number' && v >= 80 && v <= 2000, describe: 'design pixels between 80 and 2000' },
+  { path: 'loading.label', check: (v) => typeof v === 'string', describe: 'a string' },
+  { path: 'loading.textColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'loading.textSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
   { path: 'hitFlash.seconds', check: (v) => typeof v === 'number' && v > 0 && v <= 2, describe: 'seconds above 0 and at most 2' },
   { path: 'hitFlash.colour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'hitFlash.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },

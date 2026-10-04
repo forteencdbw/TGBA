@@ -25,8 +25,8 @@ import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
-import { Sprite, Texture } from 'pixi.js';
-import { assetUrl } from './assets';
+import { Sprite, Text as PixiText, Texture } from 'pixi.js';
+import { allAssetNames, assetUrl, preloadAssets } from './assets';
 
 /**
  * Whether the chain of parents above `node` flips the Y axis.
@@ -155,6 +155,16 @@ class Game {
    */
   private readonly leaving = new Graphics();
   private readonly bubble = new Graphics();
+  /** The loading screen: a scrim, a progress track and bar, a label, and how far along the fetch is. */
+  private readonly loadScrim = new Graphics();
+  private readonly loadBar = new Graphics();
+  private readonly loadLabel = new PixiText({
+    text: '',
+    style: { fill: 0xeaf9ff, fontFamily: mech.text.fontFamily, align: 'center' },
+  });
+  private loadProgress = 0;
+  /** The bubble type chosen on the menu, held while the pictures arrive. */
+  private pendingType: string | null = null;
   /**
    * The rage burst's wave, on its own layer UNDER the bubble.
    *
@@ -259,6 +269,7 @@ class Game {
     | 'cleared'
     | 'ascend'
     | 'summary'
+    | 'loading'
     | 'paused'
     | 'codex' = 'menu';
   /**
@@ -405,7 +416,7 @@ class Game {
   }
   private phaseTimer = INTRO_SECONDS;
   /** The phase to restore when the settings panel closes. */
-  private phaseBeforePause: 'intro' | 'playing' | 'burst' | 'cleared' | 'ascend' | 'summary' = 'playing';
+  private phaseBeforePause: 'intro' | 'playing' | 'burst' | 'cleared' | 'ascend' | 'summary' | 'loading' = 'playing';
   /**
    * The bubble's growth stage: which speed tier it is in, and how far into the next one.
    *
@@ -433,6 +444,10 @@ class Game {
     this.nominalSeconds = nominalAscentSeconds();
 
     this.scene.world.addChild(this.pickups, this.leaving, this.burstWave, this.bubble, this.particles);
+    this.loadScrim.eventMode = 'none';
+    this.loadBar.eventMode = 'none';
+    this.loadLabel.eventMode = 'none';
+    this.app.stage.addChild(this.loadScrim, this.loadBar, this.loadLabel);
     // The flash sits directly over the water but UNDER the HUD, so the depth readout stays legible
     // through it -- the player should still be able to see where they got to during the white-out.
     this.flash.visible = false;
@@ -468,7 +483,16 @@ class Game {
       this.infiniteHealth = on;
     };
     this.settings.onExit = () => this.exitToMenu();
-    this.menu.onStart = (typeId) => this.enterFromMenu(typeId);
+    /**
+     * Starting a run now goes through the loader.
+     *
+     * The level is set up first -- so the loading screen can name it -- and the run proper begins when the art is in. The
+     * phase is \`loading\`, which the frame loop treats like any other non-playing phase: no input, no hazards, no timers, so
+     * nothing can happen to the player while the pictures arrive.
+     */
+    this.menu.onStart = (typeId) => {
+      void this.beginWithLoading(typeId);
+    };
     this.menu.onCodex = () => this.enterCodex();
     /**
      * Picking a level, which the menu only offers for levels that are reachable.
@@ -3365,6 +3389,60 @@ class Game {
    * score goes with them -- that is the whole point of judging a run by its total rather than by one level's best. A
    * death, by contrast, starts the same level with nothing, which is the same flag left at its default.
    */
+  /**
+   * Show the loading screen, fetch the level's pictures, then start the run.
+   *
+   * EVERY picture rather than only this level's, deliberately: the whole set is a few hundred kilobytes of authored art, and
+   * fetching it once means no later level -- including the automatic hand-off from one to the next -- ever shows a loading
+   * screen again. Per-level fetching would add a screen between every pair of levels to save nothing.
+   */
+  private async beginWithLoading(typeId: string): Promise<void> {
+    this.pendingType = typeId;
+    this.phase = 'loading';
+    this.loadProgress = 0;
+    this.menu.root.visible = false;
+    this.layoutLoading(this.app.screen.width, this.app.screen.height, 0);
+    await preloadAssets(allAssetNames(), (done, total) => {
+      this.loadProgress = total > 0 ? done / total : 1;
+      this.layoutLoading(this.app.screen.width, this.app.screen.height, this.loadProgress);
+    });
+    this.loadScrim.clear();
+    this.loadBar.clear();
+    this.loadLabel.visible = false;
+    if (this.pendingType) {
+      const type = this.pendingType;
+      this.pendingType = null;
+      // The SAME entry point the menu used before this screen existed: the loader wraps it rather than replacing it, so a run
+      // starts exactly as it always did once the art is in.
+      this.enterFromMenu(type);
+    }
+  }
+
+  /** The scrim, track, bar and label for a given progress. */
+  private layoutLoading(width: number, height: number, progress: number): void {
+    const cfg = mech.loading;
+    const s = designScale(width, height);
+    this.loadScrim.clear();
+    this.loadScrim.rect(0, 0, width, height).fill({ color: cfg.scrimColour, alpha: cfg.scrimAlpha });
+    const barW = Math.min(width * 0.7, cfg.maxWidth * s);
+    const barH = cfg.barHeight * s;
+    const x = (width - barW) / 2;
+    const y = height / 2;
+    this.loadBar.clear();
+    this.loadBar.roundRect(x, y, barW, barH, barH / 2).fill({ color: cfg.trackColour, alpha: 1 });
+    if (progress > 0) {
+      this.loadBar.roundRect(x, y, Math.max(barH, barW * Math.min(1, progress)), barH, barH / 2).fill({ color: cfg.barColour, alpha: 1 });
+    }
+    this.loadLabel.visible = true;
+    this.loadLabel.text = cfg.label + '  ' + Math.round(Math.min(1, progress) * 100) + '%';
+    this.loadLabel.style.fill = cfg.textColour;
+    this.loadLabel.style.fontSize = cfg.textSize;
+    this.loadLabel.scale.set(s);
+    this.loadLabel.anchor.set(0.5, 0);
+    this.loadLabel.x = width / 2;
+    this.loadLabel.y = y + barH + 18 * s;
+  }
+
   private startRun(carryScore = false): void {
     this.player.reset();
     // The arrival begins below the screen; the intro walks it up. Set here rather than inside the intro so that where a
@@ -5936,6 +6014,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 

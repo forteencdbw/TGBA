@@ -46,3 +46,37 @@ export function isYFlipped(node: { parent: unknown }): boolean {
   }
   return scaleY < 0;
 }
+
+/** Every picture the game can show, as the names the config uses. */
+export function allAssetNames(): string[] {
+  return Object.keys(ASSETS).map((path) => path.replace(/^\.\/assets\//, ''));
+}
+
+/**
+ * Fetch pictures and wait until they can be DRAWN, reporting progress as each one lands.
+ *
+ * \`decode()\` rather than \`onload\`: onload fires when the bytes have arrived, decode resolves when the bitmap is ready to be
+ * used -- and it is the difference that produced a zero-width texture once, which made a sprite enormous. A name with no file
+ * is counted as done rather than failing the load: a missing picture should cost one creature its art, not the whole level.
+ */
+export async function preloadAssets(names: string[], onProgress: (done: number, total: number) => void): Promise<void> {
+  const todo = [...new Set(names)].filter((name) => name.length > 0);
+  let done = 0;
+  onProgress(0, todo.length);
+  await Promise.all(
+    todo.map(async (name) => {
+      const url = assetUrl(name);
+      if (url) {
+        const image = new Image();
+        image.src = url;
+        try {
+          await image.decode();
+        } catch {
+          console.warn('[assets] could not decode ' + name);
+        }
+      }
+      done += 1;
+      onProgress(done, todo.length);
+    }),
+  );
+}
