@@ -43,8 +43,18 @@ const LEVEL_IMAGES = import.meta.glob('./assets/levels/*.{jpg,jpeg,png,webp}', {
 
 /** Resolve a level's `backdrop.image` (a bare filename) to the URL Vite emitted for it. */
 function imageUrl(name: string): string {
-  const key = './assets/levels/' + name;
-  const url = LEVEL_IMAGES[key];
+  /**
+   * The extension is OPTIONAL, and that is on purpose.
+   *
+   * These files are swapped by hand, and whoever swaps them should not have to care that the code wants `.jpg`: a `.png`
+   * dropped in with the same name is the same picture as far as anyone looking at the folder is concerned. If the exact
+   * name is not there, the first file whose name (without its extension) matches wins -- so the config says
+   * `黑烟囱墓场-最远景` and any of `jpg`, `jpeg`, `png`, `webp` satisfies it.
+   */
+  const bare = name.replace(/\.[^.]+$/, '');
+  const exact = './assets/levels/' + name;
+  const key = exact in LEVEL_IMAGES ? exact : Object.keys(LEVEL_IMAGES).find((k) => k.replace('./assets/levels/', '').replace(/\.[^.]+$/, '') === bare);
+  const url = key ? LEVEL_IMAGES[key] : undefined;
   if (!url) {
     console.warn(
       '[backdrop] no image called "' + name + '". Available: ' + Object.keys(LEVEL_IMAGES).map((k) => k.replace('./assets/levels/', '')).join(', '),
@@ -285,6 +295,7 @@ export class Parallax {
     }
   }
 }
+
 
 
 
