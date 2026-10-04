@@ -703,6 +703,11 @@ class Game {
     return this.runBanner.text;
   }
 
+  /** Test hook: the parallax field, so a probe can read each layer's offset. */
+  get parallaxRef(): { layerOffsetsRef: number[] } {
+    return this.scene.parallax;
+  }
+
   /** Test hook: the end-of-run summary panel. */
   get summaryRef(): RunSummary {
     return this.summary;
@@ -5641,6 +5646,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 

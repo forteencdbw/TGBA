@@ -1,6 +1,7 @@
 import { Application, Container, FillGradient, Graphics, Text } from 'pixi.js';
 import { LATERAL_DAMPING, VIEW } from './config';
 import { mech } from './mechanisms';
+import { Parallax } from './parallax';
 import { DEPTH_TOTAL, LEVEL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Player } from './player';
@@ -136,6 +137,8 @@ export class WorldLayer {
   private readonly margins = new Graphics();
   /** Marine snow: world space. */
   private readonly snow = new Graphics();
+  /** The four-layer parallax field. See `src/parallax.ts`. */
+  readonly parallax = new Parallax();
 
   private readonly maskShape = new Graphics();
   private snowPoints: { x: number; y: number; r: number; driftX: number; driftY: number }[] = [];
@@ -153,6 +156,14 @@ export class WorldLayer {
     this.margins.eventMode = 'none';
 
     this.world.addChild(this.snow);
+    /**
+     * The parallax field, UNDER the marine snow.
+     *
+     * Two fields rather than one because they are different jobs: the snow is the near, coarse, obvious stuff the player
+     * reads as "I am moving", and the parallax layers are the depth behind it. Drawn first so the snow stays legible on
+     * top of them.
+     */
+    this.world.addChild(this.parallax.root);
     this.world.mask = this.maskShape;
 
     // Margin shading goes AFTER the gradient but BEFORE the world, so the water's colour is dimmed while
@@ -175,6 +186,10 @@ export class WorldLayer {
   }
 
   layout(viewport: Viewport): void {
+    // The mote FIELD is scattered here rather than per frame: its count and its sizes depend on the lane IN METRES, so a
+    // new canvas is a new field -- and re-scattering every frame would make the whole thing jump, which is the one thing
+    // a depth cue must never do.
+    this.parallax.layout(viewport.laneWidthMeters, viewport.visibleDepthMeters);
     // Rebuild the gradient on the next update: its geometry depends on the viewport.
     this.lastTopColour = -1;
     this.lastBottomColour = -1;
@@ -272,6 +287,9 @@ export class WorldLayer {
       // Right band, mirrored so both fade INWARD.
       paintMargin(this.margins, rightEdge, viewport.width - rightEdge, viewport.height, true);
     }
+
+    // --- Parallax (four layers, far to near) ------------------------------
+    this.parallax.draw(scrolled, min, max);
 
     // --- Marine snow (world space) ----------------------------------------
     // Graphics keeps its path until `clear()`, so this is mandatory: without it the circles
@@ -980,6 +998,10 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+
+
+
+
 
 
 

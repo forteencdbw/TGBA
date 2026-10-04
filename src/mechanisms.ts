@@ -306,6 +306,27 @@ export interface Mechanisms {
     /** Fire-rate upgrade: a different shape AND hue from the rows one, so the two never blur together. */
     rate: PickupLook;
   };
+  /** Parallax: four layers of drifting motes, far to near, each at its own multiple of the world's scroll. */
+  background: {
+    /** One tile's height in screen heights. Above 1, so wrapping cannot leave a gap at an edge. */
+    tileScreens: number;
+    /** A multiplier on every layer's mote count -- the one dial for "how busy is the water". */
+    countScale: number;
+    /**
+     * The layers, FARTHEST FIRST.
+     *
+     * Order is the drawing order as well as the meaning: the first row is painted first and therefore sits behind the
+     * rest. `speedFactor` is a multiple of the level's own scroll; the last row is conventionally 1.0, the layer that
+     * travels with the world.
+     */
+    layers: {
+      speedFactor: number;
+      count: number;
+      sizeRatio: number;
+      colour: number;
+      alpha: number;
+    }[];
+  };
   collectables: {
     riseMin: number;
     riseMax: number;
@@ -1355,10 +1376,155 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'movement.verticalSpeedScale', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'movement.drag.sensitivity', check: (v) => typeof v === 'number' && v > 0 && v <= 4, describe: 'a displacement multiplier above 0 and at most 4; 1 is finger-for-finger' },
   { path: 'movement.drag.penaltiesApply', check: (v) => typeof v === 'boolean', describe: 'true or false; false keeps the drag a strict 1:1 with the finger' },
+  { path: 'background.tileScreens', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 6, describe: 'screen heights between 0.5 and 6' },
+  { path: 'background.countScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 4, describe: 'a multiplier between 0 and 4' },
+  {
+    path: 'background.layers',
+    check: (v) =>
+      Array.isArray(v) &&
+      v.length === 4 &&
+      v.every((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        return (
+          typeof r.speedFactor === 'number' &&
+          r.speedFactor >= 0 &&
+          r.speedFactor <= 3 &&
+          typeof r.count === 'number' &&
+          Number.isInteger(r.count) &&
+          r.count >= 0 &&
+          r.count <= 400 &&
+          typeof r.sizeRatio === 'number' &&
+          r.sizeRatio >= 0 &&
+          r.sizeRatio <= 0.1 &&
+          isColour(r.colour) &&
+          typeof r.alpha === 'number' &&
+          r.alpha >= 0 &&
+          r.alpha <= 1
+        );
+      }),
+    describe: 'exactly four layers (farthest first), each { speedFactor, count, sizeRatio, colour, alpha }',
+  },
   { path: 'collectables.riseMin', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'background.tileScreens', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 6, describe: 'screen heights between 0.5 and 6' },
+  { path: 'background.countScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 4, describe: 'a multiplier between 0 and 4' },
+  {
+    path: 'background.layers',
+    check: (v) =>
+      Array.isArray(v) &&
+      v.length === 4 &&
+      v.every((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        return (
+          typeof r.speedFactor === 'number' &&
+          r.speedFactor >= 0 &&
+          r.speedFactor <= 3 &&
+          typeof r.count === 'number' &&
+          Number.isInteger(r.count) &&
+          r.count >= 0 &&
+          r.count <= 400 &&
+          typeof r.sizeRatio === 'number' &&
+          r.sizeRatio >= 0 &&
+          r.sizeRatio <= 0.1 &&
+          isColour(r.colour) &&
+          typeof r.alpha === 'number' &&
+          r.alpha >= 0 &&
+          r.alpha <= 1
+        );
+      }),
+    describe: 'exactly four layers (farthest first), each { speedFactor, count, sizeRatio, colour, alpha }',
+  },
   { path: 'collectables.riseMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.riseMin') as number), describe: 'at least riseMin' },
+  { path: 'background.tileScreens', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 6, describe: 'screen heights between 0.5 and 6' },
+  { path: 'background.countScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 4, describe: 'a multiplier between 0 and 4' },
+  {
+    path: 'background.layers',
+    check: (v) =>
+      Array.isArray(v) &&
+      v.length === 4 &&
+      v.every((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        return (
+          typeof r.speedFactor === 'number' &&
+          r.speedFactor >= 0 &&
+          r.speedFactor <= 3 &&
+          typeof r.count === 'number' &&
+          Number.isInteger(r.count) &&
+          r.count >= 0 &&
+          r.count <= 400 &&
+          typeof r.sizeRatio === 'number' &&
+          r.sizeRatio >= 0 &&
+          r.sizeRatio <= 0.1 &&
+          isColour(r.colour) &&
+          typeof r.alpha === 'number' &&
+          r.alpha >= 0 &&
+          r.alpha <= 1
+        );
+      }),
+    describe: 'exactly four layers (farthest first), each { speedFactor, count, sizeRatio, colour, alpha }',
+  },
   { path: 'collectables.riseSpeedExponent', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'background.tileScreens', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 6, describe: 'screen heights between 0.5 and 6' },
+  { path: 'background.countScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 4, describe: 'a multiplier between 0 and 4' },
+  {
+    path: 'background.layers',
+    check: (v) =>
+      Array.isArray(v) &&
+      v.length === 4 &&
+      v.every((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        return (
+          typeof r.speedFactor === 'number' &&
+          r.speedFactor >= 0 &&
+          r.speedFactor <= 3 &&
+          typeof r.count === 'number' &&
+          Number.isInteger(r.count) &&
+          r.count >= 0 &&
+          r.count <= 400 &&
+          typeof r.sizeRatio === 'number' &&
+          r.sizeRatio >= 0 &&
+          r.sizeRatio <= 0.1 &&
+          isColour(r.colour) &&
+          typeof r.alpha === 'number' &&
+          r.alpha >= 0 &&
+          r.alpha <= 1
+        );
+      }),
+    describe: 'exactly four layers (farthest first), each { speedFactor, count, sizeRatio, colour, alpha }',
+  },
   { path: 'collectables.wobbleMin', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  { path: 'background.tileScreens', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 6, describe: 'screen heights between 0.5 and 6' },
+  { path: 'background.countScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 4, describe: 'a multiplier between 0 and 4' },
+  {
+    path: 'background.layers',
+    check: (v) =>
+      Array.isArray(v) &&
+      v.length === 4 &&
+      v.every((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        return (
+          typeof r.speedFactor === 'number' &&
+          r.speedFactor >= 0 &&
+          r.speedFactor <= 3 &&
+          typeof r.count === 'number' &&
+          Number.isInteger(r.count) &&
+          r.count >= 0 &&
+          r.count <= 400 &&
+          typeof r.sizeRatio === 'number' &&
+          r.sizeRatio >= 0 &&
+          r.sizeRatio <= 0.1 &&
+          isColour(r.colour) &&
+          typeof r.alpha === 'number' &&
+          r.alpha >= 0 &&
+          r.alpha <= 1
+        );
+      }),
+    describe: 'exactly four layers (farthest first), each { speedFactor, count, sizeRatio, colour, alpha }',
+  },
   { path: 'collectables.wobbleMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.wobbleMin') as number), describe: 'at least wobbleMin' },
   { path: 'hazards.vent.radiusRatio', check: (v) => typeof v === 'number' && v > 0.01 && v <= 0.5, describe: 'a fraction of the lane width above 0.01 and at most 0.5' },
   { path: 'hazards.vent.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 50, describe: 'hit points between 0 and 50' },
@@ -2176,6 +2342,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 
