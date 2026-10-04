@@ -35,34 +35,9 @@ import { Container, Graphics, Sprite, Texture } from 'pixi.js';
  * and the right content type, and the config keeps referring to it by the NAME THE OWNER KNOWS. Replacing a file with
  * the same name is therefore still the whole workflow -- no code change, no config change.
  */
-const LEVEL_IMAGES = import.meta.glob('./assets/levels/*.{jpg,jpeg,png,webp}', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>;
+import { assetUrl } from './assets';
 
 /** Resolve a level's `backdrop.image` (a bare filename) to the URL Vite emitted for it. */
-function imageUrl(name: string): string {
-  /**
-   * The extension is OPTIONAL, and that is on purpose.
-   *
-   * These files are swapped by hand, and whoever swaps them should not have to care that the code wants `.jpg`: a `.png`
-   * dropped in with the same name is the same picture as far as anyone looking at the folder is concerned. If the exact
-   * name is not there, the first file whose name (without its extension) matches wins -- so the config says
-   * `黑烟囱墓场-最远景` and any of `jpg`, `jpeg`, `png`, `webp` satisfies it.
-   */
-  const bare = name.replace(/\.[^.]+$/, '');
-  const exact = './assets/levels/' + name;
-  const key = exact in LEVEL_IMAGES ? exact : Object.keys(LEVEL_IMAGES).find((k) => k.replace('./assets/levels/', '').replace(/\.[^.]+$/, '') === bare);
-  const url = key ? LEVEL_IMAGES[key] : undefined;
-  if (!url) {
-    console.warn(
-      '[backdrop] no image called "' + name + '". Available: ' + Object.keys(LEVEL_IMAGES).map((k) => k.replace('./assets/levels/', '')).join(', '),
-    );
-    return '';
-  }
-  return url;
-}
 import { mech } from './mechanisms';
 
 /** One layer's live state: its graphics and its particles, in metres. */
@@ -139,7 +114,7 @@ export class Backdrop {
     };
     // `encodeURI`ed because the asset names are Chinese: the files are named after the level they belong to, so the URL
     // carries non-ASCII characters, and a filename with a space or a `#` must not quietly truncate the path.
-    const url = imageUrl(spec.image);
+    const url = assetUrl(spec.image);
     if (!url) {
       this.loadError = 'no such image: ' + spec.image;
       return;
@@ -295,6 +270,8 @@ export class Parallax {
     }
   }
 }
+
+
 
 
 

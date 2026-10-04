@@ -743,6 +743,26 @@ export interface Mechanisms {
    * Only LAYOUT and colour here. Every number ON a card is read from the section it belongs to, so the page cannot
    * describe a game that no longer exists -- see `src/codex.ts`.
    */
+  /**
+   * The player's own bubble art.
+   *
+   * A picture REPLACES the procedural look -- fill, rim, highlight and glow -- rather than sitting under it. The art the
+   * owner supplies IS the bubble; painting the old rim on top would be two bubbles disagreeing about where the edge is.
+   * `keepDetails` is there for art that is only the fill, with the rim still wanted.
+   *
+   * It is a top-level section rather than part of `stages.appearance` because it is not a stage: the same picture serves
+   * every stage, and the stage colour still tints it. Per-stage art is the obvious next step, and this is the shape that
+   * would grow into it.
+   */
+  playerBubble: {
+    /** A file name in `src/assets/`, without its extension. Empty means the drawn bubble. */
+    image: string;
+    imageAlpha: number;
+    imageTint: number;
+    /** A multiplier on the drawn radius, for art with padding around the ball. */
+    imageScale: number;
+    keepDetails: boolean;
+  };
   codex: {
     columns: number;
     rows: number;
@@ -1729,6 +1749,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'stomach.markerMinSpreadRadians', check: (v) => typeof v === 'number' && v > 0 && v < 6.28, describe: 'an angle in radians, above 0 and below a full turn' },
   { path: 'stomach.fuseBlinkHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
   { path: 'stomach.fusePanicSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
+  { path: 'playerBubble.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string for the drawn bubble' },
+  { path: 'playerBubble.imageAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'playerBubble.imageTint', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'playerBubble.imageScale', check: (v) => typeof v === 'number' && v > 0.1 && v <= 4, describe: 'a multiplier above 0.1 and at most 4' },
+  { path: 'playerBubble.keepDetails', check: (v) => typeof v === 'boolean', describe: 'true or false' },
   { path: 'codex.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 4, describe: 'a whole number of columns between 1 and 4' },
   { path: 'codex.rows', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 6, describe: 'a whole number of rows between 1 and 6' },
   { path: 'codex.margin', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },

@@ -25,6 +25,8 @@ import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
+import { Sprite, Texture } from 'pixi.js';
+import { assetUrl } from './assets';
 import { RunSummary } from './summary';
 import { APP_VERSION, buildLabel, GIT_DIRTY, GIT_HASH } from './version';
 import { demote, initialStageState, recordAbsorb, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
@@ -701,6 +703,21 @@ class Game {
   /** Test hook: the run banner's current text, so a probe can read the feedback the player got. */
   get bannerTextRef(): string {
     return this.runBanner.text;
+  }
+
+  /** Test hook: the raw bubble sprite, for measuring. */
+  get bubbleSpriteRef2(): Sprite | null {
+    return this.bubbleSprite;
+  }
+
+  /** Test hook: the drawn bubble graphics. */
+  get bubbleRef(): Sprite | null {
+    return this.bubble as unknown as Sprite;
+  }
+
+  /** Test hook: whether the player's bubble art is on screen. */
+  get bubbleSpriteRef(): boolean {
+    return Boolean(this.bubbleSprite?.visible);
   }
 
   /** Test hook: whether a level's backdrop image actually loaded. */
@@ -4481,6 +4498,61 @@ class Game {
     });
   }
 
+  /**
+   * The player bubble's picture, if `playerBubble.image` names one.
+   *
+   * Built once and reused: the bubble is on screen every frame, and rebuilding a Sprite per frame is how a game drops to
+   * single-digit frames. It is added to the SAME parent as the drawn bubble, so it inherits the camera transform and can
+   * be positioned in world coordinates like everything else in the water.
+   */
+  private bubbleSprite: Sprite | null = null;
+  private bubbleSpriteFor = '';
+
+  /**
+   * Load (once) and place the player's picture for this frame. See `playerBubble` in the config.
+   *
+   * Three things are worth naming. It loads through a plain `<img>` rather than Pixi's asset loader, for the reason the
+   * backdrops do: these files are hand-replaced, have Chinese names, and the loader's own decode path rejected one of them
+   * with a message that pointed at the file instead of the URL. It is built ONCE per image name, because the bubble is
+   * drawn every frame. And the size is `radius * imageScale`, so art with padding around the ball can be corrected
+   * without touching code.
+   */
+  private syncBubbleSprite(worldX: number, worldY: number, radius: number, alpha: number): boolean {
+    const cfg = mech.playerBubble;
+    if (!cfg.image) {
+      if (this.bubbleSprite) this.bubbleSprite.visible = false;
+      return false;
+    }
+    if (!this.bubbleSprite || this.bubbleSpriteFor !== cfg.image) {
+      this.bubbleSpriteFor = cfg.image;
+      this.bubbleSprite?.destroy();
+      this.bubbleSprite = null;
+      const image = new Image();
+      image.onload = () => {
+        const sprite = new Sprite(Texture.from(image));
+        sprite.anchor.set(0.5);
+        sprite.eventMode = 'none';
+        // The same parent as the drawn bubble, so it lives in world coordinates like everything else in the water.
+        this.bubble.parent?.addChildAt(sprite, this.bubble.parent.getChildIndex(this.bubble));
+        this.bubbleSprite = sprite;
+      };
+      image.onerror = () => console.warn('[bubble] could not load ' + cfg.image);
+      const url = assetUrl(cfg.image);
+      if (url) image.src = url;
+    }
+    const sprite = this.bubbleSprite;
+    if (!sprite) return false;
+    sprite.visible = alpha > 0.01;
+    sprite.x = worldX;
+    sprite.y = worldY;
+    sprite.alpha = cfg.imageAlpha * alpha;
+    sprite.tint = cfg.imageTint;
+    const size = radius * 2 * cfg.imageScale;
+    sprite.width = size;
+    sprite.height = size;
+    return true;
+  }
+
   private paintBubble(
     worldX: number,
     worldY: number,
@@ -4497,6 +4569,15 @@ class Game {
   ): void {
     const g = this.bubble;
     const p = this.particles;
+    /**
+     * The picture, if there is one.
+     *
+     * Positioned and scaled here and returned from: with art configured, the procedural pass is not "also drawn", it is
+     * not drawn at all (unless `keepDetails`). Every stage's colour still reaches the picture through the tint, so the
+     * skin does not cost the game the thing that says which stage the player is in.
+     */
+    const art = this.syncBubbleSprite(worldX, worldY, radius, alpha);
+    if (art && !mech.playerBubble.keepDetails) return;
     // Graphics retains its path between `clear()` calls, so both must be cleared every frame.
     // Leaving them dirty is what drew a stray line from the bubble to the finish banner.
     g.clear();
@@ -5656,6 +5737,10 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
+
 
 
 
