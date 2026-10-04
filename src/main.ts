@@ -703,6 +703,11 @@ class Game {
     return this.runBanner.text;
   }
 
+  /** Test hook: whether a level's backdrop image actually loaded. */
+  get backdropLoadedRef(): boolean {
+    return this.scene.backdropLoaded;
+  }
+
   /** Test hook: the parallax field, so a probe can read each layer's offset. */
   get parallaxRef(): { layerOffsetsRef: number[] } {
     return this.scene.parallax;
@@ -5646,6 +5651,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 

@@ -479,6 +479,28 @@ playing → cleared → ascend → intro（下一关）
 
 实测：第一关带 2 排枪 + 第 2 档射速通关 → 进入第二关后**仍是 2 排 / 第 2 档** ✓、分数 200 → 1200 ✓、阶段序列 `playing → cleared → ascend → intro` ✓；打通第六关 → 阶段 `summary`、面板打开、总分 1100 ✓
 
+### 第一关的最远景：一张手绘海底火山图
+
+`levels["black-smokers"].backdrop`：
+
+```json5
+backdrop: {
+  image: 'levels/black-smokers-backdrop.jpg',  // public/ 下
+  speedFactor: 0.03,   // 每米卷动移动多少（最远的一层几乎不动）
+  heightScreens: 1.15, // 画多高（屏高），>1 才能无缝绕回
+  alpha: 0.62,         // 叠在水体渐变上的不透明度
+  tint: 0x8f6a7a       // 乘进去的颜色：让它落在这一关的黑/暗红里
+}
+```
+
+这是全项目**唯一一个"图片才是对的答案"**的地方：一关的环境是一件**美术品**（海床上的火山脊），再多的程序化微粒也说不出这件事。按关卡给，理由和 `palette` 一样——六关是六个地方。
+
+**图层顺序**：水体渐变（水）→ **这张图**（水里的远处）→ 视差微粒（镜头和那个远处之间的水）。图必须在渐变**之上**，否则被不透明的水盖住，就是一张没人看得见的背景。
+
+**原图 4 MB，导入时压到了 65 KB**（1080 宽、JPEG q84、渐进式）——手机加载 4 MB 的背景图是实打实的代价。想要原图分辨率就把 `public/levels/` 里的文件换掉，配置不用动。
+
+顺带修了 `vite.config.ts` 的 watcher：把 `public/levels/**` 加进忽略列表——**盯着一个几 MB 的文件正是刚才 dev server EBUSY 崩掉的原因**。
+
 ### 视差滚动：四层背景微粒
 
 `background.layers` 四行，**由远到近**（绘制顺序也是这个顺序，第一行在最底层）：每行一个 `speedFactor`（关卡自身卷动的倍数）、`count`、`sizeRatio`、`colour`、`alpha`。
@@ -1169,6 +1191,7 @@ pwsh -File scripts\install-pwsh-path.ps1
 
 > 机器 PATH 里那条失效的 7.6.4 条目已经无害（目录不存在，只是拖慢一点点路径查找），
 > 但它归 `Machine` 作用域，**需要管理员**才能清理。脚本只报告、不修改。
+
 
 
 

@@ -249,12 +249,34 @@ export interface Level {
    */
   paths?: Record<string, PathSpec>;
   /**
+   * A hand-authored image painted behind everything, the farthest layer of the level.
+   *
+   * The one place in this project where an image file is the right answer: the environment of a level is a piece of ART
+   * -- volcanic ridges at the seabed -- and no amount of procedural dots says that. It is per LEVEL for the same reason
+   * the palette is: the six levels are six places.
+   */
+  backdrop?: BackdropSpec;
+  /**
    * This level's water: a deep-to-shallow gradient, the surface bloom, and a mood tint over both.
    *
    * Per LEVEL because the six levels are six different places, and water colour is the cheapest way to say so. It used
    * to be one hardcoded ramp, which made every level the same sea with different creatures in it.
    */
   palette: LevelPalette;
+}
+
+/** A level's backdrop image and how it sits in the water. */
+export interface BackdropSpec {
+  /** Path under public/, e.g. levels/black-smokers-backdrop.jpg. */
+  image: string;
+  /** How far it moves per metre of scroll. The farthest layer moves least; 0.03 is nearly still. */
+  speedFactor: number;
+  /** Height on screen, in screen heights. Above 1 leaves no seam while the image wraps. */
+  heightScreens: number;
+  /** Overall opacity, on top of whatever the water gradient is already doing. */
+  alpha: number;
+  /** A colour multiplied into the image, so it sits inside the level's palette rather than on top of it. */
+  tint: number;
 }
 
 /** A spline for creatures to follow, as written in the level file. */
@@ -464,7 +486,7 @@ const BLOCK_KEYS: readonly string[] = [
   'depth',
 ];
 
-const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'palette', 'paths', 'spawns'];
+const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'palette', 'paths', 'backdrop', 'spawns'];
 
 /** Throw with the offending place named, so a typo in the file is a message rather than a mystery. */
 function fail(where: string, message: string): never {
@@ -723,6 +745,19 @@ function readLevels(text: string): { start: string; levels: Level[] } {
      * look like "the creatures I placed are not moving" rather than like a config error -- so both are refused here,
      * with the level and the path named.
      */
+    const rawBackdrop = node['backdrop'];
+    const backdropNode = (rawBackdrop && typeof rawBackdrop === 'object' && !Array.isArray(rawBackdrop) ? rawBackdrop : {}) as Record<string, unknown>;
+    const backdrop: BackdropSpec | undefined =
+      typeof backdropNode['image'] === 'string'
+        ? {
+            image: backdropNode['image'] as string,
+            speedFactor: optNum(backdropNode, 'speedFactor', 'levels[' + id + '].backdrop', 0.03, 0, 1),
+            heightScreens: optNum(backdropNode, 'heightScreens', 'levels[' + id + '].backdrop', 1.15, 0.2, 6),
+            alpha: optNum(backdropNode, 'alpha', 'levels[' + id + '].backdrop', 0.55, 0, 1),
+            tint: optColour(backdropNode, 'tint', 'levels[' + id + '].backdrop', 0xffffff),
+          }
+        : undefined;
+
     let paths: Record<string, PathSpec> | undefined;
     if (node['paths'] !== undefined) {
       const rawPaths = node['paths'];
@@ -784,6 +819,7 @@ function readLevels(text: string): { start: string; levels: Level[] } {
       boss,
       palette,
       ...(paths ? { paths } : {}),
+      ...(backdrop ? { backdrop } : {}),
       entries,
       blocks,
     });
@@ -948,6 +984,7 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
 
 
 

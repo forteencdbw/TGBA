@@ -58,6 +58,13 @@ export default defineConfig({
     __GIT_DIRTY__: JSON.stringify(gitDirty),
   },
   server: {
+    /**
+     * The big imported images are NOT watched.
+     *
+     * `public/levels/*` holds hand-authored backdrops, which nothing regenerates during dev -- and watching a
+     * multi-megabyte file is what crashed the dev server with EBUSY the moment one was copied in while it ran.
+     */
+    // (the asset-ignore rule lives with the other watch exclusions below)
     port: 5173,
     // Exposed on the LAN so the game can be opened on a real phone during development.
     host: true,
@@ -65,7 +72,7 @@ export default defineConfig({
       // Editors and agent tooling write scratch/temp directories inside the repo. Watching them
       // makes Vite's fs watcher throw EBUSY on Windows and kill the dev server outright, so the
       // non-runtime directories are excluded.
-      ignored: ['**/scripts/**', '**/.scratch/**', '**/dist/**', '**/*.tmpdir/**', '**/.*.tmp'],
+      ignored: ['**/scripts/**', '**/.scratch/**', '**/dist/**', '**/*.tmpdir/**', '**/.*.tmp', '**/public/levels/**'],
     },
   },
   build: {
@@ -89,3 +96,4 @@ export default defineConfig({
     sourcemap: false,
   },
 });
+

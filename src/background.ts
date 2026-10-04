@@ -1,7 +1,7 @@
 import { Application, Container, FillGradient, Graphics, Text } from 'pixi.js';
 import { LATERAL_DAMPING, VIEW } from './config';
 import { mech } from './mechanisms';
-import { Parallax } from './parallax';
+import { Backdrop, Parallax } from './parallax';
 import { DEPTH_TOTAL, LEVEL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Player } from './player';
@@ -139,6 +139,21 @@ export class WorldLayer {
   private readonly snow = new Graphics();
   /** The four-layer parallax field. See `src/parallax.ts`. */
   readonly parallax = new Parallax();
+  /**
+   * The level's backdrop image, if it has one.
+   *
+   * Rebuilt when the LEVEL changes rather than when the canvas does: it belongs to the place, not to the window.
+   */
+  private backdrop: Backdrop | null = null;
+  private backdropImage = '';
+  /** Whether the current level's backdrop image has finished loading. */
+  get backdropLoaded(): boolean {
+    return this.backdrop?.isLoaded ?? false;
+  }
+  /** The canvas the backdrop was last sized against, so a level change mid-run still sizes it. */
+  private lastCanvasWidth = 0;
+  private lastCanvasHeight = 0;
+  private lastLaneWidthMeters = 0;
 
   private readonly maskShape = new Graphics();
   private snowPoints: { x: number; y: number; r: number; driftX: number; driftY: number }[] = [];
@@ -190,6 +205,10 @@ export class WorldLayer {
     // new canvas is a new field -- and re-scattering every frame would make the whole thing jump, which is the one thing
     // a depth cue must never do.
     this.parallax.layout(viewport.laneWidthMeters, viewport.visibleDepthMeters);
+    this.lastCanvasWidth = viewport.width;
+    this.lastCanvasHeight = viewport.height;
+    this.lastLaneWidthMeters = viewport.laneWidthMeters;
+    this.backdrop?.layout(viewport.width, viewport.height, viewport.laneWidthMeters);
     // Rebuild the gradient on the next update: its geometry depends on the viewport.
     this.lastTopColour = -1;
     this.lastBottomColour = -1;
@@ -217,6 +236,45 @@ export class WorldLayer {
    * @param scrolled how far the LEVEL has travelled, in metres. Used by the marine-snow recycle, which
    *   keeps the drifting specks distributed across the visible band.
    */
+  /**
+   * Make sure the right backdrop image is the one on screen, and draw it.
+   *
+   * The water gradient is drawn UNDER it, so the image is tinted and dimmed by the level's own palette rather than
+   * pasted on top of it -- which is what makes a hand-authored picture sit inside the level's colour instead of beside
+   * it.
+   */
+  private drawBackdrop(scrolled: number, min: number, max: number, pixelsPerMetre: number): void {
+    const spec = LEVEL.backdrop;
+    if (!spec) {
+      if (this.backdrop) {
+        this.backdrop.root.destroy({ children: true });
+        this.backdrop = null;
+        this.backdropImage = '';
+      }
+      return;
+    }
+    if (!this.backdrop || this.backdropImage !== spec.image) {
+      if (this.backdrop) this.backdrop.root.destroy({ children: true });
+      this.backdrop = new Backdrop(spec);
+      this.backdropImage = spec.image;
+      /**
+       * Placed just UNDER the parallax field, not at the very back.
+       *
+       * The water gradient is an opaque fill that covers the whole canvas, so a backdrop behind it is a backdrop nobody
+       * sees. The layering that works is: gradient (the water), then the image (what is far away IN it), then the
+       * parallax motes (the water between the camera and that distance).
+       */
+      this.world.addChildAt(this.backdrop.root, Math.max(0, this.world.getChildIndex(this.parallax.root)));
+      this.backdrop.layout(this.lastCanvasWidth, this.lastCanvasHeight, this.lastLaneWidthMeters);
+    }
+    /**
+     * The camera's pixels-per-metre, which is what turns the backdrop's screen size into world metres. The world layer is
+     * drawn in world coordinates, so every size here has to be converted -- sizing the image in canvas pixels was what
+     * made it a patch over part of the frame rather than a backdrop.
+     */
+    this.backdrop.draw(scrolled, min, max, pixelsPerMetre);
+  }
+
   update(camera: Camera, _player: Player, dt: number, scrolled: number): void {
     const viewport = camera.viewport;
     const { min, max } = camera.visibleWorldRange(20);
@@ -287,6 +345,9 @@ export class WorldLayer {
       // Right band, mirrored so both fade INWARD.
       paintMargin(this.margins, rightEdge, viewport.width - rightEdge, viewport.height, true);
     }
+
+    // --- The level's backdrop, behind everything ---------------------------
+    this.drawBackdrop(scrolled, min, max, camera.viewport.scale);
 
     // --- Parallax (four layers, far to near) ------------------------------
     this.parallax.draw(scrolled, min, max);
@@ -998,6 +1059,16 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
