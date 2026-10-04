@@ -255,7 +255,13 @@ export interface Level {
    * -- volcanic ridges at the seabed -- and no amount of procedural dots says that. It is per LEVEL for the same reason
    * the palette is: the six levels are six places.
    */
-  backdrop?: BackdropSpec;
+  /**
+   * The level's backdrop layers, FARTHEST FIRST.
+   *
+   * A list rather than one picture because distance is not one thing: a level has a far horizon and a nearer ridge, and
+   * they move at different speeds. Order is the drawing order as well as the meaning, exactly like the parallax motes.
+   */
+  backdrops?: BackdropSpec[];
   /**
    * This level's water: a deep-to-shallow gradient, the surface bloom, and a mood tint over both.
    *
@@ -488,7 +494,7 @@ const BLOCK_KEYS: readonly string[] = [
   'depth',
 ];
 
-const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'palette', 'paths', 'backdrop', 'spawns'];
+const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'palette', 'paths', 'backdrop', 'backdrops', 'spawns'];
 
 /** Throw with the offending place named, so a typo in the file is a message rather than a mystery. */
 function fail(where: string, message: string): never {
@@ -748,19 +754,29 @@ function readLevels(text: string): { start: string; levels: Level[] } {
      * look like "the creatures I placed are not moving" rather than like a config error -- so both are refused here,
      * with the level and the path named.
      */
-    const rawBackdrop = node['backdrop'];
-    const backdropNode = (rawBackdrop && typeof rawBackdrop === 'object' && !Array.isArray(rawBackdrop) ? rawBackdrop : {}) as Record<string, unknown>;
-    const backdrop: BackdropSpec | undefined =
-      typeof backdropNode['image'] === 'string'
-        ? {
-            image: backdropNode['image'] as string,
-            speedFactor: optNum(backdropNode, 'speedFactor', 'levels[' + id + '].backdrop', 0.03, 0, 1),
-            heightScreens: optNum(backdropNode, 'heightScreens', 'levels[' + id + '].backdrop', 1.15, 0.2, 6),
-            alpha: optNum(backdropNode, 'alpha', 'levels[' + id + '].backdrop', 0.55, 0, 1),
-            tint: optColour(backdropNode, 'tint', 'levels[' + id + '].backdrop', 0xffffff),
-          }
-        : undefined;
-
+    /**
+     * The backdrop layer list, read as an array.
+     *
+     * A single object is accepted and wrapped, so a level with one picture (or a config written before this became a
+     * list) keeps working: the shape of the data follows the common case, and the common case for a while was one image.
+     */
+    const rawBackdrop = node['backdrop'] ?? node['backdrops'];
+    const rawList = Array.isArray(rawBackdrop) ? rawBackdrop : rawBackdrop === undefined ? [] : [rawBackdrop];
+    const backdrops: BackdropSpec[] | undefined =
+      rawList.length === 0
+        ? undefined
+        : rawList.map((raw, i) => {
+            const bd = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+            const where = 'levels[' + id + '].backdrops[' + i + ']';
+            if (typeof bd['image'] !== 'string') fail(where + '.image', 'must be the file name of a picture.');
+            return {
+              image: bd['image'] as string,
+              speedFactor: optNum(bd, 'speedFactor', where, 0.03, 0, 1),
+              heightScreens: optNum(bd, 'heightScreens', where, 1.15, 0.2, 6),
+              alpha: optNum(bd, 'alpha', where, 0.55, 0, 1),
+              tint: optColour(bd, 'tint', where, 0xffffff),
+            };
+          });
     let paths: Record<string, PathSpec> | undefined;
     if (node['paths'] !== undefined) {
       const rawPaths = node['paths'];
@@ -822,7 +838,7 @@ function readLevels(text: string): { start: string; levels: Level[] } {
       boss,
       palette,
       ...(paths ? { paths } : {}),
-      ...(backdrop ? { backdrop } : {}),
+      ...(backdrops ? { backdrops } : {}),
       entries,
       blocks,
     });
@@ -987,6 +1003,8 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
+
 
 
 

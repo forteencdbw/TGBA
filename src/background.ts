@@ -144,16 +144,18 @@ export class WorldLayer {
    *
    * Rebuilt when the LEVEL changes rather than when the canvas does: it belongs to the place, not to the window.
    */
-  private backdrop: Backdrop | null = null;
-  private backdropImage = '';
+  /** The level's backdrop layers, FARTHEST FIRST: one image per distance. */
+  private backdrops: Backdrop[] = [];
+  /** The image names currently loaded, so the set is rebuilt when the LEVEL changes and not when the canvas does. */
+  private backdropKey = '';
   /** Whether the current level's backdrop image has finished loading. */
   get backdropLoaded(): boolean {
-    return this.backdrop?.isLoaded ?? false;
+    return this.backdrops.length > 0 && this.backdrops.every((l) => l.isLoaded);
   }
 
   /** Why the level's backdrop failed to load, if it did. */
   get backdropError(): string {
-    return this.backdrop?.error ?? '';
+    return this.backdrops.map((l) => l.error).filter(Boolean).join(' | ');
   }
   /** The canvas the backdrop was last sized against, so a level change mid-run still sizes it. */
   private lastCanvasWidth = 0;
@@ -214,7 +216,7 @@ export class WorldLayer {
     this.lastCanvasWidth = viewport.width;
     this.lastCanvasHeight = viewport.height;
     this.lastLaneWidthMeters = viewport.laneWidthMeters;
-    this.backdrop?.layout(viewport.width, viewport.height, viewport.laneWidthMeters);
+    for (const layer of this.backdrops) layer.layout(viewport.width, viewport.height, viewport.laneWidthMeters);
     // Rebuild the gradient on the next update: its geometry depends on the viewport.
     this.lastTopColour = -1;
     this.lastBottomColour = -1;
@@ -237,12 +239,6 @@ export class WorldLayer {
   }
 
   /**
-   * `WorldLayer.update`: the scenery. Draws no readouts, so it does not need the player.
-   *
-   * @param scrolled how far the LEVEL has travelled, in metres. Used by the marine-snow recycle, which
-   *   keeps the drifting specks distributed across the visible band.
-   */
-  /**
    * Make sure the right backdrop image is the one on screen, and draw it.
    *
    * The water gradient is drawn UNDER it, so the image is tinted and dimmed by the level's own palette rather than
@@ -250,42 +246,29 @@ export class WorldLayer {
    * it.
    */
   private drawBackdrop(scrolled: number, pixelsPerMetre: number): void {
-    const spec = LEVEL.backdrop;
-    if (!spec) {
-      if (this.backdrop) {
-        this.backdrop.root.destroy({ children: true });
-        this.backdrop = null;
-        this.backdropImage = '';
+    const specs = LEVEL.backdrops ?? [];
+    const key = specs.map((s) => s.image).join('|');
+    if (key !== this.backdropKey) {
+      for (const layer of this.backdrops) layer.root.destroy({ children: true });
+      this.backdrops = [];
+      this.backdropKey = key;
+      for (const spec of specs) {
+        const layer = new Backdrop(spec);
+        layer.layout(this.lastCanvasWidth, this.lastCanvasHeight, this.lastLaneWidthMeters);
+        // Index 0, in order: the list is the depth ordering, and every layer belongs BEHIND the water.
+        this.root.addChildAt(layer.root, 0);
+        this.backdrops.push(layer);
       }
-      return;
     }
-    if (!this.backdrop || this.backdropImage !== spec.image) {
-      if (this.backdrop) this.backdrop.root.destroy({ children: true });
-      this.backdrop = new Backdrop(spec);
-      this.backdropImage = spec.image;
-      /**
-       * Placed just UNDER the parallax field, not at the very back.
-       *
-       * The water gradient is an opaque fill that covers the whole canvas, so a backdrop behind it is a backdrop nobody
-       * sees. The layering that works is: gradient (the water), then the image (what is far away IN it), then the
-       * parallax motes (the water between the camera and that distance).
-       */
-      /**
-       * BEHIND the water, which is where the owner wants it: the picture is the far distance, and the water is in front
-       * of it. oot's first child is behind gradient, margins and world -- and the backdrop has to be SCREEN space
-       * for that, because the gradient is a screen-space fill.
-       */
-      this.root.addChildAt(this.backdrop.root, 0);
-      this.backdrop.layout(this.lastCanvasWidth, this.lastCanvasHeight, this.lastLaneWidthMeters);
-    }
-    /**
-     * The camera's pixels-per-metre, which is what turns the backdrop's screen size into world metres. The world layer is
-     * drawn in world coordinates, so every size here has to be converted -- sizing the image in canvas pixels was what
-     * made it a patch over part of the frame rather than a backdrop.
-     */
-    this.backdrop.draw(scrolled, pixelsPerMetre);
+    for (const layer of this.backdrops) layer.draw(scrolled, pixelsPerMetre);
   }
 
+  /**
+   * `WorldLayer.update`: the scenery. Draws no readouts, so it does not need the player.
+   *
+   * @param scrolled how far the LEVEL has travelled, in metres. Used by the marine-snow recycle, which
+   *   keeps the drifting specks distributed across the visible band.
+   */
   update(camera: Camera, _player: Player, dt: number, scrolled: number): void {
     const viewport = camera.viewport;
     const { min, max } = camera.visibleWorldRange(20);
@@ -1081,6 +1064,7 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+
 
 
 
