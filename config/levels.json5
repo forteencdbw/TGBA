@@ -197,6 +197,13 @@
         { at: 870, kind: 'vent', x: 0.5 },
         // 第二串：同一和张曲线，但更密，配合喷口一起读。
         { at: 890, kind: 'fish', count: 8, path: 'weave', x: 1 },
+        // **深海鱼（灯笼鱼）**：这一关一共 10 点血，比小鱼小虾硬得多，所以它出现在中段以后，而且单独放——
+        // 它的触角是这一关唯一会发光的东西，混在别的敌人里就白瞎了。
+        { at: 520, kind: 'angler', x: 0.28, from: 'left' },
+        { at: 760, kind: 'angler', x: 0.72, from: 'right' },
+        { at: 1010, kind: 'angler', x: 0.5 },
+        // 靠近 BOSS 前再来一条，作为"要打 BOSS 了"的提示。
+        { at: 1180, kind: 'angler', x: 0.35, from: 'left' },
         { at: 900, kind: 'crab', x: 0.75 },
         { at: 940, span: 80, count: 6, kind: 'mineral', arrange: 'spread', amplitude: 0.18, x: 0.5, from: 'bottom' },
         { at: 990, kind: 'shrimp', count: 2, arrange: 'spread', span: 20, x: 0.7, from: 'right', depth: 0.45 },
