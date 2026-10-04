@@ -1,5 +1,5 @@
 /**
- * Floating score numbers: `+25` where it was earned, drifting up, gone after a few seconds.
+ * Floating numbers: `+25` where points were earned, `-1` where a shot landed, drifting up, gone after a moment.
  *
  * ---------------------------------------------------------------------------------------------
  * WHY THE POSITION IS THE WHOLE POINT
@@ -7,6 +7,10 @@
  * The corner readout says what the run is worth; it cannot say what just paid. A number that appears where the
  * thing happened answers that without a word of text -- a fish that vanishes upward and a `+25` where it was is a
  * complete sentence, and the same `+25` in the corner is bookkeeping.
+ *
+ * The same argument is what a DAMAGE number is for, one layer down: a creature's hit points are invisible, and the
+ * white flash says only that something connected this frame. `-1` at the point of impact is the only thing in the
+ * game that answers "how much is left" and "is this gun doing anything at all".
  *
  * So every popup is created at the SCREEN position of the event it came from -- converted once, through the camera.
  *
@@ -16,6 +20,23 @@
  * number that sinks is not a number that drifts, and the drift is the thing that catches the eye. So the popup is
  * anchored to where the event was at the instant it happened, and rises from there -- the water moving under it is a
  * detail no one tracks in three seconds.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * ONE CLASS, ONE INSTANCE PER STYLE
+ * ---------------------------------------------------------------------------------------------
+ * Score numbers and damage numbers are the same mechanism with different clothes: rise, hold, fade, pooled label. What
+ * differs is entirely in `PopupStyle` (see `config/mechanics.json5`), so the difference is a configuration object and
+ * not a second copy of this file. Two copies would be two rise curves to keep in step, and the second one would be the
+ * one that drifts.
+ *
+ * They are separate INSTANCES rather than one field with two styles, and the reason is what the two are FOR: a score
+ * number is an event (a creature died, and the number says what that paid) while a damage number is a rate (the gun
+ * lands several a second, and the numbers are a stream). Sharing one list would make "how many are in flight" -- the
+ * question the debug readout and every probe asks -- stop having an answer, and would let a burst of damage numbers
+ * push a just-earned score number out of the pool. Each instance keeps its own cap, its own life, and its own count.
+ *
+ * The style is held BY REFERENCE to the config object, so the live console tuning this project relies on
+ * (`window.__GB.mechRef.damagePopups.size = 20`) still applies to numbers already in the air.
  *
  * ---------------------------------------------------------------------------------------------
  * SIZE FOLLOWS THE HUD, NOT THE WATER
@@ -32,7 +53,7 @@
 
 import { Container, Text } from 'pixi.js';
 import { designScale, makeLabel, type Camera, type Viewport } from './background';
-import { mech } from './config';
+import type { PopupStyle } from './mechanisms';
 
 interface Popup {
   label: Text;
@@ -42,7 +63,7 @@ interface Popup {
   age: number;
 }
 
-export class ScorePopups {
+export class NumberPopups {
   readonly root = new Container();
 
   private live: Popup[] = [];
@@ -50,7 +71,11 @@ export class ScorePopups {
   private pool: Text[] = [];
   private scale = 1;
 
-  constructor() {
+  /**
+   * @param style the live config object for this kind of number. Held rather than copied, so editing it in the console
+   *   changes the numbers already in flight -- which is the whole point of a knob you can turn while watching.
+   */
+  constructor(private readonly style: PopupStyle) {
     this.root.eventMode = 'none';
   }
 
@@ -64,7 +89,7 @@ export class ScorePopups {
     this.scale = designScale(viewport.width, viewport.height);
   }
 
-  /** How many are in flight, for probes. */
+  /** How many are in flight, for probes and for the debug readout. */
   get count(): number {
     return this.live.length;
   }
@@ -75,17 +100,27 @@ export class ScorePopups {
   }
 
   /**
-   * Score something at a WORLD position, which the camera turns into the screen spot the number appears at.
+   * Say something at a WORLD position, which the camera turns into the screen spot the number appears at.
    *
-   * World metres rather than pixels because that is the vocabulary of every event that scores: a pickup has a world
-   * x and y, a creature has a world x and y, and the caller should not have to know how the screen is laid out.
+   * World metres rather than pixels because that is the vocabulary of every event that produces one of these: a pickup
+   * has a world x and y, a creature has a world x and y, and the caller should not have to know how the screen is laid
+   * out.
    *
-   * `points` of 0 or less is ignored, which is what lets a caller award and announce in one line without reading the
-   * config first: an event taken out of the game by a price of 0 must not leave a `+0` floating.
+   * `value` of 0 or less is ignored, which is what lets a caller announce in one line without reading the config
+   * first: an event taken out of the game by a price of 0 must not leave a `+0` floating, and a shot that deals no
+   * damage must not leave a `-0`.
    */
-  add(worldX: number, worldY: number, points: number, camera: Camera): void {
-    if (points <= 0) return;
-    const cfg = mech.score.popups;
+  add(worldX: number, worldY: number, value: number, camera: Camera): void {
+    if (value <= 0) return;
+    const cfg = this.style;
+    /**
+     * `max: 0` turns this kind of number OFF rather than meaning "unlimited".
+     *
+     * The cap doubles as the switch for a stream the player may find noisy, and it is the one value that says "none of
+     * these": the damage numbers are a rate, so "off" is the first thing anyone would want to try. It costs one
+     * comparison to honour.
+     */
+    if (cfg.max <= 0) return;
     /**
      * At the cap, retire the OLDEST rather than refusing the new one.
      *
@@ -107,7 +142,7 @@ export class ScorePopups {
     label.style.fill = cfg.colour;
     label.style.fontWeight = cfg.weight;
     label.anchor.set(cfg.anchorX, cfg.anchorY);
-    label.text = `${cfg.prefix}${points}`;
+    label.text = `${cfg.prefix}${value}`;
     label.visible = true;
     label.alpha = cfg.alpha;
     this.root.addChild(label);
@@ -122,7 +157,7 @@ export class ScorePopups {
    * by their own exponent from the config, so "how it moves" is tunable without touching this file.
    */
   update(dt: number): void {
-    const cfg = mech.score.popups;
+    const cfg = this.style;
     const rise = cfg.risePx * this.scale;
     for (let i = this.live.length - 1; i >= 0; i--) {
       const popup = this.live[i]!;
@@ -140,7 +175,7 @@ export class ScorePopups {
        * Full brightness for the first stretch, then a fade.
        *
        * A popup that started fading immediately would be half-read by the time the eye arrived; holding it and then
-       * dropping it is what makes three seconds feel like a beat rather than like a slow dissolve.
+       * dropping it is what makes a moment feel like a beat rather than like a slow dissolve.
        */
       const faded = t <= cfg.fadeFrom ? 0 : (t - cfg.fadeFrom) / (1 - cfg.fadeFrom);
       popup.label.alpha = cfg.alpha * (1 - faded ** cfg.fadeEase);
@@ -161,4 +196,3 @@ export class ScorePopups {
     this.pool.push(popup.label);
   }
 }
-

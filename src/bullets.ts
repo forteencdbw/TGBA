@@ -97,14 +97,29 @@ export class BulletField {
    * connected, a floating number wants to know WHERE, and a score wants to know that a creature was finished rather
    * than merely hit. A round stopped by scenery is in `hits` and in none of the others -- a crate does not bleed, and
    * it is not worth points.
+   *
+   * `struck` is the per-hit detail that `hits` cannot carry: WHERE each round landed on a creature and how much it took
+   * off. Scenery hits are deliberately not in it -- this is the list a damage number is drawn from, and a crate does not
+   * show one.
    */
-  update(dt: number, ctx: BulletContext): { hits: number; drivenOff: number; fired: number; driven: readonly { x: number; y: number }[] } {
+  update(
+    dt: number,
+    ctx: BulletContext,
+  ): {
+    hits: number;
+    drivenOff: number;
+    fired: number;
+    driven: readonly { x: number; y: number }[];
+    struck: readonly { x: number; y: number; amount: number }[];
+  } {
     const cfg = mech.bullets;
     let landed = 0;
     let drivenOff = 0;
     let fired = 0;
     /** Positions of creatures finished this frame, for whatever the caller wants to draw there. */
     const driven: { x: number; y: number }[] = [];
+    /** Every round that landed on a creature this frame, with the damage it dealt. */
+    const struck: { x: number; y: number; amount: number }[] = [];
 
     if (ctx.armed && ctx.perSecond > 0) {
       /**
@@ -155,6 +170,9 @@ export class BulletField {
           const outcome = ctx.hazards.hit(h, cfg.damage, { x: b.x, y: b.y });
           this.hits++;
           landed++;
+          // Reported at the CREATURE, not at the round: the round is a few pixels wide and has already been removed by
+          // the time the caller draws anything, while the creature is the thing the number is about.
+          struck.push({ x: h.x, y: h.y, amount: cfg.damage });
           if (outcome === 'fled') {
             drivenOff++;
             driven.push({ x: h.x, y: h.y });
@@ -170,7 +188,7 @@ export class BulletField {
       }
     }
 
-    return { hits: landed, drivenOff, fired, driven };
+    return { hits: landed, drivenOff, fired, driven, struck };
   }
 
   private spawn(ctx: BulletContext): void {

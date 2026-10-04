@@ -128,6 +128,37 @@ export interface StageConfig {
   appearance: StageAppearance[];
 }
 
+/**
+ * The look and the timing of one kind of FLOATING NUMBER.
+ *
+ * One shape for every kind of number that drifts up from where something happened, because they are one mechanism: the
+ * score popup and the damage popup differ only in what they say and how loud they say it. Two copies of these thirteen
+ * fields would be two places to fix when the rise curve is wrong.
+ */
+export interface PopupStyle {
+  lifeSeconds: number;
+  /** Design pixels of upward drift over that life. */
+  risePx: number;
+  /** Exponent on the progress: 1 linear, below 1 fast-then-slow, above 1 slow-then-fast. */
+  riseEase: number;
+  size: number;
+  colour: number;
+  /** Base opacity, which the fade then scales. */
+  alpha: number;
+  weight: 'bold' | 'normal';
+  /** Text before the number. `+` by default, so it reads as "that earned 50" rather than "the score is 50". */
+  prefix: string;
+  /** Fraction of the life held at full brightness before the fade starts. */
+  fadeFrom: number;
+  /** Exponent on the fade's progress: 1 linear, above 1 holds bright then drops, below 1 fades early. */
+  fadeEase: number;
+  /** Where the EVENT's position sits inside the label: 0 is the left/top edge, 0.5 the middle. */
+  anchorX: number;
+  anchorY: number;
+  /** Ceiling on popups of this style in flight: a guard against a loop, not a budget to spend. */
+  max: number;
+}
+
 export interface Mechanisms {
   /**
    * What a run is worth, per event. The keys are `ScoreEvent` in `src/score.ts`.
@@ -148,30 +179,19 @@ export interface Mechanisms {
      * Presentation rather than rules, and a sibling of the prices rather than a separate group: those four are what a
      * run is worth, and these are how the player finds out that something just paid.
      */
-    popups: {
-      lifeSeconds: number;
-      /** Design pixels of upward drift over that life. */
-      risePx: number;
-      /** Exponent on the progress: 1 linear, below 1 fast-then-slow, above 1 slow-then-fast. */
-      riseEase: number;
-      size: number;
-      colour: number;
-      /** Base opacity, which the fade then scales. */
-      alpha: number;
-      weight: 'bold' | 'normal';
-      /** Text before the number. `+` by default, so it reads as "that earned 50" rather than "the score is 50". */
-      prefix: string;
-      /** Fraction of the life held at full brightness before the fade starts. */
-      fadeFrom: number;
-      /** Exponent on the fade's progress: 1 linear, above 1 holds bright then drops, below 1 fades early. */
-      fadeEase: number;
-      /** Where the EVENT's position sits inside the label: 0 is the left/top edge, 0.5 the middle. */
-      anchorX: number;
-      anchorY: number;
-      /** Ceiling on popups in flight: a guard against a scoring loop, not a budget to spend. */
-      max: number;
-    };
+    popups: PopupStyle;
   };
+  /**
+   * The floating numbers that appear where an enemy was HIT, saying how much that shot took off it.
+   *
+   * The same field draws both (see `src/numberPopups.ts`); this is the second style. Its own group rather than a row
+   * inside `bullets`, because this is not a property of the gun -- it is the other half of the hit feedback that
+   * `hitFlash` and `hitKnockback` already provide, and it is the only one of the three that says HOW MUCH.
+   *
+   * Smaller and shorter-lived than a score number on purpose. A kill is an event; a hit is a rate, and the gun lands
+   * several a second, so these have to be readable at a glance without becoming the loudest thing on the screen.
+   */
+  damagePopups: PopupStyle;
   /**
    * Where the depth gauge sits, and how far in from the edge.
    *
@@ -1243,6 +1263,31 @@ function isNumberTable(v: unknown): v is Record<string, number> {
  * project turns into a boot failure everywhere else.
  */
 /**
+ * The rules for ONE floating-number style, so the score numbers and the damage numbers are validated identically.
+ *
+ * A generator rather than two lists: the styles are the same thirteen fields, and a rule added to one and forgotten in
+ * the other is a config key that silently stops being checked -- which is how a mistyped number becomes a popup that
+ * never appears. `score.popups` and `damagePopups` are the two callers.
+ */
+function popupRules(prefix: string): { path: string; check: (v: unknown) => boolean; describe: string }[] {
+  return [
+    { path: `${prefix}.lifeSeconds`, check: (v) => typeof v === 'number' && v > 0.2 && v <= 12, describe: 'seconds above 0.2 and at most 12' },
+    { path: `${prefix}.risePx`, check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
+    { path: `${prefix}.riseEase`, check: (v) => typeof v === 'number' && v > 0.05 && v <= 6, describe: 'an exponent above 0.05 and at most 6' },
+    { path: `${prefix}.size`, check: (v) => typeof v === 'number' && v >= 8 && v <= 48, describe: 'a font size between 8 and 48' },
+    { path: `${prefix}.colour`, check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
+    { path: `${prefix}.alpha`, check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+    { path: `${prefix}.weight`, check: (v) => v === 'bold' || v === 'normal', describe: "'bold' or 'normal'" },
+    { path: `${prefix}.prefix`, check: (v) => typeof v === 'string' && v.length <= 8, describe: 'a string of at most 8 characters; the empty string is allowed' },
+    { path: `${prefix}.fadeFrom`, check: (v) => typeof v === 'number' && v >= 0 && v < 1, describe: 'a fraction of the life, at least 0 and below 1' },
+    { path: `${prefix}.fadeEase`, check: (v) => typeof v === 'number' && v > 0.05 && v <= 6, describe: 'an exponent above 0.05 and at most 6' },
+    { path: `${prefix}.anchorX`, check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
+    { path: `${prefix}.anchorY`, check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
+    { path: `${prefix}.max`, check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a whole number of popups between 0 and 200; 0 turns this style of number off entirely' },
+  ];
+}
+
+/**
  * True if every row of the chargers table is a complete, sane row.
  *
  * The same reasoning as the shooters table: a row missing its `telegraphSeconds` would lunge with no warning at all,
@@ -1413,19 +1458,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1,
     describe: 'an opacity between 0 and 1',
   })),
-  { path: 'score.popups.riseEase', check: (v) => typeof v === 'number' && v > 0.05 && v <= 6, describe: 'an exponent above 0.05 and at most 6' },
-  { path: 'score.popups.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  { path: 'score.popups.weight', check: (v) => v === 'bold' || v === 'normal', describe: "'bold' or 'normal'" },
-  { path: 'score.popups.prefix', check: (v) => typeof v === 'string' && v.length <= 8, describe: 'a string of at most 8 characters; the empty string is allowed' },
-  { path: 'score.popups.fadeEase', check: (v) => typeof v === 'number' && v > 0.05 && v <= 6, describe: 'an exponent above 0.05 and at most 6' },
-  { path: 'score.popups.anchorX', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
-  { path: 'score.popups.anchorY', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
-  { path: 'score.popups.lifeSeconds', check: (v) => typeof v === 'number' && v > 0.2 && v <= 12, describe: 'seconds above 0.2 and at most 12' },
-  { path: 'score.popups.risePx', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
-  { path: 'score.popups.size', check: (v) => typeof v === 'number' && v >= 8 && v <= 48, describe: 'a font size between 8 and 48' },
-  { path: 'score.popups.colour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
-  { path: 'score.popups.fadeFrom', check: (v) => typeof v === 'number' && v >= 0 && v < 1, describe: 'a fraction of the life, at least 0 and below 1' },
-  { path: 'score.popups.max', check: (v) => typeof v === 'number' && v >= 1 && v <= 200, describe: 'a whole number of popups between 1 and 200' },
+  ...popupRules('score.popups'),
+  ...popupRules('damagePopups'),
   ...['rim', 'glow', 'hudColor'].map((key) => ({
     path: `plain.look.${key}`,
     check: isColour,
