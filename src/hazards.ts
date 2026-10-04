@@ -2138,6 +2138,11 @@ export function lureTip(
 }
 
 /** The last few lures drawn, for probes. */
+/** Test hook: the art sprite for a creature, so a probe can check what is on it. */
+export function hazardArtSpriteForTest(id: number): Sprite | null {
+  return ART_SPRITES.get(id) ?? null;
+}
+
 export const LURE_PROBE: { x: number; y: number; r: number; tipX: number; tipY: number; angle: number; glowRadius: number }[] = [];
 
 export function paintHazards(
@@ -2757,25 +2762,19 @@ export function paintHazards(
   }
 
   /**
-   * The white flash, as a SECOND pass over the same list.
+   * No ellipse pass here any more.
    *
-   * A pass rather than a line inside each kind's branch: there are six creatures and more coming, and the boss already had
-   * its own flash before this existed -- three ways for the same idea to be implemented differently. Drawing the overlay
-   * once, after everything, is what makes "hit" look the same on all of them, including the ones added later.
+   * The flash for a creature is the SPRITE turning white (see the art branch above, which puts a colour matrix on the sprite
+   * while it flashes). The ellipse was a stand-in for creatures drawn as shapes; every creature is heading for a picture, and
+   * a white blob over a picture is not the picture turning white.
    */
-  for (const h of field.hazards) {
-    if (h.hitFlash <= 0) continue;
-    const flash = mech.hitFlash;
-    // Fades over its own duration, so a long flash reads as a fading one rather than as a stuck white blob.
-    const strength = Math.min(1, h.hitFlash / Math.max(0.001, flash.seconds));
-    const r = laneWidth * h.radiusFraction * flash.radiusScale;
-    g.ellipse(h.x, h.y, r, r * 0.85).fill({ color: flash.colour, alpha: flash.alpha * strength });
-  }
 }
 
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
+
 
 
 

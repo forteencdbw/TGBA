@@ -3,7 +3,7 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeL
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, selectLevel, type EntrySide, type Level, type LevelEntry } from './levels';
 import { Progression } from './progress';
-import { blastRadiusFraction, HazardField, hazardHealth, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
+import { blastRadiusFraction, HazardField, hazardHealth, hazardArtSpriteForTest, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
 import { BulletField, paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
@@ -719,6 +719,11 @@ class Game {
   }
 
   /** Test hook: open the codex, for probing its pages. */
+  /** Test hook: the art sprite for a creature id, if it has one. */
+  hazardArtSpriteRef(id: number): { filters: readonly unknown[] } | null {
+    return hazardArtSpriteForTest(id);
+  }
+
   /** Test hook: the last lure geometries the painter computed, newest last. */
   codexLureProbeRef(): unknown {
     return LURE_PROBE.slice(-3);
@@ -5931,6 +5936,9 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
+
 
 
 
