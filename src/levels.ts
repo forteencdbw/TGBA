@@ -291,6 +291,8 @@ export interface PathSpec {
 
 /** One level's water colours. `tintStrength` is how much of `tint` to mix over the gradient, 0..1. */
 export interface LevelPalette {
+  /** How opaque the water gradient is, 0..1. Below 1 it is a wash over whatever is behind it. */
+  waterAlpha: number;
   deep: number;
   shallow: number;
   bloom: number;
@@ -731,6 +733,7 @@ function readLevels(text: string): { start: string; levels: Level[] } {
     const rawPalette = node['palette'];
     const paletteNode = (rawPalette && typeof rawPalette === 'object' && !Array.isArray(rawPalette) ? rawPalette : {}) as Record<string, unknown>;
     const palette: LevelPalette = {
+      waterAlpha: optNum(paletteNode, 'waterAlpha', 'levels[' + id + '].palette', 1, 0, 1),
       deep: optColour(paletteNode, 'deep', `levels[${id}].palette`, 0x020710),
       shallow: optColour(paletteNode, 'shallow', `levels[${id}].palette`, 0x2e8fc4),
       bloom: optColour(paletteNode, 'bloom', `levels[${id}].palette`, 0xbff0ff),
@@ -984,6 +987,7 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+
 
 
 

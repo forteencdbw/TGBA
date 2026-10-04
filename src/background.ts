@@ -164,6 +164,7 @@ export class WorldLayer {
   /** Cached canvas size, so a resize also forces a rebuild. See `update`. */
   private lastGradientWidth = -1;
   private lastGradientHeight = -1;
+  private lastWaterAlpha = -1;
 
   constructor() {
     this.snow.eventMode = 'none';
@@ -305,7 +306,8 @@ export class WorldLayer {
      * letterboxing decision rather than as a caching bug.
      */
     const sizeChanged = viewport.width !== this.lastGradientWidth || viewport.height !== this.lastGradientHeight;
-    if (topColour !== this.lastTopColour || bottomColour !== this.lastBottomColour || sizeChanged) {
+    if (topColour !== this.lastTopColour || bottomColour !== this.lastBottomColour || sizeChanged || LEVEL.palette.waterAlpha !== this.lastWaterAlpha) {
+      this.lastWaterAlpha = LEVEL.palette.waterAlpha;
       this.lastTopColour = topColour;
       this.lastBottomColour = bottomColour;
       this.lastGradientWidth = viewport.width;
@@ -323,7 +325,17 @@ export class WorldLayer {
 
       this.gradient.clear();
       // Full canvas width: the water fills the whole screen, and the lane is marked on top.
-      this.gradient.rect(0, 0, viewport.width, viewport.height).fill(gradient);
+      /**
+       * The water's own opacity, from the level's palette.
+       *
+       * A fully opaque gradient IS the picture: nothing behind it can show, and a level with a hand-authored backdrop
+       * (level 1 has one) ends up with the picture hidden behind its own water. `waterAlpha` lets the water be a WASH
+       * over what is behind it instead -- which is also more honest, because the backdrop is drawn INSIDE the water
+       * rather than behind it. 1.0 is the old behaviour, and every level except the one with a picture still uses it.
+       */
+      this.gradient
+        .rect(0, 0, viewport.width, viewport.height)
+        .fill({ fill: gradient, alpha: LEVEL.palette.waterAlpha });
     }
 
     /**
@@ -1059,6 +1071,8 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+
+
 
 
 
