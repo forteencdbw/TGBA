@@ -244,7 +244,7 @@ export class WorldLayer {
    * pasted on top of it -- which is what makes a hand-authored picture sit inside the level's colour instead of beside
    * it.
    */
-  private drawBackdrop(scrolled: number, min: number, max: number, pixelsPerMetre: number): void {
+  private drawBackdrop(scrolled: number, pixelsPerMetre: number): void {
     const spec = LEVEL.backdrop;
     if (!spec) {
       if (this.backdrop) {
@@ -265,7 +265,12 @@ export class WorldLayer {
        * sees. The layering that works is: gradient (the water), then the image (what is far away IN it), then the
        * parallax motes (the water between the camera and that distance).
        */
-      this.world.addChildAt(this.backdrop.root, Math.max(0, this.world.getChildIndex(this.parallax.root)));
+      /**
+       * BEHIND the water, which is where the owner wants it: the picture is the far distance, and the water is in front
+       * of it. oot's first child is behind gradient, margins and world -- and the backdrop has to be SCREEN space
+       * for that, because the gradient is a screen-space fill.
+       */
+      this.root.addChildAt(this.backdrop.root, 0);
       this.backdrop.layout(this.lastCanvasWidth, this.lastCanvasHeight, this.lastLaneWidthMeters);
     }
     /**
@@ -273,7 +278,7 @@ export class WorldLayer {
      * drawn in world coordinates, so every size here has to be converted -- sizing the image in canvas pixels was what
      * made it a patch over part of the frame rather than a backdrop.
      */
-    this.backdrop.draw(scrolled, min, max, pixelsPerMetre);
+    this.backdrop.draw(scrolled, pixelsPerMetre);
   }
 
   update(camera: Camera, _player: Player, dt: number, scrolled: number): void {
@@ -359,7 +364,7 @@ export class WorldLayer {
     }
 
     // --- The level's backdrop, behind everything ---------------------------
-    this.drawBackdrop(scrolled, min, max, camera.viewport.scale);
+    this.drawBackdrop(scrolled, camera.viewport.scale);
 
     // --- Parallax (four layers, far to near) ------------------------------
     this.parallax.draw(scrolled, min, max);
@@ -1071,6 +1076,8 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
+
+
 
 
 

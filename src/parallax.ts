@@ -36,9 +36,9 @@ interface Layer {
  */
 export class Backdrop {
   readonly root = new Container();
-  private sprite: Sprite | null = null;
+  /** Two copies of the image, so the wrap can never show a gap: together they are 2.3 screens tall. */
+  private sprites: Sprite[] = [];
   private loaded = false;
-  private imageHeightMeters = 0;
   private canvasWidth = 0;
   private canvasHeight = 0;
   /** The lane's width in metres, for sizing the image across the play area rather than the whole canvas. */
@@ -54,13 +54,17 @@ export class Backdrop {
      */
     void Assets.load<Texture>(spec.image)
       .then((texture) => {
-        const sprite = new Sprite(texture);
-        sprite.anchor.set(0.5, 0.5);
-        sprite.alpha = spec.alpha;
-        sprite.tint = spec.tint;
-        sprite.eventMode = 'none';
-        this.root.addChild(sprite);
-        this.sprite = sprite;
+        for (let i = 0; i < 2; i++) {
+          const sprite = new Sprite(texture);
+          // Anchored at its top edge and centred horizontally: the scroll offset is then the image's top, which is the
+          // simplest thing to wrap.
+          sprite.anchor.set(0.5, 0);
+          sprite.alpha = spec.alpha;
+          sprite.tint = spec.tint;
+          sprite.eventMode = 'none';
+          this.root.addChild(sprite);
+          this.sprites.push(sprite);
+        }
         this.loaded = true;
         // The canvas was already laid out before the texture arrived: size it now, or it draws at zero height.
         this.applyLayout();
@@ -92,44 +96,41 @@ export class Backdrop {
    * converted once per frame in `draw`, where the camera's scale is known.
    */
   private applyLayout(): void {
-    if (!this.sprite) return;
-    const scale = this.sprite.texture.width > 0 ? 1 / this.sprite.texture.width : 1;
-    this.sprite.scale.set(scale);
+    if (this.sprites.length === 0) return;
   }
 
   /**
    * Draw for this frame: the sprite is placed so that the image SCROLLS, and copies above and below keep the band
    * covered.
    */
-  draw(scrolled: number, min: number, max: number, pixelsPerMetre: number): void {
-    if (!this.sprite || this.canvasWidth <= 0 || pixelsPerMetre <= 0) return;
-    // One image is `heightScreens` screens tall and the full lane wide, in world metres.
-    const laneMetres = this.laneWidthMeters > 0 ? this.laneWidthMeters : this.canvasWidth / pixelsPerMetre;
-    const imageMeters = (this.canvasHeight * this.spec.heightScreens) / pixelsPerMetre;
-    this.sprite.width = laneMetres;
-    this.sprite.height = imageMeters;
+  draw(scrolled: number, pixelsPerMetre: number): void {
+    if (this.sprites.length === 0 || this.canvasWidth <= 0 || pixelsPerMetre <= 0) return;
     /**
-     * Centred on the LANE, not on the world origin.
+     * SCREEN space, because the backdrop draws BEHIND the water.
      *
-     * The sprite's anchor is its middle, so leaving `x` at zero put the image half a lane to the LEFT of the play area:
-     * it covered the left margin and half the lane, and the rest of the water showed the level's colour instead. The
-     * backdrop is a picture of where the level happens, and where the level happens is the lane.
+     * The water gradient is a screen-space fill, so anything behind it has to be screen-space too -- a world-space
+     * sprite would be transformed by the camera and slide out from under it. Everything below is therefore in pixels:
+     * the lane the picture spans, the height it spans, and the scroll converted once through pixels-per-metre.
      */
-    this.sprite.x = laneMetres / 2;
-    this.imageHeightMeters = imageMeters;
+    const lanePx = this.laneWidthMeters > 0 ? this.laneWidthMeters * pixelsPerMetre : this.canvasWidth;
+    const imagePx = this.canvasHeight * this.spec.heightScreens;
+    // (no longer needed in world metres: the backdrop and the water are both in screen space now)
     /**
-     * Wrapped by the image's own height, which is in METRES.
+     * TWO copies, `imagePx` apart, wrapped by one image height.
      *
-     * The image is `heightScreens` of the view, so `imageMeters` is what one copy covers; the level's scroll at
-     * `speedFactor` moves it, and the modulo is what turns one picture into an endless seabed. The offset is a function
-     * of `scrolled` rather than an accumulator, for the same reason the parallax layers are: a teleport must not smear
-     * the picture across the screen.
+     * One copy cannot cover the window on its own: the wrap moves its top edge across a whole image height, so for part
+     * of every cycle the window reaches past its bottom edge. Two, offset by exactly that height, always cover it.
      */
-    const span = this.imageHeightMeters;
-    const t = ((scrolled * this.spec.speedFactor) % span + span) % span;
-    // Drawn centred on the visible band's middle: `y = 0` is the world origin, so the picture is placed in world metres.
-    const centre = (min + max) / 2 - t;
-    this.sprite.y = centre;
+    const span = imagePx;
+    const t = ((scrolled * this.spec.speedFactor * pixelsPerMetre) % span + span) % span;
+    for (const [i, sprite] of this.sprites.entries()) {
+      sprite.width = lanePx;
+      sprite.height = imagePx;
+      sprite.x = this.canvasWidth / 2;
+      // The world moves DOWN as the run climbs, so the picture does too. Copy 0 starts at the offset, copy 1 one image
+      // above it.
+      sprite.y = t - i * span;
+    }
   }
 }
 
@@ -215,6 +216,8 @@ export class Parallax {
     }
   }
 }
+
+
 
 
 
