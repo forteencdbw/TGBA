@@ -27,7 +27,8 @@
  * outrun it), so the player closes on them and can see them coming.
  */
 
-import { Graphics } from 'pixi.js';
+import { ColorMatrixFilter, Graphics, Sprite, Texture } from 'pixi.js';
+import { assetUrl } from './assets';
 import { mech, tuning } from './config';
 import { hazardMass } from './consumption';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
@@ -1976,6 +1977,102 @@ export class HazardField {
  * dimming cannot drift from the drawing because it is the drawing, faded. The codex passes `in-play` and gets what
  * the water shows.
  */
+
+/**
+ * The anglerfish's lure, drawn in code because the art does not carry it.
+ *
+ * A stem and a bulb with a soft halo, all sized as fractions of the creature's radius, and BRIGHTNESS that breathes. In
+ * code rather than baked into the picture for the reason the owner gave: adding it to the art means re-exporting every
+ * time the glow is tuned, and a glowing lure is the one part of this creature that has to move.
+ */
+function paintLure(
+  g: Graphics,
+  x: number,
+  y: number,
+  r: number,
+  lure: NonNullable<NonNullable<typeof mech.hazardArt[string]>['lure']>,
+  elapsed: number,
+): void {
+  const pulse = lure.pulseMin + (lure.pulseMax - lure.pulseMin) * (0.5 + 0.5 * Math.sin(elapsed * lure.pulsePerSecond * Math.PI * 2));
+  /**
+   * The stem has an ANGLE, because the art already draws the rod.
+   *
+   * A picture of an anglerfish comes with its lure; what it does not come with is the light. So the code adds the glow and
+   * the angle and length are there to point it at the tip of whatever rod the artist drew -- two numbers, no re-export.
+   */
+  const angle = (lure.stemAngle * Math.PI) / 180;
+  const dirX = Math.sin(angle);
+  const dirY = Math.cos(angle);
+  const baseX = x + dirX * r * lure.stemFrom;
+  const baseY = y + dirY * r * lure.stemFrom;
+  const tipX = baseX + dirX * r * lure.stemLength;
+  const tipY = baseY + dirY * r * lure.stemLength;
+  if (lure.stemWidth > 0) {
+    g.moveTo(baseX, baseY)
+      .lineTo(tipX, tipY)
+      .stroke({ color: lure.stemColour, width: Math.max(0.5, r * lure.stemWidth) });
+  }
+  // Halo first, then the bulb on top of it: the light is what the eye should land on.
+  g.circle(tipX, tipY, r * lure.glowRadius).fill({ color: lure.glowColour, alpha: lure.glowAlpha * pulse });
+  g.circle(tipX, tipY, r * lure.bulbRadius).fill({ color: lure.bulbColour, alpha: Math.min(1, pulse) });
+}
+
+/**
+ * The white matrix: every channel forced to 1, alpha untouched. "The whole picture turns white."
+ *
+ * The owner's suggestion, and it is the right shape for a SPRITE: a filter on the object itself needs no shared layer, so
+ * there is no ordering question and no group alpha to compute wrong -- both of which is where the first attempt at this
+ * failed when the objects were Graphics.
+ */
+const WHITE_OUT = new ColorMatrixFilter();
+WHITE_OUT.matrix = [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0];
+
+/**
+ * One sprite per creature that has art, keyed by the hazard's id, plus the texture cache.
+ *
+ * Pooled rather than rebuilt: a creature lives for seconds and there can be a dozen on screen, so building a Sprite per
+ * frame is the bug that has already cost this project two rounds.
+ */
+const ART_SPRITES = new Map<number, Sprite>();
+const ART_TEXTURES = new Map<string, Texture>();
+
+function artTexture(name: string): Texture | null {
+  const cached = ART_TEXTURES.get(name);
+  if (cached) return cached;
+  const url = assetUrl(name);
+  if (!url) return null;
+  const image = new Image();
+  image.onload = () => {
+    void image
+      .decode()
+      .then(() => {
+        const texture = Texture.from(image);
+        // Guarded: a zero-width texture makes every `width =` downstream divide by zero, which is how the player bubble
+        // became enormous twice.
+        if (texture.width > 0 && texture.height > 0) ART_TEXTURES.set(name, texture);
+      })
+      .catch(() => console.warn('[hazardArt] could not decode ' + name));
+  };
+  image.onerror = () => console.warn('[hazardArt] could not load ' + name);
+  image.src = url;
+  // Nothing yet: the caller falls back to the drawn body for as long as that lasts, so a picture is an upgrade to the
+  // creature rather than a precondition for it.
+  ART_TEXTURES.set(name, null as unknown as Texture);
+  return null;
+}
+
+/** Retire the sprites of creatures that are gone, so the pool tracks the water rather than growing for ever. */
+function pruneArtSprites(field: HazardField): void {
+  if (ART_SPRITES.size === 0) return;
+  const live = new Set(field.hazards.map((h) => h.id));
+  for (const [id, sprite] of ART_SPRITES) {
+    if (!live.has(id)) {
+      sprite.destroy();
+      ART_SPRITES.delete(id);
+    }
+  }
+}
+
 export function paintHazards(
   g: Graphics,
   field: HazardField,
@@ -1984,12 +2081,54 @@ export function paintHazards(
   canEat: (kind: HazardKind) => boolean,
   which: 'in-play' | 'leaving' = 'in-play',
 ): void {
+  if (which === 'in-play') pruneArtSprites(field);
   for (const h of field.hazards) {
     // A creature is in exactly one of the two passes, so nothing is drawn twice and nothing is missed.
     if (which === 'leaving' ? !h.flee : h.flee) continue;
     const r = laneWidth * h.radiusFraction;
     const x = h.x;
     const y = h.y;
+
+    /**
+     * A creature with a picture is drawn from it, and its kind's branch is skipped.
+     *
+     * The fallback matters as much as the picture: while a texture is still loading (or if the file is missing) the drawn
+     * body is used, so art is an upgrade to a creature rather than a precondition for it. That is the same call the bullets
+     * make, and it was learned the hard way there.
+     */
+    const art = mech.hazardArt[h.kind];
+    if (art) {
+      const name = h.charge && art.charge ? art.charge : art.move;
+      const texture = artTexture(name);
+      if (texture) {
+        let sprite = ART_SPRITES.get(h.id);
+        if (!sprite) {
+          sprite = new Sprite(texture);
+          sprite.anchor.set(0.5);
+          sprite.eventMode = 'none';
+          g.parent?.addChild(sprite);
+          ART_SPRITES.set(h.id, sprite);
+        }
+        const size = r * 2 * art.scale;
+        sprite.texture = texture;
+        sprite.visible = true;
+        sprite.x = x;
+        sprite.y = y;
+        sprite.alpha = art.alpha * (h.flee ? mech.hazards.fleeAlpha : 1);
+        // The world is Y-flipped, so the picture's own Y is negative to keep it upright -- see the player bubble.
+        sprite.scale.set(size / texture.width, -Math.abs(size / texture.width));
+        /**
+         * The white flash, as a filter ON THE SPRITE.
+         *
+         * This is the owner's suggestion and it is the right one: the earlier attempt whitened a shared Graphics layer,
+         * which brought in layer ordering and a group alpha that could compute to zero -- and a transparent layer and an
+         * absent one look identical in a screenshot. Per object, there is nothing to get wrong.
+         */
+        sprite.filters = h.hitFlash > 0 ? [WHITE_OUT] : [];
+        if (art.lure) paintLure(g, x, y, r, art.lure, elapsed);
+        continue;
+      }
+    }
 
     /**
      * THE EDIBILITY MARKER, drawn UNDER the hazard so it reads as a halo rather than as an outline bolted on.
@@ -2553,6 +2692,7 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
+
 
 
 

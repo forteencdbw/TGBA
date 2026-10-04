@@ -771,6 +771,36 @@ export interface Mechanisms {
     imageRotation: number;
     keepDetails: boolean;
   };
+  /**
+   * Pictures for a creature, by kind. Keys are `HazardKind`s; a kind without an entry is drawn as before.
+   *
+   * A picture REPLACES the procedural body (it is the creature), and the parts the art does not carry -- the anglerfish's
+   * glowing lure -- are drawn on top from this same block.
+   */
+  hazardArt: Record<
+    string,
+    {
+      move: string;
+      charge?: string;
+      scale: number;
+      alpha: number;
+      lure?: {
+        stemAngle: number;
+        stemFrom: number;
+        stemLength: number;
+        stemWidth: number;
+        stemColour: number;
+        bulbRadius: number;
+        bulbColour: number;
+        glowRadius: number;
+        glowColour: number;
+        glowAlpha: number;
+        pulsePerSecond: number;
+        pulseMin: number;
+        pulseMax: number;
+      };
+    }
+  >;
   /** The white flash anything shootable gives when a bullet lands: creatures AND breakable obstacles. */
   hitFlash: {
     seconds: number;
@@ -1768,6 +1798,18 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'stomach.markerMinSpreadRadians', check: (v) => typeof v === 'number' && v > 0 && v < 6.28, describe: 'an angle in radians, above 0 and below a full turn' },
   { path: 'stomach.fuseBlinkHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
   { path: 'stomach.fusePanicSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
+  {
+    path: 'hazardArt',
+    check: (v) => {
+      if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+      return Object.values(v as Record<string, unknown>).every((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        return typeof r.move === 'string' && r.move.length > 0 && typeof r.scale === 'number' && r.scale > 0.05 && r.scale <= 6 && typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1;
+      });
+    },
+    describe: 'an object of kind -> { move, charge?, scale, alpha, lure? }',
+  },
   { path: 'hitFlash.seconds', check: (v) => typeof v === 'number' && v > 0 && v <= 2, describe: 'seconds above 0 and at most 2' },
   { path: 'hitFlash.colour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'hitFlash.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
@@ -2391,6 +2433,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 
