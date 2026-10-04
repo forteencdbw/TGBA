@@ -31,6 +31,8 @@ export interface Obstacle {
   healthFraction: number;
   /** Seconds since it appeared, for the coral's slow shimmer. */
   age: number;
+  /** Seconds left of the white flash a bullet leaves. Same idea as a creature's, same setting. */
+  hitFlash: number;
   /**
    * Set while it is drifting in from a side, and null once it has settled where the level put it.
    *
@@ -230,6 +232,7 @@ export class ObstacleField {
       health,
       healthFraction: 1,
       age: 0,
+      hitFlash: 0,
       entry: entry ?? null,
     };
     this.obstacles.push(obstacle);
@@ -246,6 +249,8 @@ export class ObstacleField {
     const obstacle = this.obstacles.find((o) => o.id === id);
     if (!obstacle) return null;
     obstacle.health -= amount;
+    // The white flash, set where the damage is: the one place that knows a bullet landed. See mech.hitFlash.
+    obstacle.hitFlash = mech.hitFlash.seconds;
     obstacle.healthFraction = Math.max(0, obstacle.health / Math.max(0.0001, obstacleHealth(obstacle.kind)));
     if (obstacle.health > 0) return { id, kind: obstacle.kind, broke: false };
     this.obstacles = this.obstacles.filter((o) => o.id !== id);
@@ -262,6 +267,8 @@ export class ObstacleField {
   update(dt: number, min: number, max: number): void {
     for (const o of this.obstacles) {
       o.age += dt;
+      // The flash decays on the obstacle's own clock, like a creature's.
+      if (o.hitFlash > 0) o.hitFlash = Math.max(0, o.hitFlash - dt);
       /**
        * A drifting arrival, which ENDS at the authored x.
        *
@@ -547,7 +554,20 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
       g.stroke({ color: 0x101820, alpha: 0.5 * damaged, width: r * mech.obstacles.crackWidthRatio });
     }
   }
-}
+
+  /**
+   * The white flash, as a SECOND pass -- the same shape as the creatures' pass, and for the same reasons.
+   *
+   * One place rather than a line in each kind's branch means a crate, a coral, a wall and a net all flash identically,
+   * and the next breakable thing someone adds gets it without being told.
+   */
+  for (const o of field.obstacles) {
+    if (o.hitFlash <= 0) continue;
+    const flash = mech.hitFlash;
+    const strength = Math.min(1, o.hitFlash / Math.max(0.001, flash.seconds));
+    const r = laneWidth * o.radiusFraction * flash.radiusScale;
+    g.ellipse(o.x, o.y, r, r * 0.9).fill({ color: flash.colour, alpha: flash.alpha * strength });
+  }}
 
 /** Multiply a packed colour's channels, for the "damaged things look darker" cue. */
 function shade(colour: number, factor: number): number {
@@ -556,5 +576,6 @@ function shade(colour: number, factor: number): number {
   const b = Math.max(0, Math.min(255, Math.round((colour & 255) * factor)));
   return (r << 16) | (g << 8) | b;
 }
+
 
 

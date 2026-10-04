@@ -812,7 +812,7 @@ export class HazardField {
      * "did I hit it?" had no answer for an ordinary fish. The duration now lives in `hazards.hitFlash`, where the rest of
      * the hit feedback does.
      */
-    hazard.hitFlash = mech.hazards.hitFlash.seconds;
+    hazard.hitFlash = mech.hitFlash.seconds;
     /**
      * A ZAPPER fires when it is shot.
      *
@@ -2542,7 +2542,7 @@ export function paintHazards(
    */
   for (const h of field.hazards) {
     if (h.hitFlash <= 0) continue;
-    const flash = mech.hazards.hitFlash;
+    const flash = mech.hitFlash;
     // Fades over its own duration, so a long flash reads as a fading one rather than as a stuck white blob.
     const strength = Math.min(1, h.hitFlash / Math.max(0.001, flash.seconds));
     const r = laneWidth * h.radiusFraction * flash.radiusScale;

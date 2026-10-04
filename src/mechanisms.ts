@@ -399,13 +399,6 @@ export interface Mechanisms {
     trailAlpha: number;
   };
   hazards: {
-    /** The white flash a creature gives when a bullet lands. Every kind, not just the boss. */
-    hitFlash: {
-      seconds: number;
-      colour: number;
-      alpha: number;
-      radiusScale: number;
-    };
     /**
      * The bomb fish, in all three of its roles: hunting outside, a lit fuse inside, a grenade when spat.
      *
@@ -777,6 +770,13 @@ export interface Mechanisms {
     /** Degrees clockwise. The world container is Y-flipped and that is compensated for; this is on top of it. */
     imageRotation: number;
     keepDetails: boolean;
+  };
+  /** The white flash anything shootable gives when a bullet lands: creatures AND breakable obstacles. */
+  hitFlash: {
+    seconds: number;
+    colour: number;
+    alpha: number;
+    radiusScale: number;
   };
   codex: {
     columns: number;
@@ -1561,10 +1561,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     describe: 'exactly four layers (farthest first), each { speedFactor, count, sizeRatio, colour, alpha }',
   },
   { path: 'collectables.wobbleMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.wobbleMin') as number), describe: 'at least wobbleMin' },
-  { path: 'hazards.hitFlash.seconds', check: (v) => typeof v === 'number' && v > 0 && v <= 2, describe: 'seconds above 0 and at most 2' },
-  { path: 'hazards.hitFlash.colour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
-  { path: 'hazards.hitFlash.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  { path: 'hazards.hitFlash.radiusScale', check: (v) => typeof v === 'number' && v > 0.2 && v <= 3, describe: 'a multiplier above 0.2 and at most 3' },
   { path: 'hazards.vent.radiusRatio', check: (v) => typeof v === 'number' && v > 0.01 && v <= 0.5, describe: 'a fraction of the lane width above 0.01 and at most 0.5' },
   { path: 'hazards.vent.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 50, describe: 'hit points between 0 and 50' },
   { path: 'hazards.vent.periodSeconds', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 60, describe: 'seconds between 0.5 and 60' },
@@ -1772,6 +1768,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'stomach.markerMinSpreadRadians', check: (v) => typeof v === 'number' && v > 0 && v < 6.28, describe: 'an angle in radians, above 0 and below a full turn' },
   { path: 'stomach.fuseBlinkHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
   { path: 'stomach.fusePanicSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
+  { path: 'hitFlash.seconds', check: (v) => typeof v === 'number' && v > 0 && v <= 2, describe: 'seconds above 0 and at most 2' },
+  { path: 'hitFlash.colour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'hitFlash.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hitFlash.radiusScale', check: (v) => typeof v === 'number' && v > 0.2 && v <= 3, describe: 'a multiplier above 0.2 and at most 3' },
   { path: 'playerBubble.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string for the drawn bubble' },
   { path: 'playerBubble.imageAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'playerBubble.imageTint', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
