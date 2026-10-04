@@ -2312,6 +2312,59 @@ export function paintHazards(
     const y = h.y;
 
     /**
+     * THE WARNING FOR A LUNGE, drawn before anything else the creature is made of.
+     *
+     * It has to be ABOVE the art branch below, and that placement is the whole point of this block being here. A
+     * creature with a picture is drawn from the picture and then `continue`s -- so anything below that branch is
+     * silently not drawn for it. The warning is not part of the body: it is a statement about what the creature is
+     * about to DO, and it must survive a creature getting art. It did not, and the lanternfish -- the one charger with
+     * pictures -- lunged with no warning line at all while every drawn creature showed one. Measured: 24 frames of a
+     * forced lunge drew the warning for the fish and the jellyfish, and the angler drew it exactly once, on the frame
+     * before its artwork decoded.
+     *
+     * Drawn before the creature so the warning reads as something moving through the water rather than as a label
+     * attached to the fish. The same curve the motion uses, sampled into a polyline (Pixi has no partial
+     * `quadraticCurveTo`). While the creature is winding up, the WHOLE path plus a ring at the aim point is drawn: that
+     * is the promise of where it will go, and it is what makes aiming at where the player was a fair thing to do. Once
+     * it has committed, only the travelled part is drawn, as a trail -- the warning has been delivered and what is left
+     * to show is the move.
+     */
+    if (h.charge) {
+      const cfg = mech.charges;
+      const row = cfg.chargers[h.kind];
+      const window = row?.telegraphSeconds ?? 0.75;
+      const { fromX, fromY, toX, toY, bow, elapsed: chargeAge } = h.charge;
+      const midX = (fromX + toX) / 2;
+      const midY = (fromY + toY) / 2;
+      const span = Math.hypot(toX - fromX, toY - fromY) || 1;
+      const ctrlX = midX + (-(toY - fromY) / span) * bow;
+      const ctrlY = midY + ((toX - fromX) / span) * bow;
+      const winding = chargeAge < window;
+      const head = winding ? 1 : Math.min(1, (chargeAge - window) / Math.max(0.05, row?.travelSeconds ?? 0.55));
+      const STEPS = 12;
+      g.moveTo(fromX, fromY);
+      for (let i = 1; i <= STEPS; i++) {
+        const t = (i / STEPS) * head;
+        const u = 1 - t;
+        g.lineTo(u * u * fromX + 2 * u * t * ctrlX + t * t * toX, u * u * fromY + 2 * u * t * ctrlY + t * t * toY);
+      }
+      // A pulse while winding up, so a still line reads as a countdown rather than as scenery.
+      const pulse = 0.7 + 0.3 * Math.sin(elapsed * 18);
+      g.stroke({
+        color: winding ? cfg.telegraphColour : cfg.trailColour,
+        alpha: (winding ? cfg.telegraphAlpha : cfg.trailAlpha) * (winding ? pulse : 1),
+        width: Math.max(1, r * 0.18),
+      });
+      if (winding) {
+        g.circle(toX, toY, r * 0.7 * pulse).stroke({
+          color: cfg.telegraphColour,
+          alpha: cfg.telegraphAlpha * 0.8,
+          width: Math.max(1, r * 0.14),
+        });
+      }
+    }
+
+    /**
      * A creature with a picture is drawn from it, and its kind's branch is skipped.
      *
      * The fallback matters as much as the picture: while a texture is still loading (or if the file is missing) the drawn
@@ -2436,50 +2489,6 @@ export function paintHazards(
         alpha: mech.consumption.marker.blockedAlpha,
         width: Math.max(1, r * mech.consumption.marker.widthRatio),
       });
-    }
-
-    /**
-     * A LUNGE, drawn before the creature so the warning reads as something moving through the water rather than as a
-     * label attached to the fish.
-     *
-     * The same curve the motion uses, sampled into a polyline (Pixi has no partial `quadraticCurveTo`). While the
-     * creature is winding up, the WHOLE path plus a ring at the aim point is drawn: that is the promise of where it
-     * will go, and it is what makes aiming at where the player was a fair thing to do. Once it has committed, only
-     * the travelled part is drawn, as a trail -- the warning has been delivered and what is left to show is the move.
-     */
-    if (h.charge) {
-      const cfg = mech.charges;
-      const row = cfg.chargers[h.kind];
-      const window = row?.telegraphSeconds ?? 0.75;
-      const { fromX, fromY, toX, toY, bow, elapsed: chargeAge } = h.charge;
-      const midX = (fromX + toX) / 2;
-      const midY = (fromY + toY) / 2;
-      const span = Math.hypot(toX - fromX, toY - fromY) || 1;
-      const ctrlX = midX + (-(toY - fromY) / span) * bow;
-      const ctrlY = midY + ((toX - fromX) / span) * bow;
-      const winding = chargeAge < window;
-      const head = winding ? 1 : Math.min(1, (chargeAge - window) / Math.max(0.05, row?.travelSeconds ?? 0.55));
-      const STEPS = 12;
-      g.moveTo(fromX, fromY);
-      for (let i = 1; i <= STEPS; i++) {
-        const t = (i / STEPS) * head;
-        const u = 1 - t;
-        g.lineTo(u * u * fromX + 2 * u * t * ctrlX + t * t * toX, u * u * fromY + 2 * u * t * ctrlY + t * t * toY);
-      }
-      // A pulse while winding up, so a still line reads as a countdown rather than as scenery.
-      const pulse = 0.7 + 0.3 * Math.sin(elapsed * 18);
-      g.stroke({
-        color: winding ? cfg.telegraphColour : cfg.trailColour,
-        alpha: (winding ? cfg.telegraphAlpha : cfg.trailAlpha) * (winding ? pulse : 1),
-        width: Math.max(1, r * 0.18),
-      });
-      if (winding) {
-        g.circle(toX, toY, r * 0.7 * pulse).stroke({
-          color: cfg.telegraphColour,
-          alpha: cfg.telegraphAlpha * 0.8,
-          width: Math.max(1, r * 0.14),
-        });
-      }
     }
 
     switch (h.kind) {
