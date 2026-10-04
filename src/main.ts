@@ -2114,12 +2114,13 @@ class Game {
      *
      * It was a synthesised noise bed that rose with depth, and the owner's note is that it is exactly what it looked
      * like on paper: a background sound that gets LOUDER the deeper the run goes, with no way to turn it down except the
-     * master volume (which takes the effects with it). The per-level music now carries the atmosphere instead, and it is
-     * music rather than a rising wash -- one thing doing the job beats two, one of which fights the player.
+     * master volume (which takes the effects with it).
      *
-     * `audio.setDepth` and the bed itself are left in `src/audio.ts` but unused: an experiment that failed is cheaper to
-     * delete than to argue about, and this one is one call to bring back if the silence turns out to be worse.
+     * The owner asked for the texture back at a FIXED level, and that is the right shape for it: the bed is a property of
+     * being underwater, not of how far up the bubble has got, so it is set once from `audio.ambientVolume` instead of
+     * being re-sent every frame with new numbers. `setDepth`, the rejected version, stays in `src/audio.ts` unused.
      */
+    audio.setAmbient(mech.audio.ambientVolume);
 
     /**
      * The charge verb, immediately BEFORE the player moves.
@@ -5640,6 +5641,8 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+
 
 
 

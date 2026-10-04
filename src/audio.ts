@@ -114,6 +114,15 @@ export class GameAudio {
    */
   silencedAtSurfaceCount = 0;
 
+  /** Test hooks: what the bed was last told to be, so a probe can check it does not move with depth. */
+  get requestedAmbientRef(): number {
+    return this.requested.ambient;
+  }
+
+  get requestedNoiseRef(): number {
+    return this.requested.noise;
+  }
+
   get isRunning(): boolean {
     return this.started && this.ctx?.state === 'running';
   }
@@ -322,6 +331,27 @@ export class GameAudio {
    * brightest -- and kept playing through the whole results sequence. Depth says WHERE the player is;
    * it does not say whether the run is still happening.
    */
+  /**
+   * The ambient bed at a FIXED level.
+   *
+   * The bed used to be driven by depth (`setDepth` below): it got louder and brighter as the run climbed, which sounded
+   * like the game turning itself up rather than like the sea. The owner's call is to keep the texture but hold it
+   * still -- so this sets the same two gains and the same filter to constant values, and `ambientVolume` in the config
+   * is the one dial. `setDepth` is left in place, unused: it is the experiment that was rejected, and deleting it would
+   * make bringing it back a rewrite rather than a call.
+   */
+  setAmbient(volume: number): void {
+    if (!this.ctx || !this.filter || !this.ambientGain || !this.noiseGain) return;
+    const level = Math.min(1, Math.max(0, volume));
+    const now = this.ctx.currentTime;
+    // The filter opens with the level too, so turning the bed up makes it fuller rather than just louder.
+    this.filter.frequency.setTargetAtTime(300 + level * 1400, now, 0.4);
+    this.ambientGain.gain.setTargetAtTime(level * 0.62, now, 0.5);
+    this.noiseGain.gain.setTargetAtTime(level * 0.9, now, 0.5);
+    this.requested.ambient = level * 0.62;
+    this.requested.noise = level * 0.9;
+  }
+
   setDepth(depth: number, totalDepth: number, audible = true): void {
     // Trace the last few calls, so a probe can see what the GAME actually passed rather than inferring
     // it from the resulting gains -- which was ambiguous when two call sites disagreed.
@@ -509,6 +539,8 @@ export class GameAudio {
 
 /** A single shared instance: audio is global state, and two contexts would fight over the device. */
 export const audio = new GameAudio();
+
+
 
 
 

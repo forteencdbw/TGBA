@@ -1021,6 +1021,8 @@ export interface Mechanisms {
      * game goes".
      */
     musicVolume: number;
+    /** The ambient bed's fixed level, 0..1. It used to follow depth; see udio.setAmbient. */
+    ambientVolume: number;
     /**
      * How loud one small-bubble round landing on a creature is.
      *
@@ -1719,6 +1721,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
       }),
     describe: 'an object of level id to a music recipe (rootHz, stepPerMinute, stepsPerChord, chords, pattern, wave, padWave, arpGain, padGain, noteSeconds, cutoffHz, detuneCents)',
   },
+  { path: 'audio.ambientVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1' },
   { path: 'audio.musicVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity-like level between 0 and 1' },
   { path: 'audio.bulletHitVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1; 0 mutes the bullet hit' },
   { path: 'audio.bulletFireVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1; 0 mutes the shot' },
@@ -2173,6 +2176,7 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
+
 
 
 
