@@ -2489,12 +2489,21 @@ class Game {
      * one authored weave can be placed anywhere in the level without being re-authored -- and the same path works at any
      * scroll speed, because the world keeps moving underneath it.
      */
+    /**
+     * The school, for the same reason and in the same place as the path.
+     *
+     * A key the parser accepts and the spawn path does not carry is a key that disappears between the file and the water --
+     * which is exactly how both `path` and `flock` failed the first time. The simulation reads it from the creature, so the
+     * creature is where it has to arrive.
+     */
+
+
     const pathSpec = entry.path ? LEVEL.paths?.[entry.path] : undefined;
     /**
      * The spline, already advanced to this member's place in the string.
      *
      * lapsed starts at the member's offset rather than at zero, so a string is spread ALONG its curve from the first
-     * frame -- which is what makes it read as one creature after another instead of a single creature drawn six times.
+     * elapsed starts at the member's offset rather than at zero, so a string is spread ALONG its curve from the first
      */
     const path: Hazard['path'] = pathSpec
       ? {
@@ -2506,6 +2515,13 @@ class Game {
         }
       : null;
     const hazard = this.makeHazard(entry.kind as HazardKind, spawnX, spawnY, entering, undefined, path);
+    /**
+     * The school, carried here rather than computed above, because the CREATURE is what the simulation reads it from.
+     *
+     * A key the parser accepts and the spawn path does not carry is a key that disappears between the file and the water --
+     * which is exactly how both `path` and `flock` failed the first time.
+     */
+    if (entry.flock) hazard.flock = entry.flock;
     this.hazards.hazards.push(hazard);
   }
 
