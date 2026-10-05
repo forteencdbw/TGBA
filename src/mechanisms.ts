@@ -847,6 +847,15 @@ export interface Mechanisms {
   /** The white flash anything shootable gives when a bullet lands: creatures AND breakable obstacles. */
   /** The loading screen shown between the menu and a level. */
   /** Hit particles: sparks on a hit, a ring of debris on a defeat. */
+  /** Flocking: the three boid rules, plus how hard the school is pulled around. */
+  flocks: {
+    schools: Record<string, { separation: number; alignment: number; cohesion: number; speed: number; sight: number; wander: number }>;
+    targetDriftMeters: number;
+    targetPull: number;
+    boundsPull: number;
+    speedScale: number;
+    descentSpeed: number;
+  };
   particles: {
     maxParticles: number;
     hitCount: number;
@@ -1916,6 +1925,25 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     },
     describe: 'an object of kind -> { move, charge?, scale, alpha, lure? }',
   },
+  {
+    path: 'flocks.schools',
+    check: (v) =>
+      v !== null &&
+      typeof v === 'object' &&
+      !Array.isArray(v) &&
+      Object.keys(v).length > 0 &&
+      Object.values(v as Record<string, unknown>).every((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        return (['separation', 'alignment', 'cohesion', 'speed', 'sight', 'wander'] as const).every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number));
+      }),
+    describe: 'an object of school id -> { separation, alignment, cohesion, speed, sight, wander }, at least one entry',
+  },
+  { path: 'flocks.targetDriftMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
+  { path: 'flocks.targetPull', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'a pull between 0 and 20' },
+  { path: 'flocks.boundsPull', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'a pull between 0 and 20' },
+  { path: 'flocks.speedScale', check: (v) => typeof v === 'number' && v > 0 && v <= 10, describe: 'a multiplier above 0 and at most 10' },
+  { path: 'flocks.descentSpeed', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres per second between 0 and 2000' },
   { path: 'particles.maxParticles', check: (v) => typeof v === 'number' && v >= 0 && v <= 4000, describe: 'a count between 0 and 4000' },
   { path: 'particles.hitCount', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a count between 0 and 200' },
   { path: 'particles.hitSpeed', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres per second between 0 and 2000' },

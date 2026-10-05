@@ -29,6 +29,7 @@
 
 import { ColorMatrixFilter, Graphics, Sprite, Texture } from 'pixi.js';
 import { assetUrl, isYFlipped } from './assets';
+import { flockFor } from './flock';
 import { mech, tuning } from './config';
 import { hazardMass } from './consumption';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
@@ -325,6 +326,10 @@ export interface Hazard {
    */
   facing?: number;
   facingRest?: number;
+  /** The school this creature swims with, set at spawn. See `src/flock.ts`. */
+  flock?: string;
+  /** This creature's own place in that school. */
+  flockAgent?: { x: number; y: number; vx: number; vy: number };
 }
 
 /** Tunables for D3. Kept together because they are only meaningful as a set. */
@@ -1735,6 +1740,22 @@ export class HazardField {
      * The curve is a Catmull-Rom through the waypoints, which is the spline that PASSES THROUGH its control points --
      * the reason to author a path is to say "come through here", and a Bézier would only come near it.
      */
+    /**
+     * A creature in a SCHOOL takes its motion from the flock.
+     *
+     * Handled before the per-kind switch, exactly like a path: the school is an instruction that overrides what the kind would
+     * otherwise do, so a fish swimming with a school does not also chase the player -- the authored group is the group that was
+     * authored.
+     */
+    if (h.flock) {
+      const flock = flockFor(h.flock, h.x, h.y);
+      if (!h.flockAgent) h.flockAgent = flock.add(h.x, h.y);
+      // The school owns the agent; the creature is placed where the agent ended up. Steering is the school's business.
+      h.x = h.flockAgent.x;
+      h.y = h.flockAgent.y;
+      return;
+    }
+
     if (h.path) {
       h.path.elapsed += dt;
       const t = Math.min(1, h.path.elapsed / Math.max(0.1, h.path.seconds));
