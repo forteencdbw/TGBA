@@ -849,7 +849,12 @@ export interface Mechanisms {
   /** Hit particles: sparks on a hit, a ring of debris on a defeat. */
   /** Flocking: the three boid rules, plus how hard the school is pulled around. */
   flocks: {
-    schools: Record<string, { separation: number; alignment: number; cohesion: number; speed: number; sight: number; wander: number }>;
+    schools: Record<string, { separation: number; alignment: number; cohesion: number; speed: number; sight: number; wander: number; spiralRadius: number; spiralSpeed: number; spiralDescent: number }>;
+    /** Where a spiral is centred and how high it starts. */
+    spiralCentreXRatio: number;
+    spiralStartBandRatio: number;
+    /** How far below the band a spiral sinks before it starts again. */
+    spiralRestartMeters: number;
     targetDriftMeters: number;
     targetPull: number;
     boundsPull: number;
@@ -1939,6 +1944,9 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
       }),
     describe: 'an object of school id -> { separation, alignment, cohesion, speed, sight, wander }, at least one entry',
   },
+  { path: 'flocks.spiralCentreXRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a lane fraction between 0 and 1' },
+  { path: 'flocks.spiralStartBandRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a band fraction between 0 and 2' },
+  { path: 'flocks.spiralRestartMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
   { path: 'flocks.targetDriftMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
   { path: 'flocks.targetPull', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'a pull between 0 and 20' },
   { path: 'flocks.boundsPull', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'a pull between 0 and 20' },

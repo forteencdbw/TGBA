@@ -16,10 +16,14 @@ export class Flock {
   private targetX: number;
   private targetY: number;
   private readonly seed: number;
+  /** Where the spiral begins, in world metres. Set from the first update, which is where the band is known. */
+  private spiralStartY: number | null = null;
+  /** When the current lap began, so the helix restarts cleanly rather than jumping. */
+  private startedAt = 0;
 
   constructor(
     readonly id: string,
-    private readonly cfg: { separation: number; alignment: number; cohesion: number; speed: number; sight: number; wander: number },
+    private readonly cfg: { separation: number; alignment: number; cohesion: number; speed: number; sight: number; wander: number; spiralRadius: number; spiralSpeed: number; spiralDescent: number },
     x: number,
     y: number,
   ) {
@@ -42,10 +46,33 @@ export class Flock {
    */
   update(dt: number, laneWidth: number, min: number, max: number, elapsed: number): void {
     const cfg = this.cfg;
+    // The first frame decides where the helix starts, so a spiral begins where the school was placed.
+    if (this.spiralStartY === null) this.spiralStartY = (min + max) * mech.flocks.spiralStartBandRatio;
     const flare = mech.flocks.targetDriftMeters;
     // The wander target drifts on its own clock, so the school changes direction over seconds rather than every frame.
-    this.targetX = laneWidth * (0.5 + 0.4 * Math.sin(elapsed * cfg.wander + this.seed));
-    this.targetY = (min + max) / 2 + flare * Math.sin(elapsed * cfg.wander * 0.7 + this.seed * 1.7);
+    /**
+     * The target's path: a HELIX when the school spirals, a lazy drift otherwise.
+     *
+     * Round and round while sinking. The school follows the target with cohesion, so the spiral is what the fish do rather than
+     * something done to them -- and the descent is a constant speed, which is what keeps the turns evenly spaced instead of
+     * bunching up as the group speeds up.
+     */
+    if (cfg.spiralRadius > 0) {
+      const angle = (elapsed - this.startedAt) * cfg.spiralSpeed + this.seed;
+      const cx = laneWidth * mech.flocks.spiralCentreXRatio;
+      this.targetX = cx + Math.cos(angle) * cfg.spiralRadius;
+      // Sinking: `elapsed` grows, so the target walks down the screen while it goes round.
+      this.targetY = this.spiralStartY - (elapsed - this.startedAt) * cfg.spiralDescent + Math.sin(angle) * cfg.spiralRadius;
+    } else {
+      this.targetX = laneWidth * (0.5 + 0.4 * Math.sin(elapsed * cfg.wander + this.seed));
+      this.targetY = (min + max) / 2 + flare * Math.sin(elapsed * cfg.wander * 0.7 + this.seed * 1.7);
+    }
+
+    // A spiral that has sunk below the band is restarted at the top: it is a loop, not an exit.
+    if (cfg.spiralRadius > 0 && this.spiralStartY !== null && this.spiralStartY - elapsed * cfg.spiralDescent < min - mech.flocks.spiralRestartMeters) {
+      this.spiralStartY = max + mech.flocks.spiralRestartMeters;
+      this.startedAt = elapsed;
+    }
 
     for (const a of this.agents) {
       let sepX = 0;
