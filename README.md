@@ -826,6 +826,25 @@ canvas，headless 跑不起来（这正是要拆它的原因）。这一步的�
 （`let gunStreams = world.gunStreams`），所以一步之内捡到两个升级，第二个看到的是第一个的结果——
 这正是"到顶仍然被消耗且报告到顶"那条能成立的原因。
 
+### 诊断报告：**一份状态，一个函数**（`src/diagnostics.ts` + `src/snapshot.ts`，**已验证**）
+
+
+`diagnostics` 原来是 `Game` 上一个 **613 行**的 getter（含 282 行的**内联返回类型**），它是浏览器探针读的合同——
+"泡长了多少""时间轴把那条鱼放在哪"全是读这个对象。**它是游戏上的 getter，意味着报告只能由一个有 canvas 的游戏产出**。
+
+现在它是 `diagnosticsOf(g: GameSnapshot)`：
+
+- **`GameSnapshot`（`src/snapshot.ts`）**：一帧的全部状态，70 个成员。它**故意是整个游戏**而不是只有那局——
+  报告要回答"玩家刚才看到的那一帧"的问题，所以帧时间、飘字池、横幅、图鉴页都在里面。五个**派生值**
+  （`overloaded` / `onSlam` / `suctionUp` / `tierBonus` / `burstRadiusRatio`）以**值**的形式进来：
+  一份需要请游戏现算的报告，就是一份需要游戏的报告。
+- 返回类型**原样搬过去**了（那是合同本身），所以 `window.__GB.game.diagnostics` 的形状一个字节没变——
+  而且 `pnpm typecheck` **连 `tsconfig.e2e.json` 一起检查**，规格里那些 `diagnostics: {...}` 的类型切片就是编译器替我验的。
+- 顺带：`phase` 那个十项联合类型有了名字（`Phase`），它以前在字段和 `phaseBeforePause` 上各写了一份。
+
+**验证**：把搬过去的 329 条语句和 `git show HEAD` 里的原文**逐条比对**——**完全相同**，只有**一处**是
+故意改的：`this.burstRadiusRatio()`（调用）变成快照里的值。`main.ts` 因此从 6110 行降到 **5566** 行。
+
 ### 技能的**动词**和它的**表**终于在一起（`src/skills.ts`，**已验证**）
 
 `useSkill` 原来也是 `Game` 的私有方法。`skills.ts` 早就拥有"一个技能是什么"（它的行、次数、时长、激活表），
