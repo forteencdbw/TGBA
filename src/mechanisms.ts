@@ -584,7 +584,8 @@ export interface Mechanisms {
     slowFactor: number;
     slowSeconds: number;
     /** Hit points a jellyfish sting costs, on top of the slow. */
-    jellyContactDamage: number;
+    /** The jellyfish: what its touch costs. Its slow is cross-creature and stays at the top level. */
+    jelly: { contactDamage: number };
     /**
      * How many bullet hits each kind of creature takes before it flees.
      *
@@ -618,8 +619,13 @@ export interface Mechanisms {
       launchScreenBonus: number;
     };
     launchDecaySeconds: number;
-    trashDrainPerSecond: number;
-    trashMinGripSeconds: number;
+    /**
+     * The trash bag: one block.
+     *
+     * These two are a PAIR -- a full grip deals `drainPerSecond * minGripSeconds` -- which is the argument for keeping
+     * them in one place rather than as two flat keys whose relationship is a comment.
+     */
+    trash: { drainPerSecond: number; minGripSeconds: number };
     /**
      * Negative food: edible, but it keeps acting once it is inside.
      *
@@ -1850,7 +1856,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.bombfish.stomachFuseSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.bombfish.detonationHitPoints', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'hazards.bombfish.grenadeBlastRadiusRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
-  { path: 'hazards.jellyContactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10; 0 makes a jellyfish a pure slow again' },
+  { path: 'hazards.jelly.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10; 0 makes a jellyfish a pure slow again' },
   { path: 'hazards.slowFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a number above 0 and at most 1' },
   { path: 'hazards.slowSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'hazards.health', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0), describe: 'an object of hazard kind to hit points, e.g. { fish: 3, jelly: 0 }; 0 means the bullets pass through' },
@@ -1863,8 +1869,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.crab.apexSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
   { path: 'hazards.crab.launchScreenBonus', check: (v) => typeof v === 'number' && v >= 0, describe: 'a multiplier of 0 or more' },
   { path: 'hazards.launchDecaySeconds', check: (v) => typeof v === 'number' && v > 0.01, describe: 'seconds above 0.01' },
-  { path: 'hazards.trashDrainPerSecond', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
-  { path: 'hazards.trashMinGripSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'hazards.trash.drainPerSecond', check: (v) => typeof v === 'number' && v > 0, describe: 'hit points per second above 0' },
+  { path: 'hazards.trash.minGripSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
   { path: 'hazards.urchinDrainPerSecond', check: (v) => typeof v === 'number' && v >= 0, describe: 'hit points per second, 0 or more; 0 makes the urchin harmless once swallowed' },
 
 

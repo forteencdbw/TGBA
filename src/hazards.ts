@@ -374,7 +374,7 @@ export const hazardTuning = {
    * hit, so the drain was mathematically incapable of landing and the whole mechanic was inert.
    */
   get trashDrainPerSecond() {
-    return mech.hazards.trashDrainPerSecond;
+    return mech.hazards.trash.drainPerSecond;
   },
   trashStruggleRelease: 0.55,
   /**
@@ -385,7 +385,7 @@ export const hazardTuning = {
    * single frame and is never felt.
    */
   get trashMinGripSeconds() {
-    return mech.hazards.trashMinGripSeconds;
+    return mech.hazards.trash.minGripSeconds;
   },
   /**
    * The crab, read live from its own block in the config.
@@ -1123,7 +1123,7 @@ export class HazardField {
            */
           effects.push({
             kind: 'jelly',
-            damage: mech.hazards.jellyContactDamage,
+            damage: mech.hazards.jelly.contactDamage,
             slowSeconds: tuning.hazardSlowSeconds,
             slowFactor: tuning.hazardSlowFactor,
             broke: false,
