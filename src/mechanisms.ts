@@ -479,6 +479,8 @@ export interface Mechanisms {
       armourColour: number;
       weakPointWidthRatio: number;
       hitFlashColour: number;
+      /** Intensity of the DRAWN body's flash, 0..1. The sprite path uses `hazardArt.*.spriteFlashScale` instead. */
+      hitFlashStrength: number;
       /**
        * What multiplies `hitKnockback.meters` when the BOSS is shot.
        *
@@ -877,6 +879,13 @@ export interface Mechanisms {
       dead?: string;
       /** Overrides `hazardFront` for this kind. */
       front?: 'left' | 'right';
+      /**
+       * A multiplier on `hitFlash.peakIntensity` for THIS kind, so a creature may ask for a gentler flash than the global.
+       *
+       * The boss uses it: it is a large target, so a wash at full strength covers the detail the owner drew. 1 is "the same
+       * as everything else", 0 is "this one does not flash".
+       */
+      spriteFlashScale?: number;
       scale: number;
       alpha: number;
       lure?: {
@@ -971,11 +980,55 @@ export interface Mechanisms {
     textColour: number;
     textSize: number;
   };
+  /**
+   * The full-body white flash every hit gives: its shape, its strength, and how often it may restart.
+   *
+   * A CURVE rather than a countdown, and the three timing fields are that curve: rise to `peakIntensity` over the first
+   * `riseFraction` of `seconds`, then ease out to nothing. See `flashIntensity` in `src/hazards.ts`, which is the one place
+   * the shape is computed.
+   */
   hitFlash: {
+    /** How long one flash lasts. */
     seconds: number;
+    /** The brightest it gets, 0..1, where 1 is a full white-out of the picture. 0 disables the flash entirely. */
+    peakIntensity: number;
+    /** The fraction of the life spent rising to that peak. The rest is the decay. */
+    riseFraction: number;
+    /**
+     * Seconds before another hit may restart it.
+     *
+     * The reason this is not just a nicety: the gun fires many rounds a second, and without a floor each one restarted the
+     * flash on the frame it landed -- so the creature sat at full brightness for as long as the player held fire, which
+     * reads as a white body rather than as a hit.
+     */
+    cooldownSeconds: number;
     colour: number;
     alpha: number;
     radiusScale: number;
+  };
+  /**
+   * What makes a hit a HEAVY one, and what a heavy one adds.
+   *
+   * Judged by damage rather than by weapon, so a future high-damage weapon is heavy without any code change, and so the
+   * rule reads as "how hard did that land" rather than as a list of kinds. A heavy hit rings the body and nudges the
+   * screen; a critical one does the same, harder.
+   */
+  hitFeedback: {
+    /** Damage at or above this is heavy. */
+    heavyDamage: number;
+    /** Damage at or above this is a critical: the same marks, scaled by `damage / critDamage`. */
+    critDamage: number;
+    heavyOutlineColour: number;
+    heavyOutlineAlpha: number;
+    /** Where the ring sits, as a multiple of the body radius. Just outside it, so it reads as a ring round the creature. */
+    heavyOutlineRadiusScale: number;
+    /** Ring width as a fraction of the body radius. */
+    heavyOutlineWidthRatio: number;
+    /** How long the ring stays lit. */
+    heavyOutlineSeconds: number;
+    /** Design pixels of screen shake at full strength, and how long it lasts. 0 turns the shake off. */
+    heavyShakePixels: number;
+    heavyShakeSeconds: number;
   };
   /**
    * Being SHOT knocks a creature back a little.
@@ -2080,10 +2133,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
         if (r.front !== undefined && r.front !== 'left' && r.front !== 'right') return false;
         if (r.charge !== undefined && !isArtState(r.charge)) return false;
         if (r.dead !== undefined && !isArtState(r.dead)) return false;
+        if (r.spriteFlashScale !== undefined && (typeof r.spriteFlashScale !== 'number' || r.spriteFlashScale < 0 || r.spriteFlashScale > 2)) return false;
         return isArtState(r.move) && typeof r.scale === 'number' && r.scale > 0.05 && r.scale <= 6 && typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1;
       });
     },
-    describe: 'an object of kind -> { move, charge?, dead?, front?, scale, alpha, lure? }, where each state is a picture name or an animation',
+    describe: 'an object of kind -> { move, charge?, dead?, front?, spriteFlashScale?, scale, alpha, lure? }, where each state is a picture name or an animation',
   },
   {
     path: 'animations',
@@ -2112,6 +2166,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.boss.armourColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.boss.weakPointWidthRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 0.5, describe: 'a lane fraction above 0 and at most 0.5' },
   { path: 'hazards.boss.hitFlashColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.boss.hitFlashStrength', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an intensity between 0 and 1 for the DRAWN boss body; 0 means it does not flash' },
   { path: 'chargeTrail.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string to disable it' },
   { path: 'chargeTrail.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole columns between 1 and 16' },
   { path: 'chargeTrail.rows', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole rows between 1 and 16' },
@@ -2158,9 +2213,21 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'loading.textColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'loading.textSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
   { path: 'hitFlash.seconds', check: (v) => typeof v === 'number' && v > 0 && v <= 2, describe: 'seconds above 0 and at most 2' },
-  { path: 'hitFlash.colour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'hitFlash.peakIntensity', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an intensity between 0 and 1; 0 disables the full-body flash' },
+  { path: 'hitFlash.riseFraction', check: (v) => typeof v === 'number' && v > 0 && v < 1, describe: 'a fraction above 0 and below 1 of the flash spent rising to its peak' },
+  { path: 'hitFlash.cooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'seconds between 0 and 2; 0 lets every hit restart the flash' },
+  { path: 'hitFlash.colour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
   { path: 'hitFlash.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'hitFlash.radiusScale', check: (v) => typeof v === 'number' && v > 0.2 && v <= 3, describe: 'a multiplier above 0.2 and at most 3' },
+  { path: 'hitFeedback.heavyDamage', check: (v) => typeof v === 'number' && v > 0 && v <= 100, describe: 'damage above 0 and at most 100 at which a hit counts as heavy' },
+  { path: 'hitFeedback.critDamage', check: (v) => typeof v === 'number' && v > 0 && v <= 1000, describe: 'damage above 0 and at most 1000 at which a hit counts as critical; should be above heavyDamage' },
+  { path: 'hitFeedback.heavyOutlineColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
+  { path: 'hitFeedback.heavyOutlineAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hitFeedback.heavyOutlineRadiusScale', check: (v) => typeof v === 'number' && v > 0.3 && v <= 4, describe: 'a multiple of the body radius above 0.3 and at most 4' },
+  { path: 'hitFeedback.heavyOutlineWidthRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a stroke width ratio above 0 and at most 1' },
+  { path: 'hitFeedback.heavyOutlineSeconds', check: (v) => typeof v === 'number' && v > 0.01 && v <= 3, describe: 'seconds above 0.01 and at most 3' },
+  { path: 'hitFeedback.heavyShakePixels', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'design pixels between 0 and 40; 0 disables the heavy hit shake' },
+  { path: 'hitFeedback.heavyShakeSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'seconds between 0 and 2' },
   { path: 'hitKnockback.meters', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'metres of recoil per landed hit, between 0 and 200; 0 turns the knockback off' },
   { path: 'hitKnockback.seconds', check: (v) => typeof v === 'number' && v > 0.01 && v <= 2, describe: 'seconds above 0.01 and at most 2, over which the recoil is spent' },
   { path: 'hazards.boss.knockbackScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier on hitKnockback.meters between 0 and 2; the boss holds station, so 0.5 is a nudge rather than a shove' },

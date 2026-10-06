@@ -47,6 +47,9 @@ export class SettingsUi {
   private readonly panelBg = new Graphics();
   private readonly title: Text;
   private readonly volumeLabel: Text;
+  /** The accessibility section's heading and its toggle. */
+  private readonly accessLabel: Text;
+  private readonly flashButton: Button;
   /** The cheat section's heading, and the toggle itself. */
   private readonly cheatLabel: Text;
   private readonly cheatButton: Button;
@@ -83,6 +86,14 @@ export class SettingsUi {
    * default and never persisted: a cheat that survives a reload is a cheat somebody leaves on by accident.
    */
   onInfiniteHealth: (on: boolean) => void = () => {};
+  /**
+   * The accessibility switch: less flashing.
+   *
+   * The same shape as the cheat toggle and a different KIND of thing: this one is not a cheat, it is a comfort setting, and
+   * it is remembered for the session like the volume is. It turns off the full-body white flash and nothing else -- the hit
+   * sparks, the damage numbers and a heavy hit's ring all stay, because those are how the player knows they connected.
+   */
+  onReducedFlash: (on: boolean) => void = () => {};
   /** Called when exit-to-menu is pressed. */
   onExit: () => void = () => {};
 
@@ -94,6 +105,8 @@ export class SettingsUi {
   private volume = 0.8;
   /** Whether the cheat is on. Kept here so the panel can draw its own state. */
   private infiniteHealth = false;
+  /** Whether the reduced-flash setting is on, likewise. */
+  private reducedFlash = false;
   /** The pointer dragging the slider, or null. */
   private sliderPointer: number | null = null;
   /** The HUD scale from the last layout, so a redraw from a pointer handler needs no viewport. */
@@ -117,6 +130,15 @@ export class SettingsUi {
     this.closeButton = this.mkButton('×', () => this.setOpen(false));
 
     /**
+     * The accessibility section, above the cheats.
+     *
+     * Its own heading because it is not a cheat either: it changes how the game LOOKS to the player rather than what the
+     * game is, and someone looking for it should not have to read the cheat section to find it.
+     */
+    this.accessLabel = mkText('显示 / DISPLAY', 0x8fd6ff, 13);
+    this.flashButton = this.mkButton('降低闪烁：关', () => this.setReducedFlash(!this.reducedFlash));
+
+    /**
      * The cheats section.
      *
      * Its own heading rather than another row of the settings list, because a cheat is not a setting: it changes what
@@ -133,10 +155,21 @@ export class SettingsUi {
     this.saveButton = this.mkButton('保存', () => this.setOpen(false));
     this.cancelButton = this.mkButton('取消', () => this.setOpen(false));
 
-    this.panel.addChild(this.panelBg, this.title, this.volumeLabel, this.sliderTrack, this.sliderFill, this.sliderKnob, this.cheatLabel);
+    this.panel.addChild(
+      this.panelBg,
+      this.title,
+      this.volumeLabel,
+      this.sliderTrack,
+      this.sliderFill,
+      this.sliderKnob,
+      this.accessLabel,
+      this.cheatLabel,
+    );
     this.panel.addChild(
       this.closeButton.bg,
       this.closeButton.label,
+      this.flashButton.bg,
+      this.flashButton.label,
       this.cheatButton.bg,
       this.cheatButton.label,
       this.restartButton.bg,
@@ -168,7 +201,7 @@ export class SettingsUi {
 
   /** All buttons, so the pointer handlers can walk them without repeating the list three times. */
   private buttons(): Button[] {
-    return [this.closeButton, this.cheatButton, this.restartButton, this.exitButton, this.saveButton, this.cancelButton];
+    return [this.closeButton, this.flashButton, this.cheatButton, this.restartButton, this.exitButton, this.saveButton, this.cancelButton];
   }
 
   private onPressOf(button: Button): () => void {
@@ -212,6 +245,25 @@ export class SettingsUi {
     return this.infiniteHealth;
   }
 
+  /**
+   * Turn the reduced-flash setting on or off.
+   *
+   * One place that sets the state, redraws and tells the game -- the same shape as the cheat toggle, and for the same
+   * reason: the label can never disagree with what the game is doing.
+   */
+  setReducedFlash(on: boolean, notify = true): void {
+    this.reducedFlash = on;
+    this.flashButton.label.text = on ? '降低闪烁：开' : '降低闪烁：关';
+    this.flashButton.label.style.fill = on ? 0xffd479 : 0xeaf9ff;
+    this.redraw();
+    if (notify) this.onReducedFlash(on);
+  }
+
+  /** Whether the reduced-flash setting is on, as the panel shows it. */
+  get reducedFlashOn(): boolean {
+    return this.reducedFlash;
+  }
+
   /** Reflect the actual volume without firing the callback, e.g. when the game state changes. */
   setVolume(volume: number): void {
     this.volume = Math.min(1, Math.max(0, volume));
@@ -240,6 +292,11 @@ export class SettingsUi {
 
     // Panel: most of the lane's width, centred, with a comfortable margin from the edges.
     const w = Math.min(viewport.laneWidthPx * 0.86, 420 * s);
+    /**
+     * Tall enough for the rows below and no taller, and the 470 is a CAP rather than a size: the row stack ends at 384
+     * design pixels, so a panel of 470 gives the bottom row its margin on a tall window while a short one still gets a
+     * panel that fits on the screen at all.
+     */
     const h = Math.min(viewport.height * 0.66, 470 * s);
     this.panelRect = {
       x: (viewport.width - w) / 2,
@@ -253,16 +310,40 @@ export class SettingsUi {
     this.title.x = this.panelRect.x + w / 2;
     this.title.y = this.panelRect.y + 20 * s;
 
+    /**
+     * The panel's rows, in DESIGN PIXELS below the panel's top edge.
+     *
+     * They live here rather than in `config/mechanics.json5` and that is deliberate: every number in this file is a
+     * proportional offset inside a panel whose own size is derived from the viewport (`w`, `h` just above), so a value in
+     * the config would have to be kept in step with arithmetic it cannot see. What goes in the config is what the player
+     * looks AT -- colours, sizes, timings -- not the furniture's internal spacing.
+     *
+     * The gap between a heading and its toggle is 21px rather than 16, and the number is MEASURED: a Chinese glyph at this
+     * size is about 19px tall, not the 13 the font size suggests, so a 16px offset put the button's background over the
+     * bottom of "作弊 / CHEATS" -- the label was drawn first and the background covered it. The screenshot is what caught
+     * it, which is why the rows are checked against each other rather than trusted.
+     */
+    const ROW = {
+      volumeLabel: 78,
+      slider: 112,
+      accessLabel: 156,
+      accessRow: 177,
+      cheatsLabel: 227,
+      cheatsRow: 248,
+      rowHeight: 42,
+      rowGap: 10,
+    };
+
     // Volume, near the top: it is the only setting, so it gets the prominent slot.
     this.volumeLabel.scale.set(s);
     this.volumeLabel.anchor.set(0, 0.5);
     this.volumeLabel.x = this.panelRect.x + 24 * s;
-    this.volumeLabel.y = this.panelRect.y + 78 * s;
+    this.volumeLabel.y = this.panelRect.y + ROW.volumeLabel * s;
 
     const sliderW = w - 48 * s;
     this.slider = {
       x: this.panelRect.x + 24 * s,
-      y: this.panelRect.y + 112 * s,
+      y: this.panelRect.y + ROW.slider * s,
       w: sliderW,
       h: 14 * s,
     };
@@ -270,19 +351,25 @@ export class SettingsUi {
     const closeSize = 34 * s;
     this.place(this.closeButton, this.panelRect.x + w - closeSize - 12 * s, this.panelRect.y + 12 * s, closeSize, closeSize, s);
 
-    // The cheats section: a heading and one wide toggle, above the run controls.
+    // The accessibility section: a heading and one wide toggle, under the volume and above the cheats.
+    this.accessLabel.scale.set(s);
+    this.accessLabel.anchor.set(0, 0.5);
+    this.accessLabel.x = this.panelRect.x + 24 * s;
+    this.accessLabel.y = this.panelRect.y + ROW.accessLabel * s;
+
+    // Restart and exit stacked under the cheats, then save and cancel side by side along the bottom.
+    const rowH = ROW.rowHeight * s;
+    const rowW = w - 48 * s;
+    const rowX = this.panelRect.x + 24 * s;
+    this.place(this.flashButton, rowX, this.panelRect.y + ROW.accessRow * s, rowW, rowH, s);
+
     this.cheatLabel.scale.set(s);
     this.cheatLabel.anchor.set(0, 0.5);
     this.cheatLabel.x = this.panelRect.x + 24 * s;
-    this.cheatLabel.y = this.panelRect.y + 156 * s;
-
-    // Restart and exit stacked, then save and cancel side by side along the bottom.
-    const rowH = 42 * s;
-    const rowW = w - 48 * s;
-    const rowX = this.panelRect.x + 24 * s;
-    this.place(this.cheatButton, rowX, this.panelRect.y + 172 * s, rowW, rowH, s);
-    this.place(this.restartButton, rowX, this.panelRect.y + 172 * s + rowH + 14 * s, rowW, rowH, s);
-    this.place(this.exitButton, rowX, this.panelRect.y + 172 * s + (rowH + 14 * s) * 2, rowW, rowH, s);
+    this.cheatLabel.y = this.panelRect.y + ROW.cheatsLabel * s;
+    this.place(this.cheatButton, rowX, this.panelRect.y + ROW.cheatsRow * s, rowW, rowH, s);
+    this.place(this.restartButton, rowX, this.panelRect.y + ROW.cheatsRow * s + rowH + ROW.rowGap * s, rowW, rowH, s);
+    this.place(this.exitButton, rowX, this.panelRect.y + ROW.cheatsRow * s + (rowH + ROW.rowGap * s) * 2, rowW, rowH, s);
 
     const gap = 12 * s;
     const halfW = (rowW - gap) / 2;
@@ -349,6 +436,18 @@ export class SettingsUi {
           .roundRect(b.x, b.y, b.w, b.h, 10 * s)
           .fill({ color: this.infiniteHealth ? 0x4a3418 : 0x16293f, alpha: 0.95 })
           .stroke({ color: this.infiniteHealth ? 0xffb46b : 0x5fa8cc, alpha: 0.8, width: 1.2 * s });
+        continue;
+      }
+      /**
+       * And the accessibility toggle in the UI's own blue rather than the cheat's amber: they are different kinds of
+       * switch, and sharing a colour would say they are the same kind of thing.
+       */
+      if (b === this.flashButton) {
+        b.bg.clear();
+        b.bg
+          .roundRect(b.x, b.y, b.w, b.h, 10 * s)
+          .fill({ color: this.reducedFlash ? 0x14384f : 0x16293f, alpha: 0.95 })
+          .stroke({ color: this.reducedFlash ? 0x6fe3ff : 0x5fa8cc, alpha: 0.8, width: 1.2 * s });
         continue;
       }
       b.bg.clear();

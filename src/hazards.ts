@@ -222,11 +222,6 @@ export interface Hazard {
    */
   blastFuse: number | null;
   /**
-   * Seconds left of the hit flash, drawn by the boss.\n   *\n   * A BIG target needs the feedback more than a small one does: a fish's death is its own confirmation, while a boss
-   * that absorbs ten rounds in a row has to say so every single time, or the player cannot tell hits from misses.
-   */
-  hitFlash: number;
-  /**
    * Recoil from being shot, or null.
    *
    * ---------------------------------------------------------------------------------------------
@@ -328,6 +323,23 @@ export interface Hazard {
    */
   deadSince?: number;
   deadDeadline?: number;
+  /**
+   * The white flash: when the current one started, and when the last one started, so hits can be rate-limited.
+   *
+   * Three clocks rather than one countdown, because the flash is a CURVE and not a fade from a fixed value: it rises from
+   * zero, peaks and decays (see `flashIntensity`), so the painter needs to know where in that curve it is, not how much is
+   * left. The cooldown is measured from the LAST flash, so a burst of fire cannot strobe it -- see `mech.hitFlash.cooldownSeconds`.
+   */
+  flashStarted?: number;
+  flashLastStarted?: number;
+  /**
+   * A heavy hit's outline ring and shake: when it started, and how strong, both undefined when there is none.
+   *
+   * Kept apart from the flash on purpose: they answer different questions ("that was a big one" rather than "something
+   * landed"), they have different lengths, and a light hit must not restart the outline of a heavy one.
+   */
+  heavyStarted?: number;
+  heavyStrength?: number;
   /**
    * The facing the creature has COMMITTED to, and how long before it may change: +1 keeps the picture as drawn, -1 mirrors it.
    *
@@ -1423,6 +1435,10 @@ export class HazardField {
 
   reset(): void {
     this.hazards = [];
+    // The queues go with the creatures they describe: a pending spark or outline belongs to a body that no longer exists,
+    // and carrying it into the next level would flash something that was never hit.
+    this.hitEvents.length = 0;
+    this.heavyHits.length = 0;
     this.spawnTimer = 0;
     this.grabs = 0;
     this.charges = 0;
@@ -1456,9 +1472,21 @@ export class HazardField {
    */
   private readonly hitEvents: HazardHitEvent[] = [];
 
+  /**
+   * Heavy hits since the last call, for the things that are the GAME's to do: the outline is drawn round the body and the
+   * screen shake moves the canvas, and neither is a property of a creature. Reported rather than acted on, so the hazard
+   * module stays a simulation.
+   */
+  private readonly heavyHits: { x: number; y: number; strength: number }[] = [];
+
   /** Hand over what has happened since the last call, and forget it. */
   takeHitEvents(): readonly HazardHitEvent[] {
     return this.hitEvents.splice(0, this.hitEvents.length);
+  }
+
+  /** Hand over the heavy hits since the last call, and forget them. Same shape as `takeHitEvents`. */
+  takeHeavyHits(): readonly { x: number; y: number; strength: number }[] {
+    return this.heavyHits.splice(0, this.heavyHits.length);
   }
 
   /**
@@ -1508,30 +1536,50 @@ export class HazardField {
    * The direction is rolled HERE, once, at the moment it turns: deciding per frame would have it leave in a
    * direction that changes every frame, which reads as a glitch rather than as a decision.
    *
+   * @param damage hit points taken off.
    * @param impact where the hit landed, in world metres, if the caller knows. It sets the DIRECTION of the recoil
    *   (away from where the round was), which is why it is worth passing: a round that lands slightly off-centre nudges
    *   the creature slightly sideways, and the same shot at the same creature reads differently twice. Omitted, the
    *   recoil is straight back up the screen.
+   * @param elapsed the creature's own clock (`hazard.phase`), which is what the flash and the outline are timed against.
+   *   Defaulted rather than required so that a caller which does not have it still compiles -- and one that passes nothing
+   *   gets a flash that starts at zero, which is wrong but harmless, rather than a NaN that draws nothing at all.
    */
-  hit(hazard: Hazard, damage: number, impact?: { x: number; y: number }): 'immune' | 'damaged' | 'fled' | 'killed' {
+  hit(hazard: Hazard, damage: number, impact?: { x: number; y: number }, elapsed = hazard.phase): 'immune' | 'damaged' | 'fled' | 'killed' {
     // Immune covers both "this kind is not shootable" and "this one is already leaving": firing at something that
     // is on its way out should not keep re-triggering the same event, and it should certainly not re-roll its exit.
     if (hazard.maxHealth <= 0 || hazard.flee) return 'immune';
     hazard.health = Math.max(0, hazard.health - damage);
     /**
-     * The flash is set for EVERY kind here, which is the only place that knows a bullet landed.
+     * The flash STARTS here -- a curve, rate-limited -- and this is the only place that knows a round landed.
      *
-     * It used to use the boss's own duration, so the boss flashed and nothing else did -- and since health is invisible,
-     * "did I hit it?" had no answer for an ordinary fish. The duration now lives in `hazards.hitFlash`, where the rest of
-     * the hit feedback does.
+     * It used to be a flat countdown set on every hit, which had three faults the owner hit in one session: a burst of fire
+     * restarted it every frame (so it never got past its brightest moment and read as a solid white body rather than as a
+     * flash), there was no cooldown, and it was a full white-out. Now the strength comes from a curve
+     * (`flashIntensity`), the rate is limited (`hitFlash.cooldownSeconds`), and the peak is the config's -- so a second
+     * round inside the cooldown does not restart it, it just keeps the flash that is already playing.
      */
-    hazard.hitFlash = mech.hitFlash.seconds;
+    if (mayFlash(hazard, elapsed)) {
+      hazard.flashStarted = elapsed;
+      hazard.flashLastStarted = elapsed;
+    }
     /**
      * And so is the RECOIL, for the same reason: this is the one place that knows a round connected, so it is the one
      * place that can say "it got pushed". A new hit REPLACES whatever is left of the last one rather than adding to it,
      * which is what keeps a burst of fire from launching a fish across the lane.
      */
     this.applyKnock(hazard, impact);
+    /**
+     * A HEAVY hit is a different message from a hit, so it gets a different mark: an outline round the whole body and a
+     * nudge of the screen. Both are the game's to draw (they are not properties of the creature), so a heavy hit is
+     * REPORTED here rather than acted on -- see `takeHeavyHits`.
+     */
+    if (damage >= mech.hitFeedback.heavyDamage) {
+      const strength = Math.min(1, damage / Math.max(0.01, mech.hitFeedback.critDamage));
+      hazard.heavyStarted = elapsed;
+      hazard.heavyStrength = strength;
+      this.heavyHits.push({ x: hazard.x, y: hazard.y, strength });
+    }
     /**
      * A ZAPPER fires when it is shot.
      *
@@ -1652,7 +1700,6 @@ export class HazardField {
        * out as gaps of 0.61s and 6.64s instead of a flat 2s. Anything that must tick every frame belongs to the loop that
        * runs every frame.
        */
-      if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
       if (h.facingRest !== undefined && h.facingRest > 0) h.facingRest = Math.max(0, h.facingRest - dt);
       /**
        * NOT the death clock, which is `tickDeaths`'s and runs from the frame loop.
@@ -2011,7 +2058,6 @@ export class HazardField {
       flee: null,
       charge: null,
       blastFuse: null,
-      hitFlash: 0,
       knock: null,
       discharge: 0,
       dischargeRest: 0,
@@ -2445,11 +2491,77 @@ function paintLure(
 }
 
 /**
- * The white matrix: every channel forced to 1, alpha untouched. "The whole picture turns white."
+ * Whether the player has asked for less flashing.
+ *
+ * A module-level switch rather than a field threaded through every call, because it is a global preference about DRAWING and
+ * the painter is the only thing that reads it -- and because the alternative is a parameter on `paintHazards`, which the
+ * codex also calls. Set from the settings panel (see `setReducedFlash`).
+ */
+let REDUCED_FLASH = false;
+
+/**
+ * Turn the full-body flash off or on. Returns what it now is, so a caller can prove the setting took.
+ *
+ * Only the flash: the hit sparks, the damage numbers and a big hit's outline all stay, because those are the feedback that
+ * says "that landed" and a player who wants less strobe still wants to know they hit something.
+ */
+export function setReducedFlash(reduced: boolean): boolean {
+  REDUCED_FLASH = reduced;
+  return REDUCED_FLASH;
+}
+
+/** Whether the full-body flash is currently suppressed. */
+export function isReducedFlash(): boolean {
+  return REDUCED_FLASH;
+}
+
+/**
+ * How strong the full-body flash is right now, 0..1, or 0 when there is none.
+ *
+ * A curve rather than a fade, and the shape is the owner's specification: it RISES from nothing in about the first quarter
+ * of its life and eases back DOWN over the rest -- "quickly lights up, then decays smoothly". A countdown from full
+ * brightness (what this used to be) starts at its brightest on the frame of the hit, which reads as a pop rather than as a
+ * flash, and the first frame is the one the eye actually catches.
+ *
+ * `peak` comes in rather than being read here so that a kind may dim its own flash (see `hazardArt.*.spriteFlashScale`),
+ * and the hazard is not a parameter at all: the curve is a function of TIME, which keeps it answerable without a creature.
+ */
+function flashIntensity(elapsed: number, peak: number): number {
+  const cfg = mech.hitFlash;
+  const life = Math.max(0.001, cfg.seconds);
+  if (REDUCED_FLASH || peak <= 0 || elapsed < 0 || elapsed >= life) return 0;
+  const t = elapsed / life;
+  if (t < cfg.riseFraction) return peak * (t / Math.max(0.001, cfg.riseFraction));
+  const down = (t - cfg.riseFraction) / Math.max(0.001, 1 - cfg.riseFraction);
+  // Squared ease-out: bright for the first part of the decay, then gone. A linear fall spends most of its life in the
+  // middle, which is what makes a short flash look like a flicker rather than like a light going out.
+  return peak * (1 - down) * (1 - down);
+}
+
+/** Whether a hit may start a flash now, or whether the last one is still too recent. */
+function mayFlash(h: Hazard, elapsed: number): boolean {
+  if (h.flashLastStarted === undefined) return true;
+  return elapsed - h.flashLastStarted >= mech.hitFlash.cooldownSeconds;
+}
+
+/** How strong a heavy hit's outline is right now, 0 when there is none. Decays over its own life. */
+function heavyOutlineIntensity(h: Hazard, elapsed: number): number {
+  if (h.heavyStarted === undefined) return 0;
+  const life = Math.max(0.001, mech.hitFeedback.heavyOutlineSeconds);
+  const t = (elapsed - h.heavyStarted) / life;
+  if (t < 0 || t >= 1) return 0;
+  return (h.heavyStrength ?? 0) * (1 - t) * (1 - t);
+}
+
+/**
+ * The white matrix for a given strength: every channel forced toward 1, alpha untouched.
  *
  * The owner's suggestion, and it is the right shape for a SPRITE: a filter on the object itself needs no shared layer, so
  * there is no ordering question and no group alpha to compute wrong -- both of which is where the first attempt at this
- * failed when the objects were Graphics.
+ * failed when the objects were Graphics. The STRENGTH is why this takes an argument rather than being a constant: the four
+ * colour rows push each channel to `1 - strength + strength * 1`, i.e. toward white by that fraction, so 0.25 leans a
+ * quarter of the way and leaves three quarters of the picture's own colour. The first version forced the channels to a flat
+ * 1, which is a full white-out -- what the owner asked to have turned down.
  *
  * Built on FIRST USE rather than at module load, and the difference is not tidiness: a `ColorMatrixFilter` compiles a GL
  * program when it is constructed, which needs a canvas, so constructing one at the top level made this whole module
@@ -2458,11 +2570,12 @@ function paintLure(
  */
 let WHITE_OUT: ColorMatrixFilter | null = null;
 
-function whiteOutFilter(): ColorMatrixFilter {
-  if (!WHITE_OUT) {
-    WHITE_OUT = new ColorMatrixFilter();
-    WHITE_OUT.matrix = [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0];
-  }
+function whiteOutFilter(strength: number): ColorMatrixFilter {
+  if (!WHITE_OUT) WHITE_OUT = new ColorMatrixFilter();
+  const s = Math.max(0, Math.min(1, strength));
+  const keep = 1 - s;
+  // Rows: R', G', B' each take `keep` of their own channel and add `s`; alpha passes through untouched.
+  WHITE_OUT.matrix = [keep, 0, 0, 0, s, 0, keep, 0, 0, s, 0, 0, keep, 0, s, 0, 0, 0, 1, 0];
   return WHITE_OUT;
 }
 
@@ -2591,6 +2704,47 @@ export function lureTip(
 /** Test hook: the art sprite for a creature, so a probe can check what is on it. */
 export function hazardArtSpriteForTest(id: number): Sprite | null {
   return ART_SPRITES.get(id) ?? null;
+}
+
+/**
+ * Test hook: where every creature's hit feedback is right now, as the painter would draw it.
+ *
+ * The flash is a curve over 60ms inside a filter matrix, so on screen it is a flicker that a screenshot cannot describe and
+ * a human cannot time. This reports the numbers the painter computes -- the intensity the filter was built with, and whether
+ * a new hit would be allowed to restart it -- so "it rises in 15ms, peaks at a quarter, and cannot restrobe" is a
+ * measurement rather than an impression. `reduced` reports the accessibility switch, which is the one thing here that is a
+ * setting rather than a state.
+ */
+export function hazardHitFeedbackProbe(field: HazardField): {
+  reduced: boolean;
+  peak: number;
+  seconds: number;
+  cooldownSeconds: number;
+  feedback: {
+    id: number;
+    kind: string;
+    flash: number;
+    outline: number;
+    restartable: boolean;
+    onSprite: number;
+  }[];
+} {
+  const flashPeak = mech.hitFlash.peakIntensity;
+  const feedback = field.hazards.map((h) => {
+    const art = mech.hazardArt[h.kind];
+    const peak = flashPeak * (art?.spriteFlashScale ?? 1);
+    const since = h.flashStarted;
+    return {
+      id: h.id,
+      kind: h.kind,
+      // The same two calls the painter makes, so a probe and the screen cannot disagree.
+      flash: since === undefined ? 0 : flashIntensity(h.phase - since, peak),
+      outline: heavyOutlineIntensity(h, h.phase),
+      restartable: mayFlash(h, h.phase),
+      onSprite: art ? 1 : 0,
+    };
+  });
+  return { reduced: REDUCED_FLASH, peak: flashPeak, seconds: mech.hitFlash.seconds, cooldownSeconds: mech.hitFlash.cooldownSeconds, feedback };
 }
 
 /**
@@ -2995,7 +3149,7 @@ function drawTorpedo(g: Graphics, h: Hazard, r: number, _laneWidth: number, _ela
   return;
 }
 
-function drawBoss(g: Graphics, h: Hazard, r: number, laneWidth: number, _elapsed: number): void {
+function drawBoss(g: Graphics, h: Hazard, r: number, laneWidth: number, elapsed: number): void {
   /**
    * The boss: a heavy armoured body with an eye, drawn BIG and unmistakable.
    *
@@ -3006,8 +3160,15 @@ function drawBoss(g: Graphics, h: Hazard, r: number, laneWidth: number, _elapsed
    */
   const cfg = mech.hazards.boss;
   const body = h.tint ?? cfg.colour;
-  const flash = h.hitFlash > 0;
-  g.ellipse(h.x, h.y, r * 1.35, r * 1.05).fill({ color: flash ? cfg.hitFlashColour : body, alpha: flash ? 0.85 : 1 });
+  /**
+   * The drawn body's flash, from the same curve the sprite's filter uses.
+   *
+   * This is the FALLBACK for a boss with no picture, so it stays a plainly visible blink rather than the sprite's gentler
+   * quarter-strength wash: a procedural shape has no detail to preserve, and the drawn blob needs the whole-body mark more
+   * than a detailed picture does. It still respects the curve, so a burst of fire cannot hold it lit.
+   */
+  const flash = flashIntensity(elapsed - (h.flashStarted ?? elapsed), 1) * cfg.hitFlashStrength;
+  g.ellipse(h.x, h.y, r * 1.35, r * 1.05).fill({ color: flash > 0 ? cfg.hitFlashColour : body, alpha: flash > 0 ? 0.85 : 1 });
   // Armour plates: three bands across the back, which is what makes it look like it can take a hit.
   for (const band of [-0.45, 0, 0.45]) {
     g.moveTo(h.x - r * 1.2, h.y + r * band * 0.8)
@@ -3210,17 +3371,31 @@ function startDeath(hazard: Hazard): void {
   hazard.deadDeadline = animation ? animationSeconds(animation) : DEFAULT_DEATH_SECONDS;
   hazard.flee = 'dead';
   /**
-   * AND THE HIT FLASH GOES OUT, which is the one part of a death that is not additive.
+   * AND THE HIT FEEDBACK GOES OUT, which is the one part of a death that is not additive.
    *
-   * The flash is white, it is drawn as a colour matrix on the sprite, and the killing shot sets it like any other hit -- so
-   * the death animation played through a filter that replaced every pixel of it with white. Nothing of the explosion was
-   * visible but its silhouette, which is the whole of what the owner reported: "it plays, but all white".
+   * The flash is a white filter on the sprite and the killing shot sets it like any other hit -- so the death animation
+   * played through a wash that hid every pixel of it. Nothing of the explosion was visible but its silhouette, which is the
+   * whole of what the owner reported: "it plays, but all white".
    *
-   * Cut HERE rather than left to expire, because the death's first frame is the frame the flash would hide, and two tenths of
-   * a second is the entire explosion at this length. The feedback the flash would have given is not lost: the explosion, the
-   * debris ring and the score popup are all the same event, and a body that is exploding cannot also be "just hit".
+   * Cleared by CANCELING the clocks rather than by writing a zero into a countdown, and both marks go: the flash would hide
+   * the explosion's first frame (the one frame the eye is guaranteed to catch) and the heavy ring would draw round a body
+   * that is coming apart. What is not lost is the feedback itself: the explosion, the debris ring and the score popup are
+   * all the same event, and a body that is exploding cannot also be merely hit.
    */
-  hazard.hitFlash = 0;
+  clearHitFeedback(hazard);
+}
+
+/**
+ * Put a creature's hit feedback back to "never been hit".
+ *
+ * `delete` rather than assigning `undefined`, because these are optional properties under `exactOptionalPropertyTypes` -- and
+ * the distinction is the honest one anyway: there is no flash whose start time is undefined, there is simply no flash.
+ */
+function clearHitFeedback(hazard: Hazard): void {
+  delete hazard.flashStarted;
+  delete hazard.flashLastStarted;
+  delete hazard.heavyStarted;
+  delete hazard.heavyStrength;
 }
 
 /**
@@ -3244,7 +3419,11 @@ export function paintHazards(
   g: Graphics,
   field: HazardField,
   laneWidth: number,
-  elapsed: number,
+  /**
+   * The run's clock. ONLY the charge telegraph's pulse uses it, and only because a telegraph is an ERUPTION of the run's
+   * time rather than a cycle belonging to the creature (see below). Everything else is timed on the creature's own clock.
+   */
+  runElapsed: number,
   canEat: (kind: HazardKind) => boolean,
   which: 'in-play' | 'leaving' = 'in-play',
   /**
@@ -3264,6 +3443,16 @@ export function paintHazards(
     const r = laneWidth * h.radiusFraction;
     const x = h.x;
     const y = h.y;
+    /**
+     * `elapsed` from here on is the CREATURE's own clock, not the run's -- and the two are different numbers.
+     *
+     * `h.phase` counts from the moment this creature entered the water, which is what makes every per-creature animation
+     * independent: `runElapsed` would have every fish of a school pulsing in lockstep, and worse, the hit flash is timed
+     * against `h.phase` (see `hit`) so comparing it to the run's clock made the flash land at the wrong point of its curve
+     * for every creature that had been alive for a while -- measured as a peak of 0.15 where 0.25 was configured, and on
+     * the way DOWN rather than up. One clock per creature, and this is where the painter switches to it.
+     */
+    const elapsed = h.phase;
 
     /**
      * THE WARNING FOR A LUNGE, drawn before anything else the creature is made of.
@@ -3303,7 +3492,7 @@ export function paintHazards(
         g.lineTo(u * u * fromX + 2 * u * t * ctrlX + t * t * toX, u * u * fromY + 2 * u * t * ctrlY + t * t * toY);
       }
       // A pulse while winding up, so a still line reads as a countdown rather than as scenery.
-      const pulse = 0.7 + 0.3 * Math.sin(elapsed * 18);
+      const pulse = 0.7 + 0.3 * Math.sin(runElapsed * 18);
       g.stroke({
         color: winding ? cfg.telegraphColour : cfg.trailColour,
         alpha: (winding ? cfg.telegraphAlpha : cfg.trailAlpha) * (winding ? pulse : 1),
@@ -3427,8 +3616,27 @@ export function paintHazards(
          * This is the owner's suggestion and it is the right one: the earlier attempt whitened a shared Graphics layer,
          * which brought in layer ordering and a group alpha that could compute to zero -- and a transparent layer and an
          * absent one look identical in a screenshot. Per object, there is nothing to get wrong.
+         *
+         * The strength is a CURVE now, not a switch (see `flashIntensity`), so the filter is rebuilt every frame with a
+         * value that rises and falls. `spriteFlashScale` is the kind's own dimmer, which is how the boss asks for a quarter
+         * of the flash its creatures get without the mechanism knowing what a boss is.
          */
-        sprite.filters = h.hitFlash > 0 ? [whiteOutFilter()] : [];
+        const flash = flashIntensity(elapsed - (h.flashStarted ?? elapsed), mech.hitFlash.peakIntensity * (art.spriteFlashScale ?? 1));        sprite.filters = flash > 0 ? [whiteOutFilter(flash)] : [];
+        /**
+         * A HEAVY hit's outline, drawn by the PAINTER rather than as a filter.
+         *
+         * Same language the weak-point ring and the edibility halo already speak, so it needs no new reading: the creature
+         * that just took a big one is ringed for a moment. A thicker ring for a bigger hit, from the same curve the flash
+         * uses, so the two marks agree about when the hit happened.
+         */
+        const outline = heavyOutlineIntensity(h, elapsed);
+        if (outline > 0) {
+          g.circle(x, y, r * mech.hitFeedback.heavyOutlineRadiusScale).stroke({
+            color: mech.hitFeedback.heavyOutlineColour,
+            alpha: mech.hitFeedback.heavyOutlineAlpha * outline,
+            width: Math.max(1, r * mech.hitFeedback.heavyOutlineWidthRatio * (0.6 + outline)),
+          });
+        }
         if (art.lure) paintLure(g, x, y, r, art.lure, elapsed);
         continue;
       }

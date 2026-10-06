@@ -2,7 +2,7 @@ import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
 import { LEVEL, LEVELS, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
-import { HazardField, hazardAnimationProbe, hazardArtSpriteForTest, KIND_TUNING, LURE_PROBE, paintHazards, stomachEffect, type HazardKind } from './hazards';
+import { HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, KIND_TUNING, LURE_PROBE, paintHazards, setReducedFlash, stomachEffect, type HazardKind } from './hazards';
 import { paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { diagnosticsOf } from './diagnostics';
@@ -333,6 +333,16 @@ class Game {
     this.settings.onRestart = () => this.restartLevel();
     this.settings.onInfiniteHealth = (on) => {
       this.run.infiniteHealth = on;
+    };
+    /**
+     * The accessibility switch, applied where the drawing is.
+     *
+     * It reaches the hazard module directly rather than through the run, because it is a property of how creatures are
+     * PAINTED and the painter is the only thing that reads it -- the codex draws through the same painter, so a card shows
+     * the same setting the water does.
+     */
+    this.settings.onReducedFlash = (on) => {
+      setReducedFlash(on);
     };
     this.settings.onExit = () => this.exitToMenu();
     /**
@@ -1232,6 +1242,11 @@ class Game {
     return hazardAnimationProbe(this.run.hazards);
   }
 
+  /** Test hook: the hit feedback (flash intensity, heavy outline) as the painter would compute it, per creature. */
+  hitFeedbackRef(): ReturnType<typeof hazardHitFeedbackProbe> {
+    return hazardHitFeedbackProbe(this.run.hazards);
+  }
+
   /**
    * Test hook: zero the run's counters and top the player back up.
    *
@@ -1662,6 +1677,27 @@ class Game {
             kind: event.kind,
             colour: event.colour,
           });
+        }
+        /**
+         * A heavy hit moves the SCREEN, and that is the game's to do rather than the field's.
+         *
+         * The ring round the body is the painter's (see `paintHazards`); this is the other half of "that one was big", and
+         * it is a property of the camera. A light hit deliberately does not shake: the screen is the loudest thing here, so
+         * using it for every round would make it noise -- the same reasoning the bomb fish already records for being the
+         * only blast that moves it.
+         */
+        for (const heavy of this.run.hazards.takeHeavyHits()) {
+          const cfg = mech.hitFeedback;
+          if (cfg.heavyShakePixels <= 0 || cfg.heavyShakeSeconds <= 0) continue;
+          const pixels = cfg.heavyShakePixels * heavy.strength * designScale(this.app.screen.width, this.app.screen.height);
+          /**
+           * A LONGER shake already playing is not cut short by a lighter hit.
+           *
+           * The same call the flash makes: a smaller event must not overwrite a bigger one's feedback, or a burst of fire
+           * makes the screen flicker between the two.
+           */
+          if (this.shake.seconds > cfg.heavyShakeSeconds && this.shake.pixels > pixels) continue;
+          this.shake = { seconds: cfg.heavyShakeSeconds, total: cfg.heavyShakeSeconds, pixels };
         }
         this.hitParticles.update(dt);
         /**
