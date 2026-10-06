@@ -2270,21 +2270,22 @@ class Game {
         }
         this.hitParticles.update(dt);
         /**
-         * The charge trail.
+         * The charge trail RIDES the creature.
          *
-         * Driven from HERE rather than from the charge's own code: the simulation should not know what a bubble sprite is, and
-         * everything needed to decide is public already -- the charge, its elapsed time, and the telegraph duration that says
-         * whether it is winding up or already flying. A trail during the wind-up would say "it has gone" while it is still
-         * standing there, which is the one thing the telegraph must not say.
+         * Driven from here rather than from the charge's own code: the simulation should not know what a bubble sprite is, and
+         * everything needed is public already -- the charge, its elapsed time, and the telegraph duration that says whether it
+         * is winding up or already flying. No trail during the wind-up: a bubble while it is still standing there would say "it
+         * has gone", which is the one thing the telegraph must not say.
          */
         for (const h of this.hazards.hazards) {
           if (!h.charge) continue;
           const row = mech.charges.chargers[h.kind];
           const telegraph = row?.telegraphSeconds ?? (h.kind === 'angler' ? mech.hazards.angler.telegraphSeconds : 0.75);
           if (h.charge.elapsed < telegraph) continue;
-          this.chargeTrail.emit(h.x, h.y, dt, this.camera.viewport.laneWidthMeters);
+          this.chargeTrail.ride(h.id, h.x, h.y, dt, this.camera.viewport.laneWidthMeters);
         }
-        this.chargeTrail.update(dt);
+        // Anything that did not ask for its bubble this frame has stopped charging: it loses it rather than leaving a ghost.
+        this.chargeTrail.sweep();
         break;
     }
 

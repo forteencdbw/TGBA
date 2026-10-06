@@ -852,8 +852,8 @@ export interface Mechanisms {
     image: string;
     columns: number;
     rows: number;
-    perSecond: number;
-    lifeSeconds: number;
+    /** Seconds per frame while the sheet loops. */
+    frameSeconds: number;
     sizeRatio: number;
     alpha: number;
   };
@@ -1929,8 +1929,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'chargeTrail.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string to disable it' },
   { path: 'chargeTrail.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole columns between 1 and 16' },
   { path: 'chargeTrail.rows', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole rows between 1 and 16' },
-  { path: 'chargeTrail.perSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 400, describe: 'bubbles per second above 0 and at most 400' },
-  { path: 'chargeTrail.lifeSeconds', check: (v) => typeof v === 'number' && v > 0.02 && v <= 5, describe: 'seconds above 0.02 and at most 5' },
+  { path: 'chargeTrail.frameSeconds', check: (v) => typeof v === 'number' && v > 0.005 && v <= 2, describe: 'seconds per frame above 0.005 and at most 2' },
   { path: 'chargeTrail.sizeRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 0.5, describe: 'a lane fraction above 0 and at most 0.5' },
   { path: 'chargeTrail.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'particles.maxParticles', check: (v) => typeof v === 'number' && v >= 0 && v <= 4000, describe: 'a count between 0 and 4000' },
