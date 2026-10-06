@@ -10,7 +10,7 @@ import { updateProjectiles } from './spit';
 import { updatePickups } from './pickups';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
-import { activationFor, findSkill, SKILLS, type Skill, type SkillId } from './skills';
+import { findSkill, SKILLS, useSkill, type Skill, type SkillId } from './skills';
 import { audio, type SoundEvent } from './audio';
 import { Score } from './score';
 import { NumberPopups } from './numberPopups';
@@ -2661,90 +2661,25 @@ this.sound('hit');
    * game owns how that lands on the world.
    */
   private useSkill(): boolean {
-    if (!this.skill || this.skill.uses <= 0) return false;
-    const skill = findSkill(this.skill.id);
-    const activation = activationFor(skill.id);
-    const laneWidth = this.camera.viewport.laneWidthMeters;
-    const playerX = this.player.x * laneWidth;
-
-    // Lasts of zero mean an instant effect; the player-side timer only takes non-zero ones.
-    if (skill.durationSeconds > 0) {
-      this.player.skillRemaining = skill.durationSeconds;
-      this.player.skillId = skill.id;
-    }
-    if (activation.ascentMultiplier) {
-      this.player.skillAscentBonus = activation.ascentMultiplier;
-    }
-    if (activation.invulnerableSeconds) {
-      this.invulnerable = Math.max(this.invulnerable, activation.invulnerableSeconds);
-    }
-    if (activation.clearsSlow) {
-      this.player.slowRemaining = 0;
-      this.player.slowFactor = 1;
-      // A trash bag holding on is a "penalty" too, so the stink cloud breaks the grip.
-      for (const h of this.hazards.hazards) h.gripping = false;
-    }
-
-    // Push hazards out of a radius.
-    if (activation.pushRadius && activation.pushKinds) {
-      const r = activation.pushRadius;
-      for (const h of this.hazards.hazards) {
-        if (!activation.pushKinds.includes(h.kind)) continue;
-        const dx = h.x - playerX;
-        const dy = h.y - this.player.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > r) continue;
-        if (dist < 1e-3) {
-          // Dead centre: push it somewhere deterministic rather than dividing by zero.
-          h.y += r;
-          continue;
-        }
-        const push = (r - dist) / r;
-        h.x += (dx / dist) * push * r * 0.6;
-        h.y += (dy / dist) * push * r * 0.6;
-      }
-    }
-
-    // Draw collectables in, which is the vortex's whole job.
-    if (activation.vortexRadius && activation.vortexSeconds) {
-      const r = activation.vortexRadius;
-      for (const b of this.field.bubbles) {
-        const dx = playerX - b.x;
-        const dy = this.player.y - b.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > r || dist < 1e-3) continue;
-        const pull = Math.min(
-          1,
-          (mech.skills.vortex.vortexPullPerSecond * activation.vortexSeconds) / Math.max(1, dist / r),
-        );
-        b.x += dx * pull * 0.35;
-        b.y += dy * pull * 0.35;
-      }
-    }
-
-    // Divert fish to a bait bubble. This is the decoy's entire effect: it does not kill anything, it
-    // redirects.
-    if (activation.decoyRadius && activation.decoySeconds) {
-      const r = activation.decoyRadius;
-      const baitY = this.player.y + r * 0.35;
-      for (const h of this.hazards.hazards) {
-        if (h.kind !== 'fish') continue;
-        if (Math.hypot(h.x - playerX, h.y - this.player.y) > r) continue;
-        // Baited for the whole duration, and pointed at the bait rather than at the player. Re-using
-        // the existing bait timer means the fish's own chase logic does the work.
-        h.baitedUntil = this.elapsed + activation.decoySeconds;
-        h.y = Math.min(h.y, baitY);
-      }
-      this.decoy = { x: playerX, y: baitY, until: this.elapsed + activation.decoySeconds };
-    }
-
-    this.skill.uses -= 1;
-    if (this.skill.uses <= 0) {
+    const used = useSkill({
+      player: this.player,
+      hazards: this.hazards,
+      bubbles: this.field.bubbles,
+      carried: this.skill,
+      laneWidth: this.camera.viewport.laneWidthMeters,
+      elapsed: this.elapsed,
+      events: this.runEvents,
+    });
+    if (!used) return false;
+    // Two scalars come back rather than being written through: the invulnerability window is the run's (it takes the
+    // MAX of this and whatever is left), and the decoy's bubble is something the run draws and expires.
+    this.invulnerable = Math.max(this.invulnerable, used.invulnerableSeconds);
+    if (used.decoy) this.decoy = used.decoy;
+    if (used.usesLeft <= 0) {
       this.skill = null;
       this.skillSlot(false);
     }
     this.skillActivations++;
-    this.sound('skill');
     return true;
   }
 

@@ -12,7 +12,10 @@
  */
 
 import { mech } from './mechanisms';
-import type { HazardKind } from './hazards';
+import type { HazardKind, HazardField } from './hazards';
+import type { Player } from './player';
+import type { Bubble } from './entities';
+import { saySound, type RunEvent } from './runEvents';
 
 export type SkillId = 'dash' | 'decoy' | 'vortex' | 'stink' | 'shell' | 'burst';
 
@@ -187,4 +190,130 @@ export function activationFor(id: SkillId): SkillActivation {
         pushKinds: ['fish', 'jelly', 'trash', 'crab'],
       };
   }
+}
+
+/**
+ * The water as using a skill sees it.
+ *
+ * Nothing here is a callback: the parts of the run a skill CHANGES are handed over by reference (the player, the
+ * creatures, the collectables, the carried skill's use count) and the two scalar facts it produces -- how long the
+ * bubble is invulnerable, and where the decoy's bait bubble is -- come back as a value. That is what lets a probe use a
+ * skill without a game.
+ */
+export interface SkillWorld {
+  player: Player;
+  hazards: HazardField;
+  bubbles: Bubble[];
+  /** The carried skill, BY REFERENCE: using one spends a use. The run clears its slot when the count reaches zero. */
+  carried: { id: SkillId; uses: number } | null;
+  laneWidth: number;
+  /** The run's elapsed seconds, which the bait timers are expressed in. */
+  elapsed: number;
+  events: RunEvent[];
+}
+
+/** What using a skill did, beyond what it mutated in place. */
+export interface SkillUsed {
+  /** Seconds of invulnerability it granted, or 0: the run keeps the larger of this and what it already had. */
+  invulnerableSeconds: number;
+  /** The bait bubble a decoy left for the run to draw and expire, or null. */
+  decoy: { x: number; y: number; until: number } | null;
+  /** Uses left on the carried skill: 0 means it is spent and the run should clear the slot and the button. */
+  usesLeft: number;
+}
+
+/**
+ * Use the carried skill, if there is one and it has a use left.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THE VERB LIVES WITH THE TABLE
+ * ---------------------------------------------------------------------------------------------
+ * This was `Game.useSkill`. `skills.ts` already owned what a skill IS -- its row, its uses, its duration and its
+ * activation -- and a table with no verb next to it means reading two files to answer "what does dash do".
+ *
+ * Every effect below is gated on an activation FIELD rather than on the skill's id, which is the property that makes
+ * adding a skill a config change: a new row with `pushRadius` and `pushKinds` pushes, and no branch here mentions it.
+ * The one id-specific effect is the decoy's bait bubble, and it says so.
+ *
+ * `null` means nothing was used -- no skill, or none left -- which the caller must not mistake for "used, no effect".
+ */
+export function useSkill(world: SkillWorld): SkillUsed | null {
+  if (!world.carried || world.carried.uses <= 0) return null;
+  const skill = findSkill(world.carried.id);
+  const activation = activationFor(skill.id);
+  const laneWidth = world.laneWidth;
+  const playerX = world.player.x * laneWidth;
+  let invulnerableSeconds = 0;
+  let decoy: SkillUsed['decoy'] = null;
+
+  // Lasts of zero mean an instant effect; the player-side timer only takes non-zero ones.
+  if (skill.durationSeconds > 0) {
+    world.player.skillRemaining = skill.durationSeconds;
+    world.player.skillId = skill.id;
+  }
+  if (activation.ascentMultiplier) {
+    world.player.skillAscentBonus = activation.ascentMultiplier;
+  }
+  if (activation.invulnerableSeconds) {
+    invulnerableSeconds = Math.max(invulnerableSeconds, activation.invulnerableSeconds);
+  }
+  if (activation.clearsSlow) {
+    world.player.slowRemaining = 0;
+    world.player.slowFactor = 1;
+    // A trash bag holding on is a "penalty" too, so the stink cloud breaks the grip.
+    for (const h of world.hazards.hazards) h.gripping = false;
+  }
+
+  // Push hazards out of a radius.
+  if (activation.pushRadius && activation.pushKinds) {
+    const r = activation.pushRadius;
+    for (const h of world.hazards.hazards) {
+      if (!activation.pushKinds.includes(h.kind)) continue;
+      const dx = h.x - playerX;
+      const dy = h.y - world.player.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > r) continue;
+      if (dist < 1e-3) {
+        // Dead centre: push it somewhere deterministic rather than dividing by zero.
+        h.y += r;
+        continue;
+      }
+      const push = (r - dist) / r;
+      h.x += (dx / dist) * push * r * 0.6;
+      h.y += (dy / dist) * push * r * 0.6;
+    }
+  }
+
+  // Draw collectables in, which is the vortex's whole job.
+  if (activation.vortexRadius && activation.vortexSeconds) {
+    const r = activation.vortexRadius;
+    for (const b of world.bubbles) {
+      const dx = playerX - b.x;
+      const dy = world.player.y - b.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > r || dist < 1e-3) continue;
+      const pull = Math.min(1, (mech.skills.vortex.vortexPullPerSecond * activation.vortexSeconds) / Math.max(1, dist / r));
+      b.x += dx * pull * 0.35;
+      b.y += dy * pull * 0.35;
+    }
+  }
+
+  // Divert fish to a bait bubble. This is the decoy's entire effect: it does not kill anything, it redirects.
+  if (activation.decoyRadius && activation.decoySeconds) {
+    const r = activation.decoyRadius;
+    const baitY = world.player.y + r * 0.35;
+    for (const h of world.hazards.hazards) {
+      if (h.kind !== 'fish') continue;
+      if (Math.hypot(h.x - playerX, h.y - world.player.y) > r) continue;
+      // Baited for the whole duration, and pointed at the bait rather than at the player. Re-using
+      // the existing bait timer means the fish's own chase logic does the work.
+      h.baitedUntil = world.elapsed + activation.decoySeconds;
+      h.y = Math.min(h.y, baitY);
+    }
+    decoy = { x: playerX, y: baitY, until: world.elapsed + activation.decoySeconds };
+  }
+
+  world.carried.uses -= 1;
+  saySound(world.events, 'skill');
+  return { invulnerableSeconds, decoy, usesLeft: world.carried.uses };
 }
