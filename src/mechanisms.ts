@@ -847,6 +847,16 @@ export interface Mechanisms {
   /** The white flash anything shootable gives when a bullet lands: creatures AND breakable obstacles. */
   /** The loading screen shown between the menu and a level. */
   /** Hit particles: sparks on a hit, a ring of debris on a defeat. */
+  /** The bubble trail every charge leaves behind. */
+  chargeTrail: {
+    image: string;
+    columns: number;
+    rows: number;
+    perSecond: number;
+    lifeSeconds: number;
+    sizeRatio: number;
+    alpha: number;
+  };
   particles: {
     maxParticles: number;
     hitCount: number;
@@ -1916,6 +1926,13 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     },
     describe: 'an object of kind -> { move, charge?, scale, alpha, lure? }',
   },
+  { path: 'chargeTrail.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string to disable it' },
+  { path: 'chargeTrail.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole columns between 1 and 16' },
+  { path: 'chargeTrail.rows', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole rows between 1 and 16' },
+  { path: 'chargeTrail.perSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 400, describe: 'bubbles per second above 0 and at most 400' },
+  { path: 'chargeTrail.lifeSeconds', check: (v) => typeof v === 'number' && v > 0.02 && v <= 5, describe: 'seconds above 0.02 and at most 5' },
+  { path: 'chargeTrail.sizeRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 0.5, describe: 'a lane fraction above 0 and at most 0.5' },
+  { path: 'chargeTrail.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'particles.maxParticles', check: (v) => typeof v === 'number' && v >= 0 && v <= 4000, describe: 'a count between 0 and 4000' },
   { path: 'particles.hitCount', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a count between 0 and 200' },
   { path: 'particles.hitSpeed', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres per second between 0 and 2000' },

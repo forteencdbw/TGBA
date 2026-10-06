@@ -28,6 +28,7 @@ import { Music, type MusicTrack } from './music';
 import { Sprite, Text as PixiText, Texture } from 'pixi.js';
 import { allAssetNames, assetUrl, preloadAssets } from './assets';
 import { ParticleField } from './particles';
+import { ChargeTrail } from './chargeTrail';
 
 /**
  * Whether the chain of parents above `node` flips the Y axis.
@@ -160,6 +161,8 @@ class Game {
   private readonly loadScrim = new Graphics();
   /** Sparks and debris from hits, in world space. See `src/particles.ts`. */
   private readonly hitParticles = new ParticleField();
+  /** Bubbles behind every charge. See `src/chargeTrail.ts`. */
+  private readonly chargeTrail = new ChargeTrail();
   private readonly loadBar = new Graphics();
   private readonly loadLabel = new PixiText({
     text: '',
@@ -449,6 +452,7 @@ class Game {
     this.scene.world.addChild(this.pickups, this.leaving, this.burstWave, this.bubble, this.particles);
     // Over the water and under the HUD: a spark is part of the scene, not a readout.
     this.scene.world.addChild(this.hitParticles.graphics);
+    this.scene.world.addChild(this.chargeTrail.root);
     this.loadScrim.eventMode = 'none';
     this.loadBar.eventMode = 'none';
     this.loadLabel.eventMode = 'none';
@@ -782,6 +786,11 @@ class Game {
 
   openCodexRef(): void {
     this.debugOpenCodexForTest();
+  }
+
+  /** Test hook: the charge trail's live bubbles and cut frames. */
+  get chargeTrailRef(): { live: number; frames: number } {
+    return this.chargeTrail.state;
   }
 
   /** Test hook: how many particles are alive. */
@@ -2248,6 +2257,22 @@ class Game {
           });
         }
         this.hitParticles.update(dt);
+        /**
+         * The charge trail.
+         *
+         * Driven from HERE rather than from the charge's own code: the simulation should not know what a bubble sprite is, and
+         * everything needed to decide is public already -- the charge, its elapsed time, and the telegraph duration that says
+         * whether it is winding up or already flying. A trail during the wind-up would say "it has gone" while it is still
+         * standing there, which is the one thing the telegraph must not say.
+         */
+        for (const h of this.hazards.hazards) {
+          if (!h.charge) continue;
+          const row = mech.charges.chargers[h.kind];
+          const telegraph = row?.telegraphSeconds ?? (h.kind === 'angler' ? mech.hazards.angler.telegraphSeconds : 0.75);
+          if (h.charge.elapsed < telegraph) continue;
+          this.chargeTrail.emit(h.x, h.y, dt, this.camera.viewport.laneWidthMeters);
+        }
+        this.chargeTrail.update(dt);
         break;
     }
 
@@ -6096,6 +6121,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 
