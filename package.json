@@ -2,7 +2,7 @@
   "name": "bubble-battle",
   "private": true,
   "type": "module",
-  "version": "1.1.24",
+  "version": "1.1.25",
   "description": "冒泡大作战 / Bubble Battle - a vertical-scrolling arcade game about emergence. Game jam prototype.",
   "scripts": {
     "dev": "vite",

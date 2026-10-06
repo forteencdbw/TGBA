@@ -2510,6 +2510,531 @@ export interface HazardHitEvent {
   colour: number;
 }
 
+/**
+ * How each creature is DRAWN, one function per creature.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THIS IS A TABLE
+ * ---------------------------------------------------------------------------------------------
+ * The last of the per-kind switches. It was an eighteen-case `switch (h.kind)` in the middle of `paintHazards`, 464
+ * lines of it, so "how does a crab look" was a case in the biggest function in the file and a new creature meant
+ * finding the right place in it. The creature's own behaviour is a function (see `CREATURES`), what it does on contact
+ * is a function (`CONTACT_EFFECTS`), and what it looks like is a function.
+ *
+ * These are called only for a creature with NO artwork: a picture, when one exists, is drawn instead and skips this
+ * entirely -- so this is both the fallback while a sheet loads and the finished state for the kinds that have no sheet.
+ * `x` and `y` are `h.x` and `h.y`; `r` is the body radius in metres, which the painter has already computed from the
+ * lane width and the kind's radius fraction.
+ */
+type CreatureDraw = (g: Graphics, h: Hazard, r: number, laneWidth: number, elapsed: number) => void;
+function drawFish(g: Graphics, h: Hazard, r: number, _laneWidth: number, elapsed: number): void {
+  /**
+   * Facing its direction of travel; the tail trails behind.
+   *
+   * A fish that is LEAVING faces the way it is going, which is the one case where the direction is a fact
+   * rather than a guess: `flee` says 'left' or 'right' and the body has to agree with it, or the exit reads as
+   * a fish sliding backwards out of frame.
+   */
+  const dir = h.flee ? (h.flee === 'left' ? -1 : 1) : Math.sign(h.x - 0) || 1;
+  g.ellipse(h.x, h.y, r * 1.5, r * 0.75).fill({ color: KIND_TUNING.fish.colour, alpha: 0.85 });
+  g.moveTo(h.x - dir * r * 1.3, h.y)
+    .lineTo(h.x - dir * r * 2.2, h.y - r * 0.6)
+    .lineTo(h.x - dir * r * 2.2, h.y + r * 0.6)
+    .closePath()
+    .fill({ color: KIND_TUNING.fish.colour, alpha: 0.6 });
+  // A baited fish gets a blank stare: no eye, just a dot.
+  if (h.baitedUntil > elapsed) {
+    g.circle(h.x + dir * r * 0.5, h.y - r * 0.15, r * 0.16).fill({ color: 0xffffff, alpha: 0.9 });
+  } else {
+    g.circle(h.x + dir * r * 0.7, h.y - r * 0.1, r * 0.2).fill({ color: 0x08131f, alpha: 0.9 });
+  }
+  return;
+}
+
+function drawJelly(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  const squash = 1 + h.squashed * 0.5;
+  g.ellipse(h.x, h.y, r * squash, r * (1 / squash)).fill({ color: KIND_TUNING.jelly.colour, alpha: 0.55 });
+  g.ellipse(h.x, h.y, r * squash, r * (1 / squash)).stroke({ color: KIND_TUNING.jelly.colour, alpha: 0.95, width: Math.max(1, r * 0.12) });
+  /**
+   * Tentacles trail DOWNWARD behind it -- which means SMALLER world y, not larger.
+   *
+   * `toScreenY` is `cy - (worldY - camera.y) * scale`, so up the screen is +y in world metres. The tentacles were
+   * drawn at `y + r * 0.8 .. y + r * 2.3`, i.e. above the dome, and the jellyfish read as a creature standing on
+   * its tentacles. They hang from the underside of the bell now.
+   */
+  for (let i = -2; i <= 2; i++) {
+    const tx = h.x + (i / 2) * r * 0.6;
+    const wob = Math.sin(h.phase * 2.4 + i) * r * 0.35;
+    g.moveTo(tx, h.y - r * 0.8)
+      .lineTo(tx + wob, h.y - r * 2.3)
+      .stroke({ color: KIND_TUNING.jelly.colour, alpha: 0.5, width: Math.max(1, r * 0.1) });
+  }
+  return;
+}
+
+function drawTrash(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  const spin = Math.sin(h.phase * 0.9 + h.seed) * 0.25;
+  g.moveTo(h.x - r, h.y + r * (0.6 + spin))
+    .lineTo(h.x + r * 0.9, h.y + r * (0.8 - spin))
+    .lineTo(h.x + r * 0.7, h.y - r * 0.9)
+    .lineTo(h.x - r * 0.8, h.y - r * 0.7)
+    .closePath()
+    .fill({ color: KIND_TUNING.trash.colour, alpha: 0.7 });
+  g.moveTo(h.x - r * 0.6, h.y - r * 0.6)
+    .lineTo(h.x + r * 0.5, h.y - r * 0.5)
+    .stroke({ color: 0x6d5232, alpha: 0.8, width: Math.max(1, r * 0.14) });
+  return;
+}
+
+function drawCrab(g: Graphics, h: Hazard, r: number, _laneWidth: number, elapsed: number): void {
+  // TELEGRAPH FIRST: a visible arc showing exactly where the player will be thrown.
+  if (h.fuse > 0) {
+    const progress = 1 - h.fuse / hazardTuning.crabFuseSeconds;
+    const arcTop = h.y + hazardTuning.crabLaunchMps * hazardTuning.crabApexSeconds * progress;
+    g.moveTo(h.x, h.y)
+      .quadraticCurveTo(h.x, (h.y + arcTop) / 2 + r * 3, h.x, arcTop)
+      .stroke({ color: 0xffd479, alpha: 0.15 + progress * 0.5, width: Math.max(1, r * 0.18) });
+    // Sand puffs while it winds up.
+    for (let i = 0; i < 3; i++) {
+      const p = (h.phase * 1.8 + i * 0.33) % 1;
+      g.circle(h.x + Math.sin(i * 2.1) * r * 1.4, h.y - r * 0.5 - p * r * 2.2, r * (0.16 + p * 0.2)).fill({
+        color: 0xd9c39a,
+        alpha: 0.3 * (1 - p),
+      });
+    }
+  }
+  g.ellipse(h.x, h.y, r * 1.35, r * 0.95).fill({ color: KIND_TUNING.crab.colour, alpha: 0.9 });
+  // Claws, plus legs that flail after firing.
+  const flail = h.fired ? Math.sin(elapsed * 14) * 0.6 : 0;
+  for (const side of [-1, 1]) {
+    g.circle(h.x + side * r * 1.35, h.y - r * 0.3, r * 0.4).stroke({ color: KIND_TUNING.crab.colour, alpha: 0.9, width: Math.max(1, r * 0.16) });
+    for (let i = -1; i <= 1; i++) {
+      g.moveTo(h.x + side * r * 0.9, h.y + r * 0.5)
+        .lineTo(h.x + side * r * 1.7, h.y + r * (1.1 + i * 0.3) + flail * r * 0.6)
+        .stroke({ color: KIND_TUNING.crab.colour, alpha: 0.75, width: Math.max(1, r * 0.13) });
+    }
+  }
+  return;
+}
+
+function drawUrchin(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * A dark ball of needles, rotating slowly.
+   *
+   * SHAPE is the whole message: at the size this reads on a phone, a ball with spikes is unmistakable against
+   * every other silhouette in the game, and the eye picks it up before any colour does. Which is what a
+   * hazard the player must DECIDE about needs -- being surprised by an urchin is not a decision.
+   *
+   * The needles are the same colour at full opacity over a dimmer body rather than a second colour, so the
+   * one entry in KIND_TUNING still describes the whole creature.
+   */
+  const spin = h.phase * 0.35 + h.seed;
+  g.circle(h.x, h.y, r * 0.92).fill({ color: KIND_TUNING.urchin.colour, alpha: 0.55 });
+  const needles = 11;
+  for (let i = 0; i < needles; i++) {
+    const a = (i / needles) * Math.PI * 2 + spin;
+    g.moveTo(h.x + Math.cos(a) * r * 0.7, h.y + Math.sin(a) * r * 0.7)
+      .lineTo(h.x + Math.cos(a) * r * 1.55, h.y + Math.sin(a) * r * 1.55)
+      .stroke({ color: KIND_TUNING.urchin.colour, alpha: 0.95, width: Math.max(1, r * 0.16) });
+  }
+  g.circle(h.x, h.y, r * 0.95).stroke({ color: KIND_TUNING.urchin.colour, alpha: 1, width: Math.max(1, r * 0.2) });
+  return;
+}
+
+function drawVent(g: Graphics, h: Hazard, r: number, laneWidth: number, _elapsed: number): void {
+  /**
+   * A black smoker: a rock chimney with a plume, and the plume is the hazard.
+   *
+   * The reading order is deliberate. The CHIMNEY is always drawn (it is terrain, and terrain does not flicker).
+   * The PLUME is drawn only while it is erupting, in a colour that brightens through the warning, so "is it
+   * dangerous right now" is answered by whether the column is there at all -- the one question the player has to
+   * be able to answer at a glance, since getting it wrong is death.
+   */
+  const cfg = mech.hazards.vent;
+  const erupting = h.phase < cfg.activeSeconds;
+  const warning = h.phase > cfg.periodSeconds - cfg.warnSeconds;
+  // The chimney: a dark cone standing on the seabed.
+  g.moveTo(h.x - r, h.y)
+    .lineTo(h.x - r * 0.35, h.y + r * 2.2)
+    .lineTo(h.x + r * 0.35, h.y + r * 2.2)
+    .lineTo(h.x + r, h.y)
+    .closePath()
+    .fill({ color: cfg.plumeColour, alpha: 1 });
+  const top = h.y + r * 2.2;
+  const height = laneWidth * 1.5;
+  if (erupting || warning) {
+    const heat = erupting ? 1 : 0.35;
+    // Smoke, widening as it rises, so the column reads as a column rather than as a bar.
+    g.moveTo(h.x - r * 0.4, top)
+      .lineTo(h.x - r * 1.25, top + height)
+      .lineTo(h.x + r * 1.25, top + height)
+      .lineTo(h.x + r * 0.4, top)
+      .closePath()
+      .fill({ color: cfg.plumeColour, alpha: 0.5 * heat });
+    g.moveTo(h.x - r * 0.25, top)
+      .lineTo(h.x - r * 0.9, top + height)
+      .lineTo(h.x + r * 0.9, top + height)
+      .lineTo(h.x + r * 0.25, top)
+      .closePath()
+      .fill({ color: cfg.glowColour, alpha: 0.35 * heat });
+  }
+  /**
+   * The dangerous WIDTH, drawn as two edges while the plume is up.
+   *
+   * This is the line the player actually steers by: the smoke is decoration, and a lethal hitbox that is only
+   * implied by decoration is the one kind of unfair this level cannot afford.
+   */
+  if (erupting) {
+    for (const side of [-1, 1]) {
+      g.moveTo(h.x + side * r, top)
+        .lineTo(h.x + side * r * 1.25, top + height)
+        .stroke({ color: cfg.edgeColour, alpha: cfg.edgeAlpha, width: Math.max(1, r * 0.12) });
+    }
+  }
+  return;
+}
+
+function drawFoam(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * Foam, drawn as a bubble much like the player's own.
+   *
+   * That is the point of it: the level's interference is that the player cannot tell at a glance which bubble is
+   * theirs. It is deliberately paler and softer-edged than the real one -- a fair version of the trick, because a
+   * decoy that was pixel-identical would be a lie rather than a puzzle.
+   */
+  const fc = mech.hazards.foam;
+  g.circle(h.x, h.y, r).fill({ color: fc.colour, alpha: fc.alpha });
+  g.circle(h.x, h.y, r).stroke({ color: fc.rimColour, alpha: fc.rimAlpha, width: Math.max(1, r * 0.1) });
+  // A few smaller bubbles clinging to it, which is what foam actually looks like.
+  for (const [ox, oy, scale] of [[0.8, 0.6, 0.35], [-0.7, 0.5, 0.28], [0.2, -0.9, 0.24]]) {
+    g.circle(h.x + r * ox, h.y + r * oy, r * scale).fill({ color: fc.colour, alpha: fc.alpha * 0.8 });
+  }
+  return;
+}
+
+function drawRain(g: Graphics, h: Hazard, r: number, laneWidth: number, _elapsed: number): void {
+  // A drop: a short vertical streak, because the direction of the threat has to be readable in one frame.
+  const rc = mech.hazards.rain;
+  const len = laneWidth * rc.lengthRatio;
+  g.moveTo(h.x, h.y + len).lineTo(h.x, h.y).stroke({ color: rc.colour, alpha: 0.75, width: Math.max(1, r * 1.2) });
+  g.circle(h.x, h.y, r).fill({ color: rc.colour, alpha: 0.95 });
+  return;
+}
+
+function drawZapper(g: Graphics, h: Hazard, r: number, laneWidth: number, elapsed: number): void {
+  /**
+   * An electric jellyfish: a violet bell, a few thick tentacles, and the discharge ring.
+   *
+   * The ring is drawn at exactly the radius the hitbox uses (`ringRadiusRatio`), which is the rule this project
+   * keeps everywhere: what the player aims at and what the game tests are the same number, or the picture is a
+   * lie. It fades as it expires, so "how much of it is left" is answerable from the picture alone.
+   */
+  const zc = mech.hazards.zapper;
+  const ring = laneWidth * zc.ringRadiusRatio;
+  g.ellipse(h.x, h.y, r, r * 0.85).fill({ color: zc.bellColour, alpha: 0.85 });
+  g.ellipse(h.x, h.y, r, r * 0.85).stroke({ color: 0xffffff, alpha: 0.5, width: Math.max(1, r * 0.12) });
+  for (const offset of [-0.5, 0, 0.5]) {
+    g.moveTo(h.x + r * offset, h.y - r * 0.5)
+      .lineTo(h.x + r * offset * 1.6 + Math.sin(elapsed * 1.5 + offset * 4) * r * 0.3, h.y - r * 2.4)
+      .stroke({ color: zc.bellColour, alpha: 0.7, width: Math.max(1, r * 0.14) });
+  }
+  if (h.discharge > 0) {
+    const left = Math.max(0, Math.min(1, h.discharge / Math.max(0.01, zc.ringSeconds)));
+    g.circle(h.x, h.y, ring * (0.4 + 0.6 * (1 - left))).stroke({
+      color: zc.ringColour,
+      alpha: zc.ringAlpha * left,
+      width: Math.max(1, r * 0.35 * (0.4 + left)),
+    });
+    g.circle(h.x, h.y, ring * 0.55).fill({ color: zc.ringColour, alpha: 0.12 * left });
+  }
+  return;
+}
+
+function drawMineral(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  // Grit: a hot speck with a short bright tail behind it, so its UPWARD direction is unmistakable.
+  g.circle(h.x, h.y - r * 1.6, r * 1.6).fill({ color: mech.hazards.vent.edgeColour, alpha: 0.25 });
+  g.circle(h.x, h.y, r).fill({ color: KIND_TUNING.mineral.colour, alpha: 1 });
+  g.circle(h.x, h.y, r * 1.9).stroke({ color: mech.hazards.vent.edgeColour, alpha: 0.5, width: Math.max(1, r * 0.35) });
+  return;
+}
+
+function drawShrimp(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  // A pale, blind drifter: a curved body, no eyes, and antennae that read as "feeling its way".
+  g.ellipse(h.x, h.y, r * 1.5, r * 0.85).fill({ color: KIND_TUNING.shrimp.colour, alpha: 0.95 });
+  g.moveTo(h.x - r * 1.4, h.y + r * 0.2)
+    .lineTo(h.x - r * 2.3, h.y - r * 0.3)
+    .lineTo(h.x - r * 2.4, h.y + r * 0.5)
+    .closePath()
+    .fill({ color: KIND_TUNING.shrimp.colour, alpha: 0.8 });
+  for (const tilt of [-0.35, 0.35]) {
+    g.moveTo(h.x + r * 1.2, h.y + r * tilt)
+      .lineTo(h.x + r * 2.6, h.y + r * tilt * 2.4)
+      .stroke({ color: KIND_TUNING.shrimp.colour, alpha: 0.7, width: Math.max(1, r * 0.16) });
+  }
+  return;
+}
+
+function drawAngler(g: Graphics, h: Hazard, r: number, laneWidth: number, elapsed: number): void {
+  /**
+   * A lanternfish: a dark body and a lit lure on a stalk in front of it.
+   *
+   * The lure is drawn LAST and brightest -- it is the thing the player's eye goes to, which is exactly the trap.
+   * It hangs on the side the creature will lunge toward, so the bait already points the way it is going to come.
+   */
+  const cfg = mech.hazards.angler;
+  const facing = h.x < laneWidth * 0.5 ? 1 : -1;
+  g.ellipse(h.x, h.y, r * 1.4, r * 0.95).fill({ color: KIND_TUNING.angler.colour, alpha: 1 });
+  g.moveTo(h.x - facing * r * 1.2, h.y)
+    .lineTo(h.x - facing * r * 2.2, h.y - r * 0.6)
+    .lineTo(h.x - facing * r * 2.2, h.y + r * 0.6)
+    .closePath()
+    .fill({ color: KIND_TUNING.angler.colour, alpha: 0.9 });
+  // Teeth, because a lunge has to be advertised as a mouth and not as a nudge.
+  for (const step of [-0.4, 0, 0.4]) {
+    g.moveTo(h.x + facing * r * 1.3, h.y + r * step)
+      .lineTo(h.x + facing * r * 1.7, h.y + r * step + r * 0.16)
+      .stroke({ color: 0xffffff, alpha: 0.7, width: Math.max(1, r * 0.12) });
+  }
+  const lurePulse = 1 + 0.18 * Math.sin(elapsed * cfg.lurePulsePerSecond * Math.PI * 2);
+  const lx = h.x + facing * r * cfg.lureOffsetRatio * 2.4;
+  const ly = h.y - r * 1.5;
+  g.moveTo(h.x + facing * r * 0.8, h.y - r * 0.7)
+    .lineTo(lx, ly)
+    .stroke({ color: cfg.lureColour, alpha: 0.55, width: Math.max(1, r * 0.1) });
+  g.circle(lx, ly, laneWidth * cfg.lureRadiusRatio * 3 * lurePulse).fill({ color: cfg.lureColour, alpha: 0.16 });
+  g.circle(lx, ly, laneWidth * cfg.lureRadiusRatio * lurePulse).fill({ color: cfg.lureColour, alpha: 0.95 });
+  return;
+}
+
+function drawTorpedo(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * A torpedo: a metal cylinder with a lit nose, pointing the way it is going.
+   *
+   * `fed` tells the painter which half of its life it is in, so the LOOK changes when it turns -- the dive light
+   * goes from white to red. That is the only warning the player gets that a dodged round is now a pursuer, and
+   * without it the turn is invisible.
+   */
+  const cfg = mech.hazards.torpedo;
+  const homing = h.fed >= cfg.runMeters;
+  // No transform stack on a Graphics in this project: the body is drawn along the lane and the FIN carries the
+  // tilt, which is enough to read a turn without a rotation.
+  const droop = homing ? r * 0.5 : 0;
+  g.roundRect(h.x - r * 1.7, h.y - r * 0.55, r * 3.4, r * 1.1, r * 0.5).fill({ color: KIND_TUNING.torpedo.colour, alpha: 1 });
+  g.moveTo(h.x + r * 1.7, h.y - r * 0.55).lineTo(h.x + r * 2.4, h.y).lineTo(h.x + r * 1.7, h.y + r * 0.55).closePath().fill({ color: 0xc9d4de, alpha: 1 });
+  g.circle(h.x + r * 1.9, h.y, r * 0.34).fill({ color: homing ? 0xff5a5a : 0xdff3ff, alpha: 1 });
+  // A tail flame while it is running, which is the "it is coming" half of the warning.
+  g.moveTo(h.x - r * 1.7, h.y)
+    .lineTo(h.x - r * (homing ? 3.4 : 2.6), h.y + droop)
+    .stroke({ color: homing ? 0xff8a5a : 0xa8d8ff, alpha: 0.6, width: Math.max(1, r * 0.4) });
+  if (homing) {
+    // The turn itself, drawn: two fins that were flat while it ran and are swept back once it is hunting.
+    for (const side of [-1, 1]) {
+      g.moveTo(h.x - r * 1.2, h.y + side * r * 0.5)
+        .lineTo(h.x - r * 2.2, h.y + side * r * 1.4)
+        .lineTo(h.x - r * 0.6, h.y + side * r * 0.6)
+        .closePath()
+        .fill({ color: KIND_TUNING.torpedo.colour, alpha: 0.9 });
+    }
+  }
+  return;
+}
+
+function drawBoss(g: Graphics, h: Hazard, r: number, laneWidth: number, _elapsed: number): void {
+  /**
+   * The boss: a heavy armoured body with an eye, drawn BIG and unmistakable.
+   *
+   * It borrows the fish's silhouette on purpose -- it should read as "a creature, and much larger" rather than as
+   * a different order of thing -- and adds two marks that only it has: a plated shell and a single lit eye. The
+   * colour comes from the instance when the level set one (`tint`), so two levels do not look like the same
+   * monster.
+   */
+  const cfg = mech.hazards.boss;
+  const body = h.tint ?? cfg.colour;
+  const flash = h.hitFlash > 0;
+  g.ellipse(h.x, h.y, r * 1.35, r * 1.05).fill({ color: flash ? cfg.hitFlashColour : body, alpha: flash ? 0.85 : 1 });
+  // Armour plates: three bands across the back, which is what makes it look like it can take a hit.
+  for (const band of [-0.45, 0, 0.45]) {
+    g.moveTo(h.x - r * 1.2, h.y + r * band * 0.8)
+      .lineTo(h.x + r * 1.2, h.y + r * band * 0.8)
+      .stroke({ color: cfg.armourColour, alpha: 0.75, width: Math.max(1, r * 0.16) });
+  }
+  // A jaw, so the front is not ambiguous.
+  g.moveTo(h.x + r * 1.2, h.y - r * 0.5)
+    .lineTo(h.x + r * 1.75, h.y)
+    .lineTo(h.x + r * 1.2, h.y + r * 0.5)
+    .closePath()
+    .fill({ color: cfg.armourColour, alpha: 0.9 });
+  g.circle(h.x + r * 0.55, h.y + r * 0.1, r * 0.24).fill({ color: cfg.eyeColour, alpha: 1 });
+  // A weak-point ring: the game's way of saying "this is the thing to shoot".
+  g.circle(h.x, h.y, r * 1.06).stroke({
+    color: cfg.eyeColour,
+    alpha: 0.5,
+    width: Math.max(1, laneWidth * cfg.weakPointWidthRatio),
+  });
+  return;
+}
+
+function drawBombfish(g: Graphics, h: Hazard, r: number, _laneWidth: number, elapsed: number): void {
+  /**
+   * A round, heavy fish with a stub of fuse, which is the whole joke: it looks like a bomb.
+   *
+   * The stub is NOT drawn burning: it has no timer of its own. While it hunts, the timer is the ARMING ring
+   * below; while it is inside the player, the countdown is drawn on the bubble (see `Game.drawStomach`).
+   */
+  /**
+   * A LIT FUSE, drawn around the body: a ring that closes in as the clock runs out.
+   *
+   * The same language the crab's launch arc uses -- a threat states its own timing, so the player never has to
+   * guess whether this one is about to go off. Inside the case rather than as a general overlay because only one
+   * kind has an external fuse.
+   */
+  if (h.blastFuse !== null) {
+    const total = Math.max(0.01, mech.hazards.bombfish.fuseSeconds);
+    const left = Math.max(0, Math.min(1, h.blastFuse / total));
+    const pulse = 0.75 + 0.25 * Math.sin(elapsed * 22);
+    g.circle(h.x, h.y, r * (1.3 + 1.6 * (1 - left))).stroke({
+      color: KIND_TUNING.bombfish.colour,
+      alpha: (0.35 + 0.5 * (1 - left)) * pulse,
+      width: Math.max(1, r * 0.22),
+    });
+  }
+  g.ellipse(h.x, h.y, r * 1.25, r * 1.1).fill({ color: KIND_TUNING.bombfish.colour, alpha: 0.9 });
+  // A stubby tail, so it still reads as a fish rather than as a ball.
+  g.moveTo(h.x - r * 1.1, h.y)
+    .lineTo(h.x - r * 2.1, h.y - r * 0.55)
+    .lineTo(h.x - r * 2.1, h.y + r * 0.55)
+    .closePath()
+    .fill({ color: KIND_TUNING.bombfish.colour, alpha: 0.65 });
+  // The fuse: a short stub off the top, in a dull cord colour, with the cap it will be lit from.
+  g.moveTo(h.x, h.y + r * 1.0)
+    .lineTo(h.x + r * 0.25, h.y + r * 1.75)
+    .stroke({ color: 0x8a7a5c, alpha: 0.9, width: Math.max(1, r * 0.16) });
+  g.circle(h.x + r * 0.25, h.y + r * 1.85, r * 0.16).fill({ color: 0xe8d9b0, alpha: 0.9 });
+  g.circle(h.x + r * 0.75, h.y + r * 0.1, r * 0.18).fill({ color: 0x08131f, alpha: 0.9 });
+  return;
+}
+
+function drawEel(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * A long thin body in an S, with a spark at the head.
+   *
+   * The only creature drawn as a LINE rather than a blob, which is the point: at a glance the silhouette has
+   * to say "this is the one that does something to my hands", and a shape nothing else in the water shares is
+   * how that gets said without a legend. The curve is sampled from the same phase its motion uses, so the
+   * drawing and the weaving cannot disagree about which way it is going.
+   *
+   * A FULL SINE along the body, and only about three radii long. The first version bent the tail linearly and
+   * ran to four and a half radii, which came out as a 90-metre wedge -- it read as an arrow, not a fish, and
+   * it was drawn across a quarter of the lane. The head is taken from the same curve rather than placed, so
+   * the eye cannot end up floating beside its own body.
+   */
+  const spark = 0.4 + 0.6 * Math.abs(Math.sin(h.phase * 6));
+  const half = r * 1.6;
+  const bendAt = (t: number): number => Math.sin(h.phase * 2.2 + h.seed + t * Math.PI * 2.2) * r * 0.55;
+  const points: number[] = [];
+  const segments = 10;
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    points.push(h.x - half + t * half * 2, h.y + bendAt(t));
+  }
+  g.poly(points);
+  g.stroke({ color: KIND_TUNING.eel.colour, alpha: 0.9, width: Math.max(1, r * 0.32) });
+  // The head, and the spark that says "electric".
+  const headX = h.x + half;
+  const headY = h.y + bendAt(1);
+  g.circle(headX, headY, r * 0.42).fill({ color: KIND_TUNING.eel.colour, alpha: 0.95 });
+  for (let i = 0; i < 3; i++) {
+    const a = h.phase * 3 + (i / 3) * Math.PI * 2;
+    g.moveTo(headX, headY)
+      .lineTo(headX + Math.cos(a) * r * 0.85, headY + Math.sin(a) * r * 0.85)
+      .stroke({ color: KIND_TUNING.eel.colour, alpha: 0.5 * spark, width: Math.max(1, r * 0.1) });
+  }
+  return;
+}
+
+function drawRot(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * A lumpy mass with bubbles coming off it.
+   *
+   * Drawn as a polygon whose radius wobbles rather than as a circle: it is decaying, so a clean edge would be
+   * the wrong shape. The bubbles are the readable part -- they say "this is rotting" without a word, and they
+   * are the only animated exhaust in the game.
+   */
+  const points: number[] = [];
+  const lobes = 11;
+  for (let i = 0; i < lobes; i++) {
+    const a = (i / lobes) * Math.PI * 2;
+    const wob = 1 + Math.sin(a * 3 + h.phase * 0.7 + h.seed) * 0.16;
+    points.push(h.x + Math.cos(a) * r * wob, h.y + Math.sin(a) * r * wob);
+  }
+  points.push(points[0]!, points[1]!);
+  g.poly(points);
+  g.fill({ color: KIND_TUNING.rot.colour, alpha: 0.72 });
+  for (let i = 0; i < 3; i++) {
+    const p = (h.phase * 0.5 + i * 0.33) % 1;
+    g.circle(h.x + Math.sin(i * 2.3 + h.seed) * r * 0.7, h.y + r * 0.6 + p * r * 2.4, r * (0.1 + p * 0.16)).stroke({
+      color: KIND_TUNING.rot.colour,
+      alpha: 0.5 * (1 - p),
+      width: Math.max(1, r * 0.1),
+    });
+  }
+  return;
+}
+
+function drawOil(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * A flat slick, wider than it is tall, with a sheen across it.
+   *
+   * Wider than tall because that is what makes it read as a SUBSTANCE lying on the water rather than as a
+   * creature swimming in it -- and the sheen line is what says "oil" rather than "rock". It is also the only
+   * hazard that is easier to go around than through, so its silhouette wants to be wide.
+   */
+  const points: number[] = [];
+  const lobes = 13;
+  for (let i = 0; i < lobes; i++) {
+    const a = (i / lobes) * Math.PI * 2;
+    const wob = 1 + Math.sin(a * 4 + h.phase * 0.35 + h.seed) * 0.14;
+    points.push(h.x + Math.cos(a) * r * 1.15 * wob, h.y + Math.sin(a) * r * 0.72 * wob);
+  }
+  points.push(points[0]!, points[1]!);
+  g.poly(points);
+  g.fill({ color: KIND_TUNING.oil.colour, alpha: 0.85 });
+  g.poly(points);
+  g.stroke({ color: KIND_TUNING.oil.colour, alpha: 1, width: Math.max(1, r * 0.16) });
+  // The sheen: one arc across the top, in the only place light would catch a film of oil.
+  g.moveTo(h.x - r * 0.8, h.y + r * 0.25)
+    .quadraticCurveTo(h.x, h.y + r * 0.62, h.x + r * 0.8, h.y + r * 0.25)
+    .stroke({ color: 0xbfe8dd, alpha: 0.5, width: Math.max(1, r * 0.12) });
+  return;
+}
+
+/**
+ * Which function draws which creature.
+ *
+ * Total, like the other per-kind tables: a new kind with no drawing is a compile error rather than a creature that is
+ * invisible and — worse — silently unmissable, since a hazard with no body still has a hitbox.
+ */
+const CREATURE_DRAWING: Record<HazardKind, CreatureDraw> = {
+  fish: drawFish,
+  jelly: drawJelly,
+  trash: drawTrash,
+  crab: drawCrab,
+  urchin: drawUrchin,
+  bombfish: drawBombfish,
+  eel: drawEel,
+  rot: drawRot,
+  oil: drawOil,
+  boss: drawBoss,
+  vent: drawVent,
+  mineral: drawMineral,
+  shrimp: drawShrimp,
+  angler: drawAngler,
+  torpedo: drawTorpedo,
+  zapper: drawZapper,
+  foam: drawFoam,
+  rain: drawRain,
+};
+
 export function paintHazards(
   g: Graphics,
   field: HazardField,
@@ -2723,471 +3248,10 @@ export function paintHazards(
       });
     }
 
-    switch (h.kind) {
-      case 'fish': {
-        /**
-         * Facing its direction of travel; the tail trails behind.
-         *
-         * A fish that is LEAVING faces the way it is going, which is the one case where the direction is a fact
-         * rather than a guess: `flee` says 'left' or 'right' and the body has to agree with it, or the exit reads as
-         * a fish sliding backwards out of frame.
-         */
-        const dir = h.flee ? (h.flee === 'left' ? -1 : 1) : Math.sign(h.x - 0) || 1;
-        g.ellipse(x, y, r * 1.5, r * 0.75).fill({ color: KIND_TUNING.fish.colour, alpha: 0.85 });
-        g.moveTo(x - dir * r * 1.3, y)
-          .lineTo(x - dir * r * 2.2, y - r * 0.6)
-          .lineTo(x - dir * r * 2.2, y + r * 0.6)
-          .closePath()
-          .fill({ color: KIND_TUNING.fish.colour, alpha: 0.6 });
-        // A baited fish gets a blank stare: no eye, just a dot.
-        if (h.baitedUntil > elapsed) {
-          g.circle(x + dir * r * 0.5, y - r * 0.15, r * 0.16).fill({ color: 0xffffff, alpha: 0.9 });
-        } else {
-          g.circle(x + dir * r * 0.7, y - r * 0.1, r * 0.2).fill({ color: 0x08131f, alpha: 0.9 });
-        }
-        break;
-      }
-      case 'jelly': {
-        const squash = 1 + h.squashed * 0.5;
-        g.ellipse(x, y, r * squash, r * (1 / squash)).fill({ color: KIND_TUNING.jelly.colour, alpha: 0.55 });
-        g.ellipse(x, y, r * squash, r * (1 / squash)).stroke({ color: KIND_TUNING.jelly.colour, alpha: 0.95, width: Math.max(1, r * 0.12) });
-        /**
-         * Tentacles trail DOWNWARD behind it -- which means SMALLER world y, not larger.
-         *
-         * `toScreenY` is `cy - (worldY - camera.y) * scale`, so up the screen is +y in world metres. The tentacles were
-         * drawn at `y + r * 0.8 .. y + r * 2.3`, i.e. above the dome, and the jellyfish read as a creature standing on
-         * its tentacles. They hang from the underside of the bell now.
-         */
-        for (let i = -2; i <= 2; i++) {
-          const tx = x + (i / 2) * r * 0.6;
-          const wob = Math.sin(h.phase * 2.4 + i) * r * 0.35;
-          g.moveTo(tx, y - r * 0.8)
-            .lineTo(tx + wob, y - r * 2.3)
-            .stroke({ color: KIND_TUNING.jelly.colour, alpha: 0.5, width: Math.max(1, r * 0.1) });
-        }
-        break;
-      }
-      case 'trash': {
-        const spin = Math.sin(h.phase * 0.9 + h.seed) * 0.25;
-        g.moveTo(x - r, y + r * (0.6 + spin))
-          .lineTo(x + r * 0.9, y + r * (0.8 - spin))
-          .lineTo(x + r * 0.7, y - r * 0.9)
-          .lineTo(x - r * 0.8, y - r * 0.7)
-          .closePath()
-          .fill({ color: KIND_TUNING.trash.colour, alpha: 0.7 });
-        g.moveTo(x - r * 0.6, y - r * 0.6)
-          .lineTo(x + r * 0.5, y - r * 0.5)
-          .stroke({ color: 0x6d5232, alpha: 0.8, width: Math.max(1, r * 0.14) });
-        break;
-      }
-      case 'crab': {
-        // TELEGRAPH FIRST: a visible arc showing exactly where the player will be thrown.
-        if (h.fuse > 0) {
-          const progress = 1 - h.fuse / hazardTuning.crabFuseSeconds;
-          const arcTop = y + hazardTuning.crabLaunchMps * hazardTuning.crabApexSeconds * progress;
-          g.moveTo(x, y)
-            .quadraticCurveTo(x, (y + arcTop) / 2 + r * 3, x, arcTop)
-            .stroke({ color: 0xffd479, alpha: 0.15 + progress * 0.5, width: Math.max(1, r * 0.18) });
-          // Sand puffs while it winds up.
-          for (let i = 0; i < 3; i++) {
-            const p = (h.phase * 1.8 + i * 0.33) % 1;
-            g.circle(x + Math.sin(i * 2.1) * r * 1.4, y - r * 0.5 - p * r * 2.2, r * (0.16 + p * 0.2)).fill({
-              color: 0xd9c39a,
-              alpha: 0.3 * (1 - p),
-            });
-          }
-        }
-        g.ellipse(x, y, r * 1.35, r * 0.95).fill({ color: KIND_TUNING.crab.colour, alpha: 0.9 });
-        // Claws, plus legs that flail after firing.
-        const flail = h.fired ? Math.sin(elapsed * 14) * 0.6 : 0;
-        for (const side of [-1, 1]) {
-          g.circle(x + side * r * 1.35, y - r * 0.3, r * 0.4).stroke({ color: KIND_TUNING.crab.colour, alpha: 0.9, width: Math.max(1, r * 0.16) });
-          for (let i = -1; i <= 1; i++) {
-            g.moveTo(x + side * r * 0.9, y + r * 0.5)
-              .lineTo(x + side * r * 1.7, y + r * (1.1 + i * 0.3) + flail * r * 0.6)
-              .stroke({ color: KIND_TUNING.crab.colour, alpha: 0.75, width: Math.max(1, r * 0.13) });
-          }
-        }
-        break;
-      }
-      case 'urchin': {
-        /**
-         * A dark ball of needles, rotating slowly.
-         *
-         * SHAPE is the whole message: at the size this reads on a phone, a ball with spikes is unmistakable against
-         * every other silhouette in the game, and the eye picks it up before any colour does. Which is what a
-         * hazard the player must DECIDE about needs -- being surprised by an urchin is not a decision.
-         *
-         * The needles are the same colour at full opacity over a dimmer body rather than a second colour, so the
-         * one entry in KIND_TUNING still describes the whole creature.
-         */
-        const spin = h.phase * 0.35 + h.seed;
-        g.circle(x, y, r * 0.92).fill({ color: KIND_TUNING.urchin.colour, alpha: 0.55 });
-        const needles = 11;
-        for (let i = 0; i < needles; i++) {
-          const a = (i / needles) * Math.PI * 2 + spin;
-          g.moveTo(x + Math.cos(a) * r * 0.7, y + Math.sin(a) * r * 0.7)
-            .lineTo(x + Math.cos(a) * r * 1.55, y + Math.sin(a) * r * 1.55)
-            .stroke({ color: KIND_TUNING.urchin.colour, alpha: 0.95, width: Math.max(1, r * 0.16) });
-        }
-        g.circle(x, y, r * 0.95).stroke({ color: KIND_TUNING.urchin.colour, alpha: 1, width: Math.max(1, r * 0.2) });
-        break;
-      }
-      case 'vent': {
-        /**
-         * A black smoker: a rock chimney with a plume, and the plume is the hazard.
-         *
-         * The reading order is deliberate. The CHIMNEY is always drawn (it is terrain, and terrain does not flicker).
-         * The PLUME is drawn only while it is erupting, in a colour that brightens through the warning, so "is it
-         * dangerous right now" is answered by whether the column is there at all -- the one question the player has to
-         * be able to answer at a glance, since getting it wrong is death.
-         */
-        const cfg = mech.hazards.vent;
-        const erupting = h.phase < cfg.activeSeconds;
-        const warning = h.phase > cfg.periodSeconds - cfg.warnSeconds;
-        // The chimney: a dark cone standing on the seabed.
-        g.moveTo(x - r, y)
-          .lineTo(x - r * 0.35, y + r * 2.2)
-          .lineTo(x + r * 0.35, y + r * 2.2)
-          .lineTo(x + r, y)
-          .closePath()
-          .fill({ color: cfg.plumeColour, alpha: 1 });
-        const top = y + r * 2.2;
-        const height = laneWidth * 1.5;
-        if (erupting || warning) {
-          const heat = erupting ? 1 : 0.35;
-          // Smoke, widening as it rises, so the column reads as a column rather than as a bar.
-          g.moveTo(x - r * 0.4, top)
-            .lineTo(x - r * 1.25, top + height)
-            .lineTo(x + r * 1.25, top + height)
-            .lineTo(x + r * 0.4, top)
-            .closePath()
-            .fill({ color: cfg.plumeColour, alpha: 0.5 * heat });
-          g.moveTo(x - r * 0.25, top)
-            .lineTo(x - r * 0.9, top + height)
-            .lineTo(x + r * 0.9, top + height)
-            .lineTo(x + r * 0.25, top)
-            .closePath()
-            .fill({ color: cfg.glowColour, alpha: 0.35 * heat });
-        }
-        /**
-         * The dangerous WIDTH, drawn as two edges while the plume is up.
-         *
-         * This is the line the player actually steers by: the smoke is decoration, and a lethal hitbox that is only
-         * implied by decoration is the one kind of unfair this level cannot afford.
-         */
-        if (erupting) {
-          for (const side of [-1, 1]) {
-            g.moveTo(x + side * r, top)
-              .lineTo(x + side * r * 1.25, top + height)
-              .stroke({ color: cfg.edgeColour, alpha: cfg.edgeAlpha, width: Math.max(1, r * 0.12) });
-          }
-        }
-        break;
-      }
-
-      case 'foam': {
-        /**
-         * Foam, drawn as a bubble much like the player's own.
-         *
-         * That is the point of it: the level's interference is that the player cannot tell at a glance which bubble is
-         * theirs. It is deliberately paler and softer-edged than the real one -- a fair version of the trick, because a
-         * decoy that was pixel-identical would be a lie rather than a puzzle.
-         */
-        const fc = mech.hazards.foam;
-        g.circle(x, y, r).fill({ color: fc.colour, alpha: fc.alpha });
-        g.circle(x, y, r).stroke({ color: fc.rimColour, alpha: fc.rimAlpha, width: Math.max(1, r * 0.1) });
-        // A few smaller bubbles clinging to it, which is what foam actually looks like.
-        for (const [ox, oy, scale] of [[0.8, 0.6, 0.35], [-0.7, 0.5, 0.28], [0.2, -0.9, 0.24]]) {
-          g.circle(x + r * ox, y + r * oy, r * scale).fill({ color: fc.colour, alpha: fc.alpha * 0.8 });
-        }
-        break;
-      }
-      case 'rain': {
-        // A drop: a short vertical streak, because the direction of the threat has to be readable in one frame.
-        const rc = mech.hazards.rain;
-        const len = laneWidth * rc.lengthRatio;
-        g.moveTo(x, y + len).lineTo(x, y).stroke({ color: rc.colour, alpha: 0.75, width: Math.max(1, r * 1.2) });
-        g.circle(x, y, r).fill({ color: rc.colour, alpha: 0.95 });
-        break;
-      }
-      case 'zapper': {
-        /**
-         * An electric jellyfish: a violet bell, a few thick tentacles, and the discharge ring.
-         *
-         * The ring is drawn at exactly the radius the hitbox uses (`ringRadiusRatio`), which is the rule this project
-         * keeps everywhere: what the player aims at and what the game tests are the same number, or the picture is a
-         * lie. It fades as it expires, so "how much of it is left" is answerable from the picture alone.
-         */
-        const zc = mech.hazards.zapper;
-        const ring = laneWidth * zc.ringRadiusRatio;
-        g.ellipse(x, y, r, r * 0.85).fill({ color: zc.bellColour, alpha: 0.85 });
-        g.ellipse(x, y, r, r * 0.85).stroke({ color: 0xffffff, alpha: 0.5, width: Math.max(1, r * 0.12) });
-        for (const offset of [-0.5, 0, 0.5]) {
-          g.moveTo(x + r * offset, y - r * 0.5)
-            .lineTo(x + r * offset * 1.6 + Math.sin(elapsed * 1.5 + offset * 4) * r * 0.3, y - r * 2.4)
-            .stroke({ color: zc.bellColour, alpha: 0.7, width: Math.max(1, r * 0.14) });
-        }
-        if (h.discharge > 0) {
-          const left = Math.max(0, Math.min(1, h.discharge / Math.max(0.01, zc.ringSeconds)));
-          g.circle(x, y, ring * (0.4 + 0.6 * (1 - left))).stroke({
-            color: zc.ringColour,
-            alpha: zc.ringAlpha * left,
-            width: Math.max(1, r * 0.35 * (0.4 + left)),
-          });
-          g.circle(x, y, ring * 0.55).fill({ color: zc.ringColour, alpha: 0.12 * left });
-        }
-        break;
-      }      case 'mineral': {
-        // Grit: a hot speck with a short bright tail behind it, so its UPWARD direction is unmistakable.
-        g.circle(x, y - r * 1.6, r * 1.6).fill({ color: mech.hazards.vent.edgeColour, alpha: 0.25 });
-        g.circle(x, y, r).fill({ color: KIND_TUNING.mineral.colour, alpha: 1 });
-        g.circle(x, y, r * 1.9).stroke({ color: mech.hazards.vent.edgeColour, alpha: 0.5, width: Math.max(1, r * 0.35) });
-        break;
-      }
-      case 'shrimp': {
-        // A pale, blind drifter: a curved body, no eyes, and antennae that read as "feeling its way".
-        g.ellipse(x, y, r * 1.5, r * 0.85).fill({ color: KIND_TUNING.shrimp.colour, alpha: 0.95 });
-        g.moveTo(x - r * 1.4, y + r * 0.2)
-          .lineTo(x - r * 2.3, y - r * 0.3)
-          .lineTo(x - r * 2.4, y + r * 0.5)
-          .closePath()
-          .fill({ color: KIND_TUNING.shrimp.colour, alpha: 0.8 });
-        for (const tilt of [-0.35, 0.35]) {
-          g.moveTo(x + r * 1.2, y + r * tilt)
-            .lineTo(x + r * 2.6, y + r * tilt * 2.4)
-            .stroke({ color: KIND_TUNING.shrimp.colour, alpha: 0.7, width: Math.max(1, r * 0.16) });
-        }
-        break;
-      }
-      case 'angler': {
-        /**
-         * A lanternfish: a dark body and a lit lure on a stalk in front of it.
-         *
-         * The lure is drawn LAST and brightest -- it is the thing the player's eye goes to, which is exactly the trap.
-         * It hangs on the side the creature will lunge toward, so the bait already points the way it is going to come.
-         */
-        const cfg = mech.hazards.angler;
-        const facing = h.x < laneWidth * 0.5 ? 1 : -1;
-        g.ellipse(x, y, r * 1.4, r * 0.95).fill({ color: KIND_TUNING.angler.colour, alpha: 1 });
-        g.moveTo(x - facing * r * 1.2, y)
-          .lineTo(x - facing * r * 2.2, y - r * 0.6)
-          .lineTo(x - facing * r * 2.2, y + r * 0.6)
-          .closePath()
-          .fill({ color: KIND_TUNING.angler.colour, alpha: 0.9 });
-        // Teeth, because a lunge has to be advertised as a mouth and not as a nudge.
-        for (const step of [-0.4, 0, 0.4]) {
-          g.moveTo(x + facing * r * 1.3, y + r * step)
-            .lineTo(x + facing * r * 1.7, y + r * step + r * 0.16)
-            .stroke({ color: 0xffffff, alpha: 0.7, width: Math.max(1, r * 0.12) });
-        }
-        const lurePulse = 1 + 0.18 * Math.sin(elapsed * cfg.lurePulsePerSecond * Math.PI * 2);
-        const lx = x + facing * r * cfg.lureOffsetRatio * 2.4;
-        const ly = y - r * 1.5;
-        g.moveTo(x + facing * r * 0.8, y - r * 0.7)
-          .lineTo(lx, ly)
-          .stroke({ color: cfg.lureColour, alpha: 0.55, width: Math.max(1, r * 0.1) });
-        g.circle(lx, ly, laneWidth * cfg.lureRadiusRatio * 3 * lurePulse).fill({ color: cfg.lureColour, alpha: 0.16 });
-        g.circle(lx, ly, laneWidth * cfg.lureRadiusRatio * lurePulse).fill({ color: cfg.lureColour, alpha: 0.95 });
-        break;
-      }
-      case 'torpedo': {
-        /**
-         * A torpedo: a metal cylinder with a lit nose, pointing the way it is going.
-         *
-         * `fed` tells the painter which half of its life it is in, so the LOOK changes when it turns -- the dive light
-         * goes from white to red. That is the only warning the player gets that a dodged round is now a pursuer, and
-         * without it the turn is invisible.
-         */
-        const cfg = mech.hazards.torpedo;
-        const homing = h.fed >= cfg.runMeters;
-        // No transform stack on a Graphics in this project: the body is drawn along the lane and the FIN carries the
-        // tilt, which is enough to read a turn without a rotation.
-        const droop = homing ? r * 0.5 : 0;
-        g.roundRect(x - r * 1.7, y - r * 0.55, r * 3.4, r * 1.1, r * 0.5).fill({ color: KIND_TUNING.torpedo.colour, alpha: 1 });
-        g.moveTo(x + r * 1.7, y - r * 0.55).lineTo(x + r * 2.4, y).lineTo(x + r * 1.7, y + r * 0.55).closePath().fill({ color: 0xc9d4de, alpha: 1 });
-        g.circle(x + r * 1.9, y, r * 0.34).fill({ color: homing ? 0xff5a5a : 0xdff3ff, alpha: 1 });
-        // A tail flame while it is running, which is the "it is coming" half of the warning.
-        g.moveTo(x - r * 1.7, y)
-          .lineTo(x - r * (homing ? 3.4 : 2.6), y + droop)
-          .stroke({ color: homing ? 0xff8a5a : 0xa8d8ff, alpha: 0.6, width: Math.max(1, r * 0.4) });
-        if (homing) {
-          // The turn itself, drawn: two fins that were flat while it ran and are swept back once it is hunting.
-          for (const side of [-1, 1]) {
-            g.moveTo(x - r * 1.2, y + side * r * 0.5)
-              .lineTo(x - r * 2.2, y + side * r * 1.4)
-              .lineTo(x - r * 0.6, y + side * r * 0.6)
-              .closePath()
-              .fill({ color: KIND_TUNING.torpedo.colour, alpha: 0.9 });
-          }
-        }
-        break;
-      }
-      case 'boss': {
-        /**
-         * The boss: a heavy armoured body with an eye, drawn BIG and unmistakable.
-         *
-         * It borrows the fish's silhouette on purpose -- it should read as "a creature, and much larger" rather than as
-         * a different order of thing -- and adds two marks that only it has: a plated shell and a single lit eye. The
-         * colour comes from the instance when the level set one (`tint`), so two levels do not look like the same
-         * monster.
-         */
-        const cfg = mech.hazards.boss;
-        const body = h.tint ?? cfg.colour;
-        const flash = h.hitFlash > 0;
-        g.ellipse(x, y, r * 1.35, r * 1.05).fill({ color: flash ? cfg.hitFlashColour : body, alpha: flash ? 0.85 : 1 });
-        // Armour plates: three bands across the back, which is what makes it look like it can take a hit.
-        for (const band of [-0.45, 0, 0.45]) {
-          g.moveTo(x - r * 1.2, y + r * band * 0.8)
-            .lineTo(x + r * 1.2, y + r * band * 0.8)
-            .stroke({ color: cfg.armourColour, alpha: 0.75, width: Math.max(1, r * 0.16) });
-        }
-        // A jaw, so the front is not ambiguous.
-        g.moveTo(x + r * 1.2, y - r * 0.5)
-          .lineTo(x + r * 1.75, y)
-          .lineTo(x + r * 1.2, y + r * 0.5)
-          .closePath()
-          .fill({ color: cfg.armourColour, alpha: 0.9 });
-        g.circle(x + r * 0.55, y + r * 0.1, r * 0.24).fill({ color: cfg.eyeColour, alpha: 1 });
-        // A weak-point ring: the game's way of saying "this is the thing to shoot".
-        g.circle(x, y, r * 1.06).stroke({
-          color: cfg.eyeColour,
-          alpha: 0.5,
-          width: Math.max(1, laneWidth * cfg.weakPointWidthRatio),
-        });
-        break;
-      }
-      case 'bombfish': {
-        /**
-         * A round, heavy fish with a stub of fuse, which is the whole joke: it looks like a bomb.
-         *
-         * The stub is NOT drawn burning: it has no timer of its own. While it hunts, the timer is the ARMING ring
-         * below; while it is inside the player, the countdown is drawn on the bubble (see `Game.drawStomach`).
-         */
-        /**
-         * A LIT FUSE, drawn around the body: a ring that closes in as the clock runs out.
-         *
-         * The same language the crab's launch arc uses -- a threat states its own timing, so the player never has to
-         * guess whether this one is about to go off. Inside the case rather than as a general overlay because only one
-         * kind has an external fuse.
-         */
-        if (h.blastFuse !== null) {
-          const total = Math.max(0.01, mech.hazards.bombfish.fuseSeconds);
-          const left = Math.max(0, Math.min(1, h.blastFuse / total));
-          const pulse = 0.75 + 0.25 * Math.sin(elapsed * 22);
-          g.circle(x, y, r * (1.3 + 1.6 * (1 - left))).stroke({
-            color: KIND_TUNING.bombfish.colour,
-            alpha: (0.35 + 0.5 * (1 - left)) * pulse,
-            width: Math.max(1, r * 0.22),
-          });
-        }
-        g.ellipse(x, y, r * 1.25, r * 1.1).fill({ color: KIND_TUNING.bombfish.colour, alpha: 0.9 });
-        // A stubby tail, so it still reads as a fish rather than as a ball.
-        g.moveTo(x - r * 1.1, y)
-          .lineTo(x - r * 2.1, y - r * 0.55)
-          .lineTo(x - r * 2.1, y + r * 0.55)
-          .closePath()
-          .fill({ color: KIND_TUNING.bombfish.colour, alpha: 0.65 });
-        // The fuse: a short stub off the top, in a dull cord colour, with the cap it will be lit from.
-        g.moveTo(x, y + r * 1.0)
-          .lineTo(x + r * 0.25, y + r * 1.75)
-          .stroke({ color: 0x8a7a5c, alpha: 0.9, width: Math.max(1, r * 0.16) });
-        g.circle(x + r * 0.25, y + r * 1.85, r * 0.16).fill({ color: 0xe8d9b0, alpha: 0.9 });
-        g.circle(x + r * 0.75, y + r * 0.1, r * 0.18).fill({ color: 0x08131f, alpha: 0.9 });
-        break;
-      }
-      case 'eel': {
-        /**
-         * A long thin body in an S, with a spark at the head.
-         *
-         * The only creature drawn as a LINE rather than a blob, which is the point: at a glance the silhouette has
-         * to say "this is the one that does something to my hands", and a shape nothing else in the water shares is
-         * how that gets said without a legend. The curve is sampled from the same phase its motion uses, so the
-         * drawing and the weaving cannot disagree about which way it is going.
-         *
-         * A FULL SINE along the body, and only about three radii long. The first version bent the tail linearly and
-         * ran to four and a half radii, which came out as a 90-metre wedge -- it read as an arrow, not a fish, and
-         * it was drawn across a quarter of the lane. The head is taken from the same curve rather than placed, so
-         * the eye cannot end up floating beside its own body.
-         */
-        const spark = 0.4 + 0.6 * Math.abs(Math.sin(h.phase * 6));
-        const half = r * 1.6;
-        const bendAt = (t: number): number => Math.sin(h.phase * 2.2 + h.seed + t * Math.PI * 2.2) * r * 0.55;
-        const points: number[] = [];
-        const segments = 10;
-        for (let i = 0; i <= segments; i++) {
-          const t = i / segments;
-          points.push(x - half + t * half * 2, y + bendAt(t));
-        }
-        g.poly(points);
-        g.stroke({ color: KIND_TUNING.eel.colour, alpha: 0.9, width: Math.max(1, r * 0.32) });
-        // The head, and the spark that says "electric".
-        const headX = x + half;
-        const headY = y + bendAt(1);
-        g.circle(headX, headY, r * 0.42).fill({ color: KIND_TUNING.eel.colour, alpha: 0.95 });
-        for (let i = 0; i < 3; i++) {
-          const a = h.phase * 3 + (i / 3) * Math.PI * 2;
-          g.moveTo(headX, headY)
-            .lineTo(headX + Math.cos(a) * r * 0.85, headY + Math.sin(a) * r * 0.85)
-            .stroke({ color: KIND_TUNING.eel.colour, alpha: 0.5 * spark, width: Math.max(1, r * 0.1) });
-        }
-        break;
-      }
-      case 'rot': {
-        /**
-         * A lumpy mass with bubbles coming off it.
-         *
-         * Drawn as a polygon whose radius wobbles rather than as a circle: it is decaying, so a clean edge would be
-         * the wrong shape. The bubbles are the readable part -- they say "this is rotting" without a word, and they
-         * are the only animated exhaust in the game.
-         */
-        const points: number[] = [];
-        const lobes = 11;
-        for (let i = 0; i < lobes; i++) {
-          const a = (i / lobes) * Math.PI * 2;
-          const wob = 1 + Math.sin(a * 3 + h.phase * 0.7 + h.seed) * 0.16;
-          points.push(x + Math.cos(a) * r * wob, y + Math.sin(a) * r * wob);
-        }
-        points.push(points[0]!, points[1]!);
-        g.poly(points);
-        g.fill({ color: KIND_TUNING.rot.colour, alpha: 0.72 });
-        for (let i = 0; i < 3; i++) {
-          const p = (h.phase * 0.5 + i * 0.33) % 1;
-          g.circle(x + Math.sin(i * 2.3 + h.seed) * r * 0.7, y + r * 0.6 + p * r * 2.4, r * (0.1 + p * 0.16)).stroke({
-            color: KIND_TUNING.rot.colour,
-            alpha: 0.5 * (1 - p),
-            width: Math.max(1, r * 0.1),
-          });
-        }
-        break;
-      }
-      case 'oil': {
-        /**
-         * A flat slick, wider than it is tall, with a sheen across it.
-         *
-         * Wider than tall because that is what makes it read as a SUBSTANCE lying on the water rather than as a
-         * creature swimming in it -- and the sheen line is what says "oil" rather than "rock". It is also the only
-         * hazard that is easier to go around than through, so its silhouette wants to be wide.
-         */
-        const points: number[] = [];
-        const lobes = 13;
-        for (let i = 0; i < lobes; i++) {
-          const a = (i / lobes) * Math.PI * 2;
-          const wob = 1 + Math.sin(a * 4 + h.phase * 0.35 + h.seed) * 0.14;
-          points.push(x + Math.cos(a) * r * 1.15 * wob, y + Math.sin(a) * r * 0.72 * wob);
-        }
-        points.push(points[0]!, points[1]!);
-        g.poly(points);
-        g.fill({ color: KIND_TUNING.oil.colour, alpha: 0.85 });
-        g.poly(points);
-        g.stroke({ color: KIND_TUNING.oil.colour, alpha: 1, width: Math.max(1, r * 0.16) });
-        // The sheen: one arc across the top, in the only place light would catch a film of oil.
-        g.moveTo(x - r * 0.8, y + r * 0.25)
-          .quadraticCurveTo(x, y + r * 0.62, x + r * 0.8, y + r * 0.25)
-          .stroke({ color: 0xbfe8dd, alpha: 0.5, width: Math.max(1, r * 0.12) });
-        break;
-      }
-    }
+    /**
+     * One lookup instead of eighteen cases: see `CREATURE_DRAWING`. Only reached when the creature has no picture.
+     */
+    CREATURE_DRAWING[h.kind](g, h, r, laneWidth, elapsed);
   }
 
   /**
