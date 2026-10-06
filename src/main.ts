@@ -9,7 +9,7 @@ import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, SKILLS, type Skill, type SkillId } from './skills';
-import { audio } from './audio';
+import { audio, type SoundEvent } from './audio';
 import { Score } from './score';
 import { NumberPopups } from './numberPopups';
 import { canEatHazard, hazardMass, massFromEating, volumeTier } from './consumption';
@@ -63,6 +63,32 @@ import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius, drain
 
 /** The three ways a bubble can be born (design round 5). Effects land in D4; here it is flavour. */
 const SEEDS = ['鱼屁泡', '汽水泡', '深海淤泥泡'] as const;
+
+/**
+ * What a frame of the run SAYS, queued instead of said.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THE RULES DO NOT TOUCH THE SCREEN
+ * ---------------------------------------------------------------------------------------------
+ * A rule that decides something -- a crate broke, a fish was driven off, the heart ran out -- also knows what that
+ * should SOUND and LOOK like, and the shortest way to write that is to call the label and the synth from where the
+ * decision is made. That is what this file did in sixty-three places, and it is the reason the rules cannot be moved
+ * out of the class that owns the canvas: a rule holding a reference to a `Text` object is a rule that needs a renderer.
+ *
+ * So they push one of these instead. `applyRunEvents` is the only code that touches the display, and it runs
+ * immediately after the step that produced them -- so a hit still sounds on the frame it happened, and a banner is
+ * still on screen for the frame it was raised in.
+ *
+ * The same shape the particles have used since they were written (a queue the simulation fills and the presentation
+ * drains), applied to everything a run has to say rather than to sparks alone. It is also what makes the run's output
+ * inspectable: a probe can read this list instead of asking a label what it currently contains.
+ */
+type RunEvent =
+  | { kind: 'banner'; text: string }
+  | { kind: 'sound'; event: SoundEvent; intensity: number }
+  | { kind: 'scorePopup'; x: number; y: number; points: number }
+  | { kind: 'damagePopup'; x: number; y: number; amount: number }
+  | { kind: 'skillSlot'; carried: boolean };
 
 const INTRO_SECONDS = 1.6;
 /**
@@ -412,7 +438,7 @@ class Game {
     endOverload(this.rage);
     this.burst = { radius, seconds: 0, kills, pushes };
     this.bursts++;
-    audio.play('crab');
+    this.sound('crab');
   }
 
   /** The burst radius for the current rage: linear from the base at zero to the maximum at full. */
@@ -1121,7 +1147,7 @@ class Game {
        */
       if (this.tierBonus > tierBefore) {
         this.banner(`消化 · 可吞等级 +${this.tierBonus}  ·  体积仍 ${this.player.volume.toFixed(1)}`);
-        audio.play('skill');
+        this.sound('skill');
       }
     }
 
@@ -1129,7 +1155,7 @@ class Game {
     // what puts an over-eating fuse out.
     if (tick.completed) {
       this.digested += tick.completed.length;
-      audio.play('absorb', 0.5);
+      this.sound('absorb', 0.5);
     }
 
     /**
@@ -1169,8 +1195,8 @@ class Game {
 
     if (tick.detonations) {
       this.lastComedyBeat = { what: tick.detonations[0]!.kind, at: this.elapsed };
-      audio.play('hit');
-      audio.play('pop');
+      this.sound('hit');
+      this.sound('pop');
       this.banner(`胃里炸了  ·  ${tick.detonations.length} 颗  ·  炸弹鱼不能留`);
     }
 
@@ -1182,7 +1208,7 @@ class Game {
      */
     if (tick.shocks > 0) {
       this.player.applyMisfire(tick.shocks);
-      audio.play('slow');
+      this.sound('slow');
       this.lastComedyBeat = { what: 'eel', at: this.elapsed };
     }
 
@@ -1211,7 +1237,7 @@ class Game {
       if (attempt.outcome === 'clogged') {
         this.spitClogs++;
         this.banner('油污卡住了  ·  吐不出来，只能压下去');
-audio.play('hit');
+this.sound('hit');
       }
       return;
     }
@@ -1251,7 +1277,7 @@ audio.play('hit');
       age: 0,
     });
     this.spitFlash = 1;
-    audio.play('pop');
+    this.sound('pop');
   }
 
   /**
@@ -1320,10 +1346,10 @@ audio.play('hit');
      * and firing the cue per round would turn one stutter into a burst of clicks. Its volume is its own config key
      * because it is the rhythm rather than the information: the hit should be the one that stands out.
      */
-    if (shots.fired > 0) audio.play('bulletFire', mech.audio.bulletFireVolume);
+    if (shots.fired > 0) this.sound('bulletFire', mech.audio.bulletFireVolume);
     if (shots.hits > 0) {
       const volume = mech.audio.bulletHitVolume;
-      audio.play('bulletHit', shots.drivenOff > 0 ? Math.min(1, volume * 1.4) : volume);
+      this.sound('bulletHit', shots.drivenOff > 0 ? Math.min(1, volume * 1.4) : volume);
     }
     /**
      * Points for the kill, told apart from the hit: the ledger is meant to show which act paid, not just that the
@@ -1333,7 +1359,7 @@ audio.play('hit');
     if (shots.drivenOff > 0) {
       const points = this.score.award('drivenOff', shots.drivenOff);
       // Divided by the count so the numbers on screen add up to what the ledger recorded, whatever the config says.
-      for (const at of shots.driven) this.popups.add(at.x, at.y, points / shots.drivenOff, this.camera);
+      for (const at of shots.driven) this.scorePopup(at.x, at.y, points / shots.drivenOff);
     }
     /**
      * And what each round TOOK OFF, at the creature it landed on.
@@ -1346,7 +1372,7 @@ audio.play('hit');
      * events, and the count is the thing the player is reading. Its own style makes it smaller and shorter-lived than a
      * score number, because this is a RATE and the score is an event.
      */
-    for (const at of shots.struck) this.damagePopups.add(at.x, at.y, at.amount, this.camera);
+    for (const at of shots.struck) this.damagePopup(at.x, at.y, at.amount);
   }
 
   /**
@@ -1370,7 +1396,7 @@ audio.play('hit');
     const live = this.phase === 'playing';
     if (live) {
       for (const shot of shots) {
-        audio.play('hit', 0.25);
+        this.sound('hit', 0.25);
         this.enemyBullets.fire(shot.kind, shot.x, shot.y, this.player.x * laneWidth, this.player.y, laneWidth);
       }
     }
@@ -1418,7 +1444,7 @@ audio.play('hit');
       const obstacleHit = this.obstacles.hitByProjectile(p.x, p.y, hitRadius, spitImpact(p.kind));
       if (obstacleHit) {
         this.spitHits++;
-        if (obstacleHit.broke) audio.play('hit');
+        if (obstacleHit.broke) this.sound('hit');
         spent = true;
       }
 
@@ -1440,7 +1466,7 @@ audio.play('hit');
          */
         this.shoveFromProjectile(p, h, dx, dy);
         this.spitHits++;
-        audio.play('hit');
+        this.sound('hit');
 
         /**
          * An explosive round keeps going off after the first thing it touches.
@@ -1460,7 +1486,7 @@ audio.play('hit');
             // second projectile arriving.
             this.shoveFromProjectile(p, other, ox, oy);
           }
-          audio.play('crab');
+          this.sound('crab');
         }
         spent = true;
         break;
@@ -2071,6 +2097,7 @@ audio.play('hit');
     let steps = 0;
     while (this.accumulator >= step && steps < 8) {
       this.step(step);
+      this.applyRunEvents();
       this.accumulator -= step;
       steps++;
     }
@@ -2606,7 +2633,7 @@ audio.play('hit');
       if (pickup.kind === 'upgrade') {
         const before = this.gunStreams;
         this.gunStreams = Math.min(mech.bullets.maxStreams, this.gunStreams + 1);
-        audio.play('skill');
+        this.sound('skill');
         this.banner(
           this.gunStreams > before
             ? `火力升级  ·  ${this.gunStreams} 排小泡泡同时发射`
@@ -2622,7 +2649,7 @@ audio.play('hit');
          */
         const before = this.rateTier;
         this.rateTier = Math.min(mech.bullets.rateTiers.length, this.rateTier + 1);
-        audio.play('skill');
+        this.sound('skill');
         this.banner(
           this.rateTier > before
             ? `射速升级  ·  第 ${this.rateTier} 档  ·  每秒 ${mech.bullets.rateTiers[this.rateTier - 1]} 发`
@@ -2635,7 +2662,7 @@ audio.play('hit');
       // A special item is worth points because it is the level's one pure reward: everything else in the water is
       // either an obstacle or something that hurts. It floats up from WHERE IT WAS PICKED UP, which is this feature's
       // own example of what the numbers are for.
-      this.popups.add(pickup.x, pickup.y, this.score.award('skill'), this.camera);
+      this.scorePopup(pickup.x, pickup.y, this.score.award('skill'));
       this.pickupDrops.splice(i, 1);
     }
   }
@@ -2765,7 +2792,7 @@ audio.play('hit');
       }
       if (e.blast) {
         this.explosions.push({ x: e.blast.x, y: e.blast.y, radius: e.blast.radius, age: 0 });
-        audio.play('pop');
+        this.sound('pop');
         this.lastComedyBeat = { what: e.kind, at: this.elapsed };
         // The shake is the loudness of the thing: a blast is the only event in the game that moves the SCREEN.
         const shake = mech.hazards.bombfish;
@@ -2797,7 +2824,7 @@ audio.play('hit');
         // and slower for it), so a score that ignored it would price the safe play above the interesting one. The
         // number appears at the BUBBLE, which is where the creature was when it was swallowed -- a contact is a
         // touching distance, so the difference is a radius.
-        this.popups.add(this.player.x * laneWidth, this.player.y, this.score.award('eaten'), this.camera);
+        this.scorePopup(this.player.x * laneWidth, this.player.y, this.score.award('eaten'));
         this.invulnerable = Math.max(this.invulnerable, mech.consumption.eatInvulnerableSeconds);
         /**
          * What was swallowed goes into the stomach, carrying THE VOLUME IT ACTUALLY ADDED.
@@ -2811,7 +2838,7 @@ audio.play('hit');
          * than ignored, because the two checks living in different files is exactly the kind of thing that drifts.
          */
         this.stomach.swallow(e.kind, this.player.volume - beforeEating, stomachEffect(e.kind));
-        audio.play('pop');
+        this.sound('pop');
         continue;
       }
 
@@ -2824,7 +2851,7 @@ audio.play('hit');
       }
       if (e.slowSeconds && e.slowFactor) {
         this.player.applySlow(e.slowSeconds, e.slowFactor);
-        audio.play('slow');
+        this.sound('slow');
       }
       if (e.impulse) {
         /**
@@ -2843,7 +2870,7 @@ audio.play('hit');
         this.player.impulseVy = Math.max(this.player.impulseVy, asScreenFraction);
         this.lastComedyBeat = { what: 'crab', at: this.elapsed };
         // The crab is the one hazard that can HELP, so it gets an upward cue rather than a thud.
-        audio.play('crab');
+        this.sound('crab');
       }
       if (e.drainPerSecond) {
         // Continuous, so it is applied as a fraction of a hit point per second rather than as whole
@@ -2877,7 +2904,7 @@ audio.play('hit');
     this.skill = { id, name: skill.name, uses: skill.uses };
     // The on-screen button appears only while a skill is carried, so the empty state is genuinely
     // empty rather than a greyed-out control competing for attention.
-    this.touch.setHasSkill(true);
+    this.skillSlot(true);
     return displaced;
   }
 
@@ -2969,10 +2996,10 @@ audio.play('hit');
     this.skill.uses -= 1;
     if (this.skill.uses <= 0) {
       this.skill = null;
-      this.touch.setHasSkill(false);
+      this.skillSlot(false);
     }
     this.skillActivations++;
-    audio.play('skill');
+    this.sound('skill');
     return true;
   }
 
@@ -3025,7 +3052,7 @@ audio.play('hit');
     }
     this.lastComedyBeat = { what: 'fish', at: this.elapsed };
     // Deliberately silly, because the talent is a joke and should sound like one.
-    audio.play('fart');
+    this.sound('fart');
   }
 
   /**
@@ -3057,7 +3084,7 @@ audio.play('hit');
     // A banner and a sound for each beat. No hazards: the level's timeline already placed them, and the
     // job here is to tell the player what they are swimming into.
     this.banner(`${label}  ·  ${EVENT_CALLOUTS[index] ?? ''}`.trim());
-audio.play('skill');
+this.sound('skill');
   }
 
   /**
@@ -3156,7 +3183,7 @@ audio.play('skill');
     );
     if (contact.hit?.broke) {
       this.lastComedyBeat = { what: 'crab', at: this.elapsed };
-      audio.play('hit');
+      this.sound('hit');
       /**
        * Breaking something LARGE is one of the document's ways to release the rage, and it is checked here because
        * this is the only place that knows what was broken.
@@ -3254,15 +3281,15 @@ audio.play('skill');
             this.player.stageSpeedMultiplier = this.stage.speedMultiplier;
             this.invulnerable = Math.max(this.invulnerable, mech.stages.growInvulnerableSeconds);
             this.banner(`${stageName(this.stage.stage)}  ·  ${this.stage.stage} 阶段  ·  速度 ×${this.stage.speedMultiplier.toFixed(2)}`);
-            audio.play('skill');
+            this.sound('skill');
           }
         } else {
           const points = this.score.award('absorb');
-          if (points > 0) this.popups.add(b.x, b.y, points, this.camera);
+          if (points > 0) this.scorePopup(b.x, b.y, points);
         }
         this.stats.absorbed++;
         eaten++;
-        audio.play('absorb', Math.min(1, bubbleR / Math.max(1e-6, playerR)));
+        this.sound('absorb', Math.min(1, bubbleR / Math.max(1e-6, playerR)));
         this.field.bubbles.splice(i, 1);
       } else if (this.invulnerable <= 0) {
         // Too big to eat: it hurts.
@@ -3292,7 +3319,7 @@ audio.play('skill');
      */
     if (this.infiniteHealth) return;
     this.stats.hits++;
-    audio.play('hit');
+    this.sound('hit');
     this.invulnerable = tuning.invulnerableSeconds;
     /**
      * Digestion's cost, paid here rather than at the sources.
@@ -3344,7 +3371,7 @@ audio.play('skill');
     this.phaseTimer = BURST_SECONDS;
     this.stats.ended++;
     this.recordBest();
-    audio.play('pop');
+    this.sound('pop');
     this.banner(`破裂  ·  深度 ${Math.round(this.player.depth(LEVEL.scrollLength))}m  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×`);
 }
 
@@ -3405,7 +3432,7 @@ audio.play('skill');
      * The launch cue is the crab's: a heavy, water-laden shove. There is no bespoke sound for the slam yet, and
      * reusing the closest existing one is honest -- a new sound is the owner's call, not something to invent here.
      */
-    audio.play('crab');
+    this.sound('crab');
   }
 
   /**
@@ -3438,7 +3465,7 @@ audio.play('skill');
     if (!wasOverloaded && isOverloaded(this.rage)) {
       // Announced once, on the frame it starts: a warning that repeats every frame is noise.
       this.banner(`失控  ·  ${mech.angry.overload.seconds.toFixed(1)} 秒内把怒气放掉`);
-audio.play('slow');
+this.sound('slow');
     }
     if (overloadExpired) this.punishOverload();
   }
@@ -3468,7 +3495,7 @@ audio.play('slow');
     }
     this.stats.overloads++;
     this.banner(`怒气失控  ·  体积 ${before.toFixed(2)} → ${this.player.volume.toFixed(2)}`);
-audio.play('pop');
+this.sound('pop');
   }
 
   /**
@@ -3661,7 +3688,7 @@ audio.play('pop');
     this.lastEvent = null;
     this.splash = 0;
     this.surfaced = false;
-    this.touch.setHasSkill(false);
+    this.skillSlot(false);
     this.elapsed = 0;
     this.phase = 'intro';
     this.phaseTimer = INTRO_SECONDS;
@@ -3915,14 +3942,14 @@ audio.play('pop');
     this.chargeBurstRadius = cfg.chainJumpMeters * 0.5;
     this.chargeBurst = cfg.burstSeconds;
     this.charge = 0;
-    audio.play('surface');
+    this.sound('surface');
     for (const h of this.hazards.hazards) {
       if (!reached.has(h.id)) continue;
       // Through `hit`, so the discharge is ordinary damage: health, the driven-off score, the popup and the knockback
       // all apply. The impact point is the BUBBLE, because that is where the discharge came from -- so a chained zapper
       // is pushed away from the player like everything else the player hits.
       this.hazards.hit(h, cfg.chainDamage, { x: px, y: py });
-      this.popups.add(h.x, h.y, this.score.award('drivenOff'), this.camera);
+      this.scorePopup(h.x, h.y, this.score.award('drivenOff'));
     }
     if (cfg.chainSelfDamage > 0) this.takeHit();
     this.banner(`连锁放电  ·  ${reached.size} 只`);
@@ -3946,7 +3973,7 @@ audio.play('pop');
       const boss = this.makeHazard('boss', this.player.x * lane, this.camera.y + band * 0.42, null, spec.health);
       boss.tint = spec.colour ?? null;
       this.hazards.hazards.push(boss);
-      audio.play('surface');
+      this.sound('surface');
       this.banner(`${spec.name}  ·  击败它才能离开这一关`);
     }
     const boss = this.hazards.hazards.find((h) => h.kind === 'boss');
@@ -3977,9 +4004,9 @@ audio.play('pop');
     this.phaseTimer = this.music.playSting(mech.audio.clearSting.notes, mech.audio.clearSting.gapSeconds) + mech.audio.clearHoldSeconds;
     this.stats.ended++;
     // Before `recordBest`, so the best this run leaves behind includes the bonus it just earned.
-    this.popups.add(this.player.x * this.camera.viewport.laneWidthMeters, this.player.y, this.score.award('boss'), this.camera);
+    this.scorePopup(this.player.x * this.camera.viewport.laneWidthMeters, this.player.y, this.score.award('boss'));
     this.recordBest();
-    audio.play('surface');
+    this.sound('surface');
     this.splash = 1;
     // The results card is not a banner: it stays up until the run moves on, so it is shown here and faded by
     // `updateTransientOverlays`.
@@ -4146,6 +4173,11 @@ audio.play('pop');
    * bubble and the bullets fill a cache rather than decide anything.
    */
   /**
+   * What this frame's rules have to say. Drained by `applyRunEvents` at the end of every step -- see `RunEvent`.
+   */
+  private readonly runEvents: RunEvent[] = [];
+
+  /**
    * Show a transient message across the middle of the screen.
    *
    * ---------------------------------------------------------------------------------------------
@@ -4159,14 +4191,68 @@ audio.play('pop');
    * Nine of the fifteen sites remembered all three; the rest remembered two. That is the shape of a rule that lives in
    * its callers.
    *
-   * NOT a `Feedback` interface for the whole simulation yet, deliberately: with one implementation it would be a seam
-   * nothing crosses, and this file has already deleted one of those (`setCanvasRect`). It becomes that interface when
-   * the rules actually move out of this class and need to be handed something to say things through.
+   * It queues an event now rather than writing the label, because a rule that holds a `Text` is a rule that needs a
+   * renderer -- see `RunEvent` for the whole of that argument. The three statements live in `applyRunEvents`, which is
+   * the only code left in this file that touches the banner's text, its alpha or `bannerSeen`.
    */
   private banner(text: string): void {
-    this.runBanner.text = text;
-    this.runBanner.alpha = 1;
-    this.bannerSeen = true;
+    this.runEvents.push({ kind: 'banner', text });
+  }
+
+  /** A cue for the synth. Same signature as `audio.play`, because the drain is a forward to it. */
+  private sound(event: SoundEvent, intensity = 0.5): void {
+    this.runEvents.push({ kind: 'sound', event, intensity });
+  }
+
+  /** A number rising off a place in the water, in WORLD metres: the drain hands the camera to the popup layer. */
+  private scorePopup(x: number, y: number, points: number): void {
+    this.runEvents.push({ kind: 'scorePopup', x, y, points });
+  }
+
+  private damagePopup(x: number, y: number, amount: number): void {
+    this.runEvents.push({ kind: 'damagePopup', x, y, amount });
+  }
+
+  /** Whether the carried skill's button exists. Input surface, so it is an OUTPUT of the run rather than a rule. */
+  private skillSlot(carried: boolean): void {
+    this.runEvents.push({ kind: 'skillSlot', carried });
+  }
+
+  /**
+   * Give the run's output to the display, in the order it was produced.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * THE ONLY PLACE THAT TOUCHES THE SCREEN FOR A RULE'S SAKE
+   * ---------------------------------------------------------------------------------------------
+   * Called immediately after each `step`, so a hit still sounds on the frame it happened rather than at the end of a
+   * frame that ran eight sub-steps. Everything here is a forward to what the rule used to call directly, which is what
+   * makes this a move rather than a rewrite -- and it is why the banner's three statements are here now: text, the alpha
+   * reset, and `bannerSeen`, the flag that says a message has been raised this run.
+   */
+  private applyRunEvents(): void {
+    for (const e of this.runEvents) {
+      switch (e.kind) {
+        case 'banner':
+          this.runBanner.text = e.text;
+          this.runBanner.alpha = 1;
+          this.bannerSeen = true;
+          break;
+        case 'sound':
+          audio.play(e.event, e.intensity);
+          break;
+        case 'scorePopup':
+          this.popups.add(e.x, e.y, e.points, this.camera);
+          break;
+        case 'damagePopup':
+          this.damagePopups.add(e.x, e.y, e.amount, this.camera);
+          break;
+        case 'skillSlot':
+          this.touch.setHasSkill(e.carried);
+          break;
+      }
+    }
+    // Emptied rather than reallocated: this runs up to eight times a frame and the array is small but not free.
+    this.runEvents.length = 0;
   }
 
   private render(dt: number): void {
@@ -5971,7 +6057,7 @@ audio.play('pop');
      * in the state that path would have: a probe that swallowed something and then found the score unmoved would be
      * right to call it a bug, and the ledger is meant to be checkable for each event.
      */
-    this.popups.add(this.player.x * this.camera.viewport.laneWidthMeters, this.player.y, this.score.award('eaten'), this.camera);
+    this.scorePopup(this.player.x * this.camera.viewport.laneWidthMeters, this.player.y, this.score.award('eaten'));
     return gained;
   }
 
