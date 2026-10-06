@@ -28,7 +28,10 @@ export type RunEvent =
   | { kind: 'sound'; event: SoundEvent; intensity: number }
   | { kind: 'scorePopup'; x: number; y: number; points: number }
   | { kind: 'damagePopup'; x: number; y: number; amount: number }
-  | { kind: 'skillSlot'; carried: boolean };
+  | { kind: 'skillSlot'; carried: boolean }
+  | { kind: 'blast'; x: number; y: number; radius: number }
+  | { kind: 'splash' }
+  | { kind: 'results' };
 
 /**
  * The five things a rule can say, as constructors.
@@ -56,4 +59,25 @@ export function sayDamage(events: RunEvent[], x: number, y: number, amount: numb
 /** Whether the carried skill's button exists. Input surface, so it is an OUTPUT of the run rather than a rule. */
 export function saySkillSlot(events: RunEvent[], carried: boolean): void {
   events.push({ kind: 'skillSlot', carried });
+}
+
+/**
+ * A blast, in world metres.
+ *
+ * The ring and the screen shake are both the DRAIN'S to build, and the shake's size is why: it is measured against the
+ * window (`designScale(screen.width, screen.height)`), and a rule that has to ask how big the window is, is a rule that
+ * cannot run without one. All the blast knows is where it happened and how wide it was.
+ */
+export function sayBlast(events: RunEvent[], x: number, y: number, radius: number): void {
+  events.push({ kind: 'blast', x, y, radius });
+}
+
+/** The bubble broke the surface: the flash of it, and the level's end. */
+export function saySplash(events: RunEvent[]): void {
+  events.push({ kind: 'splash' });
+}
+
+/** Show the results card. Its text is composed by the presentation, which is the half that knows the layout. */
+export function sayResults(events: RunEvent[]): void {
+  events.push({ kind: 'results' });
 }

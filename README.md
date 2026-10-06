@@ -741,6 +741,13 @@ playing → cleared → ascend → intro（下一关）
 | `sound` | 合成器（事件名 + 强度） |
 | `scorePopup` / `damagePopup` | 飘字层（世界坐标，drain 时把 camera 交给它） |
 | `skillSlot` | 触屏技能键的**存在与否**（这是输入面，但它是这局的**输出**，不是规则） |
+| `blast` | 爆炸环 + **屏幕震动**——震幅是**对着窗口量的**（`designScale(screen.width, screen.height)`），所以只能在 drain 里算：**一个要知道窗口多大的规则，就是一个没有窗口跑不起来的规则** |
+| `splash` | 破水面那一下的闪白 |
+| `results` | 结算卡（**文本由 `updateTransientOverlays` 写**，因为排版是它的活） |
+
+后三条是**最后三处规则直接碰显示对象**的地方。所以现在"规则里没有一行碰
+`explosions` / `shake` / `splash` / `finishBanner`"是一句**可以用一条 grep 检查**的话——剩下的写只有构造、复位、
+每帧衰减（`updateTransientOverlays`）和绘制。
 
 `Game.applyRunEvents()` 是**全文件唯一**碰这些东西的地方，它在**每个 step 之后**立刻跑（不是每帧之后），
 所以打中的音效还是在发生的那一帧响，横幅也还是在举起它的那一帧就在屏幕上。

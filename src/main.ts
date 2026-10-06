@@ -20,7 +20,7 @@ import { CodexUi } from './codexUi';
 import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
 import { BUBBLE_TYPES, defaultBubbleType, findBubbleType, hasControl, hasVerb, type BubbleType } from './bubbleTypes';
 import { placeEntry, type PickupDrop, type SpawnRecord } from './placement';
-import { sayBanner, sayDamage, sayScore, saySkillSlot, saySound, type RunEvent } from './runEvents';
+import { sayBanner, sayBlast, sayDamage, sayResults, sayScore, saySkillSlot, saySound, saySplash, type RunEvent } from './runEvents';
 import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
 import { endOverload, gainRage, hitRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName, slamDamage, spendRage, tickRage, type RageState } from './rage';
 import { mech } from './mechanisms';
@@ -2536,19 +2536,11 @@ this.sound('hit');
         this.charge = Math.min(mech.hazards.charge.max, this.charge + e.charge);
       }
       if (e.blast) {
-        this.explosions.push({ x: e.blast.x, y: e.blast.y, radius: e.blast.radius, age: 0 });
+        // The ring and the shake are the drain's to build: the shake is measured against the WINDOW, and a rule that
+        // has to ask how big the window is cannot run without one. The blast says where and how wide.
+        sayBlast(this.runEvents, e.blast.x, e.blast.y, e.blast.radius);
         this.sound('pop');
         this.lastComedyBeat = { what: e.kind, at: this.elapsed };
-        // The shake is the loudness of the thing: a blast is the only event in the game that moves the SCREEN.
-        const shake = mech.hazards.bombfish;
-        if (shake.blastShakePixels > 0 && shake.blastShakeSeconds > 0) {
-          const screen = this.app.renderer.screen;
-          this.shake = {
-            seconds: shake.blastShakeSeconds,
-            total: shake.blastShakeSeconds,
-            pixels: shake.blastShakePixels * designScale(screen.width, screen.height),
-          };
-        }
         /**
          * The blast hurts the player, through the ordinary hit path.
          *
@@ -3687,10 +3679,10 @@ this.sound('pop');
     this.scorePopup(this.player.x * this.camera.viewport.laneWidthMeters, this.player.y, this.score.award('boss'));
     this.recordBest();
     this.sound('surface');
-    this.splash = 1;
+    saySplash(this.runEvents);
     // The results card is not a banner: it stays up until the run moves on, so it is shown here and faded by
-    // `updateTransientOverlays`.
-    this.finishBanner.alpha = 1;
+    // `updateTransientOverlays` -- which is also what writes its TEXT, because the layout is its business.
+    sayResults(this.runEvents);
     /**
      * Clearing the level, which is what unlocks the next one.
      *
@@ -3928,6 +3920,32 @@ this.sound('pop');
           break;
         case 'skillSlot':
           this.touch.setHasSkill(e.carried);
+          break;
+        case 'blast': {
+          this.explosions.push({ x: e.x, y: e.y, radius: e.radius, age: 0 });
+          /**
+           * The shake is the loudness of the thing: a blast is the only event in the game that moves the SCREEN.
+           *
+           * Its size is measured against the window, which is the reason the rule does not do this itself -- and the
+           * reason the numbers it uses are the bomb fish's: the blast is that creature's, and a second creature with a
+           * blast will bring its own row when it has one.
+           */
+          const blastCfg = mech.hazards.bombfish;
+          if (blastCfg.blastShakePixels > 0 && blastCfg.blastShakeSeconds > 0) {
+            const screen = this.app.renderer.screen;
+            this.shake = {
+              seconds: blastCfg.blastShakeSeconds,
+              total: blastCfg.blastShakeSeconds,
+              pixels: blastCfg.blastShakePixels * designScale(screen.width, screen.height),
+            };
+          }
+          break;
+        }
+        case 'splash':
+          this.splash = 1;
+          break;
+        case 'results':
+          this.finishBanner.alpha = 1;
           break;
       }
     }
