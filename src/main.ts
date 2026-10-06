@@ -85,6 +85,16 @@ const INTRO_END_SCREEN_Y = 0.25;
 const BURST_SECONDS = 1.5;
 
 /**
+ * How long a detonation ring lives, in seconds.
+ *
+ * Here rather than inline in the drawing code because the AGEING happens in `step` now and the drawing reads it: a
+ * lifetime written into a draw call is a lifetime that only advances when the page is drawn. The rest of the ring's
+ * look (its colour, its fades, its stroke ratio) is still in `drawPickups` and belongs in the config with the other
+ * styling numbers.
+ */
+const EXPLOSION_SECONDS = 0.45;
+
+/**
  * What to shout when a level's landmark is reached.
  *
  * The beats are announced rather than generated: the timeline decides WHAT is there, and this decides
@@ -2091,6 +2101,14 @@ class Game {
     if (this.phase === 'paused' || this.phase === 'menu' || this.phase === 'codex') return;
 
     if (this.invulnerable > 0) this.invulnerable = Math.max(0, this.invulnerable - dt);
+    /**
+     * The overlays' clocks, ticked here rather than in the draw pass -- and BEFORE the phase switch, because the shake
+     * and the flash belong to the ending sequence, whose phases all return early from that switch.
+     *
+     * A pause freezes them with everything else. That is new, and it is the honest reading of a pause: the alternative
+     * was a white-out that finished fading while the game was stopped.
+     */
+    this.updateTransientOverlays(dt);
 
     // Collectables are maintained in EVERY phase, not just 'playing'. During the birth intro and
     // the death burst the world should already be populated, otherwise a restart begins in an
@@ -3784,6 +3802,23 @@ class Game {
      * bed to stop -- it kept playing over the menu at the level it had when the player quit.
      */
     audio.silenceAmbience();
+    /**
+     * The transient overlays go with the level.
+     *
+     * They are no longer decayed while the menu is up -- `step` returns before it reaches them, the same way it does
+     * for the ambience above -- so anything mid-fade at the moment the player quits would freeze on screen instead of
+     * finishing. A half-faded results card stuck over the menu is exactly the stale-overlay bug this file has already
+     * fixed once.
+     */
+    this.shake = { seconds: 0, total: 0, pixels: 0 };
+    this.splash = 0;
+    this.flash.alpha = 0;
+    this.flash.visible = false;
+    this.finishBanner.alpha = 0;
+    this.finishBanner.text = '';
+    this.runBanner.alpha = 0;
+    this.explosions = [];
+    this.app.stage.position.set(0, 0);
     this.menu.root.visible = true;
   }
 
@@ -4091,16 +4126,84 @@ class Game {
     this.bestScore = Math.max(this.bestScore, this.score.value);
   }
 
+  /**
+   * The overlays that are not the level: the screen shake, the surface flash, the two banners, the detonation rings.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THIS IS ADVANCED FROM `step` AND NOT FROM `render`
+   * ---------------------------------------------------------------------------------------------
+   * All of it used to tick inside the draw pass. Two things were wrong with that, and the second is the one that
+   * matters: "how long is left" depended on how OFTEN the page was drawn rather than on how much time had passed, and
+   * the detonation ring aged by a hardcoded 1/60 per frame while the rest of the world aged by the fixed 120 Hz step.
+   * A frame runs between zero and eight steps, so the draw pass was a second, quieter clock for game state.
+   *
+   * State advances here; `render` reads it and nothing else. That is the rule this method exists to keep: a draw call
+   * that can change what the next draw shows is a draw call whose result depends on how many times it ran.
+   */
+  private updateTransientOverlays(dt: number): void {
+    if (this.shake.seconds > 0) this.shake.seconds = Math.max(0, this.shake.seconds - dt);
+    if (this.splash > 0) this.splash = Math.max(0, this.splash - dt * 1.5);
+
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      const boom = this.explosions[i]!;
+      boom.age += dt;
+      if (boom.age >= EXPLOSION_SECONDS) this.explosions.splice(i, 1);
+    }
+
+    /**
+     * The results card fades out, and is DROPPED the moment the run moves on.
+     *
+     * It used to fade only while the phase was `burst`, which meant a card left over from a death stayed on screen for
+     * the whole of the next level if that level began from a phase it did not recognise -- and with the transition flow
+     * there now are such phases. Anything that is not a run-ending burst clears it outright: a stale score floating over
+     * a live level is worse than no card at all.
+     */
+    const cardBelongs = this.phase === 'burst' && this.runComplete === false && this.pendingLevel === null;
+    if (cardBelongs) {
+      this.finishBanner.alpha = Math.min(1, this.finishBanner.alpha);
+      /**
+       * Rewritten every step rather than set once, because the RECORD comparison is against a best that `recordBest`
+       * has already updated -- so the card has to say "new record" from a flag captured at the moment the run ended,
+       * not by re-comparing against a best that now includes this run.
+       *
+       * A cleared level mid-run gets the banner (which names the level it is walking into next) and no card: the card
+       * is a full stop, and the ladder has five more levels to go. `surfaced` alone could not say this -- it is set by
+       * every boss death, including the ones that lead onward.
+       */
+      this.finishBanner.text = this.surfaced
+        ? `击败 ${LEVEL.boss.name}  ·  通关\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  最大 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`
+        : `破裂  ·  深度 ${Math.round(this.player.depth(LEVEL.scrollLength))}m\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  爬升 ${Math.round(this.player.y)}m\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`;
+    } else if (this.finishBanner.alpha > 0) {
+      this.finishBanner.alpha = Math.max(0, this.finishBanner.alpha - dt * 1.8);
+      if (this.finishBanner.alpha <= 0.01) {
+        this.finishBanner.alpha = 0;
+        this.finishBanner.text = '';
+      }
+    }
+
+    this.runBanner.alpha = Math.max(0, this.runBanner.alpha - dt * 0.28);
+  }
+
+  /**
+   * Draw the frame.
+   *
+   * READS game state; the only things it assigns are display objects -- `visible`, `alpha`, and the stage's shake
+   * offset. Everything that ticks used to tick here, and `updateTransientOverlays` says why that was wrong; the rule to
+   * keep is this one: if you want the frame to advance something, it goes in `step`.
+   *
+   * What it does still advance, and why that is not the same thing: the floating numbers, the menu's animations and the
+   * marine snow are presentation with no rule attached -- nothing reads them back -- and the sprite loaders on the
+   * bubble and the bullets fill a cache rather than decide anything.
+   */
   private render(dt: number): void {
     /**
      * The screen shake, applied before anything is drawn.
      *
-     * Two offsets that do not divide each other, so it reads as a rattle rather than as a sway, scaled by what is left
-     * of the duration so it ends where it started -- at zero. Snapping back to centre at the end would be the one part
-     * of a shake the eye notices.
+     * Read from the state `step` keeps, not decayed here: see `updateTransientOverlays`. Two offsets that do not divide
+     * each other, so it reads as a rattle rather than as a sway, scaled by what is left of the duration so it ends where
+     * it started -- at zero. Snapping back to centre at the end would be the one part of a shake the eye notices.
      */
     if (this.shake.seconds > 0) {
-      this.shake.seconds = Math.max(0, this.shake.seconds - dt);
       const fade = this.shake.seconds / Math.max(0.001, this.shake.total);
       const amp = this.shake.pixels * fade;
       this.app.stage.position.set(Math.sin(this.elapsed * 61) * amp, Math.cos(this.elapsed * 47) * amp);
@@ -4194,49 +4297,12 @@ class Game {
     if (inMenu) this.menu.update(dt);
     // The codex draws nothing per frame: a tab press, a page turn and a resize each schedule their own redraw.
     this.codex.root.visible = this.phase === 'codex';
-    // Both banners decay in render; `step` only seeds their alpha, because a transient message
-    // that is set and faded in the same frame would never be visible.
-    const decay = dt * 0.6;
     /**
-     * The results card fades out, and is DROPPED the moment the run moves on.
+     * The banners and the results card are NOT touched here.
      *
-     * It used to fade only while the phase was `burst`, which meant a card left over from a death stayed on screen for
-     * the whole of the next level if that level began from a phase it did not recognise -- and with the transition flow
-     * there now are such phases. Anything that is not a run-ending burst clears it outright: a stale score floating over
-     * a live level is worse than no card at all.
+     * Their alpha, their text and the card's record line are all advanced by `updateTransientOverlays`, from `step`:
+     * this pass reads state and draws it. See that method for why.
      */
-    const cardBelongs = this.phase === 'burst' && this.runComplete === false && this.pendingLevel === null;
-    this.finishBanner.alpha = cardBelongs
-      ? Math.min(1, this.finishBanner.alpha)
-      : this.finishBanner.alpha > 0
-        ? Math.max(0, this.finishBanner.alpha - decay * 3)
-        : 0;
-    if (this.finishBanner.alpha <= 0.01) {
-      this.finishBanner.alpha = 0;
-      if (!cardBelongs) this.finishBanner.text = '';
-    }
-    this.runBanner.alpha = Math.max(0, this.runBanner.alpha - dt * 0.28);
-    if (this.finishBanner.alpha <= 0.01 && this.phase !== 'burst') this.finishBanner.alpha = 0;
-
-    /**
-     * The results card, rebuilt continuously while the run is ending.
-     *
-     * Rewritten every frame rather than set once, because the RECORD comparison is against a best that
-     * `recordBest` has already updated -- so the card has to say "new record" from a flag captured at
-     * the moment the run ended, not by re-comparing against a best that now includes this run.
-     */
-    /**
-     * The results card is only for a run that is OVER.
-     *
-     * A cleared level mid-run gets the banner (which names the level it is walking into next) and no card: the card is
-     * a full stop, and the ladder has five more levels to go. `surfaced` alone could not say this -- it is set by every
-     * boss death, including the ones that lead onward.
-     */
-    if (this.phase === 'burst' && !this.pendingLevel) {
-      this.finishBanner.text = this.surfaced
-        ? `击败 ${LEVEL.boss.name}  ·  通关\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  最大 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`
-        : `破裂  ·  深度 ${Math.round(this.player.depth(LEVEL.scrollLength))}m\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  爬升 ${Math.round(this.player.y)}m\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`;
-    }
 
     /**
      * The surface white-out: a short, hard flash that fades.
@@ -4245,9 +4311,10 @@ class Game {
      * breaking through and reading the results -- long enough to feel like a transition, short enough
      * that it never reads as a loading screen. A death gets no flash at all, which is what makes the
      * two endings feel different in the hands.
+     *
+     * The countdown is `step`'s; this only shows what is left of it.
      */
     if (this.splash > 0) {
-      this.splash = Math.max(0, this.splash - dt * 1.5);
       this.flash.alpha = Math.min(1, this.splash * 1.6);
       this.flash.visible = this.flash.alpha > 0.01;
     } else if (this.flash.visible) {
@@ -4455,17 +4522,11 @@ class Game {
     /**
      * Detonations, drawn as an expanding ring that fades.
      *
-     * Drawn in the world with everything else, from a list that ages itself: the creature is gone by now, so this is
+     * Drawn in the world with everything else, from a list that `step` ages: the creature is gone by now, so this is
      * the only thing left to say "that was a bomb, and it was that big".
      */
-    for (let i = this.explosions.length - 1; i >= 0; i--) {
-      const boom = this.explosions[i]!;
-      boom.age += 1 / 60;
-      const t = Math.min(1, boom.age / 0.45);
-      if (t >= 1) {
-        this.explosions.splice(i, 1);
-        continue;
-      }
+    for (const boom of this.explosions) {
+      const t = Math.min(1, boom.age / EXPLOSION_SECONDS);
       g.circle(boom.x, boom.y, boom.radius * (0.25 + 0.75 * t)).stroke({
         color: 0xffb44a,
         alpha: 0.85 * (1 - t),
