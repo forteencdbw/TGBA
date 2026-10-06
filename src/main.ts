@@ -4164,7 +4164,9 @@ audio.play('pop');
    * the rules actually move out of this class and need to be handed something to say things through.
    */
   private banner(text: string): void {
-    this.banner(text);
+    this.runBanner.text = text;
+    this.runBanner.alpha = 1;
+    this.bannerSeen = true;
   }
 
   private render(dt: number): void {
