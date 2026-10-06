@@ -2,7 +2,7 @@ import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
 import { LEVEL, LEVELS, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
-import { HazardField, hazardArtSpriteForTest, KIND_TUNING, LURE_PROBE, paintHazards, stomachEffect, type HazardKind } from './hazards';
+import { HazardField, hazardAnimationProbe, hazardArtSpriteForTest, KIND_TUNING, LURE_PROBE, paintHazards, stomachEffect, type HazardKind } from './hazards';
 import { paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { diagnosticsOf } from './diagnostics';
@@ -1222,6 +1222,17 @@ class Game {
   }
 
   /**
+   * Test hook: the boss's death as it happens -- which animations loaded, and which frame the body is on.
+   *
+   * Added because "the death animation did not play" has two very different causes (the frames never arrived, or the body is
+   * not being drawn) and the two look identical on screen; this tells them apart, and it is also how "the level waits for the
+   * explosion" is observable rather than inferable from the clock.
+   */
+  bossAnimationRef(): ReturnType<typeof hazardAnimationProbe> {
+    return hazardAnimationProbe(this.run.hazards);
+  }
+
+  /**
    * Test hook: zero the run's counters and top the player back up.
    *
    * Lets a probe measure each hazard in isolation without restarting the run. It deliberately does
@@ -1459,6 +1470,16 @@ class Game {
      * was a white-out that finished fading while the game was stopped.
      */
     this.updateTransientOverlays(dt);
+    /**
+     * And a death, for the same reason and with the same placement.
+     *
+     * `resolveHazards` is where a hazard's clock normally ticks, and the ending does not reach it: once the boss is dead the
+     * phase holds the level open so that nothing moves, nothing spawns and nothing deals damage -- and a death's animation
+     * was inside that freeze. Measured: the body's clock pinned at 0.008s while the ticker ran on. So the explosion is
+     * advanced HERE, where the phase cannot skip it, and it is the only part of the hazard simulation that runs during the
+     * hold. See `HazardField.tickDeaths`.
+     */
+    this.run.hazards.tickDeaths(dt);
 
     // Collectables are maintained in EVERY phase, not just 'playing'. During the birth intro and
     // the death burst the world should already be populated, otherwise a restart begins in an
@@ -1562,7 +1583,19 @@ class Game {
          * a moment to notice they won.
          */
         this.run.phaseTimer -= dt;
-        if (this.run.phaseTimer > 0) return;
+        /**
+         * AND THE LEVEL DOES NOT END UNTIL THE BOSS HAS FINISHED DYING.
+         *
+         * This is the whole shape of the beat, and it was wrong: the boss is killed, the phase turns over on the same
+         * frame, and the hold was then only as long as the music -- so a death animation longer than the flourish was cut
+         * off mid-explosion, and the player watched a frozen crab while the bubble flew away. The order the fight EARNS is
+         * the shot, then the explosion, then the departure.
+         *
+         * The condition is read from the field rather than counted here (see `HazardField.dying`), so "the explosion has
+         * finished" cannot drift away from the animation that defines it. The timer is a MINIMUM hold, not the length of
+         * the beat: it keeps the flourish from being clipped by a boss that exploded quickly.
+         */
+        if (this.run.phaseTimer > 0 || this.run.hazards.dying) return;
         this.run.phase = 'ascend';
         this.run.ascendMetres = 0;
         return;
@@ -2249,9 +2282,18 @@ class Game {
      *
      * The flourish's length is read from the same numbers the synth plays, so "the music finished" and "the bubble
      * goes" cannot disagree.
+     *
+     * The HOLD here is a MINIMUM and not the length of the beat: the phase also waits for the boss's death animation to
+     * finish (see the `cleared` case in `step`). The music and the explosion are two different lengths and the longer one
+     * wins -- otherwise the ending interrupts the very explosion it is celebrating, which is what it used to do.
      */
     this.run.phase = 'cleared';
-    this.run.phaseTimer = this.music.playSting(mech.audio.clearSting.notes, mech.audio.clearSting.gapSeconds) + mech.audio.clearHoldSeconds;
+    /**
+     * The flourish plays HERE and its length is the hold, which is the point of it returning a number. The synth and this
+     * sequence agree about how long the music lasts because they read the same value.
+     */
+    const sting = this.music.playSting(mech.audio.clearSting.notes, mech.audio.clearSting.gapSeconds);
+    this.run.phaseTimer = sting + mech.audio.clearHoldSeconds;
     this.run.stats.ended++;
     // Before `recordBest`, so the best this run leaves behind includes the bonus it just earned.
     this.scorePopup(this.run.player.x * this.camera.viewport.laneWidthMeters, this.run.player.y, this.run.score.award('boss'));

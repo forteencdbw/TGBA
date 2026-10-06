@@ -1462,6 +1462,43 @@ export class HazardField {
   }
 
   /**
+   * Whether anything in the water is still playing its death animation.
+   *
+   * The ending sequence asks THIS rather than running a timer of its own: "the explosion has finished" is a fact about the
+   * body, and a second timer on the game's side would be a second answer to it -- one that drifts the moment either the
+   * animation or the hold is retuned, which is exactly how the boss came to vanish before it exploded.
+   */
+  get dying(): boolean {
+    return this.hazards.some((h) => isStillDying(h));
+  }
+
+  /**
+   * Advance every death by one frame and retire the bodies that have finished.
+   *
+   * Driven from the FRAME LOOP rather than from `update`, and that is the whole reason it exists as its own method: the
+   * ending sequence stops calling `update` while it holds the level open (nothing must move or deal damage once the fight is
+   * over), and a death clock living in there stopped with it -- the boss died, the screen froze on the first frame of the
+   * explosion, and the hold then waited for a timer that could never finish. Measured: the body's clock pinned at 0.008s
+   * while `frameCount` advanced, and the phase never left `cleared`.
+   *
+   * It does NOT move anything: a dead creature holds its ground and kills nobody, so the only things here are its clock and
+   * its removal. Nothing else advances that clock -- `update` deliberately leaves it alone -- so a death runs at the same
+   * speed whether the water is moving or the level is holding still.
+   */
+  tickDeaths(dt: number): void {
+    if (this.hazards.length === 0) return;
+    let finished = false;
+    for (const h of this.hazards) {
+      if (h.deadSince === undefined) continue;
+      h.deadSince += dt;
+      if (!isStillDying(h)) finished = true;
+    }
+    // Filtered only when there is something to remove: this runs every frame of every phase, and the common case is a field
+    // with no deaths in it at all.
+    if (finished) this.hazards = this.hazards.filter((h) => h.deadSince === undefined || isStillDying(h));
+  }
+
+  /**
    * Take hit points off one creature, and let it go when they run out.
    *
    * Here rather than in the bullets' module because the STATE is this module's: `health` and `flee` belong to the
@@ -1617,9 +1654,14 @@ export class HazardField {
        */
       if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
       if (h.facingRest !== undefined && h.facingRest > 0) h.facingRest = Math.max(0, h.facingRest - dt);
-      // The death's clock, ticked here for the same reason: the painter reads it for the frame and the cull reads it for the
-      // removal, and neither may depend on whether this frame happened to take the death branch's early return.
-      if (h.deadSince !== undefined) h.deadSince += dt;
+      /**
+       * NOT the death clock, which is `tickDeaths`'s and runs from the frame loop.
+       *
+       * Both paths reach a live field in the same frame -- `tickDeaths` before the phase switch and this one after it -- so a
+       * clock ticked in both would run at DOUBLE speed while the water is moving and at normal speed while it holds, which is
+       * the kind of bug that only shows up as "the explosion looks a bit fast". The death's clock is advanced in exactly one
+       * place for that reason; the cull below still retires the finished bodies in every phase.
+       */
       this.advance(h, dt, ctx);
       /**
        * A creature's trigger finger, kept out of `advance` on purpose.
@@ -1752,9 +1794,10 @@ export class HazardField {
        * A DEAD creature leaves when its death animation is done, and that is the only thing that removes it.
        *
        * It cannot use the band test below: a boss holds station relative to the player, so a body that was on screen a moment
-       * ago is still on screen -- that is the point of it -- and the band would never retire it.
+       * ago is still on screen -- that is the point of it -- and the band would never retire it. The same test drives
+       * `tickDeaths`, which is the path that runs while the level is holding still.
        */
-      if (h.deadSince !== undefined) return h.deadSince < (h.deadDeadline ?? 0);
+      if (h.deadSince !== undefined) return isStillDying(h);
       const inside = h.y > ctx.min - 80 && h.y < ctx.max + 120;
       /**
        * A creature leaving through a SIDE needs retiring on the X axis, because the band above is a y test only.
@@ -2551,6 +2594,44 @@ export function hazardArtSpriteForTest(id: number): Sprite | null {
 }
 
 /**
+ * Test hook: how each animation loaded, and where each creature's death has got to.
+ *
+ * A death is otherwise unobservable from outside: the sprite is one object in a pool and the clock that drives it is a field
+ * on the hazard. This answers, in one call, "did the frames arrive" and "is the body actually playing them" -- the two
+ * questions that a "the animation did not play" report can be either of.
+ */
+export function hazardAnimationProbe(field: HazardField): {
+  animations: { name: string; frames: number; seconds: number; loading: boolean }[];
+  dying: { id: number; kind: string; since: number; deadline: number; frame: number; texture: string }[];
+} {
+  const animations = Object.entries(mech.animations).map(([name, animation]) => ({
+    name,
+    frames: ART_ANIMATIONS.get(name)?.length ?? 0,
+    seconds: animationSeconds(animation),
+    loading: ART_ANIMATIONS_LOADING.has(name),
+  }));
+  const dying = field.hazards
+    .filter((h) => h.deadSince !== undefined)
+    .map((h) => {
+      const art = mech.hazardArt[h.kind];
+      const animation = art?.dead ? mech.animations[art.dead] : undefined;
+      const frame = animation ? animationFrameAt(animation, h.deadSince ?? 0) : 0;
+      const sprite = ART_SPRITES.get(h.id);
+      return {
+        id: h.id,
+        kind: h.kind,
+        since: h.deadSince ?? 0,
+        deadline: h.deadDeadline ?? 0,
+        frame,
+        // The label of what the sprite is SHOWING, which is the whole question: a frame index that never reaches the
+        // texture is an animation that does not play.
+        texture: sprite ? `${sprite.texture.width}x${sprite.texture.height}` : 'no sprite',
+      };
+    });
+  return { animations, dying };
+}
+
+/**
  * The last few lures drawn, for probes.
  *
  * A bounded ring rather than a log, and the bound is the point: this is written on every frame a lanternfish is on
@@ -3140,6 +3221,11 @@ function startDeath(hazard: Hazard): void {
  */
 function isDeparting(h: Hazard): boolean {
   return h.flee !== null && h.flee !== 'dead';
+}
+
+/** Whether a dead creature is still mid-explosion. False for everything that is not dying at all. */
+function isStillDying(h: Hazard): boolean {
+  return h.deadSince !== undefined && h.deadSince < (h.deadDeadline ?? 0);
 }
 
 export function paintHazards(
