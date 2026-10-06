@@ -854,8 +854,18 @@ export interface Mechanisms {
     rows: number;
     /** Seconds per frame while the sheet loops. */
     frameSeconds: number;
-    /** How far behind the creature the bubble trails, as a multiple of the bubble's own size. */
+    /** How far behind the creature the bubbles trail, as a multiple of each bubble's own size. */
     behindFactor: number;
+    /** How many bubbles in the cluster. */
+    count: number;
+    /** How much further each successive bubble sits, relative to its own size. */
+    spread: number;
+    /** Angular jitter of the cluster, in radians. */
+    jitter: number;
+    /** Random size variation, as a fraction. */
+    scaleVariance: number;
+    /** How much smaller each successive bubble is. */
+    sizeFalloff: number;
     sizeRatio: number;
     alpha: number;
   };
@@ -1931,6 +1941,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'chargeTrail.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string to disable it' },
   { path: 'chargeTrail.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole columns between 1 and 16' },
   { path: 'chargeTrail.rows', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole rows between 1 and 16' },
+  { path: 'chargeTrail.count', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 24, describe: 'whole bubbles between 1 and 24' },
+  { path: 'chargeTrail.spread', check: (v) => typeof v === 'number' && v >= 0 && v <= 4, describe: 'a multiple between 0 and 4' },
+  { path: 'chargeTrail.jitter', check: (v) => typeof v === 'number' && v >= 0 && v <= Math.PI, describe: 'radians of jitter up to half a turn' },
+  { path: 'chargeTrail.scaleVariance', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a fraction between 0 and 2' },
+  { path: 'chargeTrail.sizeFalloff', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
   { path: 'chargeTrail.behindFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 6, describe: 'a multiple between 0 and 6' },
   { path: 'chargeTrail.frameSeconds', check: (v) => typeof v === 'number' && v > 0.005 && v <= 2, describe: 'seconds per frame above 0.005 and at most 2' },
   { path: 'chargeTrail.sizeRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 0.5, describe: 'a lane fraction above 0 and at most 0.5' },

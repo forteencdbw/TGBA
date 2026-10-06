@@ -12,11 +12,16 @@ import { assetUrl } from './assets';
 import { mech } from './mechanisms';
 
 interface Rider {
-  sprite: Sprite;
+  /** The cluster: one bubble each, with its own steady offsets so the group does not shimmer frame to frame. */
+  sprites: Sprite[];
   /** Seconds of animation so far, so the frame advances with time rather than with frames rendered. */
   clock: number;
   /** Whether this rider was asked for during the frame being drawn. */
   seen: boolean;
+  /** Per-bubble constants, rolled once: a bubble that changed place every frame would look like boiling, not like a wake. */
+  jitter: number[];
+  sizeMul: number[];
+  phase: number[];
 }
 
 export class ChargeTrail {
@@ -70,36 +75,59 @@ export class ChargeTrail {
     if (!this.ready) return;
     let rider = this.riders.get(id);
     if (!rider) {
-      const sprite = new Sprite(this.textures[0]!);
-      sprite.anchor.set(0.5);
-      sprite.eventMode = 'none';
-      this.root.addChild(sprite);
-      rider = { sprite, clock: 0, seen: true };
+      const count = Math.max(1, Math.round(cfg.count));
+      const sprites: Sprite[] = [];
+      for (let i = 0; i < count; i++) {
+        const sprite = new Sprite(this.textures[i % this.textures.length]!);
+        sprite.anchor.set(0.5);
+        sprite.eventMode = 'none';
+        this.root.addChild(sprite);
+        sprites.push(sprite);
+      }
+      rider = {
+        sprites,
+        clock: 0,
+        seen: true,
+        jitter: sprites.map(() => (Math.random() - 0.5) * cfg.jitter),
+        sizeMul: sprites.map((_, i) => 1 + (Math.random() - 0.5) * cfg.scaleVariance - i * cfg.sizeFalloff),
+        // Staggered through the sheet, so the group is never all on the same frame.
+        phase: sprites.map((_, i) => (i / count) * this.textures.length),
+      };
       this.riders.set(id, rider);
     }
     rider.seen = true;
     rider.clock += dt;
-    // Looping, because "轮播" is what was asked for: the sheet runs round for as long as the dash does.
     const per = Math.max(0.01, cfg.frameSeconds);
-    const index = Math.floor(rider.clock / per) % this.textures.length;
-    const frame = this.textures[index]!;
-    rider.sprite.texture = frame;
     const size = laneWidth * cfg.sizeRatio;
     /**
-     * Behind the creature: back along the direction of travel, by a fraction of the bubble's own size.
+     * Behind the creature, fanning outwards.
      *
      * A unit direction is passed in rather than computed here, because the creature's VELOCITY is not the same thing as the
-     * dash's direction -- a charge steers along its curve, and the bubble should trail the geometry the player sees.
+     * dash's direction -- a charge steers along its curve, and the wake should trail the geometry the player sees.
      */
-    const back = size * cfg.behindFactor;
-    rider.sprite.visible = true;
-    rider.sprite.x = x - dirX * back;
-    rider.sprite.y = y - dirY * back;
-    rider.sprite.alpha = cfg.alpha;
-    const scale = size / Math.max(1, frame.width);
-    // The world is Y-flipped, so the sprite's own Y is negative to keep the art upright. See the player bubble.
-    const flipped = rider.sprite.parent ? rider.sprite.parent.scale.y < 0 : true;
-    rider.sprite.scale.set(scale, flipped ? -Math.abs(scale) : Math.abs(scale));
+    const baseAngle = Math.atan2(-dirY, -dirX);
+    const flipped = rider.sprites[0]?.parent ? (rider.sprites[0]!.parent!.scale.y < 0) : true;
+    for (const [i, sprite] of rider.sprites.entries()) {
+      // Looping, because "轮播" is what was asked for: the sheet runs round for as long as the dash does.
+      /**
+       * Both terms are FLOORED, and the reason is worth keeping: the stagger is a fraction of the sheet, so adding it raw made
+       * the index fractional -- `this.textures[1.2]` is undefined, and the first frame of the wake threw. A frame index is a
+       * whole number or it is a bug.
+       */
+      const index = (Math.floor(rider.clock / per) + Math.floor(rider.phase[i]!)) % this.textures.length;
+      const frame = this.textures[index]!;
+      sprite.texture = frame;
+      const bubbleSize = size * rider.sizeMul[i]!;
+      const back = bubbleSize * cfg.behindFactor * (1 + i * cfg.spread);
+      const angle = baseAngle + rider.jitter[i]!;
+      sprite.visible = true;
+      sprite.x = x + Math.cos(angle) * back;
+      sprite.y = y - Math.sin(angle) * back;
+      sprite.alpha = cfg.alpha;
+      const scale = bubbleSize / Math.max(1, frame.width);
+      // The world is Y-flipped, so the sprite's own Y is negative to keep the art upright. See the player bubble.
+      sprite.scale.set(scale, flipped ? -Math.abs(scale) : Math.abs(scale));
+    }
   }
 
   /**
@@ -114,17 +142,19 @@ export class ChargeTrail {
         rider.seen = false;
         continue;
       }
-      rider.sprite.visible = false;
-      this.root.removeChild(rider.sprite);
-      rider.sprite.destroy();
+      for (const sprite of rider.sprites) {
+        sprite.visible = false;
+        this.root.removeChild(sprite);
+        sprite.destroy();
+      }
       this.riders.delete(id);
     }
   }
 
   /** Test hook: one rider's sprite, for measuring where it sits relative to its creature. */
   riderForTest(id: number): { x: number; y: number; width: number } | null {
-    const rider = this.riders.get(id);
-    return rider ? { x: rider.sprite.x, y: rider.sprite.y, width: rider.sprite.width } : null;
+    const sprite = this.riders.get(id)?.sprites[0];
+    return sprite ? { x: sprite.x, y: sprite.y, width: sprite.width } : null;
   }
 
   /** Test hook: how many creatures are carrying a bubble, and whether the sheet arrived. */
