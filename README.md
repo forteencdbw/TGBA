@@ -750,6 +750,40 @@ playing → cleared → ascend → intro（下一关）
 canvas，headless 跑不起来（这正是要拆它的原因）。这一步的价值不在行为变化——行为**故意**不变——而在于它是
 **把一局抬出这个类**的前置条件：搬出去之后，规则只认这个队列。
 
+### 第一条规则真的搬出去了：`src/placement.ts`（**已验证**）
+
+`emitTimelineEntry` 原来是 `Game` 的私有方法（110 行）：读 `this.camera.visibleWorldRange()`、四块场地
+（`field` / `pickupDrops` / `obstacles` / `hazards`）、以及 `this.stage` + `this.player` 只为了算一个气泡半径。
+**规则本身离"能在类外跑"只差一个 canvas。**
+
+现在它是 `placeEntry(entry, worldY, view, laneWidth, world)`：
+
+- `view` 是**传进来的**——只有调用者知道"进场那一刻"的可见范围；
+- `world` 是四块场地 + `playerRadiusFraction`，没有别的；
+- 它**返回**一条 `SpawnRecord`（落点、来自哪个边、当时的视野上下界），而**日志与每边计数留在 `Game`**，
+  因为那是诊断读的东西，不是规则的一部分。
+
+顺带两处命名：`isObstacleKind` 搬到 `obstacles.ts`（挨着它要问的 `OBSTACLE_KINDS`），`SpawnRecord` /
+`PickupDrop` 从内联类型变成了有名字的类型。
+
+**验证**（这才是重点：这条规则以前**没法**被探针驱动，它需要 canvas，现在可以了）：探针造出 view 与四块场地，
+**19 项逐条通过** ✓
+
+| 检查 | 结果 |
+| --- | --- |
+| `top` 落在作者给的 x、随水流下 | `x=50, y=750` ✓ |
+| `left` / `right` **故意落在泳道外** | `-25` / `125`（lane 100）✓ |
+| 边上进来时的**高度**：作者给的 `depth` vs 默认 | `600` / `576` ✓ |
+| `bottom` 落在视野**下方** | `y=-12` ✓ |
+| bubble 进 `field`（不进 hazards） | `1 / 0` ✓ |
+| pickup **追加**（两次=2）且技能未掷 | `id=null` ✓ |
+| 箱子按**名单**进 obstacles | `1 / 0` ✓ |
+| spline 锚在出生点、按 offset 预先进位 | `start=(50,750)`，`elapsed=3.75/7.5` ✓ |
+| **只有不从边上进来时才**夹进泳道 | `100` vs `125` ✓ |
+
+**诚实说明**：搬的是**逐行原文**（`this.` → 参数、`return;` → `return record;`），只有两处**故意**的改动：
+`path` 改成通过 `spawnAt` 的选项传入（候选 4 的工厂现在支持），以及删掉两段讲**已删除的 `flock`** 的注释。
+
 ### 加载页：进关前先把图片下完
 
 **问题**：图片一直是"用到才下载"，于是**关卡开头那几秒**——玩家看得最仔细的时候——敌人会**从代码画的形状变成贴图** ✗，读起来像故障。

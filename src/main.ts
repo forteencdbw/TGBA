@@ -17,10 +17,10 @@ import { MainMenu } from './menu';
 import { CodexUi } from './codexUi';
 import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
 import { BUBBLE_TYPES, defaultBubbleType, findBubbleType, hasControl, hasVerb, type BubbleType } from './bubbleTypes';
-import { PICKUP_KINDS, type PickupKind } from './levels';
+import { placeEntry, type PickupDrop, type SpawnRecord } from './placement';
 import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
 import { endOverload, gainRage, hitRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName, slamDamage, spendRage, tickRage, type RageState } from './rage';
-import { OBSTACLE_KINDS, mech } from './mechanisms';
+import { mech } from './mechanisms';
 import { chainTargets } from './conductive';
 import { suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
@@ -118,19 +118,6 @@ const BURST_SECONDS = 1.5;
  * what to call it. Indexed by landmark, so a level states its own beats through `Level.landmarks`.
  */
 const EVENT_CALLOUTS = ['鱼群来了', '气泡潮', '爆发'];
-
-/**
- * Whether a level entry names an obstacle.
- *
- * A type PREDICATE rather than an `includes` check with a cast, and the difference is not style: the predicate is
- * what lets the remaining branch narrow to "a hazard kind", so `makeHazard` cannot be handed an obstacle. The
- * enumerated version of this check (`crate` || `coral`) was one new kind away from quietly building a CREATURE out of
- * scenery -- it would have placed, drifted and collided as a hazard while looking like a crate -- and the narrowing
- * is the half of the fix that turns that into a compile error.
- */
-function isObstacleKind(kind: LevelEntry['kind']): kind is ObstacleKind {
-  return (OBSTACLE_KINDS as readonly string[]).includes(kind);
-}
 
 class Game {
   private readonly player = new Player();
@@ -245,16 +232,7 @@ class Game {
    * Exists because "enemies spawn in the middle of the screen" cannot be checked from a screenshot and
    * is a single comparison between two numbers.
    */
-  private readonly spawnLog: {
-    kind: string;
-    /** Which edge it arrived from, so a probe can prove a block's rom reached the game. */
-    from: string;
-    /** Where it actually spawned, which for a side or bottom entry is deliberately OFF the screen. */
-    x: number;
-    worldY: number;
-    visibleTop: number;
-    visibleBottom: number;
-  }[] = [];
+  private readonly spawnLog: SpawnRecord[] = [];
 
   /**
    * How many entries have arrived from each edge this run.
@@ -1841,7 +1819,7 @@ this.sound('hit');
    * `kind` says WHAT each one gives: a skill (rolled at pickup time, because deciding at spawn would commit the
    * player's next twenty seconds before they had even seen the thing), the gun upgrade, or the rate upgrade.
    */
-  private pickupDrops: { kind: PickupKind; id: SkillId | null; x: number; y: number }[] = [];
+  private pickupDrops: PickupDrop[] = [];
   /** When the fish-fart talent can fire again, and how many times it has. */
   private fartReadyAt = 0;
   private farts = 0;
@@ -2475,116 +2453,25 @@ this.sound('hit');
    * Collectables go into the shared field; hazards and skills are owned by the game, so the field hands
    * them over rather than building them.
    */
+  /**
+   * Place one timeline entry, and record where it went.
+   *
+   * The RULE lives in `src/placement.ts`: it needs the water and one fact about the player, and nothing else about this
+   * class -- which is what let it out. What stays here is the bookkeeping the DIAGNOSTICS read: the log of recent
+   * placements (which is how "enemies spawning on screen" is caught as two numbers rather than by eye) and the count
+   * per edge.
+   */
   private emitTimelineEntry(entry: LevelEntry, worldY: number, laneWidth: number): void {
-    /**
-     * ---------------------------------------------------------------------------------------------
-     * WHERE IT ARRIVES FROM, which decides the spawn position before anything else
-     * ---------------------------------------------------------------------------------------------
-     * `top` -- the classic case -- is placed at the top of the view and the current carries it down, so `worldY` is
-     * the whole story.
-     *
-     * The other three need a position that is deliberately OFF the screen, because a creature that appears inside the
-     * view has spawned rather than swum in. So: sides are placed outside the lane at a chosen screen height, and
-     * `bottom` is placed below the view (and moves up -- see `advance` in src/hazards.ts). The visible range is read
-     * HERE rather than being computed by the field, because this is the only place that knows the entry moment.
-     */
-    const side = entry.from ?? 'top';
-    const view = this.camera.visibleWorldRange(0);
-    let spawnX = entry.x * laneWidth;
-    let spawnY = worldY;
-    if (side === 'left' || side === 'right') {
-      const off = laneWidth * mech.spawning.offscreenMarginRatio;
-      spawnX = side === 'left' ? -off : laneWidth + off;
-      spawnY = view.min + (entry.depth ?? mech.spawning.entryDepth) * (view.max - view.min);
-    } else if (side === 'bottom') {
-      spawnY = view.min - laneWidth * mech.spawning.bottomMarginRatio;
-    }
-    const entering = side === 'top' ? null : { from: side, speed: entry.enterSpeed ?? mech.spawning.enterSpeedMps };
-
-    // Recorded so a probe can prove content ENTERS from off-screen rather than appearing on screen.
-    // A "spawns in the middle" bug is invisible in a screenshot and obvious in these numbers.
-    this.spawnLog.push({
-      kind: entry.kind,
-      from: side,
-      x: +spawnX.toFixed(1),
-      worldY: +spawnY.toFixed(1),
-      visibleTop: +view.max.toFixed(1),
-      visibleBottom: +view.min.toFixed(1),
+    const record = placeEntry(entry, worldY, this.camera.visibleWorldRange(0), laneWidth, {
+      field: this.field,
+      pickupDrops: this.pickupDrops,
+      obstacles: this.obstacles,
+      hazards: this.hazards,
+      playerRadiusFraction: stageRadiusFraction(this.stage.stage, this.player.volume),
     });
+    this.spawnLog.push(record);
     if (this.spawnLog.length > 12) this.spawnLog.shift();
-    this.spawnedBySide[side]++;
-    if (entry.kind === 'bubble') {
-      this.field.bubbles.push(this.field.bubbleFromEntry({ ...entry, at: spawnY }, laneWidth, stageRadiusFraction(this.stage.stage, this.player.volume)));
-      return;
-    }
-    if ((PICKUP_KINDS as readonly string[]).includes(entry.kind)) {
-      // APPENDED, not assigned: a level may place several, and one silently replacing another is how a pickup came to
-      // vanish on the player (see `pickups`).
-      // A pickup sits where the level put it and drifts down with the water, waiting to be taken.
-      this.pickupDrops.push({
-        kind: entry.kind as PickupKind,
-        x: spawnX,
-        y: spawnY,
-        // The skill is rolled when it is COLLECTED, not when it is created: granting it here would
-        // decide the player's next twenty seconds before they had even seen the pickup.
-        id: null,
-      });
-      return;
-    }
-    /**
-     * Anything in the obstacle list IS an obstacle, asked of the list rather than enumerated.
-     *
-     * The two-kind version of this was kind === 'crate' || kind === 'coral', which is the kind of check that fails
-     * quietly: a new obstacle kind would fall through to makeHazard and become a creature with an obstacle's name,
-     * which would place, move and collide as a hazard while looking like scenery. Asking OBSTACLE_KINDS means the
-     * fall-through cannot happen, because there is nothing left for it to fall through to.
-     */
-    if (isObstacleKind(entry.kind)) {
-      // Scenery only ever drifts in from a side; the loader refuses a `bottom` obstacle, so `entering` here is
-      // either null or a horizontal drift whose target is the entry's authored x.
-      this.obstacles.spawn(
-        entry.kind,
-        spawnX,
-        spawnY,
-        side === 'left' || side === 'right' ? { speed: entry.enterSpeed ?? mech.spawning.enterSpeedMps, targetX: entry.x * laneWidth } : undefined,
-      );
-      return;
-    }
-    // Everything left is a creature: the pickups, the collectables and the scenery have all returned above.
-    /**
-     * A creature on a path carries the spline, anchored at where it spawned.
-     *
-     * The waypoints are level coordinates RELATIVE to the spawn point (`x` in lane fractions, `y` in metres above), so
-     * one authored weave can be placed anywhere in the level without being re-authored -- and the same path works at any
-     * scroll speed, because the world keeps moving underneath it.
-     */
-    /**
-     * The school, for the same reason and in the same place as the path.
-     *
-     * A key the parser accepts and the spawn path does not carry is a key that disappears between the file and the water --
-     * which is exactly how both `path` and `flock` failed the first time. The simulation reads it from the creature, so the
-     * creature is where it has to arrive.
-     */
-
-
-    const pathSpec = entry.path ? LEVEL.paths?.[entry.path] : undefined;
-    /**
-     * The spline, already advanced to this member's place in the string.
-     *
-     * lapsed starts at the member's offset rather than at zero, so a string is spread ALONG its curve from the first
-     * elapsed starts at the member's offset rather than at zero, so a string is spread ALONG its curve from the first
-     */
-    const path: Hazard['path'] = pathSpec
-      ? {
-          points: pathSpec.points,
-          seconds: pathSpec.seconds,
-          elapsed: pathSpec.seconds * Math.min(0.95, Math.max(0, entry.pathOffset ?? 0)),
-          startX: spawnX,
-          startY: spawnY,
-        }
-      : null;
-    const hazard = this.makeHazard(entry.kind as HazardKind, spawnX, spawnY, entering, undefined, path);
-    this.hazards.hazards.push(hazard);
+    this.spawnedBySide[record.from]++;
   }
 
   /**
@@ -6280,9 +6167,6 @@ async function boot(): Promise<void> {
 }
 
 void boot();
-
-
-
 
 
 

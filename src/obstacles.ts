@@ -16,6 +16,19 @@ import { OBSTACLE_KINDS, mech } from './mechanisms';
  */
 export type ObstacleKind = (typeof OBSTACLE_KINDS)[number];
 
+/**
+ * Whether a level entry names an obstacle.
+ *
+ * A type PREDICATE rather than an `includes` check with a cast, and the difference is not style: the predicate is what
+ * lets the remaining branch narrow to "a hazard kind", so a placement cannot build a CREATURE out of scenery. The
+ * enumerated version of this check (`crate` || `coral`) was one new kind away from exactly that -- it would have placed,
+ * drifted and collided as a hazard while looking like a crate -- and the narrowing is the half of the fix that turns it
+ * into a compile error. It lives next to the list it asks, in the module that owns the list.
+ */
+export function isObstacleKind(kind: string): kind is ObstacleKind {
+  return (OBSTACLE_KINDS as readonly string[]).includes(kind);
+}
+
 /** A placed obstacle. */
 export interface Obstacle {
   id: number;
