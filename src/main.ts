@@ -25,7 +25,7 @@ import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
-import { Sprite, Text as PixiText, Texture } from 'pixi.js';
+import { Assets, Sprite, Text as PixiText, Texture } from 'pixi.js';
 import { allAssetNames, assetUrl, preloadAssets } from './assets';
 import { ParticleField } from './particles';
 import { ChargeTrail } from './chargeTrail';
@@ -786,6 +786,18 @@ class Game {
 
   openCodexRef(): void {
     this.debugOpenCodexForTest();
+  }
+
+  /** Test hook: does Pixi's own asset loader handle the current (Chinese-named) sheet? */
+  async probeAssetsLoad(name: string): Promise<string> {
+    const url = assetUrl(name);
+    if (!url) return 'no url for ' + name;
+    try {
+      const texture = await Assets.load<Texture>(url);
+      return 'loaded ' + texture.width + 'x' + texture.height;
+    } catch (error) {
+      return 'failed: ' + (error instanceof Error ? error.message : String(error));
+    }
   }
 
   /** Test hook: the charge trail's live bubbles and cut frames. */
@@ -6121,6 +6133,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 
