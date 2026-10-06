@@ -28,7 +28,7 @@
  */
 
 import { ColorMatrixFilter, Graphics, Sprite, Texture } from 'pixi.js';
-import { assetUrl, isYFlipped } from './assets';
+import { animationFrameAt, animationSeconds, assetTextureNow, isYFlipped, loadAnimationTextures } from './assets';
 import { mech, tuning } from './config';
 import { hazardMass } from './consumption';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
@@ -316,7 +316,18 @@ export interface Hazard {
    * hit points are gone a creature stops chasing, stops being fooled by bait, stops eating, stops being pulled by
    * the suction field, cannot hurt the player -- and leaves, in one of three directions picked when it decided.
    */
-  flee: 'up' | 'left' | 'right' | 'down' | null;
+  flee: 'up' | 'left' | 'right' | 'down' | 'dead' | null;
+  /**
+   * Seconds since this creature DIED, and how long its death lasts -- both undefined while it is not dying.
+   *
+   * One creature dies rather than leaving: the boss. It does not use `flee`'s motion -- it holds its ground and plays its
+   * death animation -- so `deadSince` is both the animation's clock and the field's timer for removing it, and `deadDeadline`
+   * is the length the config gave that animation (see `startDeath`). `flee: 'dead'` rides along with them so that every "is
+   * it still in the fight" test in this file keeps the same answer without learning a second flag: a dead boss cannot be
+   * shot, cannot hurt the player, and is not pulled by the suction field.
+   */
+  deadSince?: number;
+  deadDeadline?: number;
   /**
    * The facing the creature has COMMITTED to, and how long before it may change: +1 keeps the picture as drawn, -1 mirrors it.
    *
@@ -1522,6 +1533,13 @@ export class HazardField {
      */
     if (hazard.kind === 'boss') {
       this.killed++;
+      /**
+       * `flee: 'dead'` rather than immediate removal, because a boss that vanishes on the killing shot throws away the one
+       * picture the fight earns: it EXPLODES. The body stays in the field, frozen and harmless (`flee` is what every
+       * "still in the fight" test asks), playing its death animation, until `deadSince` outlasts that animation -- see the
+       * cull in `update`. The outcome reported here is unchanged, so the level still ends on the frame the shot lands.
+       */
+      startDeath(hazard);
       // The boss is the one thing that is KILLED rather than driven off, and it breaks like anything else.
       this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour });
       return 'killed';
@@ -1599,6 +1617,9 @@ export class HazardField {
        */
       if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
       if (h.facingRest !== undefined && h.facingRest > 0) h.facingRest = Math.max(0, h.facingRest - dt);
+      // The death's clock, ticked here for the same reason: the painter reads it for the frame and the cull reads it for the
+      // removal, and neither may depend on whether this frame happened to take the death branch's early return.
+      if (h.deadSince !== undefined) h.deadSince += dt;
       this.advance(h, dt, ctx);
       /**
        * A creature's trigger finger, kept out of `advance` on purpose.
@@ -1727,6 +1748,13 @@ export class HazardField {
     const eatenIds = new Set(effects.filter((e) => e.eaten).map((e) => e.eaten!.id));
     this.hazards = this.hazards.filter((h) => {
       if (eatenIds.has(h.id) || detonating.has(h.id)) return false;
+      /**
+       * A DEAD creature leaves when its death animation is done, and that is the only thing that removes it.
+       *
+       * It cannot use the band test below: a boss holds station relative to the player, so a body that was on screen a moment
+       * ago is still on screen -- that is the point of it -- and the band would never retire it.
+       */
+      if (h.deadSince !== undefined) return h.deadSince < (h.deadDeadline ?? 0);
       const inside = h.y > ctx.min - 80 && h.y < ctx.max + 120;
       /**
        * A creature leaving through a SIDE needs retiring on the X axis, because the band above is a y test only.
@@ -2077,6 +2105,14 @@ export class HazardField {
      * current would move it a metre or two anyway.
      */
     if (h.flee) {
+      /**
+       * A DEAD creature does not travel: it holds its ground and plays its death.
+       *
+       * Every other `flee` is a departure, and the step below is what carries it off screen. A boss has nowhere to go -- it
+       * is the level's win condition -- so the death animation is the whole of what happens, and moving it would slide the
+       * explosion out from under the player who caused it.
+       */
+      if (h.flee === 'dead') return;
       const screen = Math.max(1, ctx.max - ctx.min);
       const step = screen * mech.hazards.fleeScreensPerSecond * dt;
       if (h.flee === 'up') h.y += step;
@@ -2407,31 +2443,46 @@ const ART_SPRITES = new Map<number, Sprite>();
 const ART_SEEN = new Map<number, number>();
 /** A monotonic clock for the sweep, set by the painter on each pass. */
 let ART_NOW = 0;
-const ART_TEXTURES = new Map<string, Texture>();
 
-function artTexture(name: string): Texture | null {
-  const cached = ART_TEXTURES.get(name);
-  if (cached) return cached;
-  const url = assetUrl(name);
-  if (!url) return null;
-  const image = new Image();
-  image.onload = () => {
-    void image
-      .decode()
-      .then(() => {
-        const texture = Texture.from(image);
-        // Guarded: a zero-width texture makes every `width =` downstream divide by zero, which is how the player bubble
-        // became enormous twice.
-        if (texture.width > 0 && texture.height > 0) ART_TEXTURES.set(name, texture);
-      })
-      .catch(() => console.warn('[hazardArt] could not decode ' + name));
-  };
-  image.onerror = () => console.warn('[hazardArt] could not load ' + name);
-  image.src = url;
+/**
+ * The textures of every animation, by animation name, once each.
+ *
+ * Loaded through Pixi's asset manager (`loadAnimationTextures`), so the eight pictures behind the boss's two animations are
+ * uploaded once however many bosses come and go. The entry appears only when every frame has arrived, because a half-loaded
+ * animation that played would be a creature changing shape.
+ */
+const ART_ANIMATIONS = new Map<string, Texture[]>();
+const ART_ANIMATIONS_LOADING = new Set<string>();
+
+function animationTextures(name: string): Texture[] | null {
+  const ready = ART_ANIMATIONS.get(name);
+  if (ready) return ready;
+  const animation = mech.animations[name];
+  if (!animation || ART_ANIMATIONS_LOADING.has(name)) return null;
+  ART_ANIMATIONS_LOADING.add(name);
+  void loadAnimationTextures(animation).then((textures) => {
+    ART_ANIMATIONS_LOADING.delete(name);
+    if (textures.length > 0) ART_ANIMATIONS.set(name, textures);
+  });
   // Nothing yet: the caller falls back to the drawn body for as long as that lasts, so a picture is an upgrade to the
   // creature rather than a precondition for it.
-  ART_TEXTURES.set(name, null as unknown as Texture);
   return null;
+}
+
+/**
+ * The picture for one of a creature's states, whether that state is an animation's name or a single file's name.
+ *
+ * `elapsed` is seconds in the state, which is the animation's clock: the frame index is computed by `animationFrameAt`, so
+ * how long a death takes and which frame it is on are one answer rather than two.
+ */
+function hazardArtState(name: string, elapsed: number): Texture | null {
+  const animation = mech.animations[name];
+  if (animation) {
+    const frames = animationTextures(name);
+    if (!frames) return null;
+    return frames[animationFrameAt(animation, elapsed)] ?? frames[frames.length - 1]!;
+  }
+  return assetTextureNow(name);
 }
 
 /**
@@ -3059,6 +3110,38 @@ const CREATURE_DRAWING: Record<HazardKind, CreatureDraw> = {
   rain: drawRain,
 };
 
+/**
+ * Start a creature's death: it stops being part of the fight and starts playing its death animation where it stands.
+ *
+ * ONE place, because the two halves have to agree -- the body must leave the fight on the same frame the animation starts,
+ * and the field must know how long to wait before removing it. `deadDeadline` is computed HERE rather than at the cull so
+ * that the length of a death is decided once, by the config, and not re-derived while the thing is on screen.
+ *
+ * A creature with no `dead` animation still gets its moment: the fallback is short and it holds its last pose, which is the
+ * difference between an explosion that plays and a boss that blinks out of existence.
+ */
+const DEFAULT_DEATH_SECONDS = 0.4;
+
+function startDeath(hazard: Hazard): void {
+  const art = mech.hazardArt[hazard.kind];
+  const animation = art?.dead ? mech.animations[art.dead] : undefined;
+  hazard.deadSince = 0;
+  hazard.deadDeadline = animation ? animationSeconds(animation) : DEFAULT_DEATH_SECONDS;
+  hazard.flee = 'dead';
+}
+
+/**
+ * Whether this creature is on its way OUT of the water, as opposed to dead in it.
+ *
+ * The distinction is the layer a creature is drawn in and the alpha it is drawn at. `flee` covers both states, and the
+ * "leaving" pass exists to dim a departing creature as a whole -- but a boss that has DIED is not departing, it is playing
+ * its death where it stopped, at full opacity. Drawing it in the leaving pass would show the explosion at 42% and read as
+ * "it is still thinking about it".
+ */
+function isDeparting(h: Hazard): boolean {
+  return h.flee !== null && h.flee !== 'dead';
+}
+
 export function paintHazards(
   g: Graphics,
   field: HazardField,
@@ -3077,8 +3160,9 @@ export function paintHazards(
   ART_NOW += 1;
   if (which === 'in-play') pruneArtSprites();
   for (const h of field.hazards) {
-    // A creature is in exactly one of the two passes, so nothing is drawn twice and nothing is missed.
-    if (which === 'leaving' ? !h.flee : h.flee) continue;
+    // A creature is in exactly one of the two passes, so nothing is drawn twice and nothing is missed. A dead one is in
+    // the FIRST pass: it is still part of what is happening, not something on its way out (see `isDeparting`).
+    if (which === 'leaving' ? !isDeparting(h) : isDeparting(h)) continue;
     const r = laneWidth * h.radiusFraction;
     const x = h.x;
     const y = h.y;
@@ -3156,8 +3240,19 @@ export function paintHazards(
       const chargeRow = mech.charges.chargers[h.kind];
       const telegraphSeconds = chargeRow?.telegraphSeconds ?? 0.75;
       const windingUp = h.charge !== null && h.charge.elapsed < telegraphSeconds;
-      const name = windingUp && art.charge ? art.charge : art.move;
-      const texture = artTexture(name);
+      /**
+       * WHICH PICTURE, which is now three states rather than two.
+       *
+       * `dead` beats everything: a boss playing its death is not winding up and not swimming, and the clock it reads (how
+       * long it has been dead) is the same one the field uses to decide when to remove it. `charge` is the wind-up pose, and
+       * only for the wind-up -- a curled shrimp through the whole lunge is a pose saying "I am about to spring" while it is
+       * already springing.
+       */
+      const deadSince = h.deadSince;
+      const dying = deadSince !== undefined;
+      const state = dying ? art.dead : windingUp ? (art.charge ?? art.move) : art.move;
+      const stateElapsed = dying ? deadSince : windingUp ? h.charge!.elapsed : h.phase;
+      const texture = state ? hazardArtState(state, stateElapsed) : null;
       if (texture) {
         let sprite = ART_SPRITES.get(h.id);
         if (!sprite) {
@@ -3179,7 +3274,7 @@ export function paintHazards(
         sprite.visible = true;
         sprite.x = x;
         sprite.y = y;
-        sprite.alpha = art.alpha * (h.flee ? mech.hazards.fleeAlpha : 1);
+        sprite.alpha = art.alpha * (h.flee && !dying ? mech.hazards.fleeAlpha : 1);
         // The world is Y-flipped, so the picture's own Y is negative to keep it upright -- see the player bubble.
         /**
          * Upright in BOTH places, because the flip is asked of the parent chain rather than assumed.

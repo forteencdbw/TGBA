@@ -81,13 +81,12 @@ export class Backdrop {
      * truncating the path.
      */
     /**
-     * Loaded as a plain `<img>`, NOT through Pixi's asset loader.
+     * Loaded as a plain `<img>` rather than through Pixi's loader, and it is the LAST place that does so.
      *
-     * Two reasons, and the first is a bug this hit: `Assets.load` reported
-     * `InvalidStateError: The source image could not be decoded` for a JPEG that the browser then rendered happily from
-     * an `<img>` with the same URL -- so the loader's own decode path was the problem, not the file. The second is that
-     * these files are meant to be replaced BY HAND: an image element fails in the ordinary browser way, and the message
-     * below names the file.
+     * Everything else goes through `loadAssetTexture` (see `src/assets.ts`) so that one file is one GPU texture. A backdrop
+     * is the exception for a reason particular to it: these are the biggest pictures in the game and the most likely to be
+     * re-exported by hand mid-session, and an `<img>` fails in the ordinary browser way, naming the file in the message
+     * below. Pixi's cache would also hold a broken decode for the life of the page; this asks again next level.
      */
     const image = new Image();
     image.decoding = 'async';

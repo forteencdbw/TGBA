@@ -129,6 +129,27 @@ export interface StageConfig {
 }
 
 /**
+ * One animation as the config writes it, and the shape a creature's art points at for its idle, charge or death state.
+ *
+ * `framesPerSecond` and `maxSeconds` are both limits and the SHORTER one wins: the frame rate says how the animation should
+ * read, and the ceiling says how long a state may hold the screen whatever the config says. A four-frame sheet at 4 fps is a
+ * second; the same sheet at 0.5 fps is a creature frozen between two poses, which is what the ceiling is for.
+ *
+ * The frame INDEX is computed in exactly one place (`animationFrameAt` in `src/assets.ts`), so the idle loop, the hold on the
+ * last frame of a death, and the cull that waits for a death to finish cannot disagree about how long an animation is.
+ */
+export interface AssetAnimation {
+  /** One name per frame: a `{n}` pattern expanded to `1..count`, or the list of names itself. */
+  frames: string | string[];
+  /** How many frames a pattern expands to. Ignored when `frames` is a list. */
+  count?: number;
+  framesPerSecond: number;
+  maxSeconds: number;
+  /** Play once and hold the last frame rather than looping. For a death. */
+  once?: boolean;
+}
+
+/**
  * The look and the timing of one kind of FLOATING NUMBER.
  *
  * One shape for every kind of number that drifts up from where something happened, because they are one mechanism: the
@@ -836,11 +857,24 @@ export interface Mechanisms {
   hazardFacing: {
     cooldownSeconds: number;
   };
+  /**
+   * Frame-by-frame animations, by name -- what a creature's art points at for a state it has more than one picture for.
+   *
+   * A frame list is written as a PATTERN plus a count (`"螃蟹-BOSS-待机-{n}"` with `count: 4`), because that is how the frames
+   * are named on disk; a list of names works too when they are not numbered. The pictures are ordinary `src/assets/` files,
+   * so the preload screen fetches them with everything else and Pixi's asset manager caches each one once.
+   *
+   * See `AssetAnimation` for what each field means and `animationFrameAt` for the one place the frame index is computed.
+   */
+  animations: Record<string, AssetAnimation>;
   hazardArt: Record<
     string,
     {
+      /** A picture name in `src/assets/`, or the NAME of an entry in `animations`. */
       move: string;
       charge?: string;
+      /** **死亡动画**: this creature DIES rather than leaving (the boss), and this is what it becomes. */
+      dead?: string;
       /** Overrides `hazardFront` for this kind. */
       front?: 'left' | 'right';
       scale: number;
@@ -1441,6 +1475,36 @@ function isColour(v: unknown): boolean {
   );
 }
 
+/**
+ * One creature's art for one state: a picture name in `src/assets/`, or the name of an entry in `animations`.
+ *
+ * Both are plain strings and they are resolved in that order (see `hazardArtState` in `src/hazards.ts`), which is what lets a
+ * single-picture state stay a single line. A name with nothing behind it is caught at run time by `assetUrl`'s own warning,
+ * naming the typo -- the config cannot see the directory.
+ */
+function isArtState(v: unknown): boolean {
+  return typeof v === 'string' && v.length > 0;
+}
+
+/** The animations table: every row has a frame list and two positive limits. */
+function isAnimationTable(v: unknown): boolean {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const rows = Object.values(v as Record<string, unknown>);
+  return rows.every((row) => {
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) return false;
+    const r = row as Record<string, unknown>;
+    const framesOk =
+      (typeof r.frames === 'string' && r.frames.length > 0 && typeof r.count === 'number' && Number.isInteger(r.count) && r.count >= 1 && r.count <= 64) ||
+      (Array.isArray(r.frames) && r.frames.length >= 1 && r.frames.every((n) => typeof n === 'string' && n.length > 0));
+    if (!framesOk) return false;
+    if (r.once !== undefined && typeof r.once !== 'boolean') return false;
+    return (
+      typeof r.framesPerSecond === 'number' && r.framesPerSecond > 0.05 && r.framesPerSecond <= 60 &&
+      typeof r.maxSeconds === 'number' && r.maxSeconds > 0.02 && r.maxSeconds <= 30
+    );
+  });
+}
+
 /** Read a value by dotted path, used by the validation pass below. */
 function readRaw(path: string): unknown {
   let node: unknown = parsed;
@@ -2014,11 +2078,17 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
         // a row can get wrong in a way that shows: a mirrored picture, or a charging creature that keeps its swimming
         // pose. `charge` is optional -- a creature with no wind-up pose is the normal case.
         if (r.front !== undefined && r.front !== 'left' && r.front !== 'right') return false;
-        if (r.charge !== undefined && (typeof r.charge !== 'string' || r.charge.length === 0)) return false;
-        return typeof r.move === 'string' && r.move.length > 0 && typeof r.scale === 'number' && r.scale > 0.05 && r.scale <= 6 && typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1;
+        if (r.charge !== undefined && !isArtState(r.charge)) return false;
+        if (r.dead !== undefined && !isArtState(r.dead)) return false;
+        return isArtState(r.move) && typeof r.scale === 'number' && r.scale > 0.05 && r.scale <= 6 && typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1;
       });
     },
-    describe: 'an object of kind -> { move, charge?, front?, scale, alpha, lure? }',
+    describe: 'an object of kind -> { move, charge?, dead?, front?, scale, alpha, lure? }, where each state is a picture name or an animation',
+  },
+  {
+    path: 'animations',
+    check: (v) => isAnimationTable(v),
+    describe: 'an object of animation name -> { frames, count?, framesPerSecond, maxSeconds, once? }; `frames` is a "{n}" pattern plus `count`, or a list of picture names',
   },
   { path: 'hazardFront', check: (v) => v === 'left' || v === 'right', describe: '"left" or "right": which way round a creature with a picture counts as facing' },
   { path: 'hazardFacing.cooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30; 0 lets a creature turn every frame' },

@@ -26,7 +26,7 @@ import { Stomach, stomachBulge, tierBonusFor, type SpitProjectile } from './spit
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
 import { Assets, Sprite, Text as PixiText, Texture } from 'pixi.js';
-import { allAssetNames, assetUrl, preloadAssets } from './assets';
+import { allAssetNames, assetTextureNow, assetUrl, preloadAssets } from './assets';
 import { ParticleField } from './particles';
 import { ChargeTrail } from './chargeTrail';
 
@@ -625,7 +625,13 @@ class Game {
     this.debugOpenCodexForTest();
   }
 
-  /** Test hook: does Pixi's own asset loader handle the current (Chinese-named) sheet? */
+  /**
+   * Test hook: what Pixi's asset manager makes of one of the Chinese-named pictures.
+   *
+   * Kept because it is what settled the question the whole loading path now rests on -- that the loader reads these files
+   * fine and reports their real size -- so the next "is the loader or the file at fault" starts from a measurement rather
+   * than a rewrite.
+   */
   async probeAssetsLoad(name: string): Promise<string> {
     const url = assetUrl(name);
     if (!url) return 'no url for ' + name;
@@ -3152,50 +3158,20 @@ class Game {
    * screen, which is what keeps this from being the "one sprite per frame" bug with bullets.
    */
   private readonly bulletSprites: Sprite[] = [];
-  private bulletTexture: Texture | null = null;
-  private bulletArtFor = '';
-  private bulletArtPending = false;
-
   private bubbleSpriteFor = '';
-  /** Whether a load for \ubbleSpriteFor\ is in flight, so one name never builds two sprites. */
-  private bubbleSpritePending = false;
 
   /**
    * Place one sprite per live bullet, and report whether the picture is being drawn at all.
    *
-   * The texture is shared by every bullet and built once per image name, after `decode()` -- the same two traps as the
-   * bubble: a zero-width texture makes `width =` divide by zero, and rebuilding per frame leaves orphans on screen for
-   * ever. Bullets are pooled by id because they are created and destroyed constantly.
+   * The texture is shared by every bullet and asked for by name, not built: Pixi's asset manager already holds it (the
+   * loading screen fetched every picture before the run began), so this is a cache lookup and a sprite scale. Bullets are
+   * pooled because they are created and destroyed constantly.
    */
   private syncBulletSprites(g: Graphics, laneWidth: number): boolean {
     const cfg = mech.bullets;
     if (!cfg.image) {
       for (const sprite of this.bulletSprites) sprite.visible = false;
       return false;
-    }
-    if (!this.bulletTexture && !this.bulletArtPending && this.bulletArtFor !== cfg.image) {
-      this.bulletArtFor = cfg.image;
-      this.bulletArtPending = true;
-      const image = new Image();
-      image.onload = () => {
-        void image
-          .decode()
-          .then(() => {
-            const texture = Texture.from(image);
-            if (texture.width > 0 && texture.height > 0) this.bulletTexture = texture;
-            this.bulletArtPending = false;
-          })
-          .catch(() => {
-            this.bulletArtPending = false;
-            console.warn('[bullets] could not decode ' + cfg.image);
-          });
-      };
-      image.onerror = () => {
-        this.bulletArtPending = false;
-        console.warn('[bullets] could not load ' + cfg.image);
-      };
-      const url = assetUrl(cfg.image);
-      if (url) image.src = url;
     }
     /**
      * Until the picture is ready, the DOTS are drawn.
@@ -3204,7 +3180,7 @@ class Game {
      * for as long as the load took, and for ever if it failed. The art is an upgrade to the rounds, not a precondition
      * for them.
      */
-    const texture = this.bulletTexture;
+    const texture = assetTextureNow(cfg.image);
     if (!texture) return false;
     const size = laneWidth * mech.bullets.radiusRatio * 2 * cfg.imageScale;
     // The world is Y-flipped, so the sprite's own Y is negative to keep the picture upright; see the bubble.
@@ -3235,11 +3211,11 @@ class Game {
   /**
    * Load (once) and place the player's picture for this frame. See `playerBubble` in the config.
    *
-   * Three things are worth naming. It loads through a plain `<img>` rather than Pixi's asset loader, for the reason the
-   * backdrops do: these files are hand-replaced, have Chinese names, and the loader's own decode path rejected one of them
-   * with a message that pointed at the file instead of the URL. It is built ONCE per image name, because the bubble is
-   * drawn every frame. And the size is `radius * imageScale`, so art with padding around the ball can be corrected
-   * without touching code.
+   * Three things are worth naming. It asks PIXI for the texture by name rather than building one, which is what keeps the
+   * bubble and every other picture of the same file on one GPU texture -- and the whole `decode`-before-you-measure dance
+   * that once made the bubble enormous is gone with it, because the asset manager never hands out a zero-width texture. It is
+   * built ONCE per image name, because the bubble is drawn every frame. And the size is `radius * imageScale`, so art with
+   * padding around the ball can be corrected without touching code.
    */
   private syncBubbleSprite(worldX: number, worldY: number, radius: number, alpha: number): boolean {
     const cfg = mech.playerBubble;
@@ -3248,58 +3224,26 @@ class Game {
       return false;
     }
     /**
-     * ONE attempt per image name, tracked by a flag rather than by `bubbleSprite` being set.
+     * ONE sprite per image name, and the name is what is remembered -- not the sprite.
      *
-     * The first version keyed on the sprite itself, which is null until the picture finishes loading -- so every frame in
-     * between started ANOTHER load and added ANOTHER sprite. They all eventually arrived at the correct size except the
-     * ones that had already been positioned while the camera was still being set up, and those stayed on screen for ever
-     * as the giant bubble at the left edge the owner photographed. A pending flag makes the invariant the obvious one:
-     * one name, one sprite.
+     * The first version keyed on the sprite itself, which is null until the picture finishes loading, so every frame in
+     * between added ANOTHER sprite. They all eventually arrived at the correct size except the ones that had already been
+     * positioned while the camera was still being set up, and those stayed on screen for ever as the giant bubble at the
+     * left edge the owner photographed.
      */
-    if (!this.bubbleSpritePending && this.bubbleSpriteFor !== cfg.image) {
-      this.bubbleSpritePending = true;
+    if (this.bubbleSpriteFor !== cfg.image) {
       this.bubbleSpriteFor = cfg.image;
       this.bubbleSprite?.destroy();
       this.bubbleSprite = null;
-      const image = new Image();
-      /**
-       * `await decode()` BEFORE building the texture, and this is the whole bug that made the bubble enormous.
-       *
-       * `Texture.from(image)` on an element whose data has arrived but whose dimensions are not yet known produces a
-       * texture of ZERO width -- and the next line, `sprite.width = size`, divides by exactly that, so the sprite's scale
-       * became enormous and the picture filled half the screen. The pixelated edges in the owner's screenshot are a
-       * 512-wide picture magnified by a runaway scale, which is what pointed at this rather than at the size maths (the
-       * maths was right: the probe measured a 30px sprite while the screen showed a giant, and a measurement that
-       * disagrees with the screen is measuring something else).
-       *
-       * `decode()` resolves only when the bitmap is fully decoded and its size is known, and it rejects on a broken file,
-       * so both the failure and the size are handled by the one call.
-       */
-      image.onload = () => {
-        void image
-          .decode()
-          .then(() => {
-            const texture = Texture.from(image);
-            if (texture.width <= 0 || texture.height <= 0) return;
-            const sprite = new Sprite(texture);
-            sprite.anchor.set(0.5);
-            sprite.eventMode = 'none';
-            // The same parent as the drawn bubble, so it lives in world coordinates like everything else in the water.
-            this.bubble.parent?.addChildAt(sprite, this.bubble.parent.getChildIndex(this.bubble));
-            this.bubbleSprite = sprite;
-            this.bubbleSpritePending = false;
-          })
-          .catch(() => {
-            this.bubbleSpritePending = false;
-            console.warn('[bubble] could not decode ' + cfg.image);
-          });
-      };
-      image.onerror = () => {
-        this.bubbleSpritePending = false;
-        console.warn('[bubble] could not load ' + cfg.image);
-      };
-      const url = assetUrl(cfg.image);
-      if (url) image.src = url;
+      const texture = assetTextureNow(cfg.image);
+      if (texture) {
+        const sprite = new Sprite(texture);
+        sprite.anchor.set(0.5);
+        sprite.eventMode = 'none';
+        // The same parent as the drawn bubble, so it lives in world coordinates like everything else in the water.
+        this.bubble.parent?.addChildAt(sprite, this.bubble.parent.getChildIndex(this.bubble));
+        this.bubbleSprite = sprite;
+      }
     }
     const sprite = this.bubbleSprite;
     if (!sprite) return false;

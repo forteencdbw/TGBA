@@ -1,7 +1,7 @@
 /**
  * The bubble animation that follows a charging creature.
  *
- * ONE sprite per charging creature (see \`count\` in the config if that ever needs to be a cluster), glued to it every frame and
+ * ONE sprite per charging creature (see `count` in the config if that ever needs to be a cluster), glued to it every frame and
  * walked through its sheet -- the sheet is a LOOP played by the sprite, not a sequence of particles emitted into the water.
  *
  * ---------------------------------------------------------------------------------------------
@@ -15,11 +15,11 @@
  * Sprites are pooled by creature id, and a creature that stops charging loses its sprite the next frame.
  */
 import { Container, Rectangle, Sprite, Texture } from 'pixi.js';
-import { assetUrl, isYFlipped } from './assets';
+import { isYFlipped, loadAssetTexture } from './assets';
 import { mech } from './mechanisms';
 
 interface Rider {
-  /** One bubble per entry in \`count\`; index 0 is the one directly behind the creature. */
+  /** One sprite per entry in `count`; index 0 is the one directly behind the creature. */
   sprites: Sprite[];
   /** Seconds of animation so far, so the frame advances with time rather than with frames rendered. */
   clock: number;
@@ -41,40 +41,38 @@ export class ChargeTrail {
     this.root.eventMode = 'none';
   }
 
+  /**
+   * Cut the sheet into frames, once, out of the texture Pixi's asset manager already holds.
+   *
+   * It used to build its own `<img>` and `Texture.from` it, which is a SECOND texture over the same bytes for a picture the
+   * loader had already uploaded. This sheet is not a special case, it is just the one picture here that arrives as a grid,
+   * and cutting rectangles out of it is the only part that is this module's business.
+   */
   private ensureTextures(): void {
     if (this.ready || this.loading) return;
     const cfg = mech.chargeTrail;
     if (!cfg.image) return;
-    const url = assetUrl(cfg.image);
-    if (!url) return;
     this.loading = true;
-    const image = new Image();
-    image.onload = () => {
-      void image
-        .decode()
-        .then(() => {
-          const sheet = Texture.from(image);
-          if (sheet.width <= 0) return;
-          const fw = Math.floor(sheet.width / Math.max(1, cfg.columns));
-          const fh = Math.floor(sheet.height / Math.max(1, cfg.rows));
-          for (let i = 0; i < cfg.columns * cfg.rows; i++) {
-            const col = i % cfg.columns;
-            const row = Math.floor(i / cfg.columns);
-            this.textures.push(new Texture({ source: sheet.source, frame: new Rectangle(col * fw, row * fh, fw, fh) }));
-          }
-          this.ready = this.textures.length > 0;
-        })
-        .catch(() => console.warn('[chargeTrail] could not decode ' + cfg.image));
-    };
-    image.onerror = () => console.warn('[chargeTrail] could not load ' + cfg.image);
-    image.src = url;
+    void loadAssetTexture(cfg.image).then((sheet) => {
+      this.loading = false;
+      if (!sheet) return;
+      const fw = Math.floor(sheet.width / Math.max(1, cfg.columns));
+      const fh = Math.floor(sheet.height / Math.max(1, cfg.rows));
+      if (fw <= 0 || fh <= 0) return;
+      for (let i = 0; i < cfg.columns * cfg.rows; i++) {
+        const col = i % cfg.columns;
+        const row = Math.floor(i / cfg.columns);
+        this.textures.push(new Texture({ source: sheet.source, frame: new Rectangle(col * fw, row * fh, fw, fh) }));
+      }
+      this.ready = this.textures.length > 0;
+    });
   }
 
   /**
    * Put this creature's bubble behind it and advance the animation. Call once per frame while it charges.
    *
-   * \`dirX\`/\`dirY\` is a unit vector along the DASH, not the creature's velocity: a charge steers along its curve, and the wake
-   * should trail the geometry the player sees. \`laneWidth\` sizes the bubble as a fraction of the lane, like every other prop
+   * `dirX`/`dirY` is a unit vector along the DASH, not the creature's velocity: a charge steers along its curve, and the wake
+   * should trail the geometry the player sees. `laneWidth` sizes the bubble as a fraction of the lane, like every other prop
    * in the water.
    */
   ride(id: number, x: number, y: number, dt: number, laneWidth: number, dirX = 0, dirY = 0): void {
@@ -108,7 +106,7 @@ export class ChargeTrail {
     /**
      * Behind the creature, fanning outwards.
      *
-     * With \`count\` at its default of 1 this is simply "back along the dash by \`behindFactor\` of the bubble's own size"; the
+     * With `count` at its default of 1 this is simply "back along the dash by `behindFactor` of the bubble's own size"; the
      * fan is what makes a cluster of several bubbles read as churned water rather than as several bubbles in a row.
      */
     const baseAngle = Math.atan2(-dirY, -dirX);
@@ -117,8 +115,8 @@ export class ChargeTrail {
       /**
        * Looping, because the sheet runs round for as long as the dash does.
        *
-       * The index is FLOORED and the reason is worth keeping: a fractional index makes \`this.textures[1.2]\` undefined, and the
-       * first frame of the wake threw. A frame index is a whole number or it is a bug.
+       * The index is FLOORED and the reason is worth keeping: a fractional index makes \`this.textures[1.2]\` undefined, and
+       * the first frame of the wake threw. A frame index is a whole number or it is a bug.
        */
       const frame = this.textures[Math.floor(rider.clock / per) % this.textures.length]!;
       sprite.texture = frame;
