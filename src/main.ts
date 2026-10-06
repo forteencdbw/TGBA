@@ -21,6 +21,7 @@ import { PICKUP_KINDS, type PickupKind } from './levels';
 import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
 import { endOverload, gainRage, hitRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName, slamDamage, spendRage, tickRage, type RageState } from './rage';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
+import { chainTargets } from './conductive';
 import { suctionMoveFactor, suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
@@ -1129,9 +1130,7 @@ class Game {
        * make, and the same banner, so "something I did just made me stronger" reads identically in both systems.
        */
       if (this.tierBonus > tierBefore) {
-        this.runBanner.text = `消化 · 可吞等级 +${this.tierBonus}  ·  体积仍 ${this.player.volume.toFixed(1)}`;
-        this.runBanner.alpha = 1;
-        this.bannerSeen = true;
+        this.banner(`消化 · 可吞等级 +${this.tierBonus}  ·  体积仍 ${this.player.volume.toFixed(1)}`);
         audio.play('skill');
       }
     }
@@ -1182,9 +1181,7 @@ class Game {
       this.lastComedyBeat = { what: tick.detonations[0]!.kind, at: this.elapsed };
       audio.play('hit');
       audio.play('pop');
-      this.runBanner.text = `胃里炸了  ·  ${tick.detonations.length} 颗  ·  炸弹鱼不能留`;
-      this.runBanner.alpha = 1;
-      this.bannerSeen = true;
+      this.banner(`胃里炸了  ·  ${tick.detonations.length} 颗  ·  炸弹鱼不能留`);
     }
 
     /**
@@ -1223,9 +1220,8 @@ class Game {
       this.spitFlash = 1;
       if (attempt.outcome === 'clogged') {
         this.spitClogs++;
-        this.runBanner.text = '油污卡住了  ·  吐不出来，只能压下去';
-        this.runBanner.alpha = 1;
-        audio.play('hit');
+        this.banner('油污卡住了  ·  吐不出来，只能压下去');
+audio.play('hit');
       }
       return;
     }
@@ -2605,12 +2601,11 @@ class Game {
         const before = this.gunStreams;
         this.gunStreams = Math.min(mech.bullets.maxStreams, this.gunStreams + 1);
         audio.play('skill');
-        this.runBanner.text =
+        this.banner(
           this.gunStreams > before
             ? `火力升级  ·  ${this.gunStreams} 排小泡泡同时发射`
-            : `火力升级  ·  已经是 ${this.gunStreams} 排（上限 ${mech.bullets.maxStreams}）`;
-        this.runBanner.alpha = 1;
-        this.bannerSeen = true;
+            : `火力升级  ·  已经是 ${this.gunStreams} 排（上限 ${mech.bullets.maxStreams}）`,
+        );
       } else if (pickup.kind === 'rate') {
         /**
          * The fire-rate ladder, one step per pickup.
@@ -2622,12 +2617,11 @@ class Game {
         const before = this.rateTier;
         this.rateTier = Math.min(mech.bullets.rateTiers.length, this.rateTier + 1);
         audio.play('skill');
-        this.runBanner.text =
+        this.banner(
           this.rateTier > before
             ? `射速升级  ·  第 ${this.rateTier} 档  ·  每秒 ${mech.bullets.rateTiers[this.rateTier - 1]} 发`
-            : `射速升级  ·  已经是最高档（第 ${mech.bullets.rateTiers.length} 档）`;
-        this.runBanner.alpha = 1;
-        this.bannerSeen = true;
+            : `射速升级  ·  已经是最高档（第 ${mech.bullets.rateTiers.length} 档）`,
+        );
       } else {
         const skill = pickup.id ?? (SKILLS[Math.floor(Math.random() * SKILLS.length)] ?? SKILLS[0]).id;
         this.grantSkill(skill);
@@ -3060,9 +3054,8 @@ class Game {
 
     // A banner and a sound for each beat. No hazards: the level's timeline already placed them, and the
     // job here is to tell the player what they are swimming into.
-    this.runBanner.text = `${label}  ·  ${EVENT_CALLOUTS[index] ?? ''}`.trim();
-    this.runBanner.alpha = 1;
-    audio.play('skill');
+    this.banner(`${label}  ·  ${EVENT_CALLOUTS[index] ?? ''}`.trim());
+audio.play('skill');
   }
 
   /**
@@ -3198,9 +3191,8 @@ class Game {
        */
       if (this.overloaded && obstacleHealth(contact.hit.kind) >= mech.angry.overload.releaseHealth) {
         endOverload(this.rage);
-        this.runBanner.text = `怒气释放  ·  撞碎了${obstacleName(contact.hit.kind)}`;
-        this.runBanner.alpha = 1;
-      }
+        this.banner(`怒气释放  ·  撞碎了${obstacleName(contact.hit.kind)}`);
+}
     }
     if (contact.hit) {
       /**
@@ -3285,9 +3277,7 @@ class Game {
           if (recordAbsorb(this.stage)) {
             this.player.stageSpeedMultiplier = this.stage.speedMultiplier;
             this.invulnerable = Math.max(this.invulnerable, mech.stages.growInvulnerableSeconds);
-            this.runBanner.text = `${stageName(this.stage.stage)}  ·  ${this.stage.stage} 阶段  ·  速度 ×${this.stage.speedMultiplier.toFixed(2)}`;
-            this.runBanner.alpha = 1;
-            this.bannerSeen = true;
+            this.banner(`${stageName(this.stage.stage)}  ·  ${this.stage.stage} 阶段  ·  速度 ×${this.stage.speedMultiplier.toFixed(2)}`);
             audio.play('skill');
           }
         } else {
@@ -3379,9 +3369,8 @@ class Game {
     this.stats.ended++;
     this.recordBest();
     audio.play('pop');
-    this.runBanner.text = `破裂  ·  深度 ${Math.round(this.player.depth(LEVEL.scrollLength))}m  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×`;
-    this.runBanner.alpha = 1;
-  }
+    this.banner(`破裂  ·  深度 ${Math.round(this.player.depth(LEVEL.scrollLength))}m  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×`);
+}
 
   /**
    * The volatile bubble's verb: wind up while the control is held, slam when it is released.
@@ -3472,9 +3461,8 @@ class Game {
     const { overloadExpired } = tickRage(this.rage, dt, this.invulnerable > 0 || gripped);
     if (!wasOverloaded && isOverloaded(this.rage)) {
       // Announced once, on the frame it starts: a warning that repeats every frame is noise.
-      this.runBanner.text = `失控  ·  ${mech.angry.overload.seconds.toFixed(1)} 秒内把怒气放掉`;
-      this.runBanner.alpha = 1;
-      audio.play('slow');
+      this.banner(`失控  ·  ${mech.angry.overload.seconds.toFixed(1)} 秒内把怒气放掉`);
+audio.play('slow');
     }
     if (overloadExpired) this.punishOverload();
   }
@@ -3503,9 +3491,8 @@ class Game {
       hits++;
     }
     this.stats.overloads++;
-    this.runBanner.text = `怒气失控  ·  体积 ${before.toFixed(2)} → ${this.player.volume.toFixed(2)}`;
-    this.runBanner.alpha = 1;
-    audio.play('pop');
+    this.banner(`怒气失控  ·  体积 ${before.toFixed(2)} → ${this.player.volume.toFixed(2)}`);
+audio.play('pop');
   }
 
   /**
@@ -3777,9 +3764,7 @@ class Game {
     const index = levelIndex(id);
     this.levelsClearedInRun = Math.max(this.levelsClearedInRun, index);
     this.startRun(carryScore);
-    this.runBanner.text = `第 ${index + 1} 关  ·  ${LEVEL.name}  ·  分数继承 ${this.score.value}`;
-    this.runBanner.alpha = 1;
-    this.bannerSeen = true;
+    this.banner(`第 ${index + 1} 关  ·  ${LEVEL.name}  ·  分数继承 ${this.score.value}`);
   }
 
   /** Leave the level and show the main menu. */
@@ -3938,36 +3923,24 @@ class Game {
 
     if (this.charge < cfg.chainAt) return;
     /**
-     * The discharge. Breadth-first from the nearest zapper, so the chain is a spreading event rather than a list of
-     * unrelated hits, and the visual radius is the distance it actually reached.
+     * The discharge. The reach is a rule of its own -- see `src/conductive.ts`, which is where the breadth-first spread
+     * lives now that it can be asked directly what a given arrangement of zappers does.
      */
     const px = this.player.x * laneWidth;
     const py = this.player.y;
-    const origin = this.hazards.hazards
-      .filter((h) => h.kind === 'zapper' && !h.flee)
-      .map((h) => ({ h, d: Math.hypot(h.x - px, h.y - py) }))
-      .filter((e) => e.d <= cfg.chainRangeMeters)
-      .sort((a, b) => a.d - b.d)[0];
-    if (!origin) return;
+    const reached = chainTargets(this.hazards.hazards, { x: px, y: py }, {
+      rangeMeters: cfg.chainRangeMeters,
+      jumpMeters: cfg.chainJumpMeters,
+      maxTargets: cfg.chainMaxTargets,
+    });
+    if (reached.size === 0) return;
 
-    const hit = new Set<number>([origin.h.id]);
-    const queue = [origin.h];
-    while (queue.length && hit.size < cfg.chainMaxTargets) {
-      const from = queue.shift()!;
-      for (const h of this.hazards.hazards) {
-        if (hit.has(h.id) || h.kind !== 'zapper' || h.flee) continue;
-        if (Math.hypot(h.x - from.x, h.y - from.y) > cfg.chainJumpMeters) continue;
-        hit.add(h.id);
-        queue.push(h);
-        if (hit.size >= cfg.chainMaxTargets) break;
-      }
-    }
     this.chargeBurstRadius = cfg.chainJumpMeters * 0.5;
     this.chargeBurst = cfg.burstSeconds;
     this.charge = 0;
     audio.play('surface');
     for (const h of this.hazards.hazards) {
-      if (!hit.has(h.id)) continue;
+      if (!reached.has(h.id)) continue;
       // Through `hit`, so the discharge is ordinary damage: health, the driven-off score, the popup and the knockback
       // all apply. The impact point is the BUBBLE, because that is where the discharge came from -- so a chained zapper
       // is pushed away from the player like everything else the player hits.
@@ -3975,9 +3948,7 @@ class Game {
       this.popups.add(h.x, h.y, this.score.award('drivenOff'), this.camera);
     }
     if (cfg.chainSelfDamage > 0) this.takeHit();
-    this.runBanner.text = `连锁放电  ·  ${hit.size} 只`;
-    this.runBanner.alpha = 1;
-    this.bannerSeen = true;
+    this.banner(`连锁放电  ·  ${reached.size} 只`);
   }
 
   private updateBoss(): void {
@@ -3999,9 +3970,7 @@ class Game {
       boss.tint = spec.colour ?? null;
       this.hazards.hazards.push(boss);
       audio.play('surface');
-      this.runBanner.text = `${spec.name}  ·  击败它才能离开这一关`;
-      this.runBanner.alpha = 1;
-      this.bannerSeen = true;
+      this.banner(`${spec.name}  ·  击败它才能离开这一关`);
     }
     const boss = this.hazards.hazards.find((h) => h.kind === 'boss');
     this.hud.setBoss(boss && !boss.flee ? { name: spec.name, fraction: boss.health / Math.max(1, boss.maxHealth) } : null);
@@ -4035,10 +4004,9 @@ class Game {
     this.recordBest();
     audio.play('surface');
     this.splash = 1;
-    this.runBanner.text = `击败了 ${LEVEL.boss.name}  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s`;
-    this.runBanner.alpha = 1;
+    // The results card is not a banner: it stays up until the run moves on, so it is shown here and faded by
+    // `updateTransientOverlays`.
     this.finishBanner.alpha = 1;
-    this.bannerSeen = true;
     /**
      * Clearing the level, which is what unlocks the next one.
      *
@@ -4047,11 +4015,16 @@ class Game {
      * any, and the banner NAMES it: an unlock that only shows up as a pill changing colour on a menu the player is not
      * looking at is an unlock nobody notices.
      */
+    const clearText = `击败了 ${LEVEL.boss.name}  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s`;
     const unlocked = this.progress.clear(LEVEL.id);
     if (unlocked) {
       const opened = LEVELS.find((l) => l.id === unlocked);
-      this.runBanner.text += `\n新关卡解锁：${opened?.name ?? unlocked}`;
+      // ONE message, composed once: the unlock is part of the same moment, and appending it to the label on screen
+      // would be a read-modify-write of a display object from inside a rule.
+      this.banner(`${clearText}\n新关卡解锁：${opened?.name ?? unlocked}`);
       this.refreshLevelMenu();
+    } else {
+      this.banner(clearText);
     }
     /**
      * And then the run WALKS ON.
@@ -4195,6 +4168,28 @@ class Game {
    * marine snow are presentation with no rule attached -- nothing reads them back -- and the sprite loaders on the
    * bubble and the bullets fill a cache rather than decide anything.
    */
+  /**
+   * Show a transient message across the middle of the screen.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THIS IS A METHOD AND NOT FIFTEEN COPIES OF TWO STATEMENTS
+   * ---------------------------------------------------------------------------------------------
+   * Every message in the game was written as `runBanner.text = …; runBanner.alpha = 1;`, which is three facts the
+   * caller had to remember: the text, that showing it means resetting the alpha (a banner that was mid-fade would
+   * otherwise appear at half opacity), and that a banner has been shown this run -- which is what `bannerSeen` records,
+   * because a transient message cannot be caught by a probe that samples once a frame.
+   *
+   * Nine of the fifteen sites remembered all three; the rest remembered two. That is the shape of a rule that lives in
+   * its callers.
+   *
+   * NOT a `Feedback` interface for the whole simulation yet, deliberately: with one implementation it would be a seam
+   * nothing crosses, and this file has already deleted one of those (`setCanvasRect`). It becomes that interface when
+   * the rules actually move out of this class and need to be handed something to say things through.
+   */
+  private banner(text: string): void {
+    this.banner(text);
+  }
+
   private render(dt: number): void {
     /**
      * The screen shake, applied before anything is drawn.
