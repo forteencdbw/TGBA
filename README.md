@@ -1390,7 +1390,7 @@ BOSS 悬在画面外，玩家永远看不到它；而这一关只有打死它才
 | `hazards.eel.shockPeriodSeconds` / `shockSeconds` | 电鳗多久电一下、电多久。`shockSeconds = 0` 等于关掉这条副作用 |
 | `hazards.rot.digestScale` | 它在胃袋里时消化速度的倍率。1 = 没影响 |
 | `hazards.oil.spitChance` | 每次喷吐把它吐出去的概率。0 = 永久堵死 |
-| `eelShockColor` / `eelShockWidthRatio` | 被电时气泡上那圈锯齿电光的颜色与线宽（通用的，不属于某一种生物） |
+| `hazards.eel.shockColor` / `shockWidthRatio` | 被电时气泡上那圈锯齿电光的颜色与线宽（**电鳗的**：那个提示说的是"我被电了"） |
 
 **"质量转化为等级"的账在炸弹鱼身上是分开的**：`StomachTick` 同时报 `drained`（消化流出的，**付**成长能量）和 `destroyed`（被炸掉的，**不付**）。合成一个数就等于让玩家用炸弹把食物白换成等级，正好和这只生物存在的理由相反。
 
