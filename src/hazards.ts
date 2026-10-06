@@ -3209,6 +3209,18 @@ function startDeath(hazard: Hazard): void {
   hazard.deadSince = 0;
   hazard.deadDeadline = animation ? animationSeconds(animation) : DEFAULT_DEATH_SECONDS;
   hazard.flee = 'dead';
+  /**
+   * AND THE HIT FLASH GOES OUT, which is the one part of a death that is not additive.
+   *
+   * The flash is white, it is drawn as a colour matrix on the sprite, and the killing shot sets it like any other hit -- so
+   * the death animation played through a filter that replaced every pixel of it with white. Nothing of the explosion was
+   * visible but its silhouette, which is the whole of what the owner reported: "it plays, but all white".
+   *
+   * Cut HERE rather than left to expire, because the death's first frame is the frame the flash would hide, and two tenths of
+   * a second is the entire explosion at this length. The feedback the flash would have given is not lost: the explosion, the
+   * debris ring and the score popup are all the same event, and a body that is exploding cannot also be "just hit".
+   */
+  hazard.hitFlash = 0;
 }
 
 /**
