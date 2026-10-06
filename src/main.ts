@@ -698,12 +698,6 @@ class Game {
     return this.pointerLog;
   }
 
-  /** Canvas box on screen. Retained for hosts that offset the canvas element. */
-  setCanvasRect(_rect: { left: number; top: number; width: number; height: number }): void {
-    // The touch layer works in canvas coordinates and does not need this today; kept as the seam
-    // for a host that letterboxes or scales the canvas element.
-  }
-
   /** Skill button geometry in canvas coordinates, so tests touch the real control. */
   get touchGeometry() {
     return this.touch.skillGeometry;
@@ -1738,11 +1732,6 @@ class Game {
     // position is derived from it. Writing player.y directly would be overwritten on the next frame.
     this.camera.setScroll(this.scrolled);
     this.player.syncToCamera(this.camera.y, this.camera.viewport.visibleDepthMeters);
-  }
-
-  /** Test hook: force the boost state, bypassing the event system. Gone with the accelerate control. */
-  debugSetBoosting(value: boolean): boolean {
-    return this.touch.debugSetBoosting(value);
   }
 
   /**
@@ -6107,15 +6096,6 @@ async function boot(): Promise<void> {
   window.addEventListener('orientationchange', () => window.setTimeout(applySize, 120));
   window.visualViewport?.addEventListener('resize', applySize);
   applySize();
-
-  // Keep the touch layer's coordinate correction in sync with the canvas's real box on screen.
-  const syncCanvasRect = () => {
-    const r = app.canvas.getBoundingClientRect();
-    game.setCanvasRect({ left: r.left, top: r.top, width: r.width, height: r.height });
-  };
-  new ResizeObserver(syncCanvasRect).observe(app.canvas);
-  window.addEventListener('scroll', syncCanvasRect, { passive: true });
-  syncCanvasRect();
 
   // Boot diagnostics: mobile sizing bugs are unreproducible without them. `window.__GB.frame()` in
   // a remote console prints the same thing.

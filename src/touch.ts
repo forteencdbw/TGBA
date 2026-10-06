@@ -839,10 +839,4 @@ export class TouchControls {
   get layers(): { surface: Graphics; button: Graphics } {
     return { surface: this.surface, button: this.buttonGfx };
   }
-
-  /** Test hook: force the press pulse, bypassing the event system. */
-  debugSetBoosting(value: boolean): boolean {
-    void value;
-    return false;
-  }
 }

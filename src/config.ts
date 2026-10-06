@@ -27,28 +27,6 @@ export const VIEW = {
 } as const;
 
 /**
- * Aspect of the play area, as width / height. Sets the shipping lane width.
- *
- * 1.9 is WIDER than it is tall, which is deliberate: the world is authored so a screenful shows plenty of
- * water across, and the lane-relative sizes of collectables then line up with the metre-scaled depth through
- * this number. Changing it changes how big everything looks, not just the layout.
- */
-export const PLAY_AREA_ASPECT = 1.9;
-
-/**
- * Largest the play area may be drawn, in canvas pixels.
- *
- * The game is a portrait vertical scroller; a desktop window is not. Scaling the lane to fill the window
- * inflates the world zoom, which inflates the HUD and puts the skill button off the right edge -- see
- * `computeViewport`. 900 is chosen for how big the BUBBLE ends up: at a 700px cap the desktop bubble was
- * 29.8px against a phone's 16.6px, and 900 brings them within 2.3x.
- */
-export const MAX_LANE_WIDTH_PX = 900;
-
-/** Touch hit-target padding, in design pixels, so a control is not smaller than a fingertip. */
-export const TOUCH_SLOP_PX = 12;
-
-/**
  * How fast lateral velocity bleeds off when the player is not steering, per second.
  *
  * This is the COAST-DOWN rate: releasing a key decays `vx` by this factor each second rather than stopping dead,

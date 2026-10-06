@@ -211,8 +211,10 @@ export interface Level {
   /**
    * Put this block's creatures on a named spline.
    *
-   * `count` then means "a string of this many", laid out along the path by its own `staggerMeters` rather than by the
-   * level's scroll: the creatures enter one after another and follow the same curve, which is the whole effect.
+   * `count` then means "a string of this many": each member takes its own place along the same curve (`pathOffset`), so
+   * they enter one after another and follow the same line, which is the whole effect. The spacing is a fraction of the
+   * path rather than a distance or a delay, which is what keeps a string from collapsing into a pile -- see
+   * `LevelEntry.pathOffset`.
    */
   path?: string;
   /** Signposts, at depths from the surface, for the HUD. */
@@ -291,8 +293,6 @@ export interface PathSpec {
   points: { x: number; y: number }[];
   /** Seconds to travel the whole spline. */
   seconds: number;
-  /** Metres between one creature and the next on the same path, so a `count` becomes a string. */
-  staggerMeters: number;
 }
 
 /** One level's water colours. `tintStrength` is how much of `tint` to mix over the gradient, 0..1. */
@@ -626,18 +626,17 @@ function expandBlock(block: SpawnBlock): LevelEntry[] {
   const tag = (entries: LevelEntry[]): LevelEntry[] => entries.map((e) => ({ ...e, ...side }));
 
   /**
-   * A block on a PATH is a STRING: `count` creatures, each `staggerMeters` after the last.
+   * A block on a PATH is a STRING: `count` creatures, spread along the curve by their own index.
    *
    * Expanded here rather than at spawn time so the whole string exists in the timeline like everything else -- which
    * is authored in metres rather than in frames.
    */
 
   if (block.path) {
-    const stagger = PATH_STAGGER.get(block.path) ?? 0;
     const n = Math.max(1, block.count);
     return tag(
       Array.from({ length: n }, (_, i) => ({
-        ...place.one(block.at + i * stagger, block.kind, block.x, block.sizes?.[i % Math.max(1, block.sizes?.length ?? 1)]),
+        ...place.one(block.at, block.kind, block.x, block.sizes?.[i % Math.max(1, block.sizes?.length ?? 1)]),
         path: block.path as string,
         pathOffset: n > 1 ? i / n : 0,
       })),
@@ -666,15 +665,6 @@ function expandBlock(block: SpawnBlock): LevelEntry[] {
       return tag(place.barrier(block.at, block.kind, block.count, block.gapAt, block.gapWidth));
   }
 }
-
-/**
- * The stagger for each named path, in metres, as read from the file.
- *
- * A module-level map because `expandBlock` is a pure function of a BLOCK and the stagger is a property of the PATH the
- * block names -- the alternative is threading the level's path table through every helper that expands a block, for one
- * number. It is filled by `readLevels`, which runs before anything can ask for it.
- */
-const PATH_STAGGER = new Map<string, number>();
 
 /** The file, parsed and validated. Throws with the offending place named. */
 /**
@@ -803,7 +793,6 @@ function readLevels(text: string): { start: string; levels: Level[] } {
         paths[name] = {
           points,
           seconds: reqNum(pathNode, 'seconds', `levels[${id}].paths.${name}`, 0.1, 600),
-          staggerMeters: optNum(pathNode, 'staggerMeters', `levels[${id}].paths.${name}`, 0, 0, 100000),
         };
       }
     }
