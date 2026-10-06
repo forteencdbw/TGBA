@@ -70,8 +70,6 @@ export interface LevelEntry {
   at: number;
   /** The named spline this entry follows, if any. See `PathSpec`. */
   path?: string;
-  /** The school this entry swims with, if any. See `mech.flocks`. */
-  flock?: string;
   /**
    * How far along that spline this entry starts, 0..1.
    *
@@ -169,8 +167,6 @@ export type Arrange = 'single' | 'line' | 'column' | 'spread' | 'barrier';
 export interface SpawnBlock {
   /** Put this block's creatures on a named spline; `count` becomes a staggered string. */
   path?: string;
-  /** Put this block's creatures in a named SCHOOL; `count` becomes a flock of that size. */
-  flock?: string;
   at: number;
   kind: SpawnKind;
   count: number;
@@ -480,7 +476,6 @@ const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom'];
 /** The keys a block may use. Anything else is an error rather than a silent no-op -- see `readBlock`. */
 const BLOCK_KEYS: readonly string[] = [
   'path',
-  'flock',
   'at',
   'kind',
   'count',
@@ -613,10 +608,9 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
     // The block's PATH, if it names one. Checked against the level's own path table later (the block is read before the
     // level finishes parsing), so a typo here is reported once the table is known rather than silently ignored.
     ...(typeof node['path'] === 'string' ? { path: node['path'] } : {}),
-    // The same for a school: readBlock copies fields one by one, so a key the parser knows about
-    // and this does not is a key that silently disappears between the file and the water. (That is how `path` failed.)
+    // (a school key used to live here; schools are splines now)
+
     // that silently disappears between the file and the water. (That is exactly how path failed the first time.)
-    ...(typeof node['flock'] === 'string' ? { flock: node['flock'] } : {}),
   };
 }
 
@@ -635,35 +629,8 @@ function expandBlock(block: SpawnBlock): LevelEntry[] {
    * A block on a PATH is a STRING: `count` creatures, each `staggerMeters` after the last.
    *
    * Expanded here rather than at spawn time so the whole string exists in the timeline like everything else -- which
-   * means the tools that reason about a level (the "what is on screen at 400m" question) keep working, and the stagger
    * is authored in metres rather than in frames.
    */
-  /**
-   * A block in a FLOCK is a school: \`count\` creatures, loosely gathered where the block was placed.
-   *
-   * The scatter is only a starting condition -- the boid rules take over on the first frame -- but it matters that they do not
-   * all begin at the same point, because a school that starts as a dot spends its first seconds pushing itself apart.
-   */
-  if (block.flock) {
-    const n = Math.max(1, block.count);
-    return tag(
-      Array.from({ length: n }, (_, i) => {
-        const angle = (i / n) * Math.PI * 2;
-        const r = 30 + (i % 3) * 22;
-        return {
-          ...place.one(
-            block.at,
-            block.kind,
-            Math.min(0.95, Math.max(0.05, block.x + Math.cos(angle) * 0.12)),
-            block.sizes?.[i % Math.max(1, block.sizes?.length ?? 1)],
-          ),
-          flock: block.flock as string,
-          // Placed in metres above the entry point, so the school arrives as a loose group rather than in a line.
-          depth: r / 300,
-        };
-      }),
-    );
-  }
 
   if (block.path) {
     const stagger = PATH_STAGGER.get(block.path) ?? 0;

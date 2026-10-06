@@ -199,9 +199,9 @@
         { at: 890, kind: 'fish', count: 8, path: 'weave', x: 1 },
         // **深海鱼（灯笼鱼）**：这一关一共 10 点血，比小鱼小虾硬得多，所以它出现在中段以后，而且单独放——
         // 它的触角是这一关唯一会发光的东西，混在别的敌人里就白瞎了。
-        // **鱼群**：一队小鱼用 boids（分离/对齐/聚集）自己游，横穿画面时像一群而不是一串。
-        // count 就是这一群有多少条；换个种类也是一样的写法。
-        { at: 470, kind: 'fish', count: 14, flock: 'school', x: 0.5 },
+        // **鱼群用 spline**：一串小鱼沿同一条曲线游过去（就是下面 paths 里的 weave）。
+        // count 是这一串有多少条；staggerMeters 决定疏密。
+        { at: 470, kind: 'fish', count: 10, path: 'weave', x: 1 },
         { at: 520, kind: 'angler', x: 0.28, from: 'left' },
         { at: 760, kind: 'angler', x: 0.72, from: 'right' },
         { at: 1010, kind: 'angler', x: 0.5 },

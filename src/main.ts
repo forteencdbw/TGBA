@@ -28,7 +28,6 @@ import { Music, type MusicTrack } from './music';
 import { Sprite, Text as PixiText, Texture } from 'pixi.js';
 import { allAssetNames, assetUrl, preloadAssets } from './assets';
 import { ParticleField } from './particles';
-import { clearFlocks, flockFor, FLOCKS, type Flock } from './flock';
 
 /**
  * Whether the chain of parents above `node` flips the Y axis.
@@ -783,11 +782,6 @@ class Game {
 
   openCodexRef(): void {
     this.debugOpenCodexForTest();
-  }
-
-  /** Test hook: a school by id. */
-  flockRef(id: string): Flock {
-    return flockFor(id, 0, 0);
   }
 
   /** Test hook: how many particles are alive. */
@@ -2254,14 +2248,6 @@ class Game {
           });
         }
         this.hitParticles.update(dt);
-        /**
-         * The schools steer here, once per frame, and the creatures were already placed from their agents during the hazards'
-         * own update -- so the order within the frame is: schools decide, creatures follow. Doing it the other way would put
-         * every fish one frame behind its own school.
-         */
-        for (const school of FLOCKS.values()) {
-          school.update(dt, this.camera.viewport.laneWidthMeters, this.camera.visibleWorldRange(20).min, this.camera.visibleWorldRange(20).max, this.elapsed);
-        }
         break;
     }
 
@@ -2515,13 +2501,6 @@ class Game {
         }
       : null;
     const hazard = this.makeHazard(entry.kind as HazardKind, spawnX, spawnY, entering, undefined, path);
-    /**
-     * The school, carried here rather than computed above, because the CREATURE is what the simulation reads it from.
-     *
-     * A key the parser accepts and the spawn path does not carry is a key that disappears between the file and the water --
-     * which is exactly how both `path` and `flock` failed the first time.
-     */
-    if (entry.flock) hazard.flock = entry.flock;
     this.hazards.hazards.push(hazard);
   }
 
@@ -3534,8 +3513,6 @@ class Game {
   }
 
   private startRun(carryScore = false): void {
-    // A new level is new water: the schools from the last one must not follow it in.
-    clearFlocks();
     this.player.reset();
     // The arrival begins below the screen; the intro walks it up. Set here rather than inside the intro so that where a
     // run starts lives in one place with everything else that resets.
