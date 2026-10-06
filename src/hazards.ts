@@ -82,9 +82,9 @@ export type HazardKind =
   /**
    * LEVEL 6 -- 破晓海面.
    *
-   * oam looks like the player's own bubble and cannot be shot (0 health): the level's interference is
-   * ABOUT not being able to tell where you are. 
-ain falls from above and presses the bubble back down, which is
+   * Foam looks like the player's own bubble and cannot be shot (0 health): the level's interference is
+   * ABOUT not being able to tell where you are. Rain falls from above and presses the bubble back down, which is
+   * the mechanic that makes approaching the surface a decision rather than a straight line.
    * the mechanic that makes approaching the surface a decision rather than a straight line.
    */
   | 'foam'
@@ -1127,6 +1127,212 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
   oil: stepOil,
 };
 
+/**
+ * What happens when the player TOUCHES a creature, one function per creature.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHAT WAS HERE BEFORE, AND WHAT THE TABLE IS FOR
+ * ---------------------------------------------------------------------------------------------
+ * This was a `switch (h.kind)` inside `update`, ten groups of cases (one of them eight kinds falling through to a single
+ * body), each pushing effects and mutating the creature. It is a table now, for the same reason the motion became one:
+ * a creature's behaviour is a named function rather than a case in the middle of a method, and `CONTACT_EFFECTS` being a
+ * TOTAL record means a new kind with no contact rule is a compile error.
+ *
+ * These run only for a creature that is touching the player and past two shared gates, which is why they contain no
+ * "is it close" test of their own:
+ *
+ *   - the REVERSAL, first: a creature the player can eat is swallowed instead, and its contact rule never runs;
+ *   - a creature that is LEAVING cannot hurt anyone, which is the whole point of driving it off.
+ *
+ * `contactPlain` is shared by seven kinds on purpose and not by accident: being ordinary contact damage is the rule for
+ * a negative food below its tier, and the consequence that makes it interesting is INSIDE (see `stomachEffect`).
+ */
+type ContactEffect = (field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]) => void;
+function contactFish(field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  const r = ctx.laneWidth * h.radiusFraction;
+  // COMEDY: a fish that crosses a bait bubble gets distracted and loses the player. This is an
+  // OCCASIONAL beat, not the default outcome -- if a chase usually ends in the fish wandering
+  // off, the swarm stops being a threat and the joke replaces the mechanic.
+  if (field.baitEnabled && h.baitedUntil <= ctx.elapsed && Math.random() < hazardTuning.fishBaitChance) {
+    h.baitedUntil = ctx.elapsed + hazardTuning.fishBaitSeconds;
+    field.baits++;
+    effects.push({ kind: 'fish', broke: true });
+    return;
+  }
+  if (ctx.invulnerable || h.baitedUntil > ctx.elapsed) return;
+  effects.push({ kind: 'fish', damage: 1, broke: false });
+  // Bounce it away so one fish cannot immediately re-hit.
+  h.y -= r * 2;
+  return;
+}
+
+function contactJelly(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  const r = ctx.laneWidth * h.radiusFraction;
+  if (ctx.invulnerable) return;
+  /**
+   * A sting: it SLOWS you AND costs a hit point.
+   *
+   * The slow is what the jellyfish is for -- it is the creature that punishes being in the wrong place at the
+   * wrong time -- but on its own it made touching one strictly better than touching a fish, which is the one
+   * thing a slow, unavoidable drifter must not be. It costs blood now, and the slow is what makes the cost
+   * hurt: you are wounded AND clumsy in the second that follows.
+   */
+  effects.push({
+    kind: 'jelly',
+    damage: mech.hazards.jelly.contactDamage,
+    slowSeconds: tuning.hazardSlowSeconds,
+    slowFactor: tuning.hazardSlowFactor,
+    broke: false,
+  });
+  // COMEDY: being bunted squashes it.
+  h.squashed = 1;
+  h.y -= r * 1.5;
+  return;
+}
+
+function contactTrash(field: HazardField, h: Hazard, _ctx: HazardContext, effects: HazardEffect[]): void {
+  if (!h.gripping) {
+    h.gripping = true;
+    field.grabs++;
+    effects.push({ kind: 'trash', broke: false });
+  }
+  return;
+}
+
+function contactCrab(_field: HazardField, h: Hazard, _ctx: HazardContext, effects: HazardEffect[]): void {
+  if (h.fired) return;
+  // Only fires once it has actually armed and the telegraph has run. Touching an UNARMED crab
+  // does nothing, which is what keeps the arc meaningful.
+  if (!h.armed || h.fuse > 0) return;
+  effects.push({ kind: 'crab', impulse: hazardTuning.crabLaunchMps, broke: true });
+  h.fired = true;
+  return;
+}
+
+function contactPlain(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  const r = ctx.laneWidth * h.radiusFraction;
+  if (ctx.invulnerable) return;
+  effects.push({ kind: h.kind, damage: 1, broke: false });
+  // Bounce it away so one cannot immediately re-hit, as a fish does.
+  h.y -= r * 2;
+  return;
+}
+
+function contactShrimp(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  const r = ctx.laneWidth * h.radiusFraction;
+  if (ctx.invulnerable) return;
+  effects.push({ kind: 'shrimp', damage: mech.hazards.shrimp.contactDamage, broke: false });
+  h.y -= r * 2;
+  return;
+}
+
+function contactZapper(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  const r = ctx.laneWidth * h.radiusFraction;
+  /**
+   * The RING is the hitbox, not the bell.
+   *
+   * Touching a zapper is what makes it fire (below), and standing in a fired ring is what hurts -- so the two
+   * are separate events and the player who keeps their distance is never hit. Reaching the ring requires being
+   * within `ringRadiusRatio` of the bell rather than the usual body radius, which is the whole reason a ring
+   * is drawable as a circle and readable as a range.
+   */
+  const zc = mech.hazards.zapper;
+  const ring = ctx.laneWidth * zc.ringRadiusRatio;
+  const gap = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
+  if (gap <= r + ctx.laneWidth * ctx.playerRadiusFraction && h.discharge <= 0 && h.dischargeRest <= 0) {
+    // Touched: it fires, whether or not the player is hurt by the contact itself.
+    h.discharge = zc.ringSeconds;
+    h.dischargeRest = zc.ringCooldownSeconds;
+  }
+  if (h.discharge <= 0 || gap > ring || ctx.invulnerable) return;
+  effects.push({ kind: 'zapper', damage: zc.ringDamage, broke: false });
+  // The bubble drinks the charge: this is where the level's whole mechanic starts.
+  effects.push({ kind: 'zapper', charge: mech.hazards.charge.perRingHit, broke: false });
+  return;
+}
+
+function contactFoam(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  /**
+   * Foam does not hurt by default -- it exists to make the water unreadable.
+   *
+   * The effect is still reported because the caller needs to know it was TOUCHED: that is what tells the game
+   * the player has just found out where they really are.
+   */
+  const fc = mech.hazards.foam;
+  effects.push({ kind: 'foam', damage: ctx.invulnerable ? 0 : fc.contactDamage, broke: true });
+  h.flee = 'up';
+  return;
+}
+
+function contactRain(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  if (ctx.invulnerable) return;
+  /**
+   * A drop PRESSES the bubble back down, which is the mechanic rather than the damage.
+   *
+   * The push is what costs the player the height they just earned, so it is reported separately from the hit.
+   */
+  const rc = mech.hazards.rain;
+  effects.push({ kind: 'rain', damage: rc.contactDamage, pushDown: rc.pushMeters, broke: true });
+  h.flee = 'down';
+  return;
+}
+
+function contactVent(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  /**
+   * The plume: lethal while it is erupting, harmless while it is quiet.
+   *
+   * The gate is the same `phase` the painter reads, so the picture IS the hitbox -- there is no second timer
+   * that could drift out of step with what the player can see.
+   */
+  const vent = mech.hazards.vent;
+  if (h.phase >= vent.activeSeconds || ctx.invulnerable) return;
+  effects.push({ kind: 'vent', damage: vent.contactDamage, broke: false });
+  return;
+}
+
+function contactMineral(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  if (ctx.invulnerable) return;
+  // Grit hurts, and it is SPENT by the hit rather than bouncing off: a particle is not a creature.
+  effects.push({ kind: 'mineral', damage: 1, broke: true });
+  h.flee = 'up';
+  return;
+}
+
+function contactBoss(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  const r = ctx.laneWidth * h.radiusFraction;
+  if (ctx.invulnerable) return;
+  effects.push({ kind: h.kind, damage: mech.hazards.boss.contactDamage, broke: false });
+  // Bounce it away so one cannot immediately re-hit, as a fish does.
+  h.y -= r * 2;
+  return;
+}
+
+/**
+ * Which function handles a touch from which creature.
+ *
+ * A total record, so the compiler is what enforces "every kind has a contact rule" -- the switch could not.
+ */
+const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
+  fish: contactFish,
+  jelly: contactJelly,
+  trash: contactTrash,
+  crab: contactCrab,
+  urchin: contactPlain,
+  bombfish: contactPlain,
+  eel: contactPlain,
+  rot: contactPlain,
+  angler: contactPlain,
+  torpedo: contactPlain,
+  oil: contactPlain,
+  boss: contactBoss,
+  shrimp: contactShrimp,
+  zapper: contactZapper,
+  mineral: contactMineral,
+  foam: contactFoam,
+  rain: contactRain,
+  vent: contactVent,
+};
+
 export class HazardField {
   hazards: Hazard[] = [];
 
@@ -1434,162 +1640,11 @@ export class HazardField {
        */
       if (h.flee) continue;
 
-      switch (h.kind) {
-        case 'fish': {
-          // COMEDY: a fish that crosses a bait bubble gets distracted and loses the player. This is an
-          // OCCASIONAL beat, not the default outcome -- if a chase usually ends in the fish wandering
-          // off, the swarm stops being a threat and the joke replaces the mechanic.
-          if (this.baitEnabled && h.baitedUntil <= ctx.elapsed && Math.random() < hazardTuning.fishBaitChance) {
-            h.baitedUntil = ctx.elapsed + hazardTuning.fishBaitSeconds;
-            this.baits++;
-            effects.push({ kind: 'fish', broke: true });
-            break;
-          }
-          if (ctx.invulnerable || h.baitedUntil > ctx.elapsed) break;
-          effects.push({ kind: 'fish', damage: 1, broke: false });
-          // Bounce it away so one fish cannot immediately re-hit.
-          h.y -= r * 2;
-          break;
-        }
-        case 'jelly': {
-          if (ctx.invulnerable) break;
-          /**
-           * A sting: it SLOWS you AND costs a hit point.
-           *
-           * The slow is what the jellyfish is for -- it is the creature that punishes being in the wrong place at the
-           * wrong time -- but on its own it made touching one strictly better than touching a fish, which is the one
-           * thing a slow, unavoidable drifter must not be. It costs blood now, and the slow is what makes the cost
-           * hurt: you are wounded AND clumsy in the second that follows.
-           */
-          effects.push({
-            kind: 'jelly',
-            damage: mech.hazards.jelly.contactDamage,
-            slowSeconds: tuning.hazardSlowSeconds,
-            slowFactor: tuning.hazardSlowFactor,
-            broke: false,
-          });
-          // COMEDY: being bunted squashes it.
-          h.squashed = 1;
-          h.y -= r * 1.5;
-          break;
-        }
-        case 'trash': {
-          if (!h.gripping) {
-            h.gripping = true;
-            this.grabs++;
-            effects.push({ kind: 'trash', broke: false });
-          }
-          break;
-        }
-        case 'crab': {
-          if (h.fired) break;
-          // Only fires once it has actually armed and the telegraph has run. Touching an UNARMED crab
-          // does nothing, which is what keeps the arc meaningful.
-          if (!h.armed || h.fuse > 0) break;
-          effects.push({ kind: 'crab', impulse: hazardTuning.crabLaunchMps, broke: true });
-          h.fired = true;
-          break;
-        }
-        /**
-         * The negative foods, below their tier.
-         *
-         * Plain contact damage, exactly like a fish, and that is deliberate rather than lazy: the reversal is a
-         * two-sided judgement, so a creature that is food above its tier has to be a threat below it or "when can I
-         * eat this" stops being the same question for every kind. Their SIDE EFFECT is what is new, and it only
-         * happens once they are inside -- which is also the only place it could be interesting, because a hazard
-         * that hurts you from outside is a sixth thing to dodge rather than a decision.
-         *
-         * Note the eel does NOT shock on contact, only from inside. Its listed side effect is an internal one, and
-         * giving it a second one at contact would make it the only creature with two verbs.
-         */
-        case 'urchin':
-        case 'bombfish':
-        case 'eel':
-        case 'rot':
-        case 'boss':
-        case 'angler':
-        case 'torpedo':
-        case 'oil': {
-          if (ctx.invulnerable) break;
-          effects.push({ kind: h.kind, damage: h.kind === 'boss' ? mech.hazards.boss.contactDamage : 1, broke: false });
-          // Bounce it away so one cannot immediately re-hit, as a fish does.
-          h.y -= r * 2;
-          break;
-        }
-        case 'shrimp': {
-          if (ctx.invulnerable) break;
-          effects.push({ kind: 'shrimp', damage: mech.hazards.shrimp.contactDamage, broke: false });
-          h.y -= r * 2;
-          break;
-        }
-        case 'zapper': {
-          /**
-           * The RING is the hitbox, not the bell.
-           *
-           * Touching a zapper is what makes it fire (below), and standing in a fired ring is what hurts -- so the two
-           * are separate events and the player who keeps their distance is never hit. Reaching the ring requires being
-           * within `ringRadiusRatio` of the bell rather than the usual body radius, which is the whole reason a ring
-           * is drawable as a circle and readable as a range.
-           */
-          const zc = mech.hazards.zapper;
-          const ring = ctx.laneWidth * zc.ringRadiusRatio;
-          const gap = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
-          if (gap <= r + ctx.laneWidth * ctx.playerRadiusFraction && h.discharge <= 0 && h.dischargeRest <= 0) {
-            // Touched: it fires, whether or not the player is hurt by the contact itself.
-            h.discharge = zc.ringSeconds;
-            h.dischargeRest = zc.ringCooldownSeconds;
-          }
-          if (h.discharge <= 0 || gap > ring || ctx.invulnerable) break;
-          effects.push({ kind: 'zapper', damage: zc.ringDamage, broke: false });
-          // The bubble drinks the charge: this is where the level's whole mechanic starts.
-          effects.push({ kind: 'zapper', charge: mech.hazards.charge.perRingHit, broke: false });
-          break;
-        }
-  
-      case 'mineral': {
-          if (ctx.invulnerable) break;
-          // Grit hurts, and it is SPENT by the hit rather than bouncing off: a particle is not a creature.
-          effects.push({ kind: 'mineral', damage: 1, broke: true });
-          h.flee = 'up';
-          break;
-        }
-        case 'foam': {
-          /**
-           * Foam does not hurt by default -- it exists to make the water unreadable.
-           *
-           * The effect is still reported because the caller needs to know it was TOUCHED: that is what tells the game
-           * the player has just found out where they really are.
-           */
-          const fc = mech.hazards.foam;
-          effects.push({ kind: 'foam', damage: ctx.invulnerable ? 0 : fc.contactDamage, broke: true });
-          h.flee = 'up';
-          break;
-        }
-        case 'rain': {
-          if (ctx.invulnerable) break;
-          /**
-           * A drop PRESSES the bubble back down, which is the mechanic rather than the damage.
-           *
-           * The push is what costs the player the height they just earned, so it is reported separately from the hit.
-           */
-          const rc = mech.hazards.rain;
-          effects.push({ kind: 'rain', damage: rc.contactDamage, pushDown: rc.pushMeters, broke: true });
-          h.flee = 'down';
-          break;
-        }
-        case 'vent': {
-          /**
-           * The plume: lethal while it is erupting, harmless while it is quiet.
-           *
-           * The gate is the same `phase` the painter reads, so the picture IS the hitbox -- there is no second timer
-           * that could drift out of step with what the player can see.
-           */
-          const vent = mech.hazards.vent;
-          if (h.phase >= vent.activeSeconds || ctx.invulnerable) break;
-          effects.push({ kind: 'vent', damage: vent.contactDamage, broke: false });
-          break;
-        }
-      }
+      /**
+       * One lookup instead of ten case groups: see `CONTACT_EFFECTS` for why, and for the two gates that already
+       * ran by the time this is reached.
+       */
+      CONTACT_EFFECTS[h.kind](this, h, ctx, effects);
     }
 
     // A latched trash bag drains continuously, and struggling tears it off.
