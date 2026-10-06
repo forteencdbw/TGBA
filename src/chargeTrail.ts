@@ -64,7 +64,7 @@ export class ChargeTrail {
    *
    * \`laneWidth\` sizes the bubble as a fraction of the lane, like every other prop in the water.
    */
-  ride(id: number, x: number, y: number, dt: number, laneWidth: number): void {
+  ride(id: number, x: number, y: number, dt: number, laneWidth: number, dirX = 0, dirY = 0): void {
     const cfg = mech.chargeTrail;
     this.ensureTextures();
     if (!this.ready) return;
@@ -84,11 +84,18 @@ export class ChargeTrail {
     const index = Math.floor(rider.clock / per) % this.textures.length;
     const frame = this.textures[index]!;
     rider.sprite.texture = frame;
-    rider.sprite.visible = true;
-    rider.sprite.x = x;
-    rider.sprite.y = y;
-    rider.sprite.alpha = cfg.alpha;
     const size = laneWidth * cfg.sizeRatio;
+    /**
+     * Behind the creature: back along the direction of travel, by a fraction of the bubble's own size.
+     *
+     * A unit direction is passed in rather than computed here, because the creature's VELOCITY is not the same thing as the
+     * dash's direction -- a charge steers along its curve, and the bubble should trail the geometry the player sees.
+     */
+    const back = size * cfg.behindFactor;
+    rider.sprite.visible = true;
+    rider.sprite.x = x - dirX * back;
+    rider.sprite.y = y - dirY * back;
+    rider.sprite.alpha = cfg.alpha;
     const scale = size / Math.max(1, frame.width);
     // The world is Y-flipped, so the sprite's own Y is negative to keep the art upright. See the player bubble.
     const flipped = rider.sprite.parent ? rider.sprite.parent.scale.y < 0 : true;
@@ -114,8 +121,15 @@ export class ChargeTrail {
     }
   }
 
+  /** Test hook: one rider's sprite, for measuring where it sits relative to its creature. */
+  riderForTest(id: number): { x: number; y: number; width: number } | null {
+    const rider = this.riders.get(id);
+    return rider ? { x: rider.sprite.x, y: rider.sprite.y, width: rider.sprite.width } : null;
+  }
+
   /** Test hook: how many creatures are carrying a bubble, and whether the sheet arrived. */
   get state(): { live: number; frames: number } {
     return { live: this.riders.size, frames: this.textures.length };
   }
 }
+

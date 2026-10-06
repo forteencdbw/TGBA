@@ -854,6 +854,8 @@ export interface Mechanisms {
     rows: number;
     /** Seconds per frame while the sheet loops. */
     frameSeconds: number;
+    /** How far behind the creature the bubble trails, as a multiple of the bubble's own size. */
+    behindFactor: number;
     sizeRatio: number;
     alpha: number;
   };
@@ -1929,6 +1931,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'chargeTrail.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string to disable it' },
   { path: 'chargeTrail.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole columns between 1 and 16' },
   { path: 'chargeTrail.rows', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole rows between 1 and 16' },
+  { path: 'chargeTrail.behindFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 6, describe: 'a multiple between 0 and 6' },
   { path: 'chargeTrail.frameSeconds', check: (v) => typeof v === 'number' && v > 0.005 && v <= 2, describe: 'seconds per frame above 0.005 and at most 2' },
   { path: 'chargeTrail.sizeRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 0.5, describe: 'a lane fraction above 0 and at most 0.5' },
   { path: 'chargeTrail.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },

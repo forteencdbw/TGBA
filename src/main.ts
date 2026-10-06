@@ -800,6 +800,11 @@ class Game {
     }
   }
 
+  /** Test hook: one creature's trail sprite, for measuring where it sits. */
+  chargeTrailRiderRef(id: number): { x: number; y: number; width: number } | null {
+    return this.chargeTrail.riderForTest(id);
+  }
+
   /** Test hook: the charge trail's live bubbles and cut frames. */
   get chargeTrailRef(): { live: number; frames: number } {
     return this.chargeTrail.state;
@@ -2282,7 +2287,11 @@ class Game {
           const row = mech.charges.chargers[h.kind];
           const telegraph = row?.telegraphSeconds ?? (h.kind === 'angler' ? mech.hazards.angler.telegraphSeconds : 0.75);
           if (h.charge.elapsed < telegraph) continue;
-          this.chargeTrail.ride(h.id, h.x, h.y, dt, this.camera.viewport.laneWidthMeters);
+          // The dash's own direction, not the creature's velocity: the bubble should trail the geometry the player sees.
+          const dx = h.charge.toX - h.charge.fromX;
+          const dy = h.charge.toY - h.charge.fromY;
+          const len = Math.hypot(dx, dy) || 1;
+          this.chargeTrail.ride(h.id, h.x, h.y, dt, this.camera.viewport.laneWidthMeters, dx / len, dy / len);
         }
         // Anything that did not ask for its bubble this frame has stopped charging: it loses it rather than leaving a ghost.
         this.chargeTrail.sweep();
@@ -6134,6 +6143,7 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
 
 
 
