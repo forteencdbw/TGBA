@@ -770,6 +770,363 @@ export interface SpawnOptions {
   deterministic?: boolean;
 }
 
+/**
+ * One creature's own motion, in one place per creature.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHAT WAS HERE BEFORE, AND WHAT THE TABLE IS FOR
+ * ---------------------------------------------------------------------------------------------
+ * This was an eighteen-case `switch` inside `advanceKind`: a 547-line method where a creature's behaviour was a case
+ * somewhere in the middle, next to the shared states (arriving, charging, fleeing, recoiling) that OVERRIDE it. Reading
+ * one creature meant finding its case; adding one meant finding the right place in a switch and remembering which of
+ * the shared states had already returned.
+ *
+ * Each kind is a named function now, and `CREATURES` is a TOTAL record -- so a new kind is a missing row and therefore
+ * a compile error, which is the same guarantee `KIND_TUNING` and the config's per-creature blocks get. What stays
+ * shared stays shared: `advanceKind` still handles entering, charging, following a spline, recoil, the hit flash and
+ * the lane clamp, because those replace or wrap EVERY creature's motion rather than belonging to one.
+ *
+ * The field is passed rather than closed over because two of these need it: a fish asks the field for the perception
+ * radius that grows with the player, and a zapper's discharge counts on the field's `charges`.
+ */
+type CreatureStep = (field: HazardField, h: Hazard, dt: number, ctx: HazardContext) => void;
+function stepFish(field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  // The bait timer is the only thing that breaks the chase.
+  if (h.baitedUntil > ctx.elapsed) {
+    // Wander: drift sideways away from the player.
+    h.x += Math.sign(h.x - ctx.playerX) * 6 * dt;
+    h.y -= ctx.descentSpeed * 0.5 * dt;
+    return;
+  }
+
+  /**
+   * Emergence rule 2, made real: the fish only CHASES inside its perception radius.
+   *
+   * This is what gives "getting bigger is dangerous" a mechanism instead of a mood. A small
+   * player is noticed from 150m; a big one from 240m and up, so growing visibly recruits more of
+   * the swarm. Outside the radius the fish just drifts, which is also what keeps a distant
+   * screenful of fish from all converging at once.
+   */
+  const perceive = field.perceptionRadius(ctx.playerVolume);
+  const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
+  if (dist > perceive) {
+    // Idle drift: keeps its own course, does not converge.
+    h.x += Math.sin(h.phase * 1.3 + h.seed) * 5 * dt;
+    h.y -= ctx.descentSpeed * 0.42 * dt;
+    return;
+  }
+
+  // Chase: steer toward the player horizontally, and close vertically.
+  const dx = ctx.playerX - h.x;
+  const steer = Math.max(-1, Math.min(1, dx / Math.max(1, ctx.laneWidth * 0.25)));
+  h.x += steer * ctx.laneWidth * hazardTuning.fishSpeedFactor * dt;
+  h.y -= ctx.descentSpeed * 0.55 * dt;
+  return;
+}
+function stepJelly(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  // Drifts down slowly and bobs. It is an obstacle, not a pursuer.
+  const bob = Math.sin(h.phase * 1.4 + h.seed) * hazardTuning.jellyBobAmplitude * ctx.laneWidth;
+  h.x += (Math.cos(h.phase * 0.7) * 0.4 + bob * 0.02) * 6 * dt;
+  h.y -= ctx.descentSpeed * 0.3 * dt;
+  h.squashed = Math.max(0, h.squashed - dt * 2.2);
+  return;
+}
+function stepTrash(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  // Barely moves; it is debris. On contact it is dragged along by the player instead.
+  if (h.gripping) {
+    h.x = ctx.playerX;
+    h.y = ctx.playerY;
+  } else {
+    h.y -= ctx.descentSpeed * hazardTuning.trashSpeedFactor * dt;
+    h.x += Math.sin(h.phase * 1.1 + h.seed) * 4 * dt;
+  }
+  return;
+}
+function stepCrab(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  // Two-phase: it drifts harmlessly until the player enters its reach, THEN telegraphs. See
+  // `armed`. Firing on a fuse that ran from spawn would mean the visible arc never coincides
+  // with the player being close enough to care.
+  h.y -= ctx.descentSpeed * 0.18 * dt;
+  const proximity = h.y < ctx.playerY + hazardTuning.crabArmDistanceMeters;
+  if (!h.armed && proximity) {
+    h.armed = true;
+    h.fuse = hazardTuning.crabFuseSeconds;
+  }
+  if (h.armed) h.fuse = Math.max(0, h.fuse - dt);
+  return;
+}
+function stepUrchin(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * Inert and heavy. It does not chase, does not flee and barely drifts, so it is a fixed hazard you have to
+   * steer around or choose to run into -- which is the point: it is a DECISION, and a decision needs a
+   * stationary option. A hunter would take the choice away and make it a reflex.
+   *
+   * It sinks faster than a crab, so it clears the water instead of accumulating into a wall of spines.
+   */
+  h.y -= ctx.descentSpeed * 0.26 * dt;
+  h.x += Math.sin(h.phase * 0.8 + h.seed) * 2.5 * dt;
+  return;
+}
+function stepBombfish(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * A HOMING time bomb, not a drifting temptation.
+   *
+   * It used to swim down with a lazy weave and pointedly not come for the player: a temptation has to be
+   * avoidable, or the choice to swallow one is made for you. That reasoning still holds for the REVERSAL -- and
+   * the reversal is still available -- but the creature's role in the water changed: it now closes on the
+   * bubble, and the counterplay is to shoot it (which sets it off where it stands) or to outrun the fuse.
+   *
+   * It re-aims every frame, which is the opposite of the charge's committed curve and deliberate: a bomb that
+   * cannot be out-turned, only out-run and out-shot.
+   */
+  const cfg = mech.hazards.bombfish;
+  const dx = ctx.playerX - h.x;
+  const dy = ctx.playerY - h.y;
+  const gap = Math.hypot(dx, dy);
+  const step = cfg.seekSpeedFactor * ctx.laneWidth;
+  if (gap > 1e-3) {
+    // Apportioned between the axes, so it arrives from wherever it is rather than sliding sideways first.
+    h.x += (dx / gap) * step * dt;
+    h.y += (dy / gap) * step * dt;
+  }
+  // The current still drags it down; the hunt is on top of that, not instead of it.
+  h.y -= ctx.descentSpeed * 0.15 * dt;
+  if (h.blastFuse === null && gap <= cfg.armMeters) h.blastFuse = cfg.fuseSeconds;
+  return;
+}
+function stepBoss(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * The boss does NOT ride the current.
+   *
+   * Everything else in this file is carried down at the level's scroll speed, which is what makes the water feel
+   * like water. The boss holds a position RELATIVE TO THE PLAYER instead -- `holdMeters` above the bubble -- which
+   * is the whole reason it is a fight rather than an encounter the player can simply outrun. It patrols sideways
+   * and tracks the player's lane slowly: slowly enough that being cornered is always something the player did.
+   */
+  const cfg = mech.hazards.boss;
+  const targetX = ctx.playerX + Math.sin(ctx.elapsed * ((Math.PI * 2) / cfg.patrolPeriodSeconds)) * cfg.patrolAmplitude * ctx.laneWidth;
+  const gapX = targetX - h.x;
+  const step = cfg.seekSpeedFactor * ctx.laneWidth * dt;
+  h.x += Math.abs(gapX) <= step ? gapX : Math.sign(gapX) * step;
+  /**
+   * Its height, derived from the VISIBLE BAND rather than fixed in metres.
+   *
+   * A fixed hold height is only correct for one window shape: the band shrinks as the window gets wider and
+   * shorter (802m on a phone, 289m at 1280x720), and a boss hovering past its top edge is a boss that never
+   * appears -- which is exactly the bug this replaced.
+   */
+  const band = Math.max(1, ctx.max - ctx.min);
+  const hold = Math.max(cfg.holdMinMeters, Math.min(cfg.holdMeters, band * cfg.holdBandRatio));
+  /**
+   * And then it is CLAMPED INTO THE VISIBLE BAND, which is the second half of the same bug.
+   *
+   * The hold is measured from the player, so a player who has fallen behind the camera -- stuck behind a wall in
+   * level 2's narrow passages, say -- would have their boss hovering wherever THEY are rather than where the
+   * fight is. The clamp says: whatever the offset works out to, the boss stays inside the band with a small
+   * margin. A boss that exists but is not on screen is indistinguishable from no boss, and a level only ends when
+   * one dies.
+   */
+  const margin = band * 0.08;
+  const targetY = Math.min(Math.max(ctx.playerY + hold, ctx.min + margin), ctx.max - margin);
+  h.y += (targetY - h.y) * Math.min(1, dt * 1.4);
+  return;
+}
+function stepVent(_field: HazardField, h: Hazard, dt: number, _ctx: HazardContext): void {
+  /**
+   * A black smoker does not move; its PLUME does, and the plume is the hazard.
+   *
+   * The cycle is the whole mechanic: a vent that was always lethal could only be avoided by never being in the
+   * middle of the lane, and a level made of those is a corridor. `periodSeconds` with a shorter `activeSeconds`
+   * makes it a rhythm the player can learn -- and the warning is drawn (the plume brightens while `warn` is
+   * counting) so learning it is a matter of paying attention rather than of memorising.
+   *
+   * `h.phase` carries how far through the cycle it is, which is also what the painter reads, so the picture and
+   * the hitbox cannot disagree.
+   */
+  const cfg = mech.hazards.vent;
+  h.phase = (h.phase + dt) % Math.max(0.2, cfg.periodSeconds);
+  return;
+}
+function stepMineral(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * Grit on the heat flow: it RISES, which is the one direction nothing else in the game moves.
+   *
+   * That is why it is the teaching level's danmaku. Every other threat comes down or sideways and is dodged by
+   * reaction; this one comes up out of the terrain and is dodged by knowing where the vents are.
+   */
+  const cfg = mech.hazards.mineral;
+  h.y += ctx.laneWidth * cfg.riseSpeedFactor * dt;
+  h.x += Math.sin((ctx.elapsed / Math.max(0.2, cfg.wobblePeriodSeconds)) * Math.PI * 2 + h.seed) * ctx.laneWidth * cfg.wobbleAmplitude * dt;
+  // It expires on AGE rather than on distance left behind, so a slow one does not linger in the level's path.
+  h.fed += dt;
+  if (h.fed * ctx.laneWidth * cfg.riseSpeedFactor > cfg.lifeMeters) h.flee = 'up';
+  return;
+}
+function stepShrimp(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * A blind shrimp: it walks a straight line and never turns.
+   *
+   * Deliberately the simplest possible pursuer -- it is the first thing the level introduces, and the lesson is
+   * "the lane is not always yours" rather than "learn a pattern". Because it does not steer, walking around one
+   * is always possible; because it comes from the SIDE, walking around it is not optional.
+   */
+  const cfg = mech.hazards.shrimp;
+  h.x += h.seed % 2 < 1 ? -ctx.laneWidth * cfg.driftSpeedFactor * dt : ctx.laneWidth * cfg.driftSpeedFactor * dt;
+  h.y -= ctx.descentSpeed * 0.25 * dt;
+  return;
+}
+function stepAngler(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * A lanternfish: it hangs still with a lit lure, then lunges at whatever came to look.
+   *
+   * The lure is a promise -- the only light in a dark level -- and the lunge is the bill for believing it. The
+   * lunge reuses the charge machinery (`h.charge`), so the telegraph, the curve and the recovery are the same
+   * geometry the player already learned from the fish, and only the TRIGGER differs: proximity rather than a
+   * distance along the level.
+   */
+  const cfg = mech.hazards.angler;
+  if (h.chargeRest > 0) h.chargeRest -= dt;
+  const gap = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
+  if (h.chargeRest <= 0 && gap <= cfg.lureMeters) {
+    h.chargeRest = cfg.cooldownSeconds;
+    const span = gap;
+    h.charge = {
+      fromX: h.x,
+      fromY: h.y,
+      toX: ctx.playerX,
+      toY: ctx.playerY,
+      bow: (h.x < ctx.playerX ? 1 : -1) * cfg.bowRatio * span,
+      elapsed: 0,
+    };
+  }
+  h.y -= ctx.descentSpeed * cfg.driftFactor * dt;
+  return;
+}
+function stepTorpedo(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * A rogue torpedo: it runs STRAIGHT first, then turns and hunts.
+   *
+   * Both halves matter. The straight leg is honest -- it can only be dodged sideways -- and the turn is the
+   * event, because a round that has already been dodged once becomes a different problem. `fed` accumulates how
+   * far it has run, which is the same trick the mineral countdown uses: a per-hazard number rather than a flag
+   * somewhere else.
+   */
+  const cfg = mech.hazards.torpedo;
+  const run = ctx.laneWidth * cfg.runSpeedFactor;
+  const seek = ctx.laneWidth * cfg.seekSpeedFactor;
+  if (h.fed < cfg.runMeters) {
+    h.fed += run * dt;
+    h.y += run * dt;
+  } else if (h.digest < cfg.seekSeconds) {
+    h.digest += dt;
+    const dx = ctx.playerX - h.x;
+    const dy = ctx.playerY - h.y;
+    const len = Math.hypot(dx, dy) || 1;
+    // It re-aims every frame, like the bomb fish: a homing round that overshoots is a round the player can beat
+    // by moving, and one that does not is a round that has to be outrun.
+    h.x += (dx / len) * seek * dt;
+    h.y += (dy / len) * seek * dt;
+  } else {
+    h.y -= ctx.descentSpeed * 0.3 * dt;
+  }
+  return;
+}
+function stepZapper(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * A zapper drifts like a jellyfish and keeps its own discharge clock.
+   *
+   * The ring is attack AND warning at once: it is drawn for `ringSeconds` and only hurts while it is up, so a
+   * player who watches can always be somewhere else. `dischargeRest` is per INSTANCE, so a row of them does not
+   * pulse in lockstep -- that would be a wall rather than a pattern.
+   */
+  // The drift below is deliberately the jellyfish drift, so a shoal of them reads as jellyfish.
+  if (h.dischargeRest > 0) h.dischargeRest -= dt;
+  if (h.discharge > 0) h.discharge -= dt;
+  h.y -= ctx.descentSpeed * 0.28 * dt;
+  h.x += Math.sin(h.phase * 0.7 + h.seed) * 2.4 * dt;
+  return;
+}
+function stepFoam(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * Foam: it drifts with the water and breaks up on its own clock.
+   *
+   * It is the only hazard whose job is to make the picture WRONG -- it is drawn as a bubble much like the
+   * player's own -- so it must also expire by itself. Interference that could persist forever would turn a level
+   * about reading the water into a level about waiting.
+   */
+  h.foamLife -= dt;
+  if (h.foamLife <= 0) h.flee = 'up';
+  h.y -= ctx.descentSpeed * 0.6 * dt;
+  h.x += Math.sin(h.phase * 0.9 + h.seed) * 3.2 * dt;
+  return;
+}
+function stepRain(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * Rain falls FASTER than the current, and that is its whole character.
+   *
+   * Everything else in the water moves at the level's scroll speed or slower; a drop that outruns the current
+   * reads as coming from somewhere else -- which is the fiction, and also the mechanic, because the surface is
+   * where the drops come from and the surface is what the player is trying to reach.
+   */
+  h.y -= ctx.laneWidth * mech.hazards.rain.fallSpeedFactor * dt;
+  return;
+}
+function stepEel(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * Swims in a wide S, and that is a fairness requirement rather than decoration.
+   *
+   * The eel is the one creature whose cost is paid by the PLAYER'S HANDS, so it has to be readable before it is
+   * touched: a sine weave of this amplitude makes its heading obvious a second ahead, which is what turns
+   * "my controls stopped working" from an ambush into something the player walked into.
+   */
+  h.y -= ctx.descentSpeed * 0.3 * dt;
+  h.x += Math.sin(h.phase * 2.6 + h.seed) * ctx.laneWidth * 0.055 * dt;
+  return;
+}
+function stepRot(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  // Barely moves and tumbles slowly: it is debris that has stopped being anything in particular.
+  h.y -= ctx.descentSpeed * 0.2 * dt;
+  h.x += Math.sin(h.phase * 0.6 + h.seed) * 3 * dt;
+  return;
+}
+function stepOil(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  /**
+   * Floats almost still, which is what makes it a decision rather than an obstacle.
+   *
+   * A slick that drifted would be something to avoid; a slick that hangs there is something the player has to
+   * choose to touch. It also means a column of it can be left behind rather than chased.
+   */
+  h.y -= ctx.descentSpeed * 0.1 * dt;
+  h.x += Math.sin(h.phase * 0.4 + h.seed) * 2 * dt;
+  return;
+}
+/**
+ * Which function moves which creature.
+ *
+ * A total record rather than a switch: the compiler is what enforces "every kind has a behaviour", exactly as it does
+ * for the tables in `config/mechanics.json5`.
+ */
+const CREATURES: Record<HazardKind, CreatureStep> = {
+  fish: stepFish,
+  jelly: stepJelly,
+  trash: stepTrash,
+  crab: stepCrab,
+  urchin: stepUrchin,
+  bombfish: stepBombfish,
+  boss: stepBoss,
+  vent: stepVent,
+  mineral: stepMineral,
+  shrimp: stepShrimp,
+  angler: stepAngler,
+  torpedo: stepTorpedo,
+  zapper: stepZapper,
+  foam: stepFoam,
+  rain: stepRain,
+  eel: stepEel,
+  rot: stepRot,
+  oil: stepOil,
+};
+
 export class HazardField {
   hazards: Hazard[] = [];
 
@@ -1822,319 +2179,10 @@ export class HazardField {
       return;
     }
 
-    switch (h.kind) {
-      case 'fish': {
-        // The bait timer is the only thing that breaks the chase.
-        if (h.baitedUntil > ctx.elapsed) {
-          // Wander: drift sideways away from the player.
-          h.x += Math.sign(h.x - ctx.playerX) * 6 * dt;
-          h.y -= base * 0.5 * dt;
-          break;
-        }
-
-        /**
-         * Emergence rule 2, made real: the fish only CHASES inside its perception radius.
-         *
-         * This is what gives "getting bigger is dangerous" a mechanism instead of a mood. A small
-         * player is noticed from 150m; a big one from 240m and up, so growing visibly recruits more of
-         * the swarm. Outside the radius the fish just drifts, which is also what keeps a distant
-         * screenful of fish from all converging at once.
-         */
-        const perceive = this.perceptionRadius(ctx.playerVolume);
-        const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
-        if (dist > perceive) {
-          // Idle drift: keeps its own course, does not converge.
-          h.x += Math.sin(h.phase * 1.3 + h.seed) * 5 * dt;
-          h.y -= base * 0.42 * dt;
-          break;
-        }
-
-        // Chase: steer toward the player horizontally, and close vertically.
-        const dx = ctx.playerX - h.x;
-        const steer = Math.max(-1, Math.min(1, dx / Math.max(1, ctx.laneWidth * 0.25)));
-        h.x += steer * ctx.laneWidth * hazardTuning.fishSpeedFactor * dt;
-        h.y -= base * 0.55 * dt;
-        break;
-      }
-      case 'jelly': {
-        // Drifts down slowly and bobs. It is an obstacle, not a pursuer.
-        const bob = Math.sin(h.phase * 1.4 + h.seed) * hazardTuning.jellyBobAmplitude * ctx.laneWidth;
-        h.x += (Math.cos(h.phase * 0.7) * 0.4 + bob * 0.02) * 6 * dt;
-        h.y -= base * 0.3 * dt;
-        h.squashed = Math.max(0, h.squashed - dt * 2.2);
-        break;
-      }
-      case 'trash': {
-        // Barely moves; it is debris. On contact it is dragged along by the player instead.
-        if (h.gripping) {
-          h.x = ctx.playerX;
-          h.y = ctx.playerY;
-        } else {
-          h.y -= base * hazardTuning.trashSpeedFactor * dt;
-          h.x += Math.sin(h.phase * 1.1 + h.seed) * 4 * dt;
-        }
-        break;
-      }
-      case 'crab': {
-        // Two-phase: it drifts harmlessly until the player enters its reach, THEN telegraphs. See
-        // `armed`. Firing on a fuse that ran from spawn would mean the visible arc never coincides
-        // with the player being close enough to care.
-        h.y -= base * 0.18 * dt;
-        const proximity = h.y < ctx.playerY + hazardTuning.crabArmDistanceMeters;
-        if (!h.armed && proximity) {
-          h.armed = true;
-          h.fuse = hazardTuning.crabFuseSeconds;
-        }
-        if (h.armed) h.fuse = Math.max(0, h.fuse - dt);
-        break;
-      }
-      case 'urchin': {
-        /**
-         * Inert and heavy. It does not chase, does not flee and barely drifts, so it is a fixed hazard you have to
-         * steer around or choose to run into -- which is the point: it is a DECISION, and a decision needs a
-         * stationary option. A hunter would take the choice away and make it a reflex.
-         *
-         * It sinks faster than a crab, so it clears the water instead of accumulating into a wall of spines.
-         */
-        h.y -= base * 0.26 * dt;
-        h.x += Math.sin(h.phase * 0.8 + h.seed) * 2.5 * dt;
-        break;
-      }
-      case 'bombfish': {
-        /**
-         * A HOMING time bomb, not a drifting temptation.
-         *
-         * It used to swim down with a lazy weave and pointedly not come for the player: a temptation has to be
-         * avoidable, or the choice to swallow one is made for you. That reasoning still holds for the REVERSAL -- and
-         * the reversal is still available -- but the creature's role in the water changed: it now closes on the
-         * bubble, and the counterplay is to shoot it (which sets it off where it stands) or to outrun the fuse.
-         *
-         * It re-aims every frame, which is the opposite of the charge's committed curve and deliberate: a bomb that
-         * cannot be out-turned, only out-run and out-shot.
-         */
-        const cfg = mech.hazards.bombfish;
-        const dx = ctx.playerX - h.x;
-        const dy = ctx.playerY - h.y;
-        const gap = Math.hypot(dx, dy);
-        const step = cfg.seekSpeedFactor * ctx.laneWidth;
-        if (gap > 1e-3) {
-          // Apportioned between the axes, so it arrives from wherever it is rather than sliding sideways first.
-          h.x += (dx / gap) * step * dt;
-          h.y += (dy / gap) * step * dt;
-        }
-        // The current still drags it down; the hunt is on top of that, not instead of it.
-        h.y -= base * 0.15 * dt;
-        if (h.blastFuse === null && gap <= cfg.armMeters) h.blastFuse = cfg.fuseSeconds;
-        break;
-      }
-      case 'boss': {
-        /**
-         * The boss does NOT ride the current.
-         *
-         * Everything else in this file is carried down at the level's scroll speed, which is what makes the water feel
-         * like water. The boss holds a position RELATIVE TO THE PLAYER instead -- `holdMeters` above the bubble -- which
-         * is the whole reason it is a fight rather than an encounter the player can simply outrun. It patrols sideways
-         * and tracks the player's lane slowly: slowly enough that being cornered is always something the player did.
-         */
-        const cfg = mech.hazards.boss;
-        const targetX = ctx.playerX + Math.sin(ctx.elapsed * ((Math.PI * 2) / cfg.patrolPeriodSeconds)) * cfg.patrolAmplitude * ctx.laneWidth;
-        const gapX = targetX - h.x;
-        const step = cfg.seekSpeedFactor * ctx.laneWidth * dt;
-        h.x += Math.abs(gapX) <= step ? gapX : Math.sign(gapX) * step;
-        /**
-         * Its height, derived from the VISIBLE BAND rather than fixed in metres.
-         *
-         * A fixed hold height is only correct for one window shape: the band shrinks as the window gets wider and
-         * shorter (802m on a phone, 289m at 1280x720), and a boss hovering past its top edge is a boss that never
-         * appears -- which is exactly the bug this replaced.
-         */
-        const band = Math.max(1, ctx.max - ctx.min);
-        const hold = Math.max(cfg.holdMinMeters, Math.min(cfg.holdMeters, band * cfg.holdBandRatio));
-        /**
-         * And then it is CLAMPED INTO THE VISIBLE BAND, which is the second half of the same bug.
-         *
-         * The hold is measured from the player, so a player who has fallen behind the camera -- stuck behind a wall in
-         * level 2's narrow passages, say -- would have their boss hovering wherever THEY are rather than where the
-         * fight is. The clamp says: whatever the offset works out to, the boss stays inside the band with a small
-         * margin. A boss that exists but is not on screen is indistinguishable from no boss, and a level only ends when
-         * one dies.
-         */
-        const margin = band * 0.08;
-        const targetY = Math.min(Math.max(ctx.playerY + hold, ctx.min + margin), ctx.max - margin);
-        h.y += (targetY - h.y) * Math.min(1, dt * 1.4);
-        break;
-      }
-      case 'vent': {
-        /**
-         * A black smoker does not move; its PLUME does, and the plume is the hazard.
-         *
-         * The cycle is the whole mechanic: a vent that was always lethal could only be avoided by never being in the
-         * middle of the lane, and a level made of those is a corridor. `periodSeconds` with a shorter `activeSeconds`
-         * makes it a rhythm the player can learn -- and the warning is drawn (the plume brightens while `warn` is
-         * counting) so learning it is a matter of paying attention rather than of memorising.
-         *
-         * `h.phase` carries how far through the cycle it is, which is also what the painter reads, so the picture and
-         * the hitbox cannot disagree.
-         */
-        const cfg = mech.hazards.vent;
-        h.phase = (h.phase + dt) % Math.max(0.2, cfg.periodSeconds);
-        break;
-      }
-
-      case 'mineral': {
-        /**
-         * Grit on the heat flow: it RISES, which is the one direction nothing else in the game moves.
-         *
-         * That is why it is the teaching level's danmaku. Every other threat comes down or sideways and is dodged by
-         * reaction; this one comes up out of the terrain and is dodged by knowing where the vents are.
-         */
-        const cfg = mech.hazards.mineral;
-        h.y += ctx.laneWidth * cfg.riseSpeedFactor * dt;
-        h.x += Math.sin((ctx.elapsed / Math.max(0.2, cfg.wobblePeriodSeconds)) * Math.PI * 2 + h.seed) * ctx.laneWidth * cfg.wobbleAmplitude * dt;
-        // It expires on AGE rather than on distance left behind, so a slow one does not linger in the level's path.
-        h.fed += dt;
-        if (h.fed * ctx.laneWidth * cfg.riseSpeedFactor > cfg.lifeMeters) h.flee = 'up';
-        break;
-      }
-      case 'shrimp': {
-        /**
-         * A blind shrimp: it walks a straight line and never turns.
-         *
-         * Deliberately the simplest possible pursuer -- it is the first thing the level introduces, and the lesson is
-         * "the lane is not always yours" rather than "learn a pattern". Because it does not steer, walking around one
-         * is always possible; because it comes from the SIDE, walking around it is not optional.
-         */
-        const cfg = mech.hazards.shrimp;
-        h.x += h.seed % 2 < 1 ? -ctx.laneWidth * cfg.driftSpeedFactor * dt : ctx.laneWidth * cfg.driftSpeedFactor * dt;
-        h.y -= base * 0.25 * dt;
-        break;
-      }
-      case 'angler': {
-        /**
-         * A lanternfish: it hangs still with a lit lure, then lunges at whatever came to look.
-         *
-         * The lure is a promise -- the only light in a dark level -- and the lunge is the bill for believing it. The
-         * lunge reuses the charge machinery (`h.charge`), so the telegraph, the curve and the recovery are the same
-         * geometry the player already learned from the fish, and only the TRIGGER differs: proximity rather than a
-         * distance along the level.
-         */
-        const cfg = mech.hazards.angler;
-        if (h.chargeRest > 0) h.chargeRest -= dt;
-        const gap = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
-        if (h.chargeRest <= 0 && gap <= cfg.lureMeters) {
-          h.chargeRest = cfg.cooldownSeconds;
-          const span = gap;
-          h.charge = {
-            fromX: h.x,
-            fromY: h.y,
-            toX: ctx.playerX,
-            toY: ctx.playerY,
-            bow: (h.x < ctx.playerX ? 1 : -1) * cfg.bowRatio * span,
-            elapsed: 0,
-          };
-        }
-        h.y -= base * cfg.driftFactor * dt;
-        break;
-      }
-      case 'torpedo': {
-        /**
-         * A rogue torpedo: it runs STRAIGHT first, then turns and hunts.
-         *
-         * Both halves matter. The straight leg is honest -- it can only be dodged sideways -- and the turn is the
-         * event, because a round that has already been dodged once becomes a different problem. `fed` accumulates how
-         * far it has run, which is the same trick the mineral countdown uses: a per-hazard number rather than a flag
-         * somewhere else.
-         */
-        const cfg = mech.hazards.torpedo;
-        const run = ctx.laneWidth * cfg.runSpeedFactor;
-        const seek = ctx.laneWidth * cfg.seekSpeedFactor;
-        if (h.fed < cfg.runMeters) {
-          h.fed += run * dt;
-          h.y += run * dt;
-        } else if (h.digest < cfg.seekSeconds) {
-          h.digest += dt;
-          const dx = ctx.playerX - h.x;
-          const dy = ctx.playerY - h.y;
-          const len = Math.hypot(dx, dy) || 1;
-          // It re-aims every frame, like the bomb fish: a homing round that overshoots is a round the player can beat
-          // by moving, and one that does not is a round that has to be outrun.
-          h.x += (dx / len) * seek * dt;
-          h.y += (dy / len) * seek * dt;
-        } else {
-          h.y -= base * 0.3 * dt;
-        }
-        break;
-      }
-      case 'zapper': {
-        /**
-         * A zapper drifts like a jellyfish and keeps its own discharge clock.
-         *
-         * The ring is attack AND warning at once: it is drawn for `ringSeconds` and only hurts while it is up, so a
-         * player who watches can always be somewhere else. `dischargeRest` is per INSTANCE, so a row of them does not
-         * pulse in lockstep -- that would be a wall rather than a pattern.
-         */
-        // The drift below is deliberately the jellyfish drift, so a shoal of them reads as jellyfish.
-        if (h.dischargeRest > 0) h.dischargeRest -= dt;
-        if (h.discharge > 0) h.discharge -= dt;
-        h.y -= base * 0.28 * dt;
-        h.x += Math.sin(h.phase * 0.7 + h.seed) * 2.4 * dt;
-        break;
-      }
-      case 'foam': {
-        /**
-         * Foam: it drifts with the water and breaks up on its own clock.
-         *
-         * It is the only hazard whose job is to make the picture WRONG -- it is drawn as a bubble much like the
-         * player's own -- so it must also expire by itself. Interference that could persist forever would turn a level
-         * about reading the water into a level about waiting.
-         */
-        h.foamLife -= dt;
-        if (h.foamLife <= 0) h.flee = 'up';
-        h.y -= base * 0.6 * dt;
-        h.x += Math.sin(h.phase * 0.9 + h.seed) * 3.2 * dt;
-        break;
-      }
-      case 'rain': {
-        /**
-         * Rain falls FASTER than the current, and that is its whole character.
-         *
-         * Everything else in the water moves at the level's scroll speed or slower; a drop that outruns the current
-         * reads as coming from somewhere else -- which is the fiction, and also the mechanic, because the surface is
-         * where the drops come from and the surface is what the player is trying to reach.
-         */
-        h.y -= ctx.laneWidth * mech.hazards.rain.fallSpeedFactor * dt;
-        break;
-      }
-      case 'eel': {
-        /**
-         * Swims in a wide S, and that is a fairness requirement rather than decoration.
-         *
-         * The eel is the one creature whose cost is paid by the PLAYER'S HANDS, so it has to be readable before it is
-         * touched: a sine weave of this amplitude makes its heading obvious a second ahead, which is what turns
-         * "my controls stopped working" from an ambush into something the player walked into.
-         */
-        h.y -= base * 0.3 * dt;
-        h.x += Math.sin(h.phase * 2.6 + h.seed) * ctx.laneWidth * 0.055 * dt;
-        break;
-      }
-      case 'rot': {
-        // Barely moves and tumbles slowly: it is debris that has stopped being anything in particular.
-        h.y -= base * 0.2 * dt;
-        h.x += Math.sin(h.phase * 0.6 + h.seed) * 3 * dt;
-        break;
-      }
-      case 'oil': {
-        /**
-         * Floats almost still, which is what makes it a decision rather than an obstacle.
-         *
-         * A slick that drifted would be something to avoid; a slick that hangs there is something the player has to
-         * choose to touch. It also means a column of it can be left behind rather than chased.
-         */
-        h.y -= base * 0.1 * dt;
-        h.x += Math.sin(h.phase * 0.4 + h.seed) * 2 * dt;
-        break;
-      }
-    }
+    /**
+     * One lookup instead of eighteen cases: see `CREATURES` for why, and for what is deliberately still here.
+     */
+    CREATURES[h.kind](this, h, dt, ctx);
 
     /**
      * The clamp that keeps ordinary creatures in the lane, skipped for anything on a PATH.
