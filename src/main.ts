@@ -7,6 +7,7 @@ import { HazardField, hazardArtSpriteForTest, KIND_TUNING, hazardTuning, LURE_PR
 import { BulletField, paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { updateProjectiles } from './spit';
+import { updatePickups } from './pickups';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, SKILLS, type Skill, type SkillId } from './skills';
@@ -2374,69 +2375,40 @@ this.sound('hit');
    */
   private updatePickup(dt: number, min: number, max: number, laneWidth: number): void {
     if (!this.pickupDrops.length) return;
-    const reach = laneWidth * (stageRadiusFraction(this.stage.stage, this.player.volume) + 0.05);
     /**
-     * Backwards, because collecting one removes it from the list.
+     * The rule lives in `src/pickups.ts`; what stays here is APPLYING what it says was taken.
      *
-     * Each drop is moved, culled and collected INDEPENDENTLY: two pickups on screen at once is the normal case now
-     * (a level may place them metres apart), and they cannot interfere.
+     * The two numbers it raises are the run's -- the gun reads them and the HUD shows them -- and the words for a
+     * pickup taken at the ceiling are Chinese UI strings, which is not a rule module's business. So the rule decides
+     * and this applies, and a probe can read the decision instead of a banner.
      */
-    for (let i = this.pickupDrops.length - 1; i >= 0; i--) {
-      const pickup = this.pickupDrops[i]!;
-      // The pickup is stationary in the water, so the SCROLL is what carries it down past the player.
-      // It used to be offset by the player's ascent, which was the same relative motion expressed the
-      // other way round; with the player able to hold still, the world has to do the moving.
-      pickup.y -= LEVEL.scrollSpeed * dt;
-      if (pickup.y < min - 40 || pickup.y > max + 160) {
-        this.pickupDrops.splice(i, 1);
-        continue;
-      }
-
-      const dx = pickup.x - this.player.x * laneWidth;
-      const dy = pickup.y - this.player.y;
-      if (dx * dx + dy * dy > reach * reach) continue;
-      /**
-       * What it gives depends on which pickup it is, and both are worth the same points.
-       *
-       * The skill is rolled on COLLECTION: deciding at placement would commit the player's next twenty seconds before
-       * they had even seen the pickup, and would turn the level author's choice of WHERE into a choice of WHAT. The
-       * upgrade has nothing to roll -- it is always the same one thing -- so it just raises the gun's row count, to
-       * the config's ceiling.
-       */
-      if (pickup.kind === 'upgrade') {
-        const before = this.gunStreams;
-        this.gunStreams = Math.min(mech.bullets.maxStreams, this.gunStreams + 1);
-        this.sound('skill');
+    for (const taken of updatePickups(dt, min, max, {
+      drops: this.pickupDrops,
+      playerX: this.player.x * laneWidth,
+      playerY: this.player.y,
+      reachMeters: laneWidth * (stageRadiusFraction(this.stage.stage, this.player.volume) + 0.05),
+      gunStreams: this.gunStreams,
+      rateTier: this.rateTier,
+      score: this.score,
+      events: this.runEvents,
+    })) {
+      if (taken.kind === 'upgrade') {
+        this.gunStreams = taken.streams;
         this.banner(
-          this.gunStreams > before
-            ? `火力升级  ·  ${this.gunStreams} 排小泡泡同时发射`
-            : `火力升级  ·  已经是 ${this.gunStreams} 排（上限 ${mech.bullets.maxStreams}）`,
+          taken.capped
+            ? `火力升级  ·  已经是 ${taken.streams} 排（上限 ${mech.bullets.maxStreams}）`
+            : `火力升级  ·  ${taken.streams} 排小泡泡同时发射`,
         );
-      } else if (pickup.kind === 'rate') {
-        /**
-         * The fire-rate ladder, one step per pickup.
-         *
-         * The ceiling is the LADDER'S LENGTH, not a separate number: "three tiers" and "three entries" are the same
-         * fact, so adding a tier is adding an entry and there is nothing to keep in sync. At the top the pickup is
-         * still consumed and says so -- a pickup that did nothing silently reads as a bug.
-         */
-        const before = this.rateTier;
-        this.rateTier = Math.min(mech.bullets.rateTiers.length, this.rateTier + 1);
-        this.sound('skill');
+      } else if (taken.kind === 'rate') {
+        this.rateTier = taken.tier;
         this.banner(
-          this.rateTier > before
-            ? `射速升级  ·  第 ${this.rateTier} 档  ·  每秒 ${mech.bullets.rateTiers[this.rateTier - 1]} 发`
-            : `射速升级  ·  已经是最高档（第 ${mech.bullets.rateTiers.length} 档）`,
+          taken.capped
+            ? `射速升级  ·  已经是最高档（第 ${mech.bullets.rateTiers.length} 档）`
+            : `射速升级  ·  第 ${taken.tier} 档  ·  每秒 ${mech.bullets.rateTiers[taken.tier - 1]} 发`,
         );
       } else {
-        const skill = pickup.id ?? (SKILLS[Math.floor(Math.random() * SKILLS.length)] ?? SKILLS[0]).id;
-        this.grantSkill(skill);
+        this.grantSkill(taken.id);
       }
-      // A special item is worth points because it is the level's one pure reward: everything else in the water is
-      // either an obstacle or something that hurts. It floats up from WHERE IT WAS PICKED UP, which is this feature's
-      // own example of what the numbers are for.
-      this.scorePopup(pickup.x, pickup.y, this.score.award('skill'));
-      this.pickupDrops.splice(i, 1);
     }
   }
 
