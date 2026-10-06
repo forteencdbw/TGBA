@@ -1,5 +1,7 @@
 import { mech } from './mechanisms';
-import { KIND_TUNING, NO_STOMACH_EFFECT, type HazardKind, type StomachEffect } from './hazards';
+import { blastRadiusFraction, HazardField, KIND_TUNING, NO_STOMACH_EFFECT, shoveCreature, type HazardKind, type StomachEffect } from './hazards';
+import { ObstacleField } from './obstacles';
+import { saySound, type RunEvent } from './runEvents';
 
 /**
  * The stomach: what you swallowed is your ammunition, and your next rank.
@@ -585,3 +587,102 @@ export const SPIT = mech.spit;
 
 
 
+
+/**
+ * One step of every round in flight.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHERE THIS CAME FROM
+ * ---------------------------------------------------------------------------------------------
+ * A private method on the game class -- `Game.updateProjectiles` -- which is why it could only ever be exercised by
+ * playing the game. It takes the water it acts on (`world`) and the band it lives in (`min`/`max`) as arguments now, and
+ * says what happened through `events` rather than through the synth.
+ *
+ * Obstacles first, then creatures, and the order is not arbitrary: an obstacle is the thing a projectile is FOR, so a
+ * crate in front of a fish should stop the shot. Hitting the fish through the crate would make the scenery a lie.
+ *
+ * Returns how many things it hit, which is the run's diagnostic counter rather than part of the rule.
+ */
+export function updateProjectiles(
+  dt: number,
+  laneWidth: number,
+  min: number,
+  max: number,
+  world: { projectiles: SpitProjectile[]; obstacles: ObstacleField; hazards: HazardField },
+  events: RunEvent[],
+): number {
+  const projectiles = world.projectiles;
+  if (!projectiles.length) return 0;
+  const hitRadius = laneWidth * mech.spit.hitRadiusRatio;
+  let hits = 0;
+
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i]!;
+    p.age += dt;
+    // Exponential decay, expressed as a time constant so the range does not change with the frame rate.
+    const decay = Math.exp(-dt / Math.max(0.02, mech.spit.decaySeconds));
+    p.vx *= decay;
+    p.vy *= decay;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+
+    let spent = false;
+
+    const obstacleHit = world.obstacles.hitByProjectile(p.x, p.y, hitRadius, spitImpact(p.kind));
+    if (obstacleHit) {
+      hits++;
+      if (obstacleHit.broke) saySound(events, 'hit');
+      spent = true;
+    }
+
+    for (const h of world.hazards.hazards) {
+      if (spent) break;
+      const hr = laneWidth * h.radiusFraction;
+      const dx = h.x - p.x;
+      const dy = h.y - p.y;
+      const reach = hitRadius + hr;
+      if (dx * dx + dy * dy > reach * reach) continue;
+
+      /**
+       * A hit knocks the target back along the projectile's path, scaled by the target's mass.
+       *
+       * DAMAGE would be the obvious alternative, but these hazards have no health to take -- nothing else in this game
+       * kills them with numbers, and inventing hit points for them inside one mechanic would be a new system hiding in
+       * this one.
+       */
+      shoveCreature(h, dx, dy, spitImpact(p.kind));
+      hits++;
+      saySound(events, 'hit');
+
+      /**
+       * An explosive round keeps going off after the first thing it touches.
+       *
+       * That is the whole reason to swallow a bomb fish, so this is the payoff half of the creature rather than an
+       * extra: the fuse in your stomach buys you a grenade, and a grenade that only pushed one thing would be an
+       * ordinary pellet with a countdown attached to it.
+       */
+      const blast = laneWidth * blastRadiusFraction(p.kind);
+      if (blast > 0) {
+        for (const other of world.hazards.hazards) {
+          if (other === h) continue;
+          const ox = other.x - p.x;
+          const oy = other.y - p.y;
+          if (ox * ox + oy * oy > blast * blast) continue;
+          // Pushed AWAY from the blast centre, which is what makes it read as an explosion rather than as a
+          // second projectile arriving.
+          shoveCreature(other, ox, oy, spitImpact(p.kind));
+        }
+        saySound(events, 'crab');
+      }
+      spent = true;
+      break;
+    }
+
+    // Recycle: it hit something, it slowed to a stop, or it left the level's band.
+    const outside = p.y < min - 60 || p.y > max + 60;
+    if (spent || outside || Math.hypot(p.vx, p.vy) < laneWidth * 0.05) {
+      projectiles.splice(i, 1);
+    }
+  }
+  return hits;
+}

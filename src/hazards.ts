@@ -1333,6 +1333,30 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   vent: contactVent,
 };
 
+/**
+ * Push a creature away from a point, scaled by its MASS.
+ *
+ * Heavy things shrug it off and light things are thrown, which keeps "the item keeps its own properties" true on the
+ * receiving end as well as the sending end. It takes a position rather than a `Hazard` because one of its two callers
+ * shoves creatures that are not in a field's list yet.
+ *
+ * A rule, not a mechanic of any one verb: the fart uses it (`pushImpact`) and so does a spent round
+ * (`spitImpact`), and it was a private method on the game class until both callers moved out.
+ */
+export function shoveCreature(target: { kind: HazardKind; x: number; y: number }, dx: number, dy: number, impact: number): void {
+  const mass = Math.max(0.05, hazardMass(target.kind));
+  const shove = (mech.spit.knockbackMeters * impact) / mass;
+  const length = Math.hypot(dx, dy);
+  // Dead centre: pick a direction rather than dividing by zero, and up is the one that means something in a
+  // vertical ascent.
+  if (length < 1e-3) {
+    target.y += shove;
+    return;
+  }
+  target.x += (dx / length) * shove;
+  target.y += (dy / length) * shove;
+}
+
 export class HazardField {
   hazards: Hazard[] = [];
 

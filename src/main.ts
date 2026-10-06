@@ -3,27 +3,29 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeL
 import { tuning } from './config';
 import { LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, selectLevel, type EntrySide, type Level, type LevelEntry } from './levels';
 import { Progression } from './progress';
-import { blastRadiusFraction, HazardField, hazardArtSpriteForTest, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind, type SpawnOptions } from './hazards';
+import { HazardField, hazardArtSpriteForTest, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, shoveCreature, stomachEffect, type Hazard, type HazardKind, type SpawnOptions } from './hazards';
 import { BulletField, paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
+import { updateProjectiles } from './spit';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
 import { pickTalent, resolveTalent, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
 import { activationFor, findSkill, SKILLS, type Skill, type SkillId } from './skills';
 import { audio, type SoundEvent } from './audio';
 import { Score } from './score';
 import { NumberPopups } from './numberPopups';
-import { canEatHazard, hazardMass, massFromEating, volumeTier } from './consumption';
+import { canEatHazard, massFromEating, volumeTier } from './consumption';
 import { MainMenu } from './menu';
 import { CodexUi } from './codexUi';
 import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
 import { BUBBLE_TYPES, defaultBubbleType, findBubbleType, hasControl, hasVerb, type BubbleType } from './bubbleTypes';
 import { placeEntry, type PickupDrop, type SpawnRecord } from './placement';
+import { sayBanner, sayDamage, sayScore, saySkillSlot, saySound, type RunEvent } from './runEvents';
 import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
 import { endOverload, gainRage, hitRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName, slamDamage, spendRage, tickRage, type RageState } from './rage';
 import { mech } from './mechanisms';
 import { chainTargets } from './conductive';
 import { suctionRadiusFraction } from './suction';
-import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
+import { digestEnergy, Stomach, spitDirection, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
 import { Assets, Sprite, Text as PixiText, Texture } from 'pixi.js';
@@ -64,31 +66,6 @@ import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius, drain
 /** The three ways a bubble can be born (design round 5). Effects land in D4; here it is flavour. */
 const SEEDS = ['鱼屁泡', '汽水泡', '深海淤泥泡'] as const;
 
-/**
- * What a frame of the run SAYS, queued instead of said.
- *
- * ---------------------------------------------------------------------------------------------
- * WHY THE RULES DO NOT TOUCH THE SCREEN
- * ---------------------------------------------------------------------------------------------
- * A rule that decides something -- a crate broke, a fish was driven off, the heart ran out -- also knows what that
- * should SOUND and LOOK like, and the shortest way to write that is to call the label and the synth from where the
- * decision is made. That is what this file did in sixty-three places, and it is the reason the rules cannot be moved
- * out of the class that owns the canvas: a rule holding a reference to a `Text` object is a rule that needs a renderer.
- *
- * So they push one of these instead. `applyRunEvents` is the only code that touches the display, and it runs
- * immediately after the step that produced them -- so a hit still sounds on the frame it happened, and a banner is
- * still on screen for the frame it was raised in.
- *
- * The same shape the particles have used since they were written (a queue the simulation fills and the presentation
- * drains), applied to everything a run has to say rather than to sparks alone. It is also what makes the run's output
- * inspectable: a probe can read this list instead of asking a label what it currently contains.
- */
-type RunEvent =
-  | { kind: 'banner'; text: string }
-  | { kind: 'sound'; event: SoundEvent; intensity: number }
-  | { kind: 'scorePopup'; x: number; y: number; points: number }
-  | { kind: 'damagePopup'; x: number; y: number; amount: number }
-  | { kind: 'skillSlot'; carried: boolean };
 
 const INTRO_SECONDS = 1.6;
 /**
@@ -387,7 +364,7 @@ class Game {
         continue;
       }
       // Not clearable: shoved away from the centre, with the same arithmetic a grenade uses.
-      this.shoveHazard(h, dx, dy, cfg.pushImpact);
+      shoveCreature(h, dx, dy, cfg.pushImpact);
       pushes++;
       survivors.push(h);
     }
@@ -1398,84 +1375,15 @@ this.sound('hit');
   }
 
   private updateProjectiles(dt: number, laneWidth: number, min: number, max: number): void {
-    if (!this.projectiles.length) return;
-    const hitRadius = laneWidth * mech.spit.hitRadiusRatio;
-
-    for (let i = this.projectiles.length - 1; i >= 0; i--) {
-      const p = this.projectiles[i]!;
-      p.age += dt;
-      // Exponential decay, expressed as a time constant so the range does not change with the frame rate.
-      const decay = Math.exp(-dt / Math.max(0.02, mech.spit.decaySeconds));
-      p.vx *= decay;
-      p.vy *= decay;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-
-      let spent = false;
-
-      /**
-       * Obstacles first, then hazards.
-       *
-       * Order matters and is not arbitrary: an obstacle is the thing a projectile is FOR, so a crate in front of
-       * a fish should stop the shot. Hitting the fish through the crate would make the scenery a lie.
-       */
-      const obstacleHit = this.obstacles.hitByProjectile(p.x, p.y, hitRadius, spitImpact(p.kind));
-      if (obstacleHit) {
-        this.spitHits++;
-        if (obstacleHit.broke) this.sound('hit');
-        spent = true;
-      }
-
-      for (const h of this.hazards.hazards) {
-        if (spent) break;
-        const hr = laneWidth * h.radiusFraction;
-        const dx = h.x - p.x;
-        const dy = h.y - p.y;
-        const reach = hitRadius + hr;
-        if (dx * dx + dy * dy > reach * reach) continue;
-
-        /**
-         * A hit knocks the target back along the projectile's path, scaled by the target's mass.
-         *
-         * Heavy things shrug it off and light things are thrown, which keeps "the item keeps its own properties"
-         * true on the receiving end as well as the sending end. DAMAGE would be the obvious alternative, but these
-         * hazards have no health to take -- nothing else in this game kills them with numbers, and inventing hit
-         * points for them inside one mechanic would be a new system hiding in this one.
-         */
-        this.shoveFromProjectile(p, h, dx, dy);
-        this.spitHits++;
-        this.sound('hit');
-
-        /**
-         * An explosive round keeps going off after the first thing it touches.
-         *
-         * That is the whole reason to swallow a bomb fish, so this is the payoff half of the creature rather than
-         * an extra: the fuse in your stomach buys you a grenade, and a grenade that only pushed one thing would be
-         * an ordinary pellet with a countdown attached to it.
-         */
-        const blast = laneWidth * blastRadiusFraction(p.kind);
-        if (blast > 0) {
-          for (const other of this.hazards.hazards) {
-            if (other === h) continue;
-            const ox = other.x - p.x;
-            const oy = other.y - p.y;
-            if (ox * ox + oy * oy > blast * blast) continue;
-            // Pushed AWAY from the blast centre, which is what makes it read as an explosion rather than as a
-            // second projectile arriving.
-            this.shoveFromProjectile(p, other, ox, oy);
-          }
-          this.sound('crab');
-        }
-        spent = true;
-        break;
-      }
-
-      // Recycle: it hit something, it slowed to a stop, or it left the level's band.
-      const outside = p.y < min - 60 || p.y > max + 60;
-      if (spent || outside || Math.hypot(p.vx, p.vy) < laneWidth * 0.05) {
-        this.projectiles.splice(i, 1);
-      }
-    }
+    // The rule lives in `src/spit.ts` with the ammunition; what stays here is the run's counter of what it hit.
+    this.spitHits += updateProjectiles(
+      dt,
+      laneWidth,
+      min,
+      max,
+      { projectiles: this.projectiles, obstacles: this.obstacles, hazards: this.hazards },
+      this.runEvents,
+    );
   }
 
   /**
@@ -1489,29 +1397,7 @@ this.sound('hit');
    * @param dx,dy direction from the impact to the target; only the direction is used.
    * @param impact the impact factor, in the same units as `spitImpact` (a crab is 1.6, a jellyfish 0.6).
    */
-  private shoveHazard(target: { kind: HazardKind; x: number; y: number }, dx: number, dy: number, impact: number): void {
-    const mass = Math.max(0.05, hazardMass(target.kind));
-    const shove = (mech.spit.knockbackMeters * impact) / mass;
-    const length = Math.hypot(dx, dy);
-    // Dead centre: pick a direction rather than dividing by zero, and up is the one that means something in a
-    // vertical ascent.
-    if (length < 1e-3) {
-      target.y += shove;
-      return;
-    }
-    target.x += (dx / length) * shove;
-    target.y += (dy / length) * shove;
-  }
 
-  /** Shove one hazard away from a projectile's position. See `shoveHazard`. */
-  private shoveFromProjectile(
-    p: SpitProjectile,
-    target: { kind: HazardKind; x: number; y: number },
-    dx: number,
-    dy: number,
-  ): void {
-    this.shoveHazard(target, dx, dy, spitImpact(p.kind));
-  }
 
   /**
    * How much the suction field is widened right now.
@@ -4083,26 +3969,26 @@ this.sound('pop');
    * the only code left in this file that touches the banner's text, its alpha or `bannerSeen`.
    */
   private banner(text: string): void {
-    this.runEvents.push({ kind: 'banner', text });
+    sayBanner(this.runEvents, text);
   }
 
   /** A cue for the synth. Same signature as `audio.play`, because the drain is a forward to it. */
   private sound(event: SoundEvent, intensity = 0.5): void {
-    this.runEvents.push({ kind: 'sound', event, intensity });
+    saySound(this.runEvents, event, intensity);
   }
 
   /** A number rising off a place in the water, in WORLD metres: the drain hands the camera to the popup layer. */
   private scorePopup(x: number, y: number, points: number): void {
-    this.runEvents.push({ kind: 'scorePopup', x, y, points });
+    sayScore(this.runEvents, x, y, points);
   }
 
   private damagePopup(x: number, y: number, amount: number): void {
-    this.runEvents.push({ kind: 'damagePopup', x, y, amount });
+    sayDamage(this.runEvents, x, y, amount);
   }
 
   /** Whether the carried skill's button exists. Input surface, so it is an OUTPUT of the run rather than a rule. */
   private skillSlot(carried: boolean): void {
-    this.runEvents.push({ kind: 'skillSlot', carried });
+    saySkillSlot(this.runEvents, carried);
   }
 
   /**
@@ -6167,8 +6053,6 @@ async function boot(): Promise<void> {
 }
 
 void boot();
-
-
 
 
 
