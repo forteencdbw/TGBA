@@ -2400,7 +2400,18 @@ export function paintHazards(
      */
     const art = mech.hazardArt[h.kind];
     if (art) {
-      const name = h.charge && art.charge ? art.charge : art.move;
+      /**
+       * The wind-up pose belongs to the WIND-UP, not to the whole charge.
+       *
+       * It used to be shown whenever `h.charge` was set, which meant a curled shrimp stayed curled through the lunge and the
+       * recovery as well -- the pose said "I am about to spring" for the entire move, including the part where it has already
+       * sprung. The telegraph duration is read from the same row the charge geometry uses, so "the pose ends when the wind-up
+       * ends" is true by construction rather than by two numbers agreeing.
+       */
+      const chargeRow = mech.charges.chargers[h.kind];
+      const telegraphSeconds = chargeRow?.telegraphSeconds ?? 0.75;
+      const windingUp = h.charge !== null && h.charge.elapsed < telegraphSeconds;
+      const name = windingUp && art.charge ? art.charge : art.move;
       const texture = artTexture(name);
       if (texture) {
         let sprite = ART_SPRITES.get(h.id);
