@@ -633,16 +633,15 @@ export interface Mechanisms {
      * has to think about whether a thing is worth eating. Both creatures are also ordinary hazards below their
      * tier, which follows from the reversal rule rather than being a second rule.
      */
-    urchinDrainPerSecond: number;
+    urchin: { drainPerSecond: number };
 
 
     /** The eel: how often it shocks, and for how long. Zero duration disables the side effect entirely. */
-    eelShockPeriodSeconds: number;
-    eelShockSeconds: number;
+    eel: { shockPeriodSeconds: number; shockSeconds: number };
     /** The rot: what it multiplies the digestion rate by while it is inside. 1 means no effect. */
-    rotDigestScale: number;
+    rot: { digestScale: number };
     /** The oil: the chance a spit attempt gets it out. 0 is a permanent clog, 1 is an ordinary item. */
-    oilSpitChance: number;
+    oil: { spitChance: number };
     /** The cue that must exist: the electric shock on the bubble is the only warning that the controls are broken. */
     eelShockColor: number;
     eelShockWidthRatio: number;
@@ -1871,14 +1870,14 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.launchDecaySeconds', check: (v) => typeof v === 'number' && v > 0.01, describe: 'seconds above 0.01' },
   { path: 'hazards.trash.drainPerSecond', check: (v) => typeof v === 'number' && v > 0, describe: 'hit points per second above 0' },
   { path: 'hazards.trash.minGripSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
-  { path: 'hazards.urchinDrainPerSecond', check: (v) => typeof v === 'number' && v >= 0, describe: 'hit points per second, 0 or more; 0 makes the urchin harmless once swallowed' },
+  { path: 'hazards.urchin.drainPerSecond', check: (v) => typeof v === 'number' && v >= 0, describe: 'hit points per second, 0 or more; 0 makes the urchin harmless once swallowed' },
 
 
 
-  { path: 'hazards.eelShockPeriodSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
-  { path: 'hazards.eelShockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10; 0 disables the eel\'s loss of control' },
-  { path: 'hazards.rotDigestScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier between 0 and 2; 1 means the rot does not slow digestion' },
-  { path: 'hazards.oilSpitChance', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a probability between 0 and 1; 0 is a permanent clog' },
+  { path: 'hazards.eel.shockPeriodSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
+  { path: 'hazards.eel.shockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10; 0 disables the eel\'s loss of control' },
+  { path: 'hazards.rot.digestScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier between 0 and 2; 1 means the rot does not slow digestion' },
+  { path: 'hazards.oil.spitChance', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a probability between 0 and 1; 0 is a permanent clog' },
   { path: 'hazards.eelShockColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.eelShockWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
   { path: 'hazards.invulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },

@@ -45,7 +45,7 @@ test.describe('negative food', () => {
       const raf = (): Promise<void> => new Promise<void>((res) => requestAnimationFrame(() => res()));
       const g = (window as unknown as {
         __GB: {
-          mechRef: { hazards: Record<string, number>; digest: Record<string, number> };
+          mechRef: { hazards: { urchin: { drainPerSecond: number } }; digest: Record<string, number> };
           player: { volume: number };
           game: {
             fieldRef: { bubbles: unknown[] };
@@ -70,7 +70,7 @@ test.describe('negative food', () => {
        * afterwards would not be the value under test.
        */
       const perSecond = 4;
-      g.mechRef.hazards.urchinDrainPerSecond = perSecond;
+      g.mechRef.hazards.urchin.drainPerSecond = perSecond;
       // Big and healthy, so a few hits cannot end the run in the middle of the measurement.
       g.player.volume = 8;
 
@@ -153,7 +153,7 @@ test.describe('negative food', () => {
       const g = (window as unknown as {
         __GB: {
           tuning: { hitPointVolume: number };
-          mechRef: { hazards: Record<string, number>; digest: Record<string, number> };
+          mechRef: { hazards: { bombfish: { fuseSeconds: number } }; digest: Record<string, number> };
           player: { volume: number };
           game: {
             fieldRef: { bubbles: unknown[] };
@@ -184,7 +184,7 @@ test.describe('negative food', () => {
       // A distinctive, short fuse, so "the countdown starts at swallow and uses the config" is measurable in a
       // second rather than in four. Set before swallowing; the item captures it.
       const configured = 0.7;
-      g.mechRef.hazards.bombfishFuseSeconds = configured;
+      g.mechRef.hazards.bombfish.fuseSeconds = configured;
       g.player.volume = 8;
 
       const gained = g.game.debugSwallowForTest('bombfish');
@@ -260,7 +260,7 @@ test.describe('negative food', () => {
       const raf = (): Promise<void> => new Promise<void>((res) => requestAnimationFrame(() => res()));
       const g = (window as unknown as {
         __GB: {
-          mechRef: { hazards: Record<string, number>; digest: Record<string, number> };
+          mechRef: { hazards: { bombfish: { fuseSeconds: number; blastRadiusRatio: number } }; digest: Record<string, number> };
           player: { x: number; y: number; volume: number };
           game: {
             fieldRef: { bubbles: unknown[] };
@@ -286,7 +286,7 @@ test.describe('negative food', () => {
        */
       g.mechRef.digest.passivePerSecond = 0;
       g.mechRef.digest.compressPerSecond = 0;
-      g.mechRef.hazards.bombfishFuseSeconds = 600;
+      g.mechRef.hazards.bombfish.fuseSeconds = 600;
       g.player.volume = 20;
 
       g.game.debugSwallowForTest('bombfish');
@@ -323,7 +323,7 @@ test.describe('negative food', () => {
       await raf();
 
       return {
-        blastRadius: g.mechRef.hazards.bombfishBlastRadiusRatio!,
+        blastRadius: g.mechRef.hazards.bombfish.blastRadiusRatio!,
         moved: targets.map((t, i) => Math.hypot(t.x - before[i]!.x, t.y - before[i]!.y)),
       };
     });
@@ -437,7 +437,7 @@ test.describe('negative food', () => {
       const raf = (): Promise<void> => new Promise<void>((res) => requestAnimationFrame(() => res()));
       const g = (window as unknown as {
         __GB: {
-          mechRef: { hazards: Record<string, number>; digest: Record<string, number> };
+          mechRef: { hazards: { eel: { shockPeriodSeconds: number; shockSeconds: number } }; digest: Record<string, number> };
           player: { x: number; vx: number; volume: number };
           game: {
             fieldRef: { bubbles: unknown[] };
@@ -457,8 +457,8 @@ test.describe('negative food', () => {
        * not, so BOTH states are observable inside one window -- a test that only ever saw the inverted state could
        * not tell "the controls break" from "the controls are broken forever".
        */
-      g.mechRef.hazards.eelShockPeriodSeconds = 1.0;
-      g.mechRef.hazards.eelShockSeconds = 0.5;
+      g.mechRef.hazards.eel.shockPeriodSeconds = 1.0;
+      g.mechRef.hazards.eel.shockSeconds = 0.5;
       g.player.volume = 8;
       g.game.debugSwallowForTest('eel');
 
@@ -524,7 +524,7 @@ test.describe('negative food', () => {
       const raf = (): Promise<void> => new Promise<void>((res) => requestAnimationFrame(() => res()));
       const g = (window as unknown as {
         __GB: {
-          mechRef: { hazards: Record<string, number>; digest: Record<string, number> };
+          mechRef: { hazards: { rot: { digestScale: number } }; digest: Record<string, number> };
           player: { volume: number };
           game: {
             fieldRef: { bubbles: unknown[] };
@@ -547,7 +547,7 @@ test.describe('negative food', () => {
       const rotScale = 0.25;
       g.mechRef.digest.passivePerSecond = rate;
       g.mechRef.digest.compressPerSecond = rate;
-      g.mechRef.hazards.rotDigestScale = rotScale;
+      g.mechRef.hazards.rot.digestScale = rotScale;
       g.player.volume = 8;
 
       /**
@@ -625,7 +625,7 @@ test.describe('negative food', () => {
       const raf = (): Promise<void> => new Promise<void>((res) => requestAnimationFrame(() => res()));
       const g = (window as unknown as {
         __GB: {
-          mechRef: { hazards: Record<string, number>; digest: Record<string, number> };
+          mechRef: { hazards: { oil: { spitChance: number } }; digest: Record<string, number> };
           player: { volume: number };
           game: {
             fieldRef: { bubbles: unknown[] };
@@ -671,7 +671,7 @@ test.describe('negative food', () => {
        * `oilSpitChance` therefore cannot loosen an oil that is already inside -- which is the honest semantic, and
        * the reason this test needs a second slick to show that the chance is what governs.
        */
-      g.mechRef.hazards.oilSpitChance = 0;
+      g.mechRef.hazards.oil.spitChance = 0;
       g.game.debugSwallowForTest('oil');
       const cloggedInFlight = await press();
       const clogged = {
@@ -682,7 +682,7 @@ test.describe('negative food', () => {
 
       // The same press with a slick that is willing to let go.
       g.game.stomachRef.reset();
-      g.mechRef.hazards.oilSpitChance = 1;
+      g.mechRef.hazards.oil.spitChance = 1;
       g.game.debugSwallowForTest('oil');
       const firedInFlight = await press();
 

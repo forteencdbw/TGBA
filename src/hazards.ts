@@ -531,7 +531,7 @@ export const NO_STOMACH_EFFECT: StomachEffect = {
 export function stomachEffect(kind: HazardKind): StomachEffect {
   switch (kind) {
     case 'urchin':
-      return { ...NO_STOMACH_EFFECT, damagePerSecond: mech.hazards.urchinDrainPerSecond };
+      return { ...NO_STOMACH_EFFECT, damagePerSecond: mech.hazards.urchin.drainPerSecond };
     case 'bombfish':
       return {
         ...NO_STOMACH_EFFECT,
@@ -541,13 +541,13 @@ export function stomachEffect(kind: HazardKind): StomachEffect {
     case 'eel':
       return {
         ...NO_STOMACH_EFFECT,
-        shockPeriodSeconds: mech.hazards.eelShockPeriodSeconds,
-        shockSeconds: mech.hazards.eelShockSeconds,
+        shockPeriodSeconds: mech.hazards.eel.shockPeriodSeconds,
+        shockSeconds: mech.hazards.eel.shockSeconds,
       };
     case 'rot':
-      return { ...NO_STOMACH_EFFECT, digestScale: mech.hazards.rotDigestScale };
+      return { ...NO_STOMACH_EFFECT, digestScale: mech.hazards.rot.digestScale };
     case 'oil':
-      return { ...NO_STOMACH_EFFECT, spitChance: mech.hazards.oilSpitChance };
+      return { ...NO_STOMACH_EFFECT, spitChance: mech.hazards.oil.spitChance };
     default:
       return NO_STOMACH_EFFECT;
   }

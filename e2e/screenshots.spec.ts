@@ -530,7 +530,7 @@ test.describe('screen captures @screenshots', () => {
     await page.evaluate(async () => {
       const g = (window as unknown as {
         __GB: {
-          mechRef: { hazards: Record<string, number>; spit: Record<string, number>; stomach: Record<string, number> };
+      mechRef: { hazards: { bombfish: { fuseSeconds: number; blastRadiusRatio: number }; urchin: { drainPerSecond: number } }; spit: Record<string, number>; stomach: Record<string, number> };
           game: {
             debugSetSteadyCruise: () => void;
             debugSwallowForTest: (kind: string) => number;
@@ -556,8 +556,8 @@ test.describe('screen captures @screenshots', () => {
        * Nothing about the drawing depends on these numbers; they only decide which frame is being photographed.
        */
       g.mechRef.spit.overloadFuseSeconds = 600;
-      g.mechRef.hazards.bombfishFuseSeconds = 600;
-      g.mechRef.hazards.urchinDrainPerSecond = 0;
+      g.mechRef.hazards.bombfish.fuseSeconds = 600;
+      g.mechRef.hazards.urchin.drainPerSecond = 0;
       g.mechRef.stomach.fusePanicSeconds = 600;
 
       g.game.debugSwallowForTest('urchin');

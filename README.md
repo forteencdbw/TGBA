@@ -530,10 +530,14 @@ playing → cleared → ascend → intro（下一关）
 漏一行只在启动时报错；一块一个之后，"这只生物是什么"是一个能读、能比较、能整个记住的东西。老几种会一种一种搬过来
 （搬的时候只动键的位置和上面那几处读取点，观感不变——螃蟹这一只实测五个数值一模一样）。
 
-**已搬过来的**：螃蟹（5 个）、水母（`contactDamage`）、垃圾袋（`drainPerSecond` + `minGripSeconds`，这两个是**一对**：
-`drainPerSecond × minGripSeconds` 就是一次完整缠绕的伤害，所以它们必须待在同一块里）。
-**还剩**：电鳗、海胆、腐败物、油污——它们的键被 e2e 规格直接引用（`g.mechRef.hazards.eelShockSeconds` 这类），
-搬的时候要同一个提交里改规格，所以留给一次专门的改动。
+**已搬过来的**：螃蟹、水母、垃圾袋，以及负食物那几种（电鳗 `shockPeriodSeconds` / `shockSeconds`、海胆 `drainPerSecond`、
+腐败物 `digestScale`、油污 `spitChance`）——炸弹鱼本来就是一块。搬的时候只动键的位置和读取点：搬完实测数值全部一样。
+
+> 搬负食物那几种时，顺手量出一件**早就坏掉**的事：`e2e/negative-food.spec.ts` 和 `screenshots.spec.ts` 里的
+> `g.mechRef.hazards.bombfishFuseSeconds` 和 `bombfishBlastRadiusRatio` **根本不是配置里的键**（配置里是
+> `hazards.bombfish.fuseSeconds` / `.blastRadiusRatio`）——在 `mech` 上给一个不存在的路径赋值不会报错，只会
+> 造出一个谁也不读的属性，所以那两条断言测的其实是"什么都没发生"。已经改对了。
+> 顺带查了一遍：规格里引用的 **27 条配置路径**现在全部能在真实配置上解析出来（用加载器跑的，不是肉眼看的）。
 
 **体型现在也在配置里了**（`hazards.radius`）：它同时决定**碰撞、绘制大小和图鉴卡片里的大小**，所以只留一处来源；改完**刷新即可，不用重新构建**。代码里的 `KIND_TUNING` 退化成**默认值**——配置里没写的种类就用默认，写了就覆盖。实测：灯笼鱼 `radiusFraction` = **0.09**（原来的 2 倍）✓，小鱼仍是 0.035 ✓。
 
@@ -1371,22 +1375,22 @@ BOSS 悬在画面外，玩家永远看不到它；而这一关只有打死它才
 | **海胆** `urchin` | 远程**尖刺** + 持续**放血** | 在胃袋里每秒扣血；**带着它压缩会更惨**（压缩期间受伤翻倍） | 重（0.5，比水母重），硬弹药（击退 ×1.2） | 血量 15（最厚），打跑它要时间；吃掉它是"用持续掉血换一份重弹药" |
 | **炸弹鱼** `bombfish` | **追着你来的定时炸弹** | 外面：靠近 → 进 110m 点燃引信，3 秒后炸开（半径 33% 泳道）；**血打空就在原地炸** | 吐出去是**一颗手雷**（命中时范围击退） | 跑出半径、或者**远距离**把它打爆；贴脸打爆等于自爆 |
 | **电鳗** `eel` | **失控** | 每隔几秒电一下，被电时**左右操作是反的** | 仍带电的弹药（击退 ×1.1） | 憋过去，或者赶紧处理掉 |
-| **腐败物** `rot` | **消化变慢** | 它在胃袋里时消化速度乘 `rotDigestScale`（默认 0.35） | 一般 | 先吐掉它，再处理别的 |
-| **油污** `oil` | **吐不出来** | 每次喷吐只有 `oilSpitChance`（默认 0.25）的概率成功，**它还占着容量** | 最重的一种（0.6，仅次于螃蟹），击退 ×1.35 | 一边按一边等引信烧完——或者一开始就别吃 |
+| **腐败物** `rot` | **消化变慢** | 它在胃袋里时消化速度乘 `hazards.rot.digestScale`（默认 0.35） | 一般 | 先吐掉它，再处理别的 |
+| **油污** `oil` | **吐不出来** | 每次喷吐只有 `hazards.oil.spitChance`（默认 0.25）的概率成功，**它还占着容量** | 最重的一种（0.6，仅次于螃蟹），击退 ×1.35 | 一边按一边等引信烧完——或者一开始就别吃 |
 
 **为什么电鳗只反横向**：关卡是纵向上升的，把纵向也反过来会让玩家觉得**关卡**坏了，而不是气泡被电了；而"手不听话"恰恰是要让人立刻察觉的。**为什么油污是概率而不是墙**：`0` 是彻底堵死、`1` 是普通道具，中间那档（0.25）才是最好玩的——它出得来，但要花掉你几次机会，而**过饱引信不会等你**。
 
-配置在 `hazards` 段（和螃蟹、垃圾袋的数值放在一起，因为都是"某一种生物的数值"）：
+配置**每一种生物一块**（见上面"一只生物 = 一块"）：
 
 | 键 | 管什么 |
 |---|---|
-| `urchinDrainPerSecond` | 海胆每秒扣多少命中点。0 = 吞下去就没事了 |
-| `bombfishFuseSeconds` / `bombfishDetonationHitPoints` | 引信长度（**从吞下那一刻开始烧**）与爆开扣几点 |
-| `bombfishBlastRadiusRatio` | 吐出去的爆炸半径。0 = 退化成普通弹丸，那就只剩代价没有诱惑了 |
-| `eelShockPeriodSeconds` / `eelShockSeconds` | 电鳗多久电一下、电多久。`eelShockSeconds = 0` 等于关掉这条副作用 |
-| `rotDigestScale` | 它在胃袋里时消化速度的倍率。1 = 没影响 |
-| `oilSpitChance` | 每次喷吐把它吐出去的概率。0 = 永久堵死 |
-| `eelShockColor` / `eelShockWidthRatio` | 被电时气泡上那圈锯齿电光的颜色与线宽 |
+| `hazards.urchin.drainPerSecond` | 海胆每秒扣多少命中点。0 = 吞下去就没事了 |
+| `hazards.bombfish.stomachFuseSeconds` / `detonationHitPoints` | 引信长度（**从吞下那一刻开始烧**）与爆开扣几点 |
+| `hazards.bombfish.grenadeBlastRadiusRatio` | 吐出去的爆炸半径。0 = 退化成普通弹丸，那就只剩代价没有诱惑了 |
+| `hazards.eel.shockPeriodSeconds` / `shockSeconds` | 电鳗多久电一下、电多久。`shockSeconds = 0` 等于关掉这条副作用 |
+| `hazards.rot.digestScale` | 它在胃袋里时消化速度的倍率。1 = 没影响 |
+| `hazards.oil.spitChance` | 每次喷吐把它吐出去的概率。0 = 永久堵死 |
+| `eelShockColor` / `eelShockWidthRatio` | 被电时气泡上那圈锯齿电光的颜色与线宽（通用的，不属于某一种生物） |
 
 **"质量转化为等级"的账在炸弹鱼身上是分开的**：`StomachTick` 同时报 `drained`（消化流出的，**付**成长能量）和 `destroyed`（被炸掉的，**不付**）。合成一个数就等于让玩家用炸弹把食物白换成等级，正好和这只生物存在的理由相反。
 
