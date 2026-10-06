@@ -3,7 +3,7 @@ import { KIND_TUNING, stomachEffect, blastRadiusFraction, type HazardKind } from
 import { OBSTACLE_NAMES } from './obstacles';
 import { spitImpact } from './spit';
 import { SKILLS, activationFor, type SkillId } from './skills';
-import { TALENTS, talentTuning, type TalentId } from './talents';
+import { TALENTS, type TalentId } from './talents';
 import { BUBBLE_TYPES, type BubbleType, type BubbleTypeId, type ControlId } from './bubbleTypes';
 
 /**
@@ -888,8 +888,8 @@ function talentEntry(id: TalentId): CodexEntry {
 
 const TALENT_NOTES: Record<TalentId, readonly string[]> = {
   'fish-fart': ['它是反射不是技能：被打到才触发，所以没法主动用。', '冷却就是它和"护盾"的区别——没有冷却的话，走进鱼群里就永远不会死。'],
-  soda: [`上升 ×${num(talentTuning.sodaAscentMultiplier)}，横向操控 ×${num(talentTuning.sodaSteerPenalty)}。`, '更快，也更难控——这是同一个设计里的两个方向，不是一笔好交易。'],
-  silt: [`出生体积 ×${num(talentTuning.siltStartVolume, 1)}，受击缩小减免 ${pct(talentTuning.siltShrinkResistance)}。`, '一开始就更结实，但块头大也更容易被优先锁定。'],
+  soda: [`上升 ×${num(mech.talents.soda.ascentMultiplier)}，横向操控 ×${num(mech.talents.soda.steerPenalty)}。`, '更快，也更难控——这是同一个设计里的两个方向，不是一笔好交易。'],
+  silt: [`出生体积 ×${num(mech.talents.silt.startVolume, 1)}，受击缩小减免 ${pct(mech.talents.silt.shrinkResistance)}。`, '一开始就更结实，但块头大也更容易被优先锁定。'],
 };
 
 /**

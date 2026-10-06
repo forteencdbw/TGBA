@@ -17,6 +17,7 @@
  * (D5); this module only owns what a talent changes about the player.
  */
 
+import { mech } from './mechanisms';
 import type { HazardKind } from './hazards';
 
 export type TalentId = 'fish-fart' | 'soda' | 'silt';
@@ -57,39 +58,13 @@ export const TALENTS: readonly Talent[] = [
   },
 ];
 
-/** Per-talent numbers. Kept together because they are only meaningful as a set. */
-export const talentTuning = {
-  /** Soda: ascent multiplier, and how much extra lateral inertia it carries. */
-  sodaAscentMultiplier: 1.25,
-  /**
-   * Soda: how much the lateral steering is loosened.
-   *
-   * Applied as a REDUCTION in steering authority rather than as a literal mass, because "floatier"
-   * has to be expressed in the model that exists: less authority means more distance covered per
-   * correction, which is what the player feels as slipperiness.
-   */
-  sodaSteerPenalty: 0.6,
-  /** Silt: starting volume, and how much of a hit's shrink it ignores. */
-  siltStartVolume: 1.3,
-  siltShrinkResistance: 0.6,
-  /**
-   * Fish-fart: the radius in metres that a fart clears, and how long it takes to recharge.
-   *
-   * The cooldown is what keeps it a reflex rather than a shield: it fires on contact, so without one
-   * a player could simply walk into fish forever.
-   */
-  fartRadiusMeters: 70,
-  fartCooldownSeconds: 1.4,
-  /**
-   * Bait bubbles a fart leaves behind.
-   *
-   * The talent's backlash, and therefore its balance: the fart pushes fish away AND feeds them, so a rescue
-   * that is not followed up makes the swarm bigger. It lives here with the fart's radius and cooldown rather
-   * than in `config.ts`'s flat alias, where it was the one member documented as coming from a config file that
-   * did not have the key.
-   */
-  fartBaitCount: 3,
-} as const;
+/**
+ * The talent numbers are read live from the config.
+ *
+ * The three blocks are in `config/mechanics.json5` under `talents`, one per talent, because every one of them is a
+ * balance number and balance lives in that file. `talents.ts` owns which talent is which; the config owns how much
+ * each one gives and costs.
+ */
 
 /** The talent's effect on the player, resolved once at birth. */
 export interface TalentEffects {
@@ -109,8 +84,8 @@ export function resolveTalent(talent: Talent): TalentEffects {
     case 'soda':
       return {
         talent,
-        ascentMultiplier: talentTuning.sodaAscentMultiplier,
-        steerMultiplier: talentTuning.sodaSteerPenalty,
+        ascentMultiplier: mech.talents.soda.ascentMultiplier,
+        steerMultiplier: mech.talents.soda.steerPenalty,
         startVolume: 1,
         shrinkResistance: 0,
       };
@@ -119,8 +94,8 @@ export function resolveTalent(talent: Talent): TalentEffects {
         talent,
         ascentMultiplier: 1,
         steerMultiplier: 1,
-        startVolume: talentTuning.siltStartVolume,
-        shrinkResistance: talentTuning.siltShrinkResistance,
+        startVolume: mech.talents.silt.startVolume,
+        shrinkResistance: mech.talents.silt.shrinkResistance,
       };
     case 'fish-fart':
     default:
@@ -147,5 +122,5 @@ export function fartPushFor(kind: HazardKind): number {
 
 /** How many bait bubbles a fart emits. These are what feed the fish and split them later. */
 export function fartBaitCount(): number {
-  return talentTuning.fartBaitCount;
+  return mech.talents['fish-fart'].baitCount;
 }

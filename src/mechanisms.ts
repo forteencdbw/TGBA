@@ -1255,6 +1255,39 @@ export interface Mechanisms {
     insideMarginRatio: number;
     entryDepth: number;
   };
+  /**
+   * The six skills, one block each, holding every number that decides how one feels.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THE KEYS ARE LISTED HERE RATHER THAN TYPED AS A Record
+   * ---------------------------------------------------------------------------------------------
+   * `SkillId` in `src/skills.ts` is the union of exactly these six names, and `src/skills.ts` reads
+   * `mech.skills[id]` with an `id: SkillId`. Spelling the keys out means that adding a skill without giving it
+   * numbers is a COMPILE error rather than a block of `undefined` at runtime -- the same guarantee
+   * `KIND_TUNING` gets from its `Record<HazardKind, ...>` type, and the reason a missing row in a per-something
+   * table is not a class of bug this project has to remember to guard.
+   *
+   * The names and the one-line blurbs are content and stay in `skills.ts`; this block is the balance.
+   */
+  skills: {
+    dash: { uses: number; durationSeconds: number; ascentMultiplier: number };
+    decoy: { uses: number; durationSeconds: number; decoyRadiusMeters: number; decoySeconds: number };
+    vortex: { uses: number; durationSeconds: number; vortexRadiusMeters: number; vortexPullPerSecond: number };
+    stink: { uses: number; durationSeconds: number; stinkRadiusMeters: number };
+    shell: { uses: number; durationSeconds: number; invulnerableSeconds: number; shellRadiusMeters: number };
+    burst: { uses: number; durationSeconds: number; burstRadiusMeters: number };
+  };
+  /**
+   * The three talents, one block each. Same reason for the spelled-out keys as `skills` above.
+   *
+   * Half of each block is what the talent GIVES and half is what it COSTS; a talent whose cost is not in its block
+   * is a talent whose cost is hidden somewhere else.
+   */
+  talents: {
+    soda: { ascentMultiplier: number; steerPenalty: number };
+    silt: { startVolume: number; shrinkResistance: number };
+    'fish-fart': { radiusMeters: number; cooldownSeconds: number; baitCount: number };
+  };
 }
 
 /** One level's music, as the config writes it. See `src/music.ts` for what each field does to the sound. */
@@ -2281,6 +2314,49 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: isColour,
     describe: 'a colour, either 0xrrggbb or "#rrggbb"',
   })),
+
+  /**
+   * --- the skills and the talents ---
+   *
+   * One row per NUMBER rather than one per block, for the reason the appearance arrays have one row per key: the
+   * failure this table exists for is a hand-edit that is out of range, and "skills.dash is invalid" would leave the
+   * owner hunting. Disjoint ranges on purpose -- `uses` is a whole number of presses and `ascentMultiplier` is a
+   * speed, and a row that accepted both would be a row that catches neither.
+   */
+  { path: 'skills.dash.uses', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 10, describe: 'a whole number of uses between 1 and 10' },
+  { path: 'skills.dash.durationSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30; 0 means the effect is instant' },
+  { path: 'skills.dash.ascentMultiplier', check: (v) => typeof v === 'number' && v >= 1 && v <= 10, describe: 'an ascent multiplier between 1 and 10' },
+
+  { path: 'skills.decoy.uses', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 10, describe: 'a whole number of uses between 1 and 10' },
+  { path: 'skills.decoy.durationSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30; 0 means the effect is instant' },
+  { path: 'skills.decoy.decoyRadiusMeters', check: (v) => typeof v === 'number' && v >= 10 && v <= 2000, describe: 'metres between 10 and 2000' },
+  { path: 'skills.decoy.decoySeconds', check: (v) => typeof v === 'number' && v >= 0.1 && v <= 60, describe: 'seconds between 0.1 and 60' },
+
+  { path: 'skills.vortex.uses', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 10, describe: 'a whole number of uses between 1 and 10' },
+  { path: 'skills.vortex.durationSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30; 0 means the effect is instant' },
+  { path: 'skills.vortex.vortexRadiusMeters', check: (v) => typeof v === 'number' && v >= 10 && v <= 2000, describe: 'metres between 10 and 2000' },
+  { path: 'skills.vortex.vortexPullPerSecond', check: (v) => typeof v === 'number' && v >= 0.1 && v <= 20, describe: 'a pull of 0.1 to 20 times the distance per second' },
+
+  { path: 'skills.stink.uses', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 10, describe: 'a whole number of uses between 1 and 10' },
+  { path: 'skills.stink.durationSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30; 0 means the effect is instant' },
+  { path: 'skills.stink.stinkRadiusMeters', check: (v) => typeof v === 'number' && v >= 10 && v <= 2000, describe: 'metres between 10 and 2000' },
+
+  { path: 'skills.shell.uses', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 10, describe: 'a whole number of uses between 1 and 10' },
+  { path: 'skills.shell.durationSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30; 0 means the effect is instant' },
+  { path: 'skills.shell.invulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30' },
+  { path: 'skills.shell.shellRadiusMeters', check: (v) => typeof v === 'number' && v >= 10 && v <= 2000, describe: 'metres between 10 and 2000' },
+
+  { path: 'skills.burst.uses', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 10, describe: 'a whole number of uses between 1 and 10' },
+  { path: 'skills.burst.durationSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30; 0 means the effect is instant' },
+  { path: 'skills.burst.burstRadiusMeters', check: (v) => typeof v === 'number' && v >= 10 && v <= 2000, describe: 'metres between 10 and 2000' },
+
+  { path: 'talents.soda.ascentMultiplier', check: (v) => typeof v === 'number' && v >= 1 && v <= 10, describe: 'an ascent multiplier between 1 and 10' },
+  { path: 'talents.soda.steerPenalty', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction of the steering authority, above 0 and at most 1' },
+  { path: 'talents.silt.startVolume', check: (v) => typeof v === 'number' && v > 0.2 && v <= 10, describe: 'a starting volume above 0.2 and at most 10' },
+  { path: 'talents.silt.shrinkResistance', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction of the shrink ignored, between 0 and 1' },
+  { path: 'talents.fish-fart.radiusMeters', check: (v) => typeof v === 'number' && v >= 10 && v <= 2000, describe: 'metres between 10 and 2000' },
+  { path: 'talents.fish-fart.cooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30' },
+  { path: 'talents.fish-fart.baitCount', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 20, describe: 'a whole number of bait bubbles between 0 and 20' },
 ];
 
 if (parsed === null || typeof parsed !== 'object') fail('the top level must be an object');

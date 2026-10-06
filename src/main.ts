@@ -7,8 +7,8 @@ import { blastRadiusFraction, HazardField, hazardHealth, hazardArtSpriteForTest,
 import { BulletField, paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
-import { pickTalent, resolveTalent, talentTuning, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
-import { activationFor, findSkill, skillTuning, SKILLS, type Skill, type SkillId } from './skills';
+import { pickTalent, resolveTalent, fartPushFor, fartBaitCount, TALENTS, type TalentEffects } from './talents';
+import { activationFor, findSkill, SKILLS, type Skill, type SkillId } from './skills';
 import { audio } from './audio';
 import { Score } from './score';
 import { NumberPopups } from './numberPopups';
@@ -2924,7 +2924,10 @@ class Game {
         const dy = this.player.y - b.y;
         const dist = Math.hypot(dx, dy);
         if (dist > r || dist < 1e-3) continue;
-        const pull = Math.min(1, (skillTuning.vortexPullPerSecond * activation.vortexSeconds) / Math.max(1, dist / r));
+        const pull = Math.min(
+          1,
+          (mech.skills.vortex.vortexPullPerSecond * activation.vortexSeconds) / Math.max(1, dist / r),
+        );
         b.x += dx * pull * 0.35;
         b.y += dy * pull * 0.35;
       }
@@ -2969,12 +2972,12 @@ class Game {
    */
   private releaseFart(): void {
     if (this.elapsed < this.fartReadyAt) return;
-    this.fartReadyAt = this.elapsed + talentTuning.fartCooldownSeconds;
+    this.fartReadyAt = this.elapsed + mech.talents['fish-fart'].cooldownSeconds;
     this.farts++;
 
     const laneWidth = this.camera.viewport.laneWidthMeters;
     const playerX = this.player.x * laneWidth;
-    const r = talentTuning.fartRadiusMeters;
+    const r = mech.talents['fish-fart'].radiusMeters;
 
     for (const h of this.hazards.hazards) {
       if (fartPushFor(h.kind) <= 0) continue;

@@ -142,6 +142,11 @@ v1.0.0 · 51be519 (uncommitted)
 **按系统分组**的路径换成**按玩法命名**的活别名（`tuning.hitPointVolume` ⇄ `mech.volume.hitCost`），
 每个成员都是 getter，所以控制台里改它和改 `mech` 是同一件事。
 
+**每个技能和每个天赋各占一块**（`skills.<id>` / `talents.<id>`），那一个道具的**全部**数值都在它自己那一块里——
+想知道"冲刺有多快、能用几次"只看 `skills.dash`，不用在几张按数字类型分的表之间数下标。名字和一句话说明
+留在代码里（`src/skills.ts` 的 `SKILLS`、`src/talents.ts` 的 `TALENTS`）：那是内容，不是旋钮。
+`Skills` 那一块的六个键是**写死在类型里**的，所以加一个技能却忘了给它数值是**编译错误**，不是运行时的 `undefined`。
+
 ### 关卡：`config/levels.json5`（手工配置刷怪）
 
 **关卡不再是代码。** 一个关卡 = 一段水域 + 一张刷怪表，全在 [`config/levels.json5`](config/levels.json5) 里，

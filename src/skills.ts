@@ -11,6 +11,7 @@
  * the pickup instead of accumulating a toolkit.
  */
 
+import { mech } from './mechanisms';
 import type { HazardKind } from './hazards';
 
 export type SkillId = 'dash' | 'decoy' | 'vortex' | 'stink' | 'shell' | 'burst';
@@ -20,60 +21,90 @@ export interface Skill {
   name: string;
   /** One line, for the pickup label and the HUD. */
   blurb: string;
-  /** How many times it can be used before it is gone. */
-  uses: number;
-  /** Seconds the effect lasts, or 0 for an instant. */
-  durationSeconds: number;
+  /**
+   * How many times it can be used before it is gone.
+   *
+   * A GETTER onto the config rather than a stored number: how many uses a skill is worth is balance, and balance
+   * lives in `config/mechanics.json5` with every other knob. The name and the blurb are content and stay here.
+   */
+  readonly uses: number;
+  /** Seconds the effect lasts, or 0 for an instant. Same reason for being a getter as `uses`. */
+  readonly durationSeconds: number;
 }
 
 /**
  * The six, with use counts chosen so that the two "clean slate" skills are the scarcest.
  *
- * Bait and burst both remove a whole situation at once, so they are the ones that would trivialise
- * the game if handed out freely. Dash and stink are the workhorses and get more uses.
+ * Each entry is content (name, blurb) plus two live views onto its own config block, so a skill's numbers are in
+ * exactly one place -- `skills.<id>` in the config file -- and `pnpm typecheck` fails if one of the six has no
+ * block there.
  */
 export const SKILLS: readonly Skill[] = [
   {
     id: 'dash',
     name: '冲刺',
     blurb: '短时间大幅加速上升',
-    uses: 3,
-    durationSeconds: 1.5,
+    get uses() {
+      return mech.skills.dash.uses;
+    },
+    get durationSeconds() {
+      return mech.skills.dash.durationSeconds;
+    },
   },
   {
     id: 'decoy',
     name: '诱饵泡',
     blurb: '扔出假气泡，吸走附近所有的鱼',
-    uses: 2,
-    durationSeconds: 0,
+    get uses() {
+      return mech.skills.decoy.uses;
+    },
+    get durationSeconds() {
+      return mech.skills.decoy.durationSeconds;
+    },
   },
   {
     id: 'vortex',
     name: '漩涡',
     blurb: '把周围的气泡吸向你',
-    uses: 1,
-    durationSeconds: 1.2,
+    get uses() {
+      return mech.skills.vortex.uses;
+    },
+    get durationSeconds() {
+      return mech.skills.vortex.durationSeconds;
+    },
   },
   {
     id: 'stink',
     name: '臭云',
     blurb: '一片区域推开垃圾与水母，并解除减速',
-    uses: 2,
-    durationSeconds: 1.0,
+    get uses() {
+      return mech.skills.stink.uses;
+    },
+    get durationSeconds() {
+      return mech.skills.stink.durationSeconds;
+    },
   },
   {
     id: 'shell',
     name: '硬壳',
     blurb: '无敌并撞开一切',
-    uses: 2,
-    durationSeconds: 3,
+    get uses() {
+      return mech.skills.shell.uses;
+    },
+    get durationSeconds() {
+      return mech.skills.shell.durationSeconds;
+    },
   },
   {
     id: 'burst',
     name: '爆散',
     blurb: '以你为中心向外爆开',
-    uses: 1,
-    durationSeconds: 0,
+    get uses() {
+      return mech.skills.burst.uses;
+    },
+    get durationSeconds() {
+      return mech.skills.burst.durationSeconds;
+    },
   },
 ];
 
@@ -82,31 +113,6 @@ export function findSkill(id: SkillId): Skill {
   if (!found) throw new Error(`unknown skill: ${id}`);
   return found;
 }
-
-/** Per-skill numbers, together because they are only meaningful as a set. */
-export const skillTuning = {
-  /** Dash: ascent multiplier while active. */
-  dashAscentMultiplier: 2.6,
-  /** Decoy: radius in metres within which fish are pulled to the bait. */
-  decoyRadiusMeters: 260,
-  /** Decoy: how long the bait keeps drawing fish in. */
-  decoySeconds: 4,
-  /** Vortex: radius in metres that collectables are drawn from. */
-  vortexRadiusMeters: 220,
-  /**
-   * Vortex: how hard collectables are pulled, as a fraction of the distance per second.
-   *
-   * Deliberately not instant. A vortex that teleported everything would remove the bubble's own
-   * motion from the screen for the duration, and the game's whole feel is that movement.
-   */
-  vortexPullPerSecond: 2.2,
-  /** Stink: radius in metres that hazards are pushed out of. */
-  stinkRadiusMeters: 170,
-  /** Burst: radius in metres within which everything is shoved away. */
-  burstRadiusMeters: 320,
-  /** Shell: how hard it shoves hazards aside while active, as a fraction of the distance per second. */
-  shellPushPerSecond: 3,
-} as const;
 
 /**
  * What a skill does, as a value the game applies. Kept declarative so the simulation stays readable
@@ -136,19 +142,27 @@ export interface SkillActivation {
  *
  * `pushKinds` is explicit per skill rather than "push everything": the stink cloud is the answer to
  * being grabbed or slowed, and a version that also shoved fish around would make the decoy redundant.
+ *
+ * Every number comes from the skill's own block in the config, including the two durations that used to be
+ * literals here (`vortexSeconds: 1.2`, `invulnerableSeconds: 3`): they duplicated `SKILLS[].durationSeconds`, and
+ * a duplicate that agrees today is a duplicate that disagrees the first time one of them is tuned.
  */
 export function activationFor(id: SkillId): SkillActivation {
   switch (id) {
     case 'dash':
-      return { id, ascentMultiplier: skillTuning.dashAscentMultiplier };
+      return { id, ascentMultiplier: mech.skills.dash.ascentMultiplier };
     case 'decoy':
-      return { id, decoyRadius: skillTuning.decoyRadiusMeters, decoySeconds: skillTuning.decoySeconds };
+      return { id, decoyRadius: mech.skills.decoy.decoyRadiusMeters, decoySeconds: mech.skills.decoy.decoySeconds };
     case 'vortex':
-      return { id, vortexRadius: skillTuning.vortexRadiusMeters, vortexSeconds: 1.2 };
+      return {
+        id,
+        vortexRadius: mech.skills.vortex.vortexRadiusMeters,
+        vortexSeconds: mech.skills.vortex.durationSeconds,
+      };
     case 'stink':
       return {
         id,
-        pushRadius: skillTuning.stinkRadiusMeters,
+        pushRadius: mech.skills.stink.stinkRadiusMeters,
         pushKinds: ['trash', 'jelly'],
         clearsSlow: true,
       };
@@ -156,13 +170,20 @@ export function activationFor(id: SkillId): SkillActivation {
       // No `clearRadius`: the shell does not delete anything, it makes the player immune and shoves
       // hazards aside while it lasts. A shell that deleted hazards would be a strictly better burst,
       // and the burst is meant to be the scarce one.
-      return { id, invulnerableSeconds: 3, pushRadius: skillTuning.burstRadiusMeters, pushKinds: ['fish', 'jelly', 'trash', 'crab'] };
+      return {
+        id,
+        invulnerableSeconds: mech.skills.shell.invulnerableSeconds,
+        // The shell's own radius rather than the burst's: the two shared one number only because it was
+        // convenient, and "how far does a shell shove" is a question about the shell.
+        pushRadius: mech.skills.shell.shellRadiusMeters,
+        pushKinds: ['fish', 'jelly', 'trash', 'crab'],
+      };
     case 'burst':
       return {
         id,
         // The burst shoves everything away rather than deleting it, for the same reason: removing
         // entities outright would make the endgame's density meaningless.
-        pushRadius: skillTuning.burstRadiusMeters,
+        pushRadius: mech.skills.burst.burstRadiusMeters,
         pushKinds: ['fish', 'jelly', 'trash', 'crab'],
       };
   }
