@@ -374,7 +374,7 @@ export class EntityField {
    *     water the player is climbing through.
    *
    * There is no clamp on y: anything above the play area simply streams in later. Clamping to
-   * DEPTH_TOTAL here once piled the whole initial fill into a single band at the top.
+   * the level's length here once piled the whole initial fill into a single band at the top.
    */
   /**
    * Specks come in two depth classes. Far ones barely move and give the water body; near ones sweep

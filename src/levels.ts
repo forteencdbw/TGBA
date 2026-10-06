@@ -868,9 +868,8 @@ export function levelIndex(id: string): number {
 /**
  * Switch levels.
  *
- * The four things that follow from the level are reassigned together rather than left to the caller: the level, its
- * timeline, its length, and the discard of any timeline a spec installed. One function so there is no way to select a
- * level and keep playing the previous one's content.
+ * The level and its timeline are reassigned together rather than left to the caller, and any timeline a spec installed is
+ * discarded: one function, so there is no way to select a level and keep playing the previous one's content.
  *
  * @return false for an id that does not exist, so a caller with a stale name learns about it instead of silently
  *   continuing on the previous level.
@@ -880,7 +879,6 @@ export function selectLevel(id: string): boolean {
   if (!level) return false;
   LEVEL = level;
   TIMELINE = level.entries;
-  DEPTH_TOTAL = level.scrollLength;
   installedBlocks = null;
   return true;
 }
@@ -933,13 +931,36 @@ export const WORLD_HEIGHT = 190;
 export const WORLD_WIDTH = WORLD_HEIGHT * PLAY_AREA_ASPECT;
 
 /**
- * The level's length.
+ * The level's length used to be exported here a second time, as `DEPTH_TOTAL`.
  *
- * Kept under this name because the whole codebase used to think of the vertical axis as "depth from
- * the surface", and the two are the same number. It is a live binding now that levels have different lengths --
- * selectLevel reassigns it with the level.
+ * That name was the depth vocabulary this project has largely left behind -- a level ends when its boss does, not when
+ * the bubble reaches the surface -- and it was always exactly `LEVEL.scrollLength`. Its readers were `player.depth`,
+ * the snow field and the water colour, all of which now take the level (or the length) as an argument, so the duplicate
+ * binding is gone rather than kept in step.
  */
-export let DEPTH_TOTAL = LEVEL.scrollLength;
+
+/**
+ * How long a full scroll of a level takes, in seconds.
+ *
+ * An OUTPUT of the level's length and speed, never an input. Nothing back-solves a duration: an earlier version of this
+ * project made that mistake once, with a run length as the target, and the ascent curve had to be distorted to hit it.
+ */
+export function nominalScrollSeconds(level: Level): number {
+  return level.scrollLength / level.scrollSpeed;
+}
+
+/**
+ * Seconds to traverse each screenful, in order from the start of the level.
+ *
+ * Reported as a series rather than an average, because a mean of a curve describes no part of it. With a CONSTANT scroll
+ * speed every screenful takes the same time, so this is a series for consistency with the tooling -- and it will stop
+ * being flat the moment a level varies its speed, which is a natural thing to want later.
+ */
+export function secondsPerScreenSeries(level: Level, maxScreens = 12): number[] {
+  const perScreen = WORLD_HEIGHT / level.scrollSpeed;
+  const count = Math.min(maxScreens, Math.max(1, Math.round(level.scrollLength / WORLD_HEIGHT)));
+  return Array.from({ length: count }, () => perScreen);
+}
 
 /**
  * Fail loudly at startup rather than shipping a level that cannot be played.

@@ -1475,7 +1475,7 @@ export class HazardField {
       /**
        * Appear ABOVE the view so the player always watches it enter.
        *
-       * Deliberately NOT clamped to DEPTH_TOTAL. Near the seabed the top of the view is already close
+       * Deliberately NOT clamped to the level's length. Near the seabed the top of the view is already close
        * to the level's ceiling, so clamping made hazards materialise in the middle of the screen --
        * the same trap that once piled the collectable seeding into one band. Anything above the play
        * area simply arrives later.

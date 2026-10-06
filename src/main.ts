@@ -1,7 +1,7 @@
 import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
-import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, selectLevel, type EntrySide, type Level, type LevelEntry } from './levels';
+import { LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, selectLevel, type EntrySide, type Level, type LevelEntry } from './levels';
 import { Progression } from './progress';
 import { blastRadiusFraction, HazardField, hazardHealth, hazardArtSpriteForTest, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
 import { BulletField, paintBullets } from './bullets';
@@ -45,7 +45,7 @@ function worldYIsFlipped(node: import('pixi.js').Container): boolean {
 import { RunSummary } from './summary';
 import { APP_VERSION, buildLabel, GIT_DIRTY, GIT_HASH } from './version';
 import { demote, initialStageState, recordAbsorb, stageName, stageRadiusFraction, type StageAppearance, type StageState } from './stages';
-import { nominalAscentSeconds, secondsPerScreenSeries } from './depth';
+import { nominalScrollSeconds, secondsPerScreenSeries } from './levels';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
 import { calibrateLateral, type LateralAuthority } from './lateral';
@@ -447,7 +447,7 @@ class Game {
   private runBanner = makeLabel('', 0xd8fbff, 20);
 
   constructor(readonly app: Application) {
-    this.nominalSeconds = nominalAscentSeconds();
+    this.nominalSeconds = nominalScrollSeconds(LEVEL);
 
     this.scene.world.addChild(this.pickups, this.leaving, this.burstWave, this.bubble, this.particles);
     // Over the water and under the HUD: a spark is part of the scene, not a readout.
@@ -1712,7 +1712,7 @@ class Game {
    * reporting the old bug after the bug is fixed, which is worse than having no probe.
    */
   waterColourAt(worldY: number, depth: number): number {
-    return waterColourForTest(worldY, depth);
+    return waterColourForTest(worldY, depth, LEVEL);
   }
 
   /**
@@ -1986,7 +1986,7 @@ class Game {
     // same crossing times. Without this, a desktop window would need a different feel by hand.
     this.lateral = calibrateLateral(viewport.laneWidthMeters);
 
-    this.scene.layout(viewport);
+    this.scene.layout(viewport, LEVEL);
     this.hud.layout(viewport);
     this.popups.layout(viewport);
     this.damagePopups.layout(viewport);
@@ -3027,7 +3027,7 @@ class Game {
    * that the thing they are about to meet is about to happen.
    */
   private fireDepthEvents(): void {
-    const depth = this.player.depth;
+    const depth = this.player.depth(LEVEL.scrollLength);
     for (const [i, mark] of (LEVEL.landmarks ?? []).entries()) {
       if (this.eventsFired.has(i)) continue;
       if (depth > mark.depth) continue; // landmarks are measured from the surface, so depth DECREASES
@@ -3361,7 +3361,7 @@ class Game {
     this.stats.ended++;
     this.recordBest();
     audio.play('pop');
-    this.runBanner.text = `破裂  ·  深度 ${Math.round(this.player.depth)}m  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×`;
+    this.runBanner.text = `破裂  ·  深度 ${Math.round(this.player.depth(LEVEL.scrollLength))}m  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×`;
     this.runBanner.alpha = 1;
   }
 
@@ -4070,7 +4070,14 @@ class Game {
    * volume, so both are kept and shown -- depth is the one that is comparable across talents.
    */
   private recordBest(): void {
-    const depthReached = DEPTH_TOTAL - this.player.depth; // metres climbed
+    /**
+     * Metres climbed, which is the bubble's own world height.
+     *
+     * It used to be written as `DEPTH_TOTAL - player.depth`, and those are the same number twice over: `depth` is
+     * `scrollLength - y`, so subtracting it from the length gives back `y`. Naming the height directly says what the
+     * record is and cannot be wrong by a sign.
+     */
+    const depthReached = this.player.y;
     if (depthReached > this.bestClimbed) {
       this.bestClimbed = depthReached;
       this.bestVolume = Math.max(this.bestVolume, this.stats.maxVolume);
@@ -4100,7 +4107,7 @@ class Game {
     } else if (this.app.stage.x !== 0 || this.app.stage.y !== 0) {
       this.app.stage.position.set(0, 0);
     }
-    this.scene.update(this.camera, this.player, dt, this.scrolled);
+    this.scene.update(this.camera, this.player, dt, this.scrolled, LEVEL);
 
     /**
      * The HUD and the water are hidden on the menu AND on the codex page.
@@ -4124,7 +4131,7 @@ class Game {
       // that resumes its three seconds after the menu closes would be a number with no event left to explain it.
       this.popups.update(dt);
       this.damagePopups.update(dt);
-      this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled, {
+      this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled, LEVEL, {
         stage: this.stage.stage,
         name: stageName(this.stage.stage),
         absorbedInStage: this.stage.absorbedInStage,
@@ -4228,7 +4235,7 @@ class Game {
     if (this.phase === 'burst' && !this.pendingLevel) {
       this.finishBanner.text = this.surfaced
         ? `击败 ${LEVEL.boss.name}  ·  通关\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  最大 ${this.stats.maxVolume.toFixed(1)}×  ·  ${this.elapsed.toFixed(1)}s\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`
-        : `破裂  ·  深度 ${Math.round(this.player.depth)}m\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  爬升 ${Math.round(DEPTH_TOTAL - this.player.depth)}m\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`;
+        : `破裂  ·  深度 ${Math.round(this.player.depth(LEVEL.scrollLength))}m\n得分 ${this.score.value}  ·  吸收 ${this.stats.absorbed}  ·  爬升 ${Math.round(this.player.y)}m\n${this.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.bestClimbed)}m`}  ·  最佳得分 ${this.bestScore}`;
     }
 
     /**
@@ -5492,7 +5499,7 @@ class Game {
          * look". With a constant scroll speed the series is flat, and it will stop being flat the moment
          * a level varies its pace.
          */
-        secondsPerScreen: secondsPerScreenSeries().map((v) => +v.toFixed(1)),
+        secondsPerScreen: secondsPerScreenSeries(LEVEL).map((v) => +v.toFixed(1)),
       },
       /** The player's own motion. Vertical and horizontal are symmetric now. */
       playerVx: +this.player.vx.toFixed(4),
@@ -5766,7 +5773,7 @@ class Game {
    * up, which is the entire point of the current model.
    */
   teleportToSurface(): void {
-    this.teleportToDistance(DEPTH_TOTAL - 0.2);
+    this.teleportToDistance(LEVEL.scrollLength - 0.2);
   }
 
   /**
@@ -5992,7 +5999,7 @@ class Game {
       playerScreenY: +cam.toScreenY(this.player.y).toFixed(2),
       playerScreenYRatio: +(cam.toScreenY(this.player.y) / cam.viewport.height).toFixed(4),
       cameraY: +cam.y.toFixed(2),
-      depth: +this.player.depth.toFixed(2),
+      depth: +this.player.depth(LEVEL.scrollLength).toFixed(2),
       nearestBubbleScreenY: nearest ? +cam.toScreenY(nearest.y).toFixed(2) : null,
       nearestBubbleWorldY: nearest ? +nearest.y.toFixed(2) : null,
       /**

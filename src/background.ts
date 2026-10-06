@@ -2,7 +2,7 @@ import { Application, Container, FillGradient, Graphics, Text } from 'pixi.js';
 import { LATERAL_DAMPING, VIEW } from './config';
 import { mech } from './mechanisms';
 import { Backdrop, Parallax } from './parallax';
-import { DEPTH_TOTAL, LEVEL } from './levels';
+import type { Level } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Player } from './player';
 import { computeViewport, designScale, type Viewport } from './viewport';
@@ -194,13 +194,13 @@ export class WorldLayer {
     this.root.addChild(this.gradient, this.margins, this.world);
   }
 
-  private seedSnow(laneWidth: number): void {
+  private seedSnow(laneWidth: number, level: Level): void {
     const railX = laneWidth * RULER_X_RATIO;
     this.snowPoints = [];
     for (let i = 0; i < 90; i++) {
       this.snowPoints.push({
         x: railX + Math.random() * (laneWidth - railX),
-        y: Math.random() * DEPTH_TOTAL,
+        y: Math.random() * level.scrollLength,
         r: laneWidth * (0.0006 + Math.random() * 0.0019),
         driftX: (Math.random() - 0.5) * laneWidth * 0.0007,
         driftY: -(0.05 + Math.random() * 0.15) * (laneWidth / 120),
@@ -208,7 +208,13 @@ export class WorldLayer {
     }
   }
 
-  layout(viewport: Viewport): void {
+  /**
+   * Lay the world out for a canvas, in the context of one level.
+   *
+   * The level is a parameter rather than an import: the snow is scattered across the level's own length, and a module
+   * that reads "the current level" out of a live binding is a module whose output depends on when it was called.
+   */
+  layout(viewport: Viewport, level: Level): void {
     // The mote FIELD is scattered here rather than per frame: its count and its sizes depend on the lane IN METRES, so a
     // new canvas is a new field -- and re-scattering every frame would make the whole thing jump, which is the one thing
     // a depth cue must never do.
@@ -235,7 +241,7 @@ export class WorldLayer {
     this.maskShape.rect(columnLeft, -1000, columnWidth, viewport.height + 2000).fill(0xffffff);
 
     // World-space prop sizes are relative to the play area width, so they need rebuilding here.
-    this.seedSnow(viewport.laneWidthMeters);
+    this.seedSnow(viewport.laneWidthMeters, level);
   }
 
   /**
@@ -245,8 +251,8 @@ export class WorldLayer {
    * pasted on top of it -- which is what makes a hand-authored picture sit inside the level's colour instead of beside
    * it.
    */
-  private drawBackdrop(scrolled: number, pixelsPerMetre: number): void {
-    const specs = LEVEL.backdrops ?? [];
+  private drawBackdrop(scrolled: number, pixelsPerMetre: number, level: Level): void {
+    const specs = level.backdrops ?? [];
     const key = specs.map((s) => s.image).join('|');
     if (key !== this.backdropKey) {
       for (const layer of this.backdrops) layer.root.destroy({ children: true });
@@ -268,8 +274,10 @@ export class WorldLayer {
    *
    * @param scrolled how far the LEVEL has travelled, in metres. Used by the marine-snow recycle, which
    *   keeps the drifting specks distributed across the visible band.
+   * @param level the level being drawn. Its palette is the water's colour and its length is what "how deep is the level"
+   *   is measured against, so both come in as arguments rather than out of a live binding -- see `waterColour`.
    */
-  update(camera: Camera, _player: Player, dt: number, scrolled: number): void {
+  update(camera: Camera, _player: Player, dt: number, scrolled: number, level: Level): void {
     const viewport = camera.viewport;
     const { min, max } = camera.visibleWorldRange(20);
     void scrolled;
@@ -286,9 +294,9 @@ export class WorldLayer {
     // top of the screen raised the bubble's world position, which brightened the whole sea as though the
     // surface were near, and at the top of the level drove the value negative.
     const halfSpan = viewport.height / 2 / viewport.scale;
-    const levelDepth = DEPTH_TOTAL - scrolled;
-    const topColour = waterColour(camera.y + halfSpan, levelDepth);
-    const bottomColour = waterColour(camera.y - halfSpan, levelDepth);
+    const levelDepth = level.scrollLength - scrolled;
+    const topColour = waterColour(camera.y + halfSpan, levelDepth, level);
+    const bottomColour = waterColour(camera.y - halfSpan, levelDepth, level);
 
     /**
      * Rebuild the gradient when the COLOUR changes **or the canvas changes size**.
@@ -299,8 +307,8 @@ export class WorldLayer {
      * letterboxing decision rather than as a caching bug.
      */
     const sizeChanged = viewport.width !== this.lastGradientWidth || viewport.height !== this.lastGradientHeight;
-    if (topColour !== this.lastTopColour || bottomColour !== this.lastBottomColour || sizeChanged || LEVEL.palette.waterAlpha !== this.lastWaterAlpha) {
-      this.lastWaterAlpha = LEVEL.palette.waterAlpha;
+    if (topColour !== this.lastTopColour || bottomColour !== this.lastBottomColour || sizeChanged || level.palette.waterAlpha !== this.lastWaterAlpha) {
+      this.lastWaterAlpha = level.palette.waterAlpha;
       this.lastTopColour = topColour;
       this.lastBottomColour = bottomColour;
       this.lastGradientWidth = viewport.width;
@@ -328,7 +336,7 @@ export class WorldLayer {
        */
       this.gradient
         .rect(0, 0, viewport.width, viewport.height)
-        .fill({ fill: gradient, alpha: LEVEL.palette.waterAlpha });
+        .fill({ fill: gradient, alpha: level.palette.waterAlpha });
     }
 
     /**
@@ -352,7 +360,7 @@ export class WorldLayer {
     }
 
     // --- The level's backdrop, behind everything ---------------------------
-    this.drawBackdrop(scrolled, camera.viewport.scale);
+    this.drawBackdrop(scrolled, camera.viewport.scale, level);
 
     // --- Parallax (four layers, far to near) ------------------------------
     this.parallax.draw(scrolled, min, max);
@@ -385,9 +393,12 @@ function toCss(colour: number): string {
  * Exported so a test can assert on the REAL implementation rather than a copy of its arithmetic. An
  * earlier probe re-derived the channels itself and therefore kept reporting the overflow after the
  * function had been fixed -- the classic shape of a test that measures its own model of the code.
+ *
+ * The level is a parameter for the same reason it is one on `waterColour`: a probe that could only ask about "the level
+ * that happens to be loaded" could not compare two levels at all, and would have to switch the global one to do it.
  */
-export function waterColourForTest(worldY: number, depth: number): number {
-  return waterColour(worldY, depth);
+export function waterColourForTest(worldY: number, depth: number, level: Level): number {
+  return waterColour(worldY, depth, level);
 }
 
 /**
@@ -434,7 +445,7 @@ function paintMargin(g: Graphics, x: number, width: number, height: number, mirr
  * The bloom is what pushes a channel past its limit, and `depth` reaching the bubble is what pushed the
  * bloom. Clamping here means no future caller can reproduce that, whatever it passes.
  */
-function waterColour(worldY: number, depth: number): number {
+function waterColour(worldY: number, depth: number, level: Level): number {
   /**
    * The level's own water, not one global ramp.
    *
@@ -442,12 +453,15 @@ function waterColour(worldY: number, depth: number): number {
    * the surface, and a mood tint over both. The span is the LEVEL's length rather than a constant, which it was before
    * -- a level shorter than the first one never reached its own shallow colour, so the deepest levels looked like the
    * first one seen through a slightly different filter.
+   *
+   * The palette and the length arrive in `level` rather than being read off a live binding, so this really is a function
+   * of its arguments: it used to take two and silently depend on four.
    */
-  const palette = LEVEL.palette;
+  const palette = level.palette;
   const deep = { r: (palette.deep >> 16) & 0xff, g: (palette.deep >> 8) & 0xff, b: palette.deep & 0xff };
   const shallow = { r: (palette.shallow >> 16) & 0xff, g: (palette.shallow >> 8) & 0xff, b: palette.shallow & 0xff };
 
-  const t = Math.min(Math.max(worldY / Math.max(1, LEVEL.scrollLength), 0), 1);
+  const t = Math.min(Math.max(worldY / Math.max(1, level.scrollLength), 0), 1);
   const eased = Math.pow(t, 1.15);
 
   let r = deep.r + (shallow.r - deep.r) * eased;
@@ -915,12 +929,17 @@ export class Hud {
     elapsed: number,
     lateral: LateralAuthority,
     /**
-     * How far the level has scrolled.
+     * How far the level has scrolled, and which level it is.
      *
-     * Still a parameter because the water colour is a function of depth, and no longer used for a progress readout --
-     * a level's progress is its boss's health now, and that arrives through `setBoss`.
+     * The level is here for ONE line of the debug readout: "metres to the surface" is the level's length minus the
+     * scroll. It used to read `DEPTH_TOTAL` out of a live binding to get that, which is the sort of dependency that
+     * makes a readout quietly wrong the day there are two levels on screen.
+     *
+     * `scrolled` is no longer used for a progress readout -- a level's progress is its boss's health now, and that
+     * arrives through `setBoss`.
      */
     scrolled: number,
+    level: Level,
     /**
      * The growth stage, how far into the next one, and the eating rank digestion has bought.
      *
@@ -1012,7 +1031,7 @@ export class Hud {
     //
     // `scrolled` still matters because the level's DEPTH remains a real reading -- the water colour and the debug line
     // both use it -- even though it no longer drives a progress bar.
-    this.levelDepthMeters = Math.max(0, DEPTH_TOTAL - scrolled);
+    this.levelDepthMeters = Math.max(0, level.scrollLength - scrolled);
 
     if (++this.debugTimer % 10 === 0) {
       this.debug.text = [
@@ -1024,7 +1043,7 @@ export class Hud {
          */
         `build   ${buildLabel()}`,
         `fps     ${fps.toFixed(0)}`,
-        `depth   player ${player.depth.toFixed(1)} m   level ${this.levelDepthMeters.toFixed(0)} m to surface`,
+        `depth   player ${player.depth(level.scrollLength).toFixed(1)} m   level ${this.levelDepthMeters.toFixed(0)} m to surface`,
         // The player's own motion, on both axes, and the SCREEN fraction the vertical is expressed in:
         // "depth" alone no longer describes where the bubble is, because the world moves under it.
         `vy      ${player.vy.toFixed(3)} screen/s`,

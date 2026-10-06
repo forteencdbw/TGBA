@@ -1,5 +1,4 @@
 import { SPAWN_X_RATIO, mech, tuning } from './config';
-import { DEPTH_TOTAL } from './levels';
 import type { LateralAuthority } from './lateral';
 import type { Input } from './input';
 
@@ -92,13 +91,14 @@ export class Player {
   }
 
   /**
-   * Metres still to climb, i.e. distance left to the surface.
+   * Metres below the surface, which is what the HUD shows.
    *
-   * The LEVEL's remaining length, not the player's: progress belongs to the scroll, and a player who
-   * could add to it by holding up is the bug this model exists to prevent.
+   * The level's length is an ARGUMENT rather than an import: this used to read a module-level `DEPTH_TOTAL`, which made
+   * "how deep is the bubble" depend on which level happened to be loaded -- a fact the Player has no business knowing,
+   * and one a probe could not vary without switching the global level first. The caller knows which level it is.
    */
-  get remaining(): number {
-    return Math.max(0, DEPTH_TOTAL - this.y);
+  depth(scrollLength: number): number {
+    return scrollLength - this.y;
   }
 
   /** How far above the camera's centre the bubble sits, in world metres. */
@@ -139,11 +139,6 @@ export class Player {
     const fromY = (this.y - cameraY) / visibleDepthMeters + 0.5;
     this.screenY = Math.min(Math.max(fromY, Player.SCREEN_Y_MIN), Player.SCREEN_Y_MAX);
     this.y = this.worldYFor(cameraY, visibleDepthMeters);
-  }
-
-  /** Metres below the surface, which is what the HUD shows. */
-  get depth(): number {
-    return DEPTH_TOTAL - this.y;
   }
 
   /**
