@@ -456,7 +456,6 @@ export interface Mechanisms {
       colour: number;
       eyeColour: number;
       armourColour: number;
-      hitFlashSeconds: number;
       weakPointWidthRatio: number;
       hitFlashColour: number;
       /**
@@ -1928,7 +1927,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'bullets.radiusRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.1, describe: 'a fraction of the lane width, above 0.001 and at most 0.1' },
   { path: 'bullets.upgradeSpreadRatio', check: (v) => typeof v === 'number' && v > 0.005 && v < 0.3, describe: 'a fraction of the lane width above 0.005 and below 0.3' },
   { path: 'pickups.pulsePerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'cycles per second between 0 and 20' },
-  ...[`${'skill'}`, `${'upgrade'}`].flatMap((kind) => [
+  ...[`${'skill'}`, `${'upgrade'}`, `${'rate'}`].flatMap((kind) => [
     { path: `pickups.${kind}.radiusRatio`, check: (v: unknown) => typeof v === 'number' && v > 0.005 && v < 0.3, describe: 'a fraction of the lane width above 0.005 and below 0.3' },
     ...[`${'haloColour'}`, `${'coreColour'}`, `${'rimColour'}`].map((key) => ({
       path: `pickups.${kind}.${key}`,
@@ -1973,11 +1972,38 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
       return Object.values(v as Record<string, unknown>).every((row) => {
         if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
         const r = row as Record<string, unknown>;
+        // `front` and `charge` are checked here rather than left to the shape check above, because they are the two keys
+        // a row can get wrong in a way that shows: a mirrored picture, or a charging creature that keeps its swimming
+        // pose. `charge` is optional -- a creature with no wind-up pose is the normal case.
+        if (r.front !== undefined && r.front !== 'left' && r.front !== 'right') return false;
+        if (r.charge !== undefined && (typeof r.charge !== 'string' || r.charge.length === 0)) return false;
         return typeof r.move === 'string' && r.move.length > 0 && typeof r.scale === 'number' && r.scale > 0.05 && r.scale <= 6 && typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1;
       });
     },
-    describe: 'an object of kind -> { move, charge?, scale, alpha, lure? }',
+    describe: 'an object of kind -> { move, charge?, front?, scale, alpha, lure? }',
   },
+  { path: 'hazardFront', check: (v) => v === 'left' || v === 'right', describe: '"left" or "right": which way round a creature with a picture counts as facing' },
+  { path: 'hazardFacing.cooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30; 0 lets a creature turn every frame' },
+  { path: 'angry.look.inner', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  /**
+   * The boss, one row per key.
+   *
+   * It had NO rules at all, which is the shape of gap the coverage check at the end of this file exists to find: twelve
+   * values read by the whole boss fight, none of which would have named itself if it were mistyped.
+   */
+  { path: 'hazards.boss.holdMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
+  { path: 'hazards.boss.holdBandRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction of the visible depth, above 0 and at most 1' },
+  { path: 'hazards.boss.holdMinMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
+  { path: 'hazards.boss.patrolAmplitude', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a lane fraction between 0 and 1' },
+  { path: 'hazards.boss.patrolPeriodSeconds', check: (v) => typeof v === 'number' && v > 0.2 && v <= 60, describe: 'seconds above 0.2 and at most 60' },
+  { path: 'hazards.boss.seekSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
+  { path: 'hazards.boss.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
+  { path: 'hazards.boss.radiusRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.5, describe: 'a lane fraction above 0.001 and at most 0.5' },
+  { path: 'hazards.boss.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.boss.eyeColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.boss.armourColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.boss.weakPointWidthRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 0.5, describe: 'a lane fraction above 0 and at most 0.5' },
+  { path: 'hazards.boss.hitFlashColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'chargeTrail.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string to disable it' },
   { path: 'chargeTrail.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole columns between 1 and 16' },
   { path: 'chargeTrail.rows', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole rows between 1 and 16' },
@@ -2359,12 +2385,89 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'talents.fish-fart.baitCount', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 20, describe: 'a whole number of bait bubbles between 0 and 20' },
 ];
 
+/**
+ * The parts of the file that are validated AS A WHOLE rather than one path at a time.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THIS LIST EXISTS
+ * ---------------------------------------------------------------------------------------------
+ * `REQUIRED` says "this path must be there, and look like this". It cannot say the reverse: that a path in the FILE has
+ * a rule at all. So a knob added to `config/mechanics.json5` and read by code, with no row above, was validated by
+ * nothing -- and a knob added to the file and read by NOBODY was not even noticed, which is the mistake this project
+ * calls out everywhere else (a misspelled key is silently ignored).
+ *
+ * The check below walks every leaf of the parsed file and demands one of:
+ *
+ *   - a `REQUIRED` row for that exact path, or
+ *   - an entry here for that path or an ancestor of it, saying which pass does validate it.
+ *
+ * Every entry therefore has to NAME its pass, because "listed here" with no reason is how an exception becomes a hole.
+ * Arrays are leaves for this purpose: `stages.speedMultiplier` is checked as a list, not index by index.
+ */
+const VALIDATED_AS_A_WHOLE: readonly { path: string; by: string }[] = [
+  // The two appearance arrays: one pass per KEY, naming the stage and the key, so a mistake is a message rather than a
+  // hunt through thirty values. See APPEARANCE_RULES and RAGE_APPEARANCE_RULES. (`stages.appearance` also has a
+  // whole-block rule; the rage one does not, which is the asymmetry this list is for.)
+  { path: 'angry.appearance', by: 'RAGE_APPEARANCE_RULES, key by key' },
+];
+
+/**
+ * Walk the parsed file to its leaves, so the check below can ask about each one.
+ *
+ * Arrays and scalars are leaves: a list is validated as a list, and its elements are not paths anyone can name in a
+ * rule. An empty block is a leaf too -- a block with nothing in it is worth naming.
+ */
+function leavesOf(value: unknown, path: string, out: string[]): void {
+  const isBranch =
+    value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0;
+  if (!isBranch) {
+    out.push(path);
+    return;
+  }
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    leavesOf(child, path ? `${path}.${key}` : key, out);
+  }
+}
+
 if (parsed === null || typeof parsed !== 'object') fail('the top level must be an object');
 
 for (const rule of REQUIRED) {
   const value = readRaw(rule.path);
   if (value === undefined) fail(`"${rule.path}" is missing. It should be ${rule.describe}.`);
   if (!rule.check(value)) fail(`"${rule.path}" is ${JSON.stringify(value)}, but it should be ${rule.describe}.`);
+}
+
+/**
+ * And the reverse of the loop above: every value in the FILE has a rule.
+ *
+ * Runs after it so that a key which is simply MISSING gets that message -- the more specific one -- rather than being
+ * reported as a stray on the other side.
+ *
+ * The other direction that is deliberately NOT checked: a rule whose key the file does not have. That was here, and it
+ * could never say anything the loop above does not say better ("…is missing. It should be …").
+ */
+{
+  const ruled = REQUIRED.map((rule) => rule.path);
+  /**
+   * A rule covers a leaf when it names that leaf OR an ANCESTOR of it: a rule for `hazardArt` that checks the whole
+   * block is a rule about every key inside it, and demanding one row per art key as well would be the parallel-list
+   * problem this check exists to catch.
+   */
+  const covered = (leaf: string): boolean => {
+    const byPrefix = (path: string): boolean => leaf === path || leaf.startsWith(`${path}.`);
+    return ruled.some(byPrefix) || VALIDATED_AS_A_WHOLE.some((entry) => byPrefix(entry.path));
+  };
+
+  const leaves: string[] = [];
+  leavesOf(parsed, '', leaves);
+  const unaccounted = leaves.filter((leaf) => !covered(leaf));
+  if (unaccounted.length) {
+    fail(
+      `${unaccounted.length} value(s) in the file are validated by nothing: ${unaccounted.join(', ')}. ` +
+        'Every knob needs a rule in REQUIRED (so a bad value names itself), or an entry in VALIDATED_AS_A_WHOLE saying ' +
+        'which pass does check it. An unvalidated key is a key that silently does nothing when it is misspelled.',
+    );
+  }
 }
 
 /** The validated configuration. Mutating this at runtime still works, and is how live tuning is done. */

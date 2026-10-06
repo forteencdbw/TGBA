@@ -1282,8 +1282,8 @@
       "eyeColour": 0xffd479,
       "armourColour": 0x7a4f9c,
 
-      // 被打中时的闪白（秒），和弱点环的粗细（泳道比例）。
-      "hitFlashSeconds": 0.12,
+      // 被打中时的闪白：颜色在这里，**时长在顶层的 hitFlash.seconds**（那是所有敌人的命中反馈，不只是 BOSS 的）。
+      // 这里曾经还有一个 hitFlashSeconds，没有任何代码读它——覆盖检查现在会把这种键揪出来。
       "weakPointWidthRatio": 0.03,
       "hitFlashColour": 0xffffff,
 
