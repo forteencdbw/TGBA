@@ -1790,7 +1790,25 @@ audio.play('hit');
    * One slot on purpose: it forces a decision at the pickup instead of accumulating a toolkit, and it
    * keeps the HUD to one button.
    */
-  private skill: { id: SkillId; uses: number } | null = null;
+  /**
+   * The skill in the slot, with its name for the HUD's line.
+   *
+   * The name is stored rather than looked up per frame: `findSkill` is a search, and the HUD is rebuilt sixty times a
+   * second for a value that changes once a pickup.
+   */
+  private skill: { id: SkillId; name: string; uses: number } | null = null;
+
+  /**
+   * The run's talent, for the HUD's line, and the boss fight as the HUD should show it.
+   *
+   * Both are the HUD's INPUT rather than something pushed into it: the boss bar used to be written straight into the
+   * HUD from `updateBoss`, which meant the sim owned a display object. They are game state now, read by the frame like
+   * everything else -- see `HudState`.
+   */
+  private talentLabel = '';
+  private bossView: { name: string; fraction: number } | null = null;
+  /** The run's progress chart, or null off a run. Read by the HUD, written where the run's progress changes. */
+  private progressView: { total: number; cleared: number; current: number } | null = null;
   /** The bait bubble a decoy left behind, so it can be drawn and then expire. */
   private decoy: { x: number; y: number; until: number } | null = null;
   /** How many skills have been used this run, for the results card. */
@@ -1952,7 +1970,7 @@ audio.play('hit');
     this.player.steerScale = this.talentEffects.steerMultiplier;
     this.player.shrinkResistance = this.talentEffects.shrinkResistance;
     this.player.volume = this.talentEffects.startVolume;
-    this.hud.setTalentLabel(talent.name);
+    this.talentLabel = talent.name;
     return talent.id;
   }
 
@@ -1973,7 +1991,6 @@ audio.play('hit');
 
   private rollSeed(): void {
     this.seedLabel = SEEDS[Math.floor(Math.random() * SEEDS.length)] ?? SEEDS[0];
-    this.hud.setSeedLabel(this.seedLabel);
   }
 
   /** Fit the world play area to the real canvas and recompute dependent geometry. */
@@ -1996,7 +2013,6 @@ audio.play('hit');
     this.hud.layout(viewport);
     this.popups.layout(viewport);
     this.damagePopups.layout(viewport);
-    this.hud.setWorldMetrics(viewport.laneWidthMeters, viewport.visibleDepthMeters);
     this.touch.layout(viewport.left, viewport.laneWidthPx, screenW, screenH);
     this.settings.layout(viewport);
     this.menu.layout(viewport);
@@ -2414,7 +2430,7 @@ audio.play('hit');
      * it cannot fall out of step with the run -- which for a chart whose whole job is "where am I" is the property that
      * matters.
      */
-    this.hud.setProgress({ total: LEVELS.length, cleared: this.levelsClearedInRun, current: levelIndex(LEVEL.id) });
+    this.progressView = { total: LEVELS.length, cleared: this.levelsClearedInRun, current: levelIndex(LEVEL.id) };
     this.updateConductiveCharge(dt, viewport.laneWidthMeters);
 
     // Trace the end condition, so a probe can see WHY a level failed to end rather than only that it
@@ -2868,8 +2884,7 @@ audio.play('hit');
   private grantSkill(id: SkillId): Skill | null {
     const displaced = this.skill ? findSkill(this.skill.id) : null;
     const skill = findSkill(id);
-    this.skill = { id, uses: skill.uses };
-    this.hud.setSkillLabel(skill.name, skill.uses);
+    this.skill = { id, name: skill.name, uses: skill.uses };
     // The on-screen button appears only while a skill is carried, so the empty state is genuinely
     // empty rather than a greyed-out control competing for attention.
     this.touch.setHasSkill(true);
@@ -2964,10 +2979,7 @@ audio.play('hit');
     this.skill.uses -= 1;
     if (this.skill.uses <= 0) {
       this.skill = null;
-      this.hud.setSkillLabel(null, 0);
       this.touch.setHasSkill(false);
-    } else {
-      this.hud.setSkillLabel(skill.name, this.skill.uses);
     }
     this.skillActivations++;
     audio.play('skill');
@@ -3594,7 +3606,9 @@ audio.play('pop');
     // A new level starts with no results card: it belongs to the run that ended, not to this one.
     this.finishBanner.alpha = 0;
     this.finishBanner.text = '';
-    this.hud.setBoss(null);
+    // The bar goes with the run it belonged to. `updateBoss` would clear it on the next step anyway, but a new level
+    // must not show the previous boss's bar for even one frame.
+    this.bossView = null;
     /**
      * The level's music.
      *
@@ -3606,7 +3620,7 @@ audio.play('pop');
     // The chart follows the run, not the save: see `levelsClearedInRun`. `startRun` without a carry is a fresh run, so
     // the chart goes back to zero with it; the transition path sets the count itself before calling in.
     if (!carryScore) this.levelsClearedInRun = levelIndex(LEVEL.id);
-    this.hud.setProgress(this.runComplete ? null : { total: LEVELS.length, cleared: this.levelsClearedInRun, current: levelIndex(LEVEL.id) });
+    this.progressView = this.runComplete ? null : { total: LEVELS.length, cleared: this.levelsClearedInRun, current: levelIndex(LEVEL.id) };
     this.bossSpawned = false;
     /**
      * The score is the RUN's number.
@@ -3684,7 +3698,6 @@ audio.play('pop');
     this.splash = 0;
     this.surfaced = false;
     this.touch.setHasSkill(false);
-    this.hud.setSkillLabel(null, 0);
     this.elapsed = 0;
     this.phase = 'intro';
     this.phaseTimer = INTRO_SECONDS;
@@ -3708,7 +3721,7 @@ audio.play('pop');
     // Volume is set AFTER `player.reset()` above, which zeroes it back to 1.
     this.player.volume = this.talentEffects.startVolume;
     this.stats.maxVolume = this.talentEffects.startVolume;
-    this.hud.setTalentLabel(this.talentEffects.talent.name);
+    this.talentLabel = this.talentEffects.talent.name;
   }
 
   /**
@@ -3973,7 +3986,7 @@ audio.play('pop');
       this.banner(`${spec.name}  ·  击败它才能离开这一关`);
     }
     const boss = this.hazards.hazards.find((h) => h.kind === 'boss');
-    this.hud.setBoss(boss && !boss.flee ? { name: spec.name, fraction: boss.health / Math.max(1, boss.maxHealth) } : null);
+    this.bossView = boss && !boss.flee ? { name: spec.name, fraction: boss.health / Math.max(1, boss.maxHealth) } : null;
     if (this.phase === 'playing' && this.hazards.killed > 0) this.defeatBoss();
   }
 
@@ -4223,15 +4236,31 @@ audio.play('pop');
     this.flash.visible = this.flash.visible && !fullScreenPage;
 
     if (!fullScreenPage) {
-      // The score, once per frame and only when it has moved -- see `Hud.setScore`.
-      this.hud.setScore(this.score.value);
       // The numbers floating where the points were earned. Cleared rather than frozen while a page is up: a popup
       // that resumes its three seconds after the menu closes would be a number with no event left to explain it.
       this.popups.update(dt);
       this.damagePopups.update(dt);
-      this.hud.update(this.player, this.fps, this.nominalSeconds, this.elapsed, this.lateral, this.scrolled, LEVEL, {
-        stage: this.stage.stage,
-        name: stageName(this.stage.stage),
+      this.hud.update({
+        score: this.score.value,
+        boss: this.bossView,
+        progress: this.progressView,
+        seed: this.seedLabel,
+        talent: this.talentLabel,
+        skill: this.skill ? { name: this.skill.name, uses: this.skill.uses } : null,
+        player: this.player,
+        fps: this.fps,
+        nominalSeconds: this.nominalSeconds,
+        elapsed: this.elapsed,
+        lateral: this.lateral,
+        scrolled: this.scrolled,
+        level: LEVEL,
+        world: {
+          laneWidthMeters: this.camera.viewport.laneWidthMeters,
+          visibleDepthMeters: this.camera.viewport.visibleDepthMeters,
+        },
+        stage: {
+          stage: this.stage.stage,
+          name: stageName(this.stage.stage),
         absorbedInStage: this.stage.absorbedInStage,
         /**
          * Whether this type grows at all, which the HUD needs to read the counter honestly.
@@ -4267,6 +4296,7 @@ audio.play('pop');
               fraction: rageFraction(this.rage.rage),
             }
           : null,
+        },
       });
       this.touch.update();
       this.drawPickups();

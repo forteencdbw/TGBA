@@ -510,6 +510,88 @@ export interface Landmark {
  */
 import { buildLabel } from './version';
 
+/**
+ * Everything the HUD reads, once per frame.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THIS IS ONE OBJECT RATHER THAN EIGHT SETTERS
+ * ---------------------------------------------------------------------------------------------
+ * The HUD used to be filled in from seven places at seven different MOMENTS: the score from the draw pass, the boss
+ * from the boss fight, the progress chart from the step, the talent from the birth roll, the skill from the pickup and
+ * again from the use, the seed from the run's start, and the lane metrics from a resize. Nothing said what a complete
+ * HUD state was, and "which of these has been set by now" was a question about the ORDER of a frame.
+ *
+ * It is now a value: the caller assembles one and hands it over, and the HUD is a function of it. A field that is
+ * missing from this interface is a field the HUD cannot show, which is what makes the interface the place to look when
+ * something is not on screen.
+ */
+export interface HudState {
+  /** The run's score, as a number: the label adds the prefix. */
+  score: number;
+  /**
+   * The boss fight, or null when there is none.
+   *
+   * Null HIDES the pair rather than zeroing it: before the boss arrives, and after it dies, the top of the screen is
+   * not a boss bar at zero health.
+   */
+  boss: { name: string; fraction: number } | null;
+  /**
+   * The run's progress chart: one pip per level, filled as the run clears them.
+   *
+   * Null off a run, which is what the menu and the codex want: this is a chart about a RUN, and there is none happening
+   * on those screens.
+   */
+  progress: { total: number; cleared: number; current: number } | null;
+  /** Which birth type this run rolled. */
+  seed: string;
+  /** This run's talent, for the line under the seed. Null or empty shows nothing. */
+  talent: string | null;
+  /**
+   * The carried skill and its remaining uses, or null for an empty slot.
+   *
+   * Empty is shown as nothing at all rather than as an empty box: an empty slot is the normal state for most of a run,
+   * and a permanent empty frame would just be clutter on a screen that is already busy.
+   */
+  skill: { name: string; uses: number } | null;
+  /** The frame's own numbers, for the debug readout. */
+  player: Player;
+  fps: number;
+  nominalSeconds: number;
+  elapsed: number;
+  lateral: LateralAuthority;
+  /** How far the level has scrolled, and which level it is. */
+  scrolled: number;
+  level: Level;
+  /** The lane's metrics in metres, quoted by the debug readout. */
+  world: { laneWidthMeters: number; visibleDepthMeters: number };
+  /**
+   * The growth stage, how far into the next one, and the eating rank digestion has bought.
+   *
+   * The progress toward the next stage is the part that matters, because it is what makes "should I eat one more" a
+   * decision. `tierBonus` is shown only when it is non-zero: a permanent "+0" would spend subline space on a fact the
+   * player has not earned -- but once it exists it has to be visible, because it changes what the bubble can eat while
+   * the volume number says otherwise, and an invisible discrepancy between what the bubble looks like and what it can
+   * do is the one thing the marker and the rule must never disagree about.
+   */
+  stage: {
+    stage: number;
+    name: string;
+    absorbedInStage: number;
+    neededForNext: number | null;
+    /** False for a type that does not grow from absorbing at all, which has no next stage to count toward. */
+    grows: boolean;
+    tierBonus: number;
+    /**
+     * A second resource, for a bubble type that has one: its label, its readout, and its colour.
+     *
+     * Null for the devour bubble, which has no second meter -- and the null is the honest representation of that rather
+     * than a zero, because "0 rage" and "no rage at all" are different claims and the HUD should not make the second
+     * one.
+     */
+    resource?: { label: string; text: string; colour: number; fraction: number } | null;
+  };
+}
+
 export class Hud {
   readonly root = new Container();
 
@@ -698,82 +780,65 @@ export class Hud {
 
   }
 
-  /** Which birth type to show under the headline. */
-  setSeedLabel(label: string): void {
-    this.seedLabel = label;
-  }
-
   /**
-   * The run's score.
+   * The run's score, the boss fight, the progress chart, and the two run labels: all of them read from `state`.
    *
-   * Called every frame, and it does nothing when the number has not moved: the digits are the point of this label, so
-   * rebuilding the string and re-laying out the text sixty times a second for a number that changes a few times a
-   * minute would be pure waste on the one screen that has to keep up with a phone.
+   * The score and the boss BAR are the only things here that are redrawn rather than re-laid-out, and both are guarded
+   * on their own last value: this is a phone, and rebuilding a string or a rounded rect sixty times a second for a
+   * number that changes a few times a minute is waste on the one screen that has to keep up.
    */
-  setScore(points: number): void {
-    if (points === this.shownScore) return;
-    this.shownScore = points;
-    this.scoreLabel.text = `分数 ${points}`;
-  }
+  private updateRunReadouts(state: HudState): void {
+    if (state.score !== this.shownScore) {
+      this.shownScore = state.score;
+      this.scoreLabel.text = `分数 ${state.score}`;
+    }
 
-  /**
-   * The boss fight, or nothing.
-   *
-   * Called every frame with the boss's state: `null` hides the pair, and a name with a fraction draws them. The bar is
-   * only redrawn when the fraction actually moves, for the same reason the score label is: this is a phone, and the
-   * digits and the bar are the only things on screen that change every frame.
-   */
-  setBoss(boss: { name: string; fraction: number } | null): void {
-    const cfg = mech.hud.bossBar;
-    const visible = boss !== null;
-    this.bossBar.visible = visible;
-    this.bossName.visible = visible;
+    const boss = state.boss;
+    this.bossBar.visible = boss !== null;
+    this.bossName.visible = boss !== null;
     if (!boss) {
       this.shownBossFraction = -1;
       this.bossBar.clear();
-      return;
+    } else {
+      const cfg = mech.hud.bossBar;
+      const s = this.hudScale;
+      if (this.bossName.text !== boss.name) this.bossName.text = boss.name;
+      const fraction = Math.max(0, Math.min(1, boss.fraction));
+      if (fraction !== this.shownBossFraction) {
+        this.shownBossFraction = fraction;
+        const width = this.canvasWidth * cfg.widthRatio;
+        const height = cfg.height * s;
+        const x = (this.canvasWidth - width) / 2;
+        const y = cfg.y * s;
+        const g = this.bossBar;
+        g.clear();
+        g.roundRect(x, y, width, height, height / 2).fill({ color: cfg.backColour, alpha: cfg.backAlpha });
+        const filled = width * fraction;
+        if (filled > 1) {
+          g.roundRect(x, y, filled, height, height / 2).fill({ color: cfg.fillColour, alpha: 1 });
+        }
+        g.roundRect(x, y, width, height, height / 2).stroke({ color: cfg.borderColour, alpha: cfg.borderAlpha, width: 1 });
+      }
     }
-    const s = this.hudScale;
-    if (this.bossName.text !== boss.name) this.bossName.text = boss.name;
-    const fraction = Math.max(0, Math.min(1, boss.fraction));
-    if (fraction === this.shownBossFraction) return;
-    this.shownBossFraction = fraction;
 
-    const width = this.canvasWidth * cfg.widthRatio;
-    const height = cfg.height * s;
-    const x = (this.canvasWidth - width) / 2;
-    const y = cfg.y * s;
-    const g = this.bossBar;
-    g.clear();
-    g.roundRect(x, y, width, height, height / 2).fill({ color: cfg.backColour, alpha: cfg.backAlpha });
-    const filled = width * fraction;
-    if (filled > 1) {
-      g.roundRect(x, y, filled, height, height / 2).fill({ color: cfg.fillColour, alpha: 1 });
-    }
-    g.roundRect(x, y, width, height, height / 2).stroke({ color: cfg.borderColour, alpha: cfg.borderAlpha, width: 1 });
-  }
-
-  /**
-   * The score exactly as the player reads it.
-   *
-   * Exposed for the same reason as the headline: "it says 350" can only be checked against the string the HUD really
-   * shows, and a test that re-derived the format would pass while the screen showed something else.
-   */
-  /**
-   * The run's progress chart: one pip per level, filled as the run clears them.
-   *
-   * The whole game is a ladder of six levels, and until now nothing on the play screen said so -- the level's own
-   * progress (a boss's health) is a different fact from the run's. Six pips answer "how far have I got" in one glance,
-   * which matters most exactly when the answer changes: the moment a boss dies and the run walks into the next level.
-   *
-   * `null` hides it, which is what the menu and the codex want: this is a chart about a RUN, and there is no run
-   * happening on those screens.
-   */
-  setProgress(chart: { total: number; cleared: number; current: number } | null): void {
-    this.progressChart = chart;
+    const chart = state.progress;
     this.progressGauge.visible = chart !== null;
     this.progressLabel.visible = chart !== null;
-    this.redrawProgress();
+    const moved =
+      chart !== null &&
+      (this.progressChart === null ||
+        this.progressChart.total !== chart.total ||
+        this.progressChart.cleared !== chart.cleared ||
+        this.progressChart.current !== chart.current);
+    const appearedOrLeft = (chart === null) !== (this.progressChart === null);
+    if (moved || appearedOrLeft) {
+      this.progressChart = chart;
+      this.redrawProgress();
+    }
+
+    this.seedLabel = state.seed;
+    this.talentLabel = state.talent ?? '';
+    this.skillLabel = state.skill ? `${state.skill.name} ×${state.skill.uses}` : '';
   }
 
   /** Where the pips go and what they look like: only `layout` knows the canvas. */
@@ -828,23 +893,6 @@ export class Hud {
     return this.scoreLabel.text;
   }
 
-  /** The run's talent, shown next to the seed so the player can see what they got. */
-  setTalentLabel(label: string | null): void {
-    this.talentLabel = label ?? '';
-  }
-
-  /**
-   * The carried skill and its remaining uses.
-   *
-   * `null` empties the slot, which the HUD shows as nothing at all rather than as an empty box: an
-   * empty slot is the normal state for most of a run, and a permanent empty frame would just be
-   * clutter on a screen that is already busy.
-   */
-  setSkillLabel(name: string | null, uses: number): void {
-    this.skillLabel = name ? `${name} ×${uses}` : '';
-  }
-
-
   /**
    * The state line under the headline, exactly as the player reads it.
    *
@@ -865,13 +913,6 @@ export class Hud {
     return this.debug.text;
   }
 
-  /**
-   * `Hud.update`: the readouts, and the water's colour.
-   *
-   * @param scrolled how far the LEVEL has travelled, in metres. Progress and depth both belong to the
-   *   scroll, not to the player: the bubble moves freely within the window, so reading either off its
-   *   world position made every press of "up" advance the bar AND brighten the whole sea.
-   */
   /**
    * The rage gauge: a bar under the resource line, filled in the live stage's colour.
    *
@@ -922,55 +963,15 @@ export class Hud {
     return this.resourceLabel.visible;
   }
 
-  update(
-    player: Player,
-    fps: number,
-    nominalSeconds: number,
-    elapsed: number,
-    lateral: LateralAuthority,
-    /**
-     * How far the level has scrolled, and which level it is.
-     *
-     * The level is here for ONE line of the debug readout: "metres to the surface" is the level's length minus the
-     * scroll. It used to read `DEPTH_TOTAL` out of a live binding to get that, which is the sort of dependency that
-     * makes a readout quietly wrong the day there are two levels on screen.
-     *
-     * `scrolled` is no longer used for a progress readout -- a level's progress is its boss's health now, and that
-     * arrives through `setBoss`.
-     */
-    scrolled: number,
-    level: Level,
-    /**
-     * The growth stage, how far into the next one, and the eating rank digestion has bought.
-     *
-     * In the subline rather than the headline: the headline is the one number a player reads at a glance, and
-     * the stage is a slower-changing fact. The progress toward the next stage is the part that matters,
-     * because it is what makes "should I eat one more" a decision.
-     *
-     * `tierBonus` is shown only when it is non-zero, because it is zero for most of a run: a permanent "+0" would
-     * spend subline space on a fact the player has not earned. Once it exists it has to be visible, though -- it
-     * changes what the bubble can eat while the volume number says otherwise, and an invisible discrepancy
-     * between what the bubble looks like and what it can do is the one thing the marker and the rule must never
-     * disagree about.
-     */
-    stage: {
-      stage: number;
-      name: string;
-      absorbedInStage: number;
-      neededForNext: number | null;
-      /** False for a type that does not grow from absorbing at all, which has no next stage to count toward. */
-      grows: boolean;
-      tierBonus: number;
-      /**
-       * A second resource, for a bubble type that has one: its label, its readout, and its colour.
-       *
-       * Null for the devour bubble, which has no second meter -- and the null is the honest representation of that
-       * rather than a zero, because "0 rage" and "no rage at all" are different claims and the HUD should not make
-       * the second one.
-       */
-      resource?: { label: string; text: string; colour: number; fraction: number } | null;
-    },
-  ): void {
+  /**
+   * Draw the frame's readouts from one state value.
+   *
+   * The HUD is a FUNCTION of `state` now: nothing is pushed into it from elsewhere in the frame, so "what is on the
+   * HUD" is answered by reading this method rather than by finding its seven callers. See `HudState`.
+   */
+  update(state: HudState): void {
+    const { player, fps, nominalSeconds, elapsed, lateral, level, scrolled, stage } = state;
+    this.updateRunReadouts(state);
     /**
      * The metres-to-surface readout is DELETED rather than hidden.
      *
@@ -1027,7 +1028,7 @@ export class Hud {
     // sense that both are HUD text, and a stale fill from a previous type would outlive the type change.
     this.subline.style.fill = 0x7fc4e8;
 
-    // The level gauge is gone; the boss bar is drawn by `setBoss` from the game's own state.
+    // The level gauge is gone; the boss bar comes in with the rest of the state.
     //
     // `scrolled` still matters because the level's DEPTH remains a real reading -- the water colour and the debug line
     // both use it -- even though it no longer drives a progress bar.
@@ -1050,22 +1051,14 @@ export class Hud {
         `vx      ${player.vx.toFixed(3)} lane/s`,
         `x       ${(player.x * 100).toFixed(1)}% of lane   screenY ${(player.screenY * 100).toFixed(0)}%`,
         `time    ${elapsed.toFixed(1)}s   level ${nominalSeconds.toFixed(0)}s`,
-        `lane    ${this.laneWidthMeters.toFixed(1)} m   depth view ${this.visibleDepthMeters.toFixed(0)} m`,
+        `lane    ${state.world.laneWidthMeters.toFixed(1)} m   depth view ${state.world.visibleDepthMeters.toFixed(0)} m`,
         `lateral ${lateral.keyboardSpeed.toFixed(3)} lane/s keyboard  damp ${LATERAL_DAMPING}`,
         `cross   ${lateral.crossingSeconds}s rest / ${lateral.boostCrossingSeconds}s with boost penalty`,
       ].join('\n');
     }
   }
-
-  /** Installed by `Game.layout()`. Shown in the debug readout only. */
-  private laneWidthMeters = 0;
-  private visibleDepthMeters = 0;
-
-  setWorldMetrics(laneWidthMeters: number, visibleDepthMeters: number): void {
-    this.laneWidthMeters = laneWidthMeters;
-    this.visibleDepthMeters = visibleDepthMeters;
-  }
 }
+
 
 export async function createApp(): Promise<Application> {
   const app = new Application();
