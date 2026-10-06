@@ -60,11 +60,7 @@ export function pullSpeedFraction(targetMass: number, playerMass: number): numbe
 }
 
 /**
- * The movement multiplier while the field is up.
- *
- * Exposed rather than applied in place so the player's own speed calculation owns its own arithmetic, and so the
- * penalty is one number in one place that a test can assert against the config.
+ * There used to be a `suctionMoveFactor()` here: `return mech.suction.moveSpeedFactor`, one name for one config value,
+ * called from one place. The movement penalty is a real rule and it lives in the player's speed product (see
+ * `Player.update`); a function whose body is the field it returns is a name, not a module. Its reader reads the config.
  */
-export function suctionMoveFactor(): number {
-  return mech.suction.moveSpeedFactor;
-}

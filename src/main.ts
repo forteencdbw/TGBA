@@ -22,7 +22,7 @@ import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
 import { endOverload, gainRage, hitRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName, slamDamage, spendRage, tickRage, type RageState } from './rage';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
 import { chainTargets } from './conductive';
-import { suctionMoveFactor, suctionRadiusFraction } from './suction';
+import { suctionRadiusFraction } from './suction';
 import { digestEnergy, Stomach, spitDirection, spitImpact, spitRadiusFraction, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
@@ -2166,7 +2166,7 @@ audio.play('hit');
      * from.
      */
     this.player.suctionMoveFactor =
-      (suctionAt ? suctionMoveFactor() : 1) * (this.stomach.overloaded ? mech.spit.overloadMoveSpeedFactor : 1);
+      (suctionAt ? mech.suction.moveSpeedFactor : 1) * (this.stomach.overloaded ? mech.spit.overloadMoveSpeedFactor : 1);
 
     this.field.update(
       dt,
