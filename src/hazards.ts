@@ -919,6 +919,16 @@ export class HazardField {
       HIT_EVENTS.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour });
       return 'killed';
     }
+    /**
+     * A creature that has been driven off DROPS ITS CHARGE.
+     *
+     * The charge branch runs first and returns early, and the field does not advance a creature that is leaving -- so a fish
+     * that was lunging when it was driven off stayed frozen in its lunge for ever, faint in the leaving pass: invisible and
+     * motionless, which is exactly what the owner reported as "it disappears after charging". Dropping the charge hands it back
+     * to the leaving motion, which is the look that was designed.
+     */
+    hazard.charge = null;
+    hazard.flee = FLEE_DIRECTIONS[Math.floor(Math.random() * FLEE_DIRECTIONS.length)]!;
     hazard.flee = FLEE_DIRECTIONS[Math.floor(Math.random() * FLEE_DIRECTIONS.length)]!;
     this.fled++;
     return 'fled';
