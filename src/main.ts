@@ -2015,6 +2015,15 @@ class Game {
     this.progressView = this.run.runComplete ? null : { total: LEVELS.length, cleared: this.run.levelsClearedInRun, current: levelIndex(LEVEL.id) };
     this.run.bossSpawned = false;
     /**
+     * A fresh run has no level queued to walk into.
+     *
+     * `pendingLevel` is set the moment a level is cleared and read when the ending beat is over, which is the same
+     * run. Quitting from the pause panel during that hold left it set -- the menu is not a run, so nothing consumed it
+     * -- and the NEXT run then inherited it: dying on level 1 teleported the player into level 2 with the score
+     * carried over. A carry keeps it, because a carry IS the walk into that level; anything else starts from nothing.
+     */
+    if (!carryScore) this.run.pendingLevel = null;
+    /**
      * The score is the RUN's number.
      *
      * It starts at zero with everything else that belongs to a run -- including the numbers still floating on screen
@@ -2160,6 +2169,18 @@ class Game {
   /** Leave the level and show the main menu. */
   private exitToMenu(): void {
     this.music.stop();
+    /**
+     * Point the game back at the level the ROW is showing, not the one the run had walked on to.
+     *
+     * Found by a bug report: clear level 1, walk into level 2, quit, press start -- and the run began on level 2 while
+     * the level pills still had level 1 selected. Two different facts were being read as one. `LEVEL` is the level
+     * being PLAYED, and the automatic handoff at the end of a level moves it (see `enterLevel`); the menu's pointer is
+     * the save's own `selected`, and only a press on a pill moves that. `enterFromMenu` starts a run on `LEVEL`, so
+     * leaving the menu with the game pointed at the other level is the contradiction the player saw. Re-applying the
+     * pointer here -- the same call `Progression` makes for the same reason at construction -- is what keeps "start"
+     * meaning "the level on screen", however far the last run had travelled.
+     */
+    selectLevel(this.run.progress.selected);
     /**
      * The summary panel goes with the run.
      *
