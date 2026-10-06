@@ -24,6 +24,8 @@ simulation serially, so any run is minutes of waiting for a verdict the owner is
 debug readout as `v<version> · <git hash>`, with ` (uncommitted)` when the working tree was dirty at build time —
 see `src/version.ts` and the `define` block in `vite.config.ts`.
 
+- **The patch number rolls over at 100: 1.0.100 -> 1.1.0, not 1.0.101.** Three digits is the end of a patch series, not
+  the start of a fourth one -- and the owner asked for it in exactly those terms.
 - **Increment it in the same commit as the change.** Patch (`1.0.1`, `1.0.2`, …) for an ordinary change; minor or
   major when the owner says so.
 - Do not hand-edit a git hash anywhere: it is read from git at build time, and a hand-maintained hash is a hash
