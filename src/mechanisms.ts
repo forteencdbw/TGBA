@@ -863,7 +863,6 @@ export interface Mechanisms {
     }
   >;
   /** The white flash anything shootable gives when a bullet lands: creatures AND breakable obstacles. */
-  /** The loading screen shown between the menu and a level. */
   /** Hit particles: sparks on a hit, a ring of debris on a defeat. */
   /**
    * The bubble animation that follows every charge.
@@ -908,6 +907,24 @@ export interface Mechanisms {
     defeatJitter: number;
     drag: number;
     descentSpeed: number;
+  };
+  /**
+   * The detonation ring: the circle a bomb fish draws where it went off.
+   *
+   * Not part of `particles`, because it is not a spray of anything -- it is a READING of how large that blast was, and
+   * it is the only thing left on screen saying so once the creature is gone.
+   */
+  explosions: {
+    seconds: number;
+    strokeColour: number;
+    strokeAlpha: number;
+    strokeStartRatio: number;
+    strokeEndRatio: number;
+    strokeWidthRatio: number;
+    coreColour: number;
+    coreAlpha: number;
+    coreStartRatio: number;
+    coreEndRatio: number;
   };
   loading: {
     scrimColour: number;
@@ -2050,6 +2067,17 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'particles.defeatJitter', check: (v) => typeof v === 'number' && v >= 0 && v <= Math.PI * 2, describe: 'radians of jitter, at most a full turn' },
   { path: 'particles.drag', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a per-frame retention above 0 and at most 1' },
   { path: 'particles.descentSpeed', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres per second between 0 and 2000' },
+  /** The detonation ring, one row per value: see the config's note at `explosions`. */
+  { path: 'explosions.seconds', check: (v) => typeof v === 'number' && v > 0.05 && v <= 5, describe: 'seconds above 0.05 and at most 5' },
+  { path: 'explosions.strokeColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'explosions.strokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'explosions.strokeStartRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a multiple of the blast radius between 0 and 3' },
+  { path: 'explosions.strokeEndRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a multiple of the blast radius between 0 and 3' },
+  { path: 'explosions.strokeWidthRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a stroke width as a fraction of the radius, above 0 and at most 1' },
+  { path: 'explosions.coreColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
+  { path: 'explosions.coreAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'explosions.coreStartRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a multiple of the blast radius between 0 and 3' },
+  { path: 'explosions.coreEndRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a multiple of the blast radius between 0 and 3' },
   { path: 'loading.scrimColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'loading.scrimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'loading.trackColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },

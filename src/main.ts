@@ -86,16 +86,6 @@ const INTRO_END_SCREEN_Y = 0.25;
 const BURST_SECONDS = 1.5;
 
 /**
- * How long a detonation ring lives, in seconds.
- *
- * Here rather than inline in the drawing code because the AGEING happens in `step` now and the drawing reads it: a
- * lifetime written into a draw call is a lifetime that only advances when the page is drawn. The rest of the ring's
- * look (its colour, its fades, its stroke ratio) is still in `drawPickups` and belongs in the config with the other
- * styling numbers.
- */
-const EXPLOSION_SECONDS = 0.45;
-
-/**
  * What to shout when a level's landmark is reached.
  *
  * The beats are announced rather than generated: the timeline decides WHAT is there, and this decides
@@ -4133,7 +4123,7 @@ audio.play('pop');
     for (let i = this.explosions.length - 1; i >= 0; i--) {
       const boom = this.explosions[i]!;
       boom.age += dt;
-      if (boom.age >= EXPLOSION_SECONDS) this.explosions.splice(i, 1);
+      if (boom.age >= mech.explosions.seconds) this.explosions.splice(i, 1);
     }
 
     /**
@@ -4549,15 +4539,24 @@ audio.play('pop');
      *
      * Drawn in the world with everything else, from a list that `step` ages: the creature is gone by now, so this is
      * the only thing left to say "that was a bomb, and it was that big".
+     *
+     * Every number here is the config's, including the two that used to be literals on these lines: what a blast LOOKS
+     * like is a thing to tune, and a number written into a draw call is not tunable from the file.
      */
+    const boomCfg = mech.explosions;
     for (const boom of this.explosions) {
-      const t = Math.min(1, boom.age / EXPLOSION_SECONDS);
-      g.circle(boom.x, boom.y, boom.radius * (0.25 + 0.75 * t)).stroke({
-        color: 0xffb44a,
-        alpha: 0.85 * (1 - t),
-        width: Math.max(1, boom.radius * 0.16 * (1 - t)),
+      const t = Math.min(1, boom.age / boomCfg.seconds);
+      const fade = 1 - t;
+      const from = (a: number, b: number): number => a + (b - a) * t;
+      g.circle(boom.x, boom.y, boom.radius * from(boomCfg.strokeStartRatio, boomCfg.strokeEndRatio)).stroke({
+        color: boomCfg.strokeColour,
+        alpha: boomCfg.strokeAlpha * fade,
+        width: Math.max(1, boom.radius * boomCfg.strokeWidthRatio * fade),
       });
-      g.circle(boom.x, boom.y, boom.radius * (0.15 + 0.5 * t)).fill({ color: 0xffe9a8, alpha: 0.28 * (1 - t) });
+      g.circle(boom.x, boom.y, boom.radius * from(boomCfg.coreStartRatio, boomCfg.coreEndRatio)).fill({
+        color: boomCfg.coreColour,
+        alpha: boomCfg.coreAlpha * fade,
+      });
     }
 
     /**
