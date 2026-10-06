@@ -847,16 +847,23 @@ export interface Mechanisms {
   /** The white flash anything shootable gives when a bullet lands: creatures AND breakable obstacles. */
   /** The loading screen shown between the menu and a level. */
   /** Hit particles: sparks on a hit, a ring of debris on a defeat. */
-  /** The bubble trail every charge leaves behind. */
+  /**
+   * The bubble animation that follows every charge.
+   *
+   * One sprite in the default case (\`count: 1\`): the sheet is a LOOP played by the sprite, not a particle emitted into the
+   * water, which is why there is a \`frameSeconds\` here and no emission rate or lifetime. The last four fields only do anything
+   * once \`count\` is raised past 1 and the sprite becomes a cluster.
+   */
   chargeTrail: {
     image: string;
+    /** The sheet's layout. Frame order is left to right, then top to bottom: \`i = row * columns + column\`. */
     columns: number;
     rows: number;
     /** Seconds per frame while the sheet loops. */
     frameSeconds: number;
-    /** How far behind the creature the bubbles trail, as a multiple of each bubble's own size. */
+    /** How far behind the creature the bubble sits, as a multiple of its own size. */
     behindFactor: number;
-    /** How many bubbles in the cluster. */
+    /** How many bubbles; 1 is a single tail sprite. */
     count: number;
     /** How much further each successive bubble sits, relative to its own size. */
     spread: number;

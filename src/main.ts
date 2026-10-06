@@ -161,7 +161,7 @@ class Game {
   private readonly loadScrim = new Graphics();
   /** Sparks and debris from hits, in world space. See `src/particles.ts`. */
   private readonly hitParticles = new ParticleField();
-  /** Bubbles behind every charge. See `src/chargeTrail.ts`. */
+  /** The bubble animation that rides behind every charge. See `src/chargeTrail.ts`. */
   private readonly chargeTrail = new ChargeTrail();
   private readonly loadBar = new Graphics();
   private readonly loadLabel = new PixiText({

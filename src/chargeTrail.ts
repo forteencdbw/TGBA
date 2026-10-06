@@ -1,18 +1,25 @@
 /**
- * The bubble animation that rides along with a charging creature.
+ * The bubble animation that follows a charging creature.
  *
- * ONE sprite per charging creature, moved to it every frame and cycled through the sheet -- not a trail of bubbles left behind,
- * because a trail that stays put is a trail of afterimages. The parenthetical distinction is the whole design: the sheet is a
- * LOOP played on the creature, not a particle emitted by it.
+ * ONE sprite per charging creature (see \`count\` in the config if that ever needs to be a cluster), glued to it every frame and
+ * walked through its sheet -- the sheet is a LOOP played by the sprite, not a sequence of particles emitted into the water.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY IT RIDES INSTEAD OF BEING EMITTED
+ * ---------------------------------------------------------------------------------------------
+ * The first version spawned a bubble every few milliseconds and let each one live out the six frames where it was born. That
+ * reads as a row of still images: the sheet's own animation is a progress bar for one bubble's life, so six bubbles born a
+ * frame apart are all showing *different* frames of the sheet at the same instant, which is not an animation at all. Pinned to
+ * the creature, the same six frames in the same order are one thing moving -- a wake.
  *
  * Sprites are pooled by creature id, and a creature that stops charging loses its sprite the next frame.
  */
 import { Container, Rectangle, Sprite, Texture } from 'pixi.js';
-import { assetUrl } from './assets';
+import { assetUrl, isYFlipped } from './assets';
 import { mech } from './mechanisms';
 
 interface Rider {
-  /** The cluster: one bubble each, with its own steady offsets so the group does not shimmer frame to frame. */
+  /** One bubble per entry in \`count\`; index 0 is the one directly behind the creature. */
   sprites: Sprite[];
   /** Seconds of animation so far, so the frame advances with time rather than with frames rendered. */
   clock: number;
@@ -21,7 +28,6 @@ interface Rider {
   /** Per-bubble constants, rolled once: a bubble that changed place every frame would look like boiling, not like a wake. */
   jitter: number[];
   sizeMul: number[];
-  phase: number[];
 }
 
 export class ChargeTrail {
@@ -65,9 +71,11 @@ export class ChargeTrail {
   }
 
   /**
-   * Put this creature's bubble at its position and advance its animation. Call once per frame while it charges.
+   * Put this creature's bubble behind it and advance the animation. Call once per frame while it charges.
    *
-   * \`laneWidth\` sizes the bubble as a fraction of the lane, like every other prop in the water.
+   * \`dirX\`/\`dirY\` is a unit vector along the DASH, not the creature's velocity: a charge steers along its curve, and the wake
+   * should trail the geometry the player sees. \`laneWidth\` sizes the bubble as a fraction of the lane, like every other prop
+   * in the water.
    */
   ride(id: number, x: number, y: number, dt: number, laneWidth: number, dirX = 0, dirY = 0): void {
     const cfg = mech.chargeTrail;
@@ -90,8 +98,6 @@ export class ChargeTrail {
         seen: true,
         jitter: sprites.map(() => (Math.random() - 0.5) * cfg.jitter),
         sizeMul: sprites.map((_, i) => 1 + (Math.random() - 0.5) * cfg.scaleVariance - i * cfg.sizeFalloff),
-        // Staggered through the sheet, so the group is never all on the same frame.
-        phase: sprites.map((_, i) => (i / count) * this.textures.length),
       };
       this.riders.set(id, rider);
     }
@@ -102,20 +108,19 @@ export class ChargeTrail {
     /**
      * Behind the creature, fanning outwards.
      *
-     * A unit direction is passed in rather than computed here, because the creature's VELOCITY is not the same thing as the
-     * dash's direction -- a charge steers along its curve, and the wake should trail the geometry the player sees.
+     * With \`count\` at its default of 1 this is simply "back along the dash by \`behindFactor\` of the bubble's own size"; the
+     * fan is what makes a cluster of several bubbles read as churned water rather than as several bubbles in a row.
      */
     const baseAngle = Math.atan2(-dirY, -dirX);
-    const flipped = rider.sprites[0]?.parent ? (rider.sprites[0]!.parent!.scale.y < 0) : true;
+    const flipped = isYFlipped(this.root);
     for (const [i, sprite] of rider.sprites.entries()) {
-      // Looping, because "轮播" is what was asked for: the sheet runs round for as long as the dash does.
       /**
-       * Both terms are FLOORED, and the reason is worth keeping: the stagger is a fraction of the sheet, so adding it raw made
-       * the index fractional -- `this.textures[1.2]` is undefined, and the first frame of the wake threw. A frame index is a
-       * whole number or it is a bug.
+       * Looping, because the sheet runs round for as long as the dash does.
+       *
+       * The index is FLOORED and the reason is worth keeping: a fractional index makes \`this.textures[1.2]\` undefined, and the
+       * first frame of the wake threw. A frame index is a whole number or it is a bug.
        */
-      const index = (Math.floor(rider.clock / per) + Math.floor(rider.phase[i]!)) % this.textures.length;
-      const frame = this.textures[index]!;
+      const frame = this.textures[Math.floor(rider.clock / per) % this.textures.length]!;
       sprite.texture = frame;
       const bubbleSize = size * rider.sizeMul[i]!;
       const back = bubbleSize * cfg.behindFactor * (1 + i * cfg.spread);
@@ -134,7 +139,7 @@ export class ChargeTrail {
    * Retire the riders that were not asked for this frame.
    *
    * Called after the hazards have had their chance: a creature that stopped charging, or that left the water, drops its bubble
-   * instead of leaving one frozen mid-screen -- which is the afterimage bug in its original form.
+   * instead of leaving one frozen mid-screen.
    */
   sweep(): void {
     for (const [id, rider] of this.riders) {
@@ -162,4 +167,3 @@ export class ChargeTrail {
     return { live: this.riders.size, frames: this.textures.length };
   }
 }
-
