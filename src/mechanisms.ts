@@ -1916,20 +1916,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     },
     describe: 'an object of kind -> { move, charge?, scale, alpha, lure? }',
   },
-  {
-    path: 'flocks.schools',
-    check: (v) =>
-      v !== null &&
-      typeof v === 'object' &&
-      !Array.isArray(v) &&
-      Object.keys(v).length > 0 &&
-      Object.values(v as Record<string, unknown>).every((row) => {
-        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
-        const r = row as Record<string, unknown>;
-        return (['separation', 'alignment', 'cohesion', 'speed', 'sight', 'wander'] as const).every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number));
-      }),
-    describe: 'an object of school id -> { separation, alignment, cohesion, speed, sight, wander }, at least one entry',
-  },
   { path: 'particles.maxParticles', check: (v) => typeof v === 'number' && v >= 0 && v <= 4000, describe: 'a count between 0 and 4000' },
   { path: 'particles.hitCount', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a count between 0 and 200' },
   { path: 'particles.hitSpeed', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres per second between 0 and 2000' },
