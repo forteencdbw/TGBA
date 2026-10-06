@@ -334,6 +334,10 @@ export interface Hazard {
  * Values marked "(config)" come from `config/mechanics.json5` and are the ones worth hand-tuning. The rest are
  * internal shape constants -- how wide a fish's bite is, how fast it turns -- where a hand-edit would be
  * guesswork rather than tuning. They live here so the file that uses them is also the file that documents them.
+ *
+ * Every "(config)" member is a GETTER rather than a value, and that is not a style choice: a copied number looks
+ * exactly like a live one, so the eleven that used to be copied here were tunable in console appearance only.
+ * `config.ts`'s `tuning` had the same fault. If you add a config-backed member, add it as a getter.
  */
 export const hazardTuning = {
   /** Hazards on a screenful at the start, and the ceiling as the run goes on. */
@@ -352,7 +356,9 @@ export const hazardTuning = {
    * mechanic.
    */
   /** How deep inside the lane a side-entering creature must get before its own AI takes over. */
-  insideMarginRatio: mech.spawning.insideMarginRatio,
+  get insideMarginRatio() {
+    return mech.spawning.insideMarginRatio;
+  },
 
   fishBaitChance: 0.25,
   fishBaitSeconds: 1.6,
@@ -367,7 +373,9 @@ export const hazardTuning = {
    * together: an earlier combination of a 0.5s grip with 1/6 per second could only ever accumulate 0.08 of a
    * hit, so the drain was mathematically incapable of landing and the whole mechanic was inert.
    */
-  trashDrainPerSecond: mech.hazards.trashDrainPerSecond,
+  get trashDrainPerSecond() {
+    return mech.hazards.trashDrainPerSecond;
+  },
   trashStruggleRelease: 0.55,
   /**
    * Minimum seconds a trash bag holds on before struggling can tear it free. (config)
@@ -376,16 +384,24 @@ export const hazardTuning = {
    * input, and a player who is dodging qualifies most of the time, so the grip needs a floor or it lasts a
    * single frame and is never felt.
    */
-  trashMinGripSeconds: mech.hazards.trashMinGripSeconds,
+  get trashMinGripSeconds() {
+    return mech.hazards.trashMinGripSeconds;
+  },
   /**
    * The crab's telegraph fires when the player comes within this many metres above it. (config)
    *
    * Generous on purpose: it has to be visible while the player still has time to decide, and the crab is the
    * one hazard whose effect is arguably GOOD, so the player wants enough warning to aim at it.
    */
-  crabArmDistanceMeters: mech.hazards.crabArmDistanceMeters,
-  crabFuseSeconds: mech.hazards.crabFuseSeconds,
-  crabLaunchMps: mech.hazards.crabLaunchMps,
+  get crabArmDistanceMeters() {
+    return mech.hazards.crabArmDistanceMeters;
+  },
+  get crabFuseSeconds() {
+    return mech.hazards.crabFuseSeconds;
+  },
+  get crabLaunchMps() {
+    return mech.hazards.crabLaunchMps;
+  },
   crabApexSeconds: 1.1,
 
   // --- Emergence (D5) -----------------------------------------------------
@@ -397,7 +413,9 @@ export const hazardTuning = {
    * whole design rests on ("I got bigger, so the world got worse"). At three, a split is a consequence of a LOT
    * of food appearing, which in practice means the player's own talent backlash or a bait bubble.
    */
-  fishFeedToSplit: mech.emergence.fishFeedToSplit,
+  get fishFeedToSplit() {
+    return mech.emergence.fishFeedToSplit;
+  },
   /** Seconds a fish spends digesting between meals. */
   fishDigestSeconds: 0.9,
   /**
@@ -406,9 +424,13 @@ export const hazardTuning = {
    * Rule 2 of the emergence engine: perception GROWS WITH THE PLAYER'S VOLUME. It is what gives "getting bigger
    * is dangerous" a number instead of a feeling.
    */
-  fishPerceptionBaseMeters: mech.emergence.fishPerceptionBaseMeters,
+  get fishPerceptionBaseMeters() {
+    return mech.emergence.fishPerceptionBaseMeters;
+  },
   /** Extra perception per unit of player volume above 1. (config) */
-  fishPerceptionPerVolume: mech.emergence.fishPerceptionPerVolume,
+  get fishPerceptionPerVolume() {
+    return mech.emergence.fishPerceptionPerVolume;
+  },
   /**
    * HARD CAP on fish. (config)
    *
@@ -416,7 +438,9 @@ export const hazardTuning = {
    * rather than more entities being created. The guard is not an optimisation: without it the design's own
    * centrepiece is a crash.
    */
-  fishHardCap: mech.emergence.fishHardCap,
+  get fishHardCap() {
+    return mech.emergence.fishHardCap;
+  },
   /**
    * Radius in metres a fish will snap up a collectable from.
    *
@@ -425,7 +449,9 @@ export const hazardTuning = {
    */
   fishBiteMeters: 34,
   /** How far a jellyfish or trash bag will drift toward the biggest nearby collectable. (config) */
-  seekBiggestRangeMeters: mech.emergence.seekBiggestRangeMeters,
+  get seekBiggestRangeMeters() {
+    return mech.emergence.seekBiggestRangeMeters;
+  },
   seekBiggestPullPerSecond: 0.35,
 };
 

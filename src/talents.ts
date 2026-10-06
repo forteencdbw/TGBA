@@ -17,7 +17,6 @@
  * (D5); this module only owns what a talent changes about the player.
  */
 
-import { tuning } from './config';
 import type { HazardKind } from './hazards';
 
 export type TalentId = 'fish-fart' | 'soda' | 'silt';
@@ -81,6 +80,15 @@ export const talentTuning = {
    */
   fartRadiusMeters: 70,
   fartCooldownSeconds: 1.4,
+  /**
+   * Bait bubbles a fart leaves behind.
+   *
+   * The talent's backlash, and therefore its balance: the fart pushes fish away AND feeds them, so a rescue
+   * that is not followed up makes the swarm bigger. It lives here with the fart's radius and cooldown rather
+   * than in `config.ts`'s flat alias, where it was the one member documented as coming from a config file that
+   * did not have the key.
+   */
+  fartBaitCount: 3,
 } as const;
 
 /** The talent's effect on the player, resolved once at birth. */
@@ -139,5 +147,5 @@ export function fartPushFor(kind: HazardKind): number {
 
 /** How many bait bubbles a fart emits. These are what feed the fish and split them later. */
 export function fartBaitCount(): number {
-  return tuning.fartBaitCount;
+  return talentTuning.fartBaitCount;
 }

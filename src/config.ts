@@ -76,8 +76,19 @@ export const PLAYER_SCREEN_Y_RATIO = 0.5;
 /**
  * The gameplay tuning, as a live alias of the config file.
  *
- * A getter-based proxy would be tidier, but a plain object built from the config's sections is enough and keeps
- * `tuning.x = 5` writing straight through to the same values the game reads.
+ * ---------------------------------------------------------------------------------------------
+ * EVERY MEMBER IS A GETTER, AND THAT IS THE WHOLE POINT
+ * ---------------------------------------------------------------------------------------------
+ * `window.__GB.tuning` is the documented way to dial a number in from the browser console, and to hold that
+ * promise a member has to be a live view of `mech` rather than a copy of it. It was a mix of the two: three
+ * getters and eleven values captured at module load, so editing `tuning.verticalSpeedScale`, `hitPointVolume` or
+ * any of the other eleven did nothing at all -- silently, because a captured number looks exactly like a live one.
+ * A tunable that cannot be tuned is worse than one that is not there, which is the rule this project already holds
+ * for the whole config file.
+ *
+ * So: a new member is a getter/setter pair, never a value. The names are the flat, gameplay-facing vocabulary for
+ * knobs whose config paths are grouped by system; where the two disagree (`hitPointVolume` against
+ * `volume.hitCost`) this is the name the simulation reads by.
  */
 export const tuning = {
   // Volume economy.
@@ -99,33 +110,84 @@ export const tuning = {
   set bubbleLaneRatio(v: number) {
     mech.volume.laneRatio = v;
   },
-  hitPointVolume: mech.volume.hitCost,
+  get hitPointVolume() {
+    return mech.volume.hitCost;
+  },
+  set hitPointVolume(v: number) {
+    mech.volume.hitCost = v;
+  },
 
   // Movement.
-  verticalSpeedScale: mech.movement.verticalSpeedScale,
+  get verticalSpeedScale() {
+    return mech.movement.verticalSpeedScale;
+  },
+  set verticalSpeedScale(v: number) {
+    mech.movement.verticalSpeedScale = v;
+  },
 
   // Collectables.
-  bubbleRiseMin: mech.collectables.riseMin,
-  bubbleRiseMax: mech.collectables.riseMax,
-  riseSpeedExponent: mech.collectables.riseSpeedExponent,
-  bubbleWobbleMin: mech.collectables.wobbleMin,
-  bubbleWobbleMax: mech.collectables.wobbleMax,
+  get bubbleRiseMin() {
+    return mech.collectables.riseMin;
+  },
+  set bubbleRiseMin(v: number) {
+    mech.collectables.riseMin = v;
+  },
+  get bubbleRiseMax() {
+    return mech.collectables.riseMax;
+  },
+  set bubbleRiseMax(v: number) {
+    mech.collectables.riseMax = v;
+  },
+  get riseSpeedExponent() {
+    return mech.collectables.riseSpeedExponent;
+  },
+  set riseSpeedExponent(v: number) {
+    mech.collectables.riseSpeedExponent = v;
+  },
+  get bubbleWobbleMin() {
+    return mech.collectables.wobbleMin;
+  },
+  set bubbleWobbleMin(v: number) {
+    mech.collectables.wobbleMin = v;
+  },
+  get bubbleWobbleMax() {
+    return mech.collectables.wobbleMax;
+  },
+  set bubbleWobbleMax(v: number) {
+    mech.collectables.wobbleMax = v;
+  },
 
   // Hazards.
-  hazardSlowFactor: mech.hazards.slowFactor,
-  hazardSlowSeconds: mech.hazards.slowSeconds,
-  hazardCrabLaunchMps: mech.hazards.crabLaunchMps,
-  hazardLaunchDecaySeconds: mech.hazards.launchDecaySeconds,
-  hazardCrabLaunchScreenBonus: mech.hazards.crabLaunchScreenBonus,
-  invulnerableSeconds: mech.hazards.invulnerableSeconds,
-  /**
-   * Bait bubbles a fish-fart leaves behind.
-   *
-   * The talent's backlash, and therefore its balance: the fart pushes fish away AND feeds them, so a rescue
-   * that is not followed up makes the swarm bigger. Read from the config so the size of that backlash is a
-   * tunable number rather than a constant buried in the talent's code.
-   */
-  fartBaitCount: 3,
+  get hazardSlowFactor() {
+    return mech.hazards.slowFactor;
+  },
+  set hazardSlowFactor(v: number) {
+    mech.hazards.slowFactor = v;
+  },
+  get hazardSlowSeconds() {
+    return mech.hazards.slowSeconds;
+  },
+  set hazardSlowSeconds(v: number) {
+    mech.hazards.slowSeconds = v;
+  },
+  get hazardLaunchDecaySeconds() {
+    return mech.hazards.launchDecaySeconds;
+  },
+  set hazardLaunchDecaySeconds(v: number) {
+    mech.hazards.launchDecaySeconds = v;
+  },
+  get hazardCrabLaunchScreenBonus() {
+    return mech.hazards.crabLaunchScreenBonus;
+  },
+  set hazardCrabLaunchScreenBonus(v: number) {
+    mech.hazards.crabLaunchScreenBonus = v;
+  },
+  get invulnerableSeconds() {
+    return mech.hazards.invulnerableSeconds;
+  },
+  set invulnerableSeconds(v: number) {
+    mech.hazards.invulnerableSeconds = v;
+  },
 };
 
 /** The config file itself, re-exported so callers have one import for "the mechanics". */
