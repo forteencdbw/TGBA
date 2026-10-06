@@ -2849,7 +2849,7 @@ audio.play('hit');
          * nearly cancel and the launch reads as nothing happening at all. See the tuning note.
          */
         const asScreenFraction =
-          (e.impulse / Math.max(1, this.camera.viewport.visibleDepthMeters)) * tuning.hazardCrabLaunchScreenBonus;
+          (e.impulse / Math.max(1, this.camera.viewport.visibleDepthMeters)) * mech.hazards.crab.launchScreenBonus;
         this.player.impulseVy = Math.max(this.player.impulseVy, asScreenFraction);
         this.lastComedyBeat = { what: 'crab', at: this.elapsed };
         // The crab is the one hazard that can HELP, so it gets an upward cue rather than a thud.

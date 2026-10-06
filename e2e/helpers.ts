@@ -244,7 +244,19 @@ export interface GameHandle {
     };
     level: { scrollSpeed: number };
     volume: { max: number; hitCost: number; laneRatio: number };
-    hazards: { crabLaunchMps: number; crabLaunchScreenBonus: number; health: Record<string, number>; fleeScreensPerSecond: number };
+    /**
+     * `crab` is nested because the config groups a creature's numbers into its own block; see `hazards.crab` there.
+     *
+     * Nothing in the suite reads the two crab fields this type used to declare at the top level (`crabLaunchMps`,
+     * `crabLaunchScreenBonus`) -- they were described here and never used, which is what a typed slice of a config
+     * looks like when the config moves under it. Kept, because the next spec that wants to place a crab deliberately
+     * will want them, and a wrong path here is now a compile error rather than an `undefined` at runtime.
+     */
+    hazards: {
+      crab: { armDistanceMeters: number; fuseSeconds: number; launchMps: number; apexSeconds: number; launchScreenBonus: number };
+      health: Record<string, number>;
+      fleeScreensPerSecond: number;
+    };
     /**
      * The gun, read from the config the RUNNING build loaded rather than from a number written into the test: "how
      * fast does it fire" and "how much does a hit take off" are the two halves of what the spec is asserting.

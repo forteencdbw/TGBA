@@ -388,21 +388,25 @@ export const hazardTuning = {
     return mech.hazards.trashMinGripSeconds;
   },
   /**
-   * The crab's telegraph fires when the player comes within this many metres above it. (config)
+   * The crab, read live from its own block in the config.
    *
-   * Generous on purpose: it has to be visible while the player still has time to decide, and the crab is the
-   * one hazard whose effect is arguably GOOD, so the player wants enough warning to aim at it.
+   * All five of the crab's numbers are `mech.hazards.crab.*` now, including `apexSeconds`, which used to be a literal
+   * right here in the middle of this table. The call sites below did not change: they still say
+   * `hazardTuning.crabLaunchMps`, so this table is a live view of the creature's block rather than a second home for
+   * its numbers. See the config's note at `hazards.crab` for the pattern and why it is the pattern.
    */
   get crabArmDistanceMeters() {
-    return mech.hazards.crabArmDistanceMeters;
+    return mech.hazards.crab.armDistanceMeters;
   },
   get crabFuseSeconds() {
-    return mech.hazards.crabFuseSeconds;
+    return mech.hazards.crab.fuseSeconds;
   },
   get crabLaunchMps() {
-    return mech.hazards.crabLaunchMps;
+    return mech.hazards.crab.launchMps;
   },
-  crabApexSeconds: 1.1,
+  get crabApexSeconds() {
+    return mech.hazards.crab.apexSeconds;
+  },
 
   // --- Emergence (D5) -----------------------------------------------------
   /**

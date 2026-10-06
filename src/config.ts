@@ -176,12 +176,7 @@ export const tuning = {
   set hazardLaunchDecaySeconds(v: number) {
     mech.hazards.launchDecaySeconds = v;
   },
-  get hazardCrabLaunchScreenBonus() {
-    return mech.hazards.crabLaunchScreenBonus;
-  },
-  set hazardCrabLaunchScreenBonus(v: number) {
-    mech.hazards.crabLaunchScreenBonus = v;
-  },
+
   get invulnerableSeconds() {
     return mech.hazards.invulnerableSeconds;
   },

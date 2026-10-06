@@ -597,11 +597,27 @@ export interface Mechanisms {
     fleeScreensPerSecond: number;
     /** How visible a creature is while it leaves, 0..1. The same drawing, dimmed, rather than a second palette. */
     fleeAlpha: number;
-    crabLaunchMps: number;
+    /**
+     * The crab, one block.
+     *
+     * The first creature to be grouped this way -- see the config's note at `hazards.crab`. Its four numbers used to be
+     * flat keys on this object between the cross-creature ones, which is how a creature's facts end up spread across a
+     * file: `crabLaunchMps` two lines from `trashDrainPerSecond`, and the fifth of them (`apexSeconds`) not in the file
+     * at all but written into `src/hazards.ts` as a literal.
+     */
+    crab: {
+      /** How close the crab must be to arm its fuse. */
+      armDistanceMeters: number;
+      /** Seconds from armed to detonation. */
+      fuseSeconds: number;
+      /** Launch speed imparted to the bubble, world metres per second. */
+      launchMps: number;
+      /** Seconds for that launch to reach the top of its arc. */
+      apexSeconds: number;
+      /** What the launch distance is multiplied by, on top of the world impulse. See the config's note. */
+      launchScreenBonus: number;
+    };
     launchDecaySeconds: number;
-    crabLaunchScreenBonus: number;
-    crabArmDistanceMeters: number;
-    crabFuseSeconds: number;
     trashDrainPerSecond: number;
     trashMinGripSeconds: number;
     /**
@@ -1840,11 +1856,13 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.health', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0), describe: 'an object of hazard kind to hit points, e.g. { fish: 3, jelly: 0 }; 0 means the bullets pass through' },
   { path: 'hazards.fleeScreensPerSecond', check: (v) => typeof v === 'number' && v > 0.05 && v <= 8, describe: 'screen heights per second, above 0.05 and at most 8; 0.9 is about a second to leave the screen' },
   { path: 'hazards.fleeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1 for a creature that is leaving' },
-  { path: 'hazards.crabLaunchMps', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  /** The crab: one row per key of its own block, for the reason the config gives at `hazards.crab`. */
+  { path: 'hazards.crab.armDistanceMeters', check: (v) => typeof v === 'number' && v >= 0, describe: 'metres of 0 or more; the distance at which the fuse is lit' },
+  { path: 'hazards.crab.fuseSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
+  { path: 'hazards.crab.launchMps', check: (v) => typeof v === 'number' && v >= 0, describe: 'metres per second, 0 or more' },
+  { path: 'hazards.crab.apexSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
+  { path: 'hazards.crab.launchScreenBonus', check: (v) => typeof v === 'number' && v >= 0, describe: 'a multiplier of 0 or more' },
   { path: 'hazards.launchDecaySeconds', check: (v) => typeof v === 'number' && v > 0.01, describe: 'seconds above 0.01' },
-  { path: 'hazards.crabLaunchScreenBonus', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
-  { path: 'hazards.crabArmDistanceMeters', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
-  { path: 'hazards.crabFuseSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.trashDrainPerSecond', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.trashMinGripSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'hazards.urchinDrainPerSecond', check: (v) => typeof v === 'number' && v >= 0, describe: 'hit points per second, 0 or more; 0 makes the urchin harmless once swallowed' },
