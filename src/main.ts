@@ -3,7 +3,7 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeL
 import { tuning } from './config';
 import { DEPTH_TOTAL, LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, selectLevel, type EntrySide, type Level, type LevelEntry } from './levels';
 import { Progression } from './progress';
-import { blastRadiusFraction, HazardField, hazardHealth, hazardArtSpriteForTest, HIT_EVENTS, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
+import { blastRadiusFraction, HazardField, hazardHealth, hazardArtSpriteForTest, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
 import { BulletField, paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
@@ -2253,7 +2253,7 @@ class Game {
          * delta into a draw call that does not otherwise need one. The radii arrive as lane fractions and become metres here,
          * which is the only place that knows how wide the lane is.
          */
-        for (const event of HIT_EVENTS.splice(0, HIT_EVENTS.length)) {
+        for (const event of this.hazards.takeHitEvents()) {
           this.hitParticles.emit({
             x: event.x,
             y: event.y,

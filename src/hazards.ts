@@ -865,6 +865,18 @@ export class HazardField {
   damaged = 0;
 
   /**
+   * Everything `hit` has been told about since the last `takeHitEvents`.
+   *
+   * See `HazardHitEvent` for why this is the field's own list rather than a shared one.
+   */
+  private readonly hitEvents: HazardHitEvent[] = [];
+
+  /** Hand over what has happened since the last call, and forget it. */
+  takeHitEvents(): readonly HazardHitEvent[] {
+    return this.hitEvents.splice(0, this.hitEvents.length);
+  }
+
+  /**
    * Take hit points off one creature, and let it go when they run out.
    *
    * Here rather than in the bullets' module because the STATE is this module's: `health` and `flee` belong to the
@@ -910,7 +922,7 @@ export class HazardField {
     }
     if (hazard.health > 0) {
       this.damaged++;
-      HIT_EVENTS.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'hit', colour: KIND_TUNING[hazard.kind].colour });
+      this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'hit', colour: KIND_TUNING[hazard.kind].colour });
       return 'damaged';
     }
     /**
@@ -923,7 +935,7 @@ export class HazardField {
     if (hazard.kind === 'bombfish') {
       hazard.blastFuse = 0;
       this.fled++;
-      HIT_EVENTS.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour });
+      this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour });
       return 'fled';
     }
     /**
@@ -937,7 +949,7 @@ export class HazardField {
     if (hazard.kind === 'boss') {
       this.killed++;
       // The boss is the one thing that is KILLED rather than driven off, and it breaks like anything else.
-      HIT_EVENTS.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour });
+      this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour });
       return 'killed';
     }
     /**
@@ -2198,6 +2210,7 @@ function paintLure(
    * the angle and length are there to point it at the tip of whatever rod the artist drew -- two numbers, no re-export.
    */
   const { tipX, tipY, baseX, baseY } = lureTip(x, y, r, lure, isYFlipped(g));
+  if (LURE_PROBE.length >= LURE_PROBE_CAP) LURE_PROBE.shift();
   LURE_PROBE.push({ x, y, r, tipX, tipY, angle: lure.stemAngle, glowRadius: lure.glowRadius });
   if (lure.stemWidth > 0) {
     g.moveTo(baseX, baseY)
@@ -2217,15 +2230,36 @@ function paintLure(
  * The owner's suggestion, and it is the right shape for a SPRITE: a filter on the object itself needs no shared layer, so
  * there is no ordering question and no group alpha to compute wrong -- both of which is where the first attempt at this
  * failed when the objects were Graphics.
+ *
+ * Built on FIRST USE rather than at module load, and the difference is not tidiness: a `ColorMatrixFilter` compiles a GL
+ * program when it is constructed, which needs a canvas, so constructing one at the top level made this whole module
+ * unloadable outside a browser -- `import('./hazards')` under Node threw `document is not defined` before a single line of
+ * the simulation could be reached. Nothing else in this file touches the GPU until something is drawn.
  */
-const WHITE_OUT = new ColorMatrixFilter();
-WHITE_OUT.matrix = [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0];
+let WHITE_OUT: ColorMatrixFilter | null = null;
+
+function whiteOutFilter(): ColorMatrixFilter {
+  if (!WHITE_OUT) {
+    WHITE_OUT = new ColorMatrixFilter();
+    WHITE_OUT.matrix = [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0];
+  }
+  return WHITE_OUT;
+}
 
 /**
  * One sprite per creature that has art, keyed by the hazard's id, plus the texture cache.
  *
  * Pooled rather than rebuilt: a creature lives for seconds and there can be a dozen on screen, so building a Sprite per
  * frame is the bug that has already cost this project two rounds.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THIS POOL IS MODULE-LEVEL WHILE THE HIT QUEUE IS THE FIELD'S
+ * ---------------------------------------------------------------------------------------------
+ * Because two DIFFERENT fields draw through `paintHazards`: the game's own, and the throwaway one `src/codexUi.ts`
+ * builds for a card. A per-field pool would mean a card rebuilt its sprite on every redraw and left the previous one
+ * behind, and it is the reason the sweep below is by TIME rather than by "is this hazard still in the field" -- an
+ * id-based sweep deletes the card's sprite on the very next frame, which showed up as the anglerfish's glow blinking
+ * out in the book. Moving this into `HazardField` looks tidier and breaks the codex.
  */
 const ART_SPRITES = new Map<number, Sprite>();
 /** When each pooled sprite was last asked for, for the time-based sweep. */
@@ -2319,11 +2353,20 @@ export function lureTip(
   return { baseX, baseY, tipX: baseX + dirX * r * length, tipY: baseY + dirY * r * length };
 }
 
-/** The last few lures drawn, for probes. */
 /** Test hook: the art sprite for a creature, so a probe can check what is on it. */
 export function hazardArtSpriteForTest(id: number): Sprite | null {
   return ART_SPRITES.get(id) ?? null;
 }
+
+/**
+ * The last few lures drawn, for probes.
+ *
+ * A bounded ring rather than a log, and the bound is the point: this is written on every frame a lanternfish is on
+ * screen, so an unbounded push retains every lure drawn for the life of the page. It is also the probe that answered "the
+ * glow is not visible" -- it printed `tipX: null`, which is NaN, and that is how a config key that had landed inside a
+ * comment was found. A probe that leaks is a probe that gets deleted rather than capped, and this one is worth keeping.
+ */
+const LURE_PROBE_CAP = 8;
 
 export const LURE_PROBE: { x: number; y: number; r: number; tipX: number; tipY: number; angle: number; glowRadius: number }[] = [];
 
@@ -2332,13 +2375,23 @@ export const LURE_PROBE: { x: number; y: number; r: number; tipX: number; tipY: 
  *
  * A queue rather than a callback because damage arrives from several places and this is the one funnel they all share: the
  * simulation should not know what a spark is, and the renderer should not have to be told about bullets.
- */
-/**
+ *
+ * It is the FIELD's queue rather than a module-level array, because that is whose ids and whose radius fractions these
+ * are: the codex draws creatures through `paintHazards` with a throwaway field, and a shared queue meant the game was
+ * draining events that a page turn had nothing to do with. The field hands them over on request, so each frame takes
+ * exactly what the field produced.
+ *
  * The radius is a LANE FRACTION, not metres: the field does not know the lane's width, and the caller (which does) is the
  * one that draws in world units. At the impact point when there is one, so a spark is where the bullet landed rather than
  * where the creature's centre happens to be.
  */
-export const HIT_EVENTS: { x: number; y: number; radiusFraction: number; kind: 'hit' | 'defeat'; colour: number }[] = [];
+export interface HazardHitEvent {
+  x: number;
+  y: number;
+  radiusFraction: number;
+  kind: 'hit' | 'defeat';
+  colour: number;
+}
 
 export function paintHazards(
   g: Graphics,
@@ -2518,7 +2571,7 @@ export function paintHazards(
          * which brought in layer ordering and a group alpha that could compute to zero -- and a transparent layer and an
          * absent one look identical in a screenshot. Per object, there is nothing to get wrong.
          */
-        sprite.filters = h.hitFlash > 0 ? [WHITE_OUT] : [];
+        sprite.filters = h.hitFlash > 0 ? [whiteOutFilter()] : [];
         if (art.lure) paintLure(g, x, y, r, art.lure, elapsed);
         continue;
       }
