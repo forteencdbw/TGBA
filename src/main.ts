@@ -3,7 +3,7 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeL
 import { tuning } from './config';
 import { LEVEL, LEVELS, TIMELINE, currentSpawnBlocks, installSpawnBlocks, levelIndex, selectLevel, type EntrySide, type Level, type LevelEntry } from './levels';
 import { Progression } from './progress';
-import { blastRadiusFraction, HazardField, hazardHealth, hazardArtSpriteForTest, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind } from './hazards';
+import { blastRadiusFraction, HazardField, hazardArtSpriteForTest, KIND_TUNING, hazardTuning, LURE_PROBE, paintHazards, stomachEffect, type Hazard, type HazardKind, type SpawnOptions } from './hazards';
 import { BulletField, paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { ObstacleField, obstacleHealth, obstacleName, paintObstacles, type ObstacleKind } from './obstacles';
@@ -3074,53 +3074,27 @@ audio.play('skill');
     healthOverride?: number,
     path?: Hazard['path'],
   ): Hazard {
-    const radiusFraction = KIND_TUNING[kind].radius;
+    const lane = this.camera.viewport.laneWidthMeters;
     /**
-     * The boss's health is the LEVEL's, so it is passed in rather than read from `hazards.health`.
+     * Clamped into the lane ONLY when it is not arriving.
      *
-     * That table row exists only so the per-kind tables stay complete (and is 0, which every other consumer reads as
-     * "not shootable" -- correct for a boss spawned by accident, wrong for the real one).
+     * A side entry is placed outside the lane on purpose, so clamping it here would put it exactly on the edge --
+     * which is the one place the player would see it appear. The entry motion is what brings it inside. The clamp is
+     * here rather than in the factory because this is the only caller that knows how wide the lane is.
      */
-    const health = healthOverride ?? hazardHealth(kind);
-    return {
-      id: -Math.floor(Math.random() * 1e9),
-      kind,
-      /**
-       * Clamped into the lane ONLY when it is not arriving.
-       *
-       * A side entry is placed outside the lane on purpose, so clamping it here would put it exactly on the edge --
-       * which is the one place the player would see it appear. The entry motion is what brings it inside.
-       */
-      x: entry ? x : Math.max(0, Math.min(this.camera.viewport.laneWidthMeters, x)),
-      y,
-      radiusFraction,
-      phase: Math.random() * Math.PI * 2,
-      seed: Math.random() * 1000,
-      baitedUntil: 0,
-      squashed: 0,
-      gripping: false,
-      gripSeconds: 0,
-      fuse: kind === 'crab' ? hazardTuning.crabFuseSeconds : 0,
-      fired: false,
-      armed: false,
-      fed: 0,
-      digest: 0,
-      entry,
-      health,
-      maxHealth: health,
-      flee: null,
-      charge: null,
-      chargeRest: 0,
-      shootTimer: 0,
-      blastFuse: null,
-      tint: null,
-      hitFlash: 0,
-      knock: null,
-      discharge: 0,
-      dischargeRest: 0,
-      path: path ?? null,
-      foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
-    };
+    const spawnX = entry ? x : Math.max(0, Math.min(lane, x));
+    /**
+     * One factory for every creature, this one included.
+     *
+     * This method used to be a third field-by-field literal -- and the one that invented its own ids
+     * (`-Math.floor(Math.random() * 1e9)`), which the field's id counter exists precisely to prevent: the field retires
+     * eaten hazards by ID, so two creatures sharing one are two creatures eaten together.
+     */
+    const opts: SpawnOptions = {};
+    if (healthOverride !== undefined) opts.health = healthOverride;
+    if (entry !== null) opts.entry = entry;
+    if (path !== undefined) opts.path = path;
+    return this.hazards.spawnAt(kind, spawnX, y, opts);
   }
 
   /**

@@ -1,7 +1,7 @@
 import { CanvasTextMetrics, Container, Graphics, Text } from 'pixi.js';
 import { makeLabel } from './background';
 import { mech } from './mechanisms';
-import { HazardField, KIND_TUNING, hazardHealth, paintHazards, type HazardKind } from './hazards';
+import { HazardField, KIND_TUNING, paintHazards, type HazardKind } from './hazards';
 import { ObstacleField, paintObstacles } from './obstacles';
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
@@ -610,45 +610,21 @@ export class CodexUi {
        */
       const kind: HazardKind = icon.hazard;
       const lane = box / (KIND_TUNING[kind].radius * ICON_LANE_DIVISOR);
+      /**
+       * A card's creature comes from the same factory the water's creatures come from.
+       *
+       * This was a fourth hand-written `Hazard` literal -- thirty fields, and a new field would have had to be added
+       * here too or the card would have drawn a half-built creature. The three differences a card actually wants are
+       * said out loud instead.
+       */
       const field = new HazardField();
-      field.hazards = [
-        {
-          id: 0,
-          kind,
-          x: cx,
-          y: cy,
-          radiusFraction: KIND_TUNING[kind].radius,
-          phase: ICON_PHASE,
-          seed: 0,
-          baitedUntil: 0,
-          squashed: 0,
-          gripping: false,
-          gripSeconds: 0,
-          fuse: 0,
-          fired: false,
-          armed: false,
-          fed: 0,
-          digest: 0,
-          // Not arriving from anywhere: the card draws it at rest.
-          entry: null,
-          // Untouched hit points, so the card shows a creature rather than one that has been driven off.
-          health: hazardHealth(kind),
-          maxHealth: hazardHealth(kind),
-          flee: null,
-          charge: null,
-          chargeRest: 0,
-          shootTimer: 0,
-          blastFuse: null,
-          tint: null,
-          hitFlash: 0,
-          // Nothing has shot it: the card draws the creature at rest.
-          knock: null,
-          path: null,
-          discharge: 0,
-          dischargeRest: 0,
-          foamLife: 0,
-        },
-      ];
+      const card = field.spawnAt(kind, cx, cy, { deterministic: true });
+      // The pose is the card's, not the water's.
+      card.phase = ICON_PHASE;
+      // And nothing is burning down or about to break up: a card shows the CREATURE, not the state it is in.
+      card.fuse = 0;
+      card.foamLife = 0;
+      field.hazards = [card];
       // Not edible and drawn at rest: the card shows the CREATURE, not the state of the water it happens to be in.
       // `in-play` because a card is of a creature that has not been driven off, and a dimmed one on a card would
       // read as a rendering fault rather than as "this one is leaving".

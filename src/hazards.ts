@@ -749,6 +749,27 @@ export interface HazardContext {
  * are passive and drift on their own, hazards are active, have state machines, and act on the player.
  * Merging them would have produced one class where half the methods apply to half the members.
  */
+/**
+ * What a caller has to say about a creature it is placing; everything else is the factory's.
+ *
+ * See `HazardField.spawnAt` for why there is one factory rather than three field-by-field literals.
+ */
+export interface SpawnOptions {
+  /** Hit points, for a creature whose health comes from the level rather than from the per-kind table (the boss). */
+  health?: number;
+  /** Set while it is still arriving from a screen edge. The caller places it outside the lane; the factory leaves it. */
+  entry?: Hazard['entry'];
+  /** The spline it follows, if a level put it on one. */
+  path?: Hazard['path'];
+  /**
+   * A probe's creature: no random phase and no random head start on its timers, so "did it lunge" is not a coin flip.
+   *
+   * Everything the GAME places -- including a level's authored blocks -- gets the random head start, because its whole
+   * purpose is that a group entered in one frame does not act in one frame.
+   */
+  deterministic?: boolean;
+}
+
 export class HazardField {
   hazards: Hazard[] = [];
 
@@ -796,45 +817,7 @@ export class HazardField {
    * nothing, because the frame before it the player had swallowed one and the field had removed all four.
    */
   spawnForTest(kind: HazardKind, x: number, y: number): Hazard {
-    const health = hazardHealth(kind);
-    const hazard: Hazard = {
-      id: this.nextId++,
-      kind,
-      x,
-      y,
-      radiusFraction: KIND_TUNING[kind].radius,
-      phase: 0,
-      seed: 0,
-      baitedUntil: 0,
-      squashed: 0,
-      gripping: false,
-      gripSeconds: 0,
-      // The crab's launch fuse. The bomb fish's own fuses are lastFuse (outside) and the stomach's, which lives
-      // on the swallowed item rather than on the hazard.
-      fuse: 0,
-      fired: false,
-      armed: false,
-      fed: 0,
-      digest: 0,
-      entry: null,
-      health,
-      maxHealth: health,
-      flee: null,
-      charge: null,
-      blastFuse: null,
-      hitFlash: 0,
-      knock: null,
-      path: null,
-      discharge: 0,
-      dischargeRest: 0,
-      foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
-      tint: null,
-      // No random head start here: a test-spawned creature is placed ON the player to be observed, and a random
-      // rest would make "did it lunge" a coin flip in the one place determinism matters most.
-      chargeRest: 0,
-      // Likewise no random offset on the trigger finger.
-      shootTimer: 0,
-    };
+    const hazard = this.spawnAt(kind, x, y, { deterministic: true });
     this.hazards.push(hazard);
     return hazard;
   }
@@ -1466,38 +1449,56 @@ export class HazardField {
     }
   }
 
-  private spawn(ctx: HazardContext): Hazard {
-    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain'];
-    const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
+  /**
+   * Build one creature.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THERE IS ONE OF THESE
+   * ---------------------------------------------------------------------------------------------
+   * Three places built a `Hazard` field by field: the random spawner, the probe hook, and `Game.makeHazard` for
+   * everything a LEVEL places. Three lists of the same thirty fields, and they had drifted apart:
+   *
+   *   - only two of them used this field's id counter. The game's invented `-Math.floor(Math.random() * 1e9)` instead,
+   *     which is precisely what the counter's own comment says it exists to prevent (two creatures sharing an id are two
+   *     creatures eaten together);
+   *   - only the random spawner gave a group a random head start on its charge and shot timers -- and that head start's
+   *     comment says it is what stops a shoal volleying in unison, which is a statement about GROUPS, and the groups the
+   *     player meets are the ones a level places;
+   *   - one of them set a crab fuse on every creature regardless of kind.
+   *
+   * What the callers genuinely differ about is three things, so those are the options. Everything else about a creature
+   * -- its size, its health, its per-kind initial state -- is decided here, once.
+   */
+  spawnAt(kind: HazardKind, x: number, y: number, opts: SpawnOptions = {}): Hazard {
     const radiusFraction = KIND_TUNING[kind].radius;
-    const margin = ctx.laneWidth * radiusFraction * 1.4;
-    const health = hazardHealth(kind);
+    /**
+     * The boss's health comes from the LEVEL, so it can be overridden.
+     *
+     * The `hazards.health` row for it exists only so the per-kind tables stay complete, and it is 0, which every other
+     * consumer reads as "not shootable" -- correct for a boss spawned by accident, wrong for the real one.
+     */
+    const health = opts.health ?? hazardHealth(kind);
+    const headStart = opts.deterministic ? 0 : 1;
     return {
       id: this.nextId++,
       kind,
-      x: margin + Math.random() * Math.max(0.01, ctx.laneWidth - margin * 2),
-      /**
-       * Appear ABOVE the view so the player always watches it enter.
-       *
-       * Deliberately NOT clamped to the level's length. Near the seabed the top of the view is already close
-       * to the level's ceiling, so clamping made hazards materialise in the middle of the screen --
-       * the same trap that once piled the collectable seeding into one band. Anything above the play
-       * area simply arrives later.
-       */
-      y: ctx.max + 20 + Math.random() * 40,
+      x,
+      y,
       radiusFraction,
-      phase: Math.random() * Math.PI * 2,
-      seed: Math.random() * 1000,
+      phase: opts.deterministic ? 0 : Math.random() * Math.PI * 2,
+      seed: opts.deterministic ? 0 : Math.random() * 1000,
       baitedUntil: 0,
       squashed: 0,
       gripping: false,
-      fuse: hazardTuning.crabFuseSeconds,
+      gripSeconds: 0,
+      // The crab's launch fuse. The bomb fish's own fuses are elsewhere: one on this field's exterior timer, one on the
+      // swallowed item in `src/spit.ts`. Per-kind, because only the crab lights one at birth.
+      fuse: kind === 'crab' ? hazardTuning.crabFuseSeconds : 0,
       fired: false,
       armed: false,
       fed: 0,
       digest: 0,
-      entry: null,
-      gripSeconds: 0,
+      entry: opts.entry ?? null,
       health,
       maxHealth: health,
       flee: null,
@@ -1505,16 +1506,25 @@ export class HazardField {
       blastFuse: null,
       hitFlash: 0,
       knock: null,
-      path: null,
       discharge: 0,
       dischargeRest: 0,
       foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
       tint: null,
-      // A random head start, so a shoal does not lunge in unison.
-      chargeRest: Math.random() * (mech.charges.chargers[kind]?.cooldownSeconds ?? 0),
+      // A random head start, so a group does not lunge in unison. Zero for a probe, where "did it lunge" must not be a
+      // coin flip.
+      chargeRest: headStart * Math.random() * (mech.charges.chargers[kind]?.cooldownSeconds ?? 0),
       // And a random offset on the trigger finger, so a colony does not volley.
-      shootTimer: Math.random() / Math.max(0.01, mech.enemyBullets.shooters[kind]?.perSecond ?? 1),
+      shootTimer: headStart * (Math.random() / Math.max(0.01, mech.enemyBullets.shooters[kind]?.perSecond ?? 1)),
+      path: opts.path ?? null,
     };
+  }
+
+  private spawn(ctx: HazardContext): Hazard {
+    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain'];
+    const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
+    const radiusFraction = KIND_TUNING[kind].radius;
+    const margin = ctx.laneWidth * radiusFraction * 1.4;
+    return this.spawnAt(kind, margin + Math.random() * Math.max(0.01, ctx.laneWidth - margin * 2), ctx.max + 20 + Math.random() * 40);
   }
 
   /**
@@ -2512,8 +2522,6 @@ export function paintHazards(
           ART_SPRITES.set(h.id, sprite);
         }
         ART_SEEN.set(h.id, ART_NOW);
-        if (false) {
-        }
         const size = r * 2 * art.scale;
         sprite.texture = texture;
         sprite.visible = true;
