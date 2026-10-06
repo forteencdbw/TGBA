@@ -25,10 +25,11 @@ import { suctionRadiusFraction } from './suction';
 import { Stomach, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
-import { Assets, Sprite, Text as PixiText, Texture } from 'pixi.js';
+import { Assets, Sprite, Texture } from 'pixi.js';
 import { allAssetNames, assetTextureNow, assetUrl, preloadAssets } from './assets';
 import { ParticleField } from './particles';
 import { ChargeTrail } from './chargeTrail';
+import { LoadingScreen } from './loading';
 
 /**
  * Whether the chain of parents above `node` flips the Y axis.
@@ -133,18 +134,12 @@ class Game {
    */
   private readonly leaving = new Graphics();
   private readonly bubble = new Graphics();
-  /** The loading screen: a scrim, a progress track and bar, a label, and how far along the fetch is. */
-  private readonly loadScrim = new Graphics();
+  /** The loading page: the backdrop, the bar and the numbers, over everything. See `src/loading.ts`. */
+  private readonly loading = new LoadingScreen();
   /** Sparks and debris from hits, in world space. See `src/particles.ts`. */
   private readonly hitParticles = new ParticleField();
   /** The bubble animation that rides behind every charge. See `src/chargeTrail.ts`. */
   private readonly chargeTrail = new ChargeTrail();
-  private readonly loadBar = new Graphics();
-  private readonly loadLabel = new PixiText({
-    text: '',
-    style: { fill: 0xeaf9ff, fontFamily: mech.text.fontFamily, align: 'center' },
-  });
-  private loadProgress = 0;
   /** The bubble type chosen on the menu, held while the pictures arrive. */
   private pendingType: string | null = null;
   /**
@@ -296,10 +291,6 @@ class Game {
     // Over the water and under the HUD: a spark is part of the scene, not a readout.
     this.scene.world.addChild(this.hitParticles.graphics);
     this.scene.world.addChild(this.chargeTrail.root);
-    this.loadScrim.eventMode = 'none';
-    this.loadBar.eventMode = 'none';
-    this.loadLabel.eventMode = 'none';
-    this.app.stage.addChild(this.loadScrim, this.loadBar, this.loadLabel);
     // The flash sits directly over the water but UNDER the HUD, so the depth readout stays legible
     // through it -- the player should still be able to see where they got to during the white-out.
     this.flash.visible = false;
@@ -319,9 +310,10 @@ class Game {
      * The UI goes on top of everything, and the MENU on top of the UI.
      *
      * Order matters here rather than being incidental: the settings panel has to cover the HUD and the water,
-     * and the menu has to cover the settings gear while it is showing.
+     * and the menu has to cover the settings gear while it is showing. The loading page joins them at the front --
+     * it is a full screen in its own right, so nothing of the level or its controls may be drawn over it.
      */
-    this.app.stage.addChild(this.settings.root, this.menu.root, this.codex.root, this.summary.root);
+    this.app.stage.addChild(this.loading.root, this.settings.root, this.menu.root, this.codex.root, this.summary.root);
     this.summary.onMenu = () => this.exitToMenu();
     this.settings.setVolume(audio.getVolume());
     this.settings.setOpen(false);
@@ -506,6 +498,15 @@ class Game {
       this.codex.handlePointerDown(x, y);
       return;
     }
+    /**
+     * And so does the loading page, which is the one that was missing.
+     *
+     * It is a full screen, so a press on it means nothing -- but the touch layer is a coordinate test rather than a
+     * display-list hit test, so it went on accepting drags through a page covering the whole canvas: the bubble could
+     * be steered while the pictures were still arriving, and the drag armed there was handed to the run the instant it
+     * began. Refusing the stream is the fix; hiding the controls underneath is only the appearance of one.
+     */
+    if (this.run.phase === 'loading') return;
     if (this.summary.handlePointerDown(x, y)) return;
     if (this.settings.handlePointerDown(pointerId, x, y)) return;
     if (this.run.phase === 'paused') return;
@@ -523,6 +524,8 @@ class Game {
       // Nothing on the codex page tracks a drag, so a move is simply not the water's business either.
       return;
     }
+    // The loading page has no controls at all: see `handlePointerDown`. A move must not steer through it.
+    if (this.run.phase === 'loading') return;
     if (this.settings.handlePointerMove(pointerId, x, y)) return;
     if (this.run.phase === 'paused') return;
     this.touch.onPointerMove(pointerId, x, y);
@@ -539,6 +542,8 @@ class Game {
     }
     // The codex fires on press, so a release has nothing left to do -- but it must still not reach the water.
     if (this.run.phase === 'codex') return;
+    // Same for the loading page: the presses it swallowed have no releases to match, and this one is not the water's.
+    if (this.run.phase === 'loading') return;
     // The summary panel owns the screen while it is up: its one button is the only thing a release can mean.
     if (this.summary.handlePointerUp(at.x, at.y)) return;
     if (this.settings.handlePointerUp(pointerId, at.x, at.y)) return;
@@ -1364,6 +1369,8 @@ class Game {
     this.settings.layout(viewport);
     this.menu.layout(viewport);
     this.codex.layout(viewport);
+    // The loading page is sized in the canvas's own pixels rather than in the play area's: it is a page, not a HUD.
+    this.loading.layout(screenW, screenH);
 
     /**
      * The results card, scaled by the world zoom -- and WRAPPED to the screen.
@@ -1907,25 +1914,25 @@ class Game {
    * death, by contrast, starts the same level with nothing, which is the same flag left at its default.
    */
   /**
-   * Show the loading screen, fetch the level's pictures, then start the run.
+   * Show the loading page, fetch the level's pictures, then start the run.
    *
-   * EVERY picture rather than only this level's, deliberately: the whole set is a few hundred kilobytes of authored art, and
+   * EVERY picture rather than only this level's, deliberately: the whole set is a few megabytes of authored art, and
    * fetching it once means no later level -- including the automatic hand-off from one to the next -- ever shows a loading
-   * screen again. Per-level fetching would add a screen between every pair of levels to save nothing.
+   * page again. Per-level fetching would add a page between every pair of levels to save nothing.
+   *
+   * The page is a FULL SCREEN, and one that refuses the pointer stream for as long as it is up (see
+   * `handlePointerDown`): before that it was a bar drawn under the water with the touch controls still live over it, so
+   * the player could steer a bubble through a level that had not started.
    */
   private async beginWithLoading(typeId: string): Promise<void> {
     this.pendingType = typeId;
     this.run.phase = 'loading';
-    this.loadProgress = 0;
     this.menu.root.visible = false;
-    this.layoutLoading(this.app.screen.width, this.app.screen.height, 0);
-    await preloadAssets(allAssetNames(), (done, total) => {
-      this.loadProgress = total > 0 ? done / total : 1;
-      this.layoutLoading(this.app.screen.width, this.app.screen.height, this.loadProgress);
-    });
-    this.loadScrim.clear();
-    this.loadBar.clear();
-    this.loadLabel.visible = false;
+    // The page takes the screen, so any finger the game thought it had is forgotten -- a drag armed on the way in
+    // would otherwise be handed to the run the moment it starts.
+    this.touch.releaseAll();
+    this.loading.begin();
+    await preloadAssets(allAssetNames(), (progress) => this.loading.update(progress));
     if (this.pendingType) {
       const type = this.pendingType;
       this.pendingType = null;
@@ -1933,31 +1940,6 @@ class Game {
       // starts exactly as it always did once the art is in.
       this.enterFromMenu(type);
     }
-  }
-
-  /** The scrim, track, bar and label for a given progress. */
-  private layoutLoading(width: number, height: number, progress: number): void {
-    const cfg = mech.loading;
-    const s = designScale(width, height);
-    this.loadScrim.clear();
-    this.loadScrim.rect(0, 0, width, height).fill({ color: cfg.scrimColour, alpha: cfg.scrimAlpha });
-    const barW = Math.min(width * 0.7, cfg.maxWidth * s);
-    const barH = cfg.barHeight * s;
-    const x = (width - barW) / 2;
-    const y = height / 2;
-    this.loadBar.clear();
-    this.loadBar.roundRect(x, y, barW, barH, barH / 2).fill({ color: cfg.trackColour, alpha: 1 });
-    if (progress > 0) {
-      this.loadBar.roundRect(x, y, Math.max(barH, barW * Math.min(1, progress)), barH, barH / 2).fill({ color: cfg.barColour, alpha: 1 });
-    }
-    this.loadLabel.visible = true;
-    this.loadLabel.text = cfg.label + '  ' + Math.round(Math.min(1, progress) * 100) + '%';
-    this.loadLabel.style.fill = cfg.textColour;
-    this.loadLabel.style.fontSize = cfg.textSize;
-    this.loadLabel.scale.set(s);
-    this.loadLabel.anchor.set(0.5, 0);
-    this.loadLabel.x = width / 2;
-    this.loadLabel.y = y + barH + 18 * s;
   }
 
   private startRun(carryScore = false): void {
@@ -2602,12 +2584,15 @@ class Game {
     this.scene.update(this.camera, this.run.player, dt, this.run.scrolled, LEVEL);
 
     /**
-     * The HUD and the water are hidden on the menu AND on the codex page.
+     * The HUD and the water are hidden on the menu, on the codex page AND behind the loading page.
      *
-     * Both draw an opaque backdrop, so leaving them visible underneath would only cost fill rate -- but the HUD also
-     * reports a live depth for a level that is not running, which is worse than wasteful.
+     * All three draw an opaque backdrop, so leaving them visible underneath would only cost fill rate -- but the HUD
+     * also reports a live depth for a level that is not running, which is worse than wasteful. The loading page is the
+     * same argument with a control in it: everything it covers is something the player would otherwise be able to
+     * touch while the pictures arrive, and a bubble that answers the finger on a page that has not started is exactly
+     * the bug this list is here to prevent.
      */
-    const fullScreenPage = this.run.phase === 'menu' || this.run.phase === 'codex';
+    const fullScreenPage = this.run.phase === 'menu' || this.run.phase === 'codex' || this.run.phase === 'loading';
     const inMenu = this.run.phase === 'menu';
     this.hud.root.visible = !fullScreenPage;
     this.scene.root.visible = !fullScreenPage;
@@ -2703,6 +2688,14 @@ class Game {
     if (inMenu) this.menu.update(dt);
     // The codex draws nothing per frame: a tab press, a page turn and a resize each schedule their own redraw.
     this.codex.root.visible = this.run.phase === 'codex';
+    /**
+     * The loading page shows for exactly as long as the phase says, rather than being turned on and off by the loader.
+     *
+     * One owner for `visible` means the page cannot be left up by a path that forgot to hide it, and it goes away on
+     * the frame the run's first phase begins. Its DRAWING is still the loader's business: this only says when it may
+     * be seen.
+     */
+    this.loading.root.visible = this.run.phase === 'loading';
     /**
      * The banners and the results card are NOT touched here.
      *

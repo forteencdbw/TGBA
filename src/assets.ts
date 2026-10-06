@@ -161,6 +161,68 @@ export function assetTextureNow(name: string): Texture | null {
   return texture && texture.width > 0 ? texture : null;
 }
 
+/** What the server said each URL weighs, so a second start does not ask again. See `assetByteSizes`. */
+const BYTE_SIZES = new Map<string, number>();
+
+/**
+ * How big each picture is, asked of the server rather than guessed.
+ *
+ * A HEAD per file, because the sizes have to be true at RUNTIME: the number the loading page reports is the number the
+ * server served, and a manifest baked at build time would be a second source of truth that goes stale the moment a
+ * picture is replaced by hand. The answers are cached per URL for the session, so the second start -- a Pixi cache hit
+ * that shows the page for one frame -- does not ask again.
+ *
+ * A file the server will not describe (no `Content-Length`, a HEAD it refuses) counts as 0 rather than as a failure:
+ * these numbers are a REPORT about the download, and a report must never be able to stop it.
+ */
+export async function assetByteSizes(names: readonly string[]): Promise<Map<string, number>> {
+  const sizes = new Map<string, number>();
+  await Promise.all(
+    names.map(async (name) => {
+      const url = assetUrl(name);
+      if (!url) return;
+      const known = BYTE_SIZES.get(url);
+      if (known !== undefined) {
+        sizes.set(name, known);
+        return;
+      }
+      let bytes = 0;
+      try {
+        const response = await fetch(url, { method: 'HEAD' });
+        const header = response.headers.get('content-length');
+        const parsed = header === null ? Number.NaN : Number(header);
+        if (Number.isFinite(parsed) && parsed > 0) bytes = parsed;
+      } catch {
+        // See above: the pictures are the point, and the sizes are a report about them.
+      }
+      BYTE_SIZES.set(url, bytes);
+      sizes.set(name, bytes);
+    }),
+  );
+  return sizes;
+}
+
+/**
+ * What the loading page is told, once per picture that lands.
+ *
+ * The BYTES are the reason this is an object rather than two counters: "12 of 17 pictures" is a progress bar that
+ * stalls on a big file, and a page that claims to be a download has to report what a download reports -- how much has
+ * arrived, out of how much, at what rate. `seconds` comes from here rather than from the caller's own clock so that
+ * the rate and the counts are measured against the same start.
+ */
+export interface PreloadProgress {
+  /** Pictures that have landed. */
+  done: number;
+  /** Pictures to fetch. */
+  total: number;
+  /** Bytes of the ones that have landed, as far as the server has said. */
+  bytesDone: number;
+  /** Bytes of the whole set, as far as the server has said. 0 until it answers, and 0 if it never does. */
+  bytesTotal: number;
+  /** Seconds since the preload began. */
+  seconds: number;
+}
+
 /**
  * Fetch pictures and wait until they can be DRAWN, reporting progress as each one lands.
  *
@@ -168,16 +230,43 @@ export function assetTextureNow(name: string): Texture | null {
  * called by NAME: a name with no file is counted as done rather than failing the load, since a missing picture should cost
  * one creature its art and not the whole level. The textures land in Pixi's cache, so every later request -- a creature's
  * art, a sprite sheet's frames -- is a cache hit rather than a second decode.
+ *
+ * The SIZES are asked for in the background and never awaited. Awaiting them would put a round trip in front of the
+ * pictures -- and worse, a HEAD per file would queue on the same handful of connections the pictures need -- so the
+ * page's totals fill in a moment after the first frame instead. Nothing the report says may delay what it reports on.
  */
-export async function preloadAssets(names: string[], onProgress: (done: number, total: number) => void): Promise<void> {
+export async function preloadAssets(
+  names: string[],
+  onProgress: (progress: PreloadProgress) => void,
+): Promise<void> {
   const todo = [...new Set(names)].filter((name) => name.length > 0);
-  let done = 0;
-  onProgress(0, todo.length);
+  const started = performance.now();
+  const sizes = new Map<string, number>();
+  const landed: string[] = [];
+  /** Summed on demand rather than accumulated: a total that is recomputed cannot drift from the map it comes from. */
+  const bytesOf = (from: readonly string[]): number => from.reduce((sum, name) => sum + (sizes.get(name) ?? 0), 0);
+  const report = (): void =>
+    onProgress({
+      done: landed.length,
+      total: todo.length,
+      bytesDone: bytesOf(landed),
+      bytesTotal: bytesOf(todo),
+      seconds: (performance.now() - started) / 1000,
+    });
+
+  report();
+  void assetByteSizes(todo).then((found) => {
+    for (const [name, bytes] of found) sizes.set(name, bytes);
+    // A picture that landed before its size was known is counted now, which is the whole reason the totals are
+    // summed from the two lists rather than added up as they arrive.
+    report();
+  });
+
   await Promise.all(
     todo.map(async (name) => {
       await loadAssetTexture(name);
-      done += 1;
-      onProgress(done, todo.length);
+      landed.push(name);
+      report();
     }),
   );
 }

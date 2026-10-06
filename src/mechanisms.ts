@@ -969,6 +969,13 @@ export interface Mechanisms {
     coreStartRatio: number;
     coreEndRatio: number;
   };
+  /**
+   * The loading page: the full-screen backdrop, the bar, and the numbers under it.
+   *
+   * Every visual number lives here rather than in `src/loading.ts`, including the three GAPS: the block is centred as
+   * a whole and its parts are placed from those, so tuning the spacing does not mean counting offsets in the drawing
+   * code -- which is exactly what "the bar at exactly `height / 2`" used to be.
+   */
   loading: {
     scrimColour: number;
     scrimAlpha: number;
@@ -976,9 +983,20 @@ export interface Mechanisms {
     barColour: number;
     barHeight: number;
     maxWidth: number;
+    /** The page's heading, and the size and colour it is drawn at. */
     label: string;
+    titleSize: number;
+    titleColour: number;
+    /** The percentage and the two number lines. */
     textColour: number;
     textSize: number;
+    lineHeight: number;
+    /** Title to bar, bar to percentage, percentage to the numbers, all in design pixels. */
+    gapTitle: number;
+    gapBar: number;
+    gapStats: number;
+    /** How many seconds of the download the reported rate is measured over. */
+    speedWindowSeconds: number;
   };
   /**
    * The full-body white flash every hit gives: its shape, its strength, and how often it may restart.
@@ -2210,8 +2228,15 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'loading.barHeight', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },
   { path: 'loading.maxWidth', check: (v) => typeof v === 'number' && v >= 80 && v <= 2000, describe: 'design pixels between 80 and 2000' },
   { path: 'loading.label', check: (v) => typeof v === 'string', describe: 'a string' },
+  { path: 'loading.titleSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
+  { path: 'loading.titleColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'loading.textColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'loading.textSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
+  { path: 'loading.lineHeight', check: (v) => typeof v === 'number' && v >= 8 && v <= 80, describe: 'a line height between 8 and 80 design pixels' },
+  { path: 'loading.gapTitle', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
+  { path: 'loading.gapBar', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
+  { path: 'loading.gapStats', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
+  { path: 'loading.speedWindowSeconds', check: (v) => typeof v === 'number' && v >= 0.25 && v <= 30, describe: 'seconds between 0.25 and 30 that the reported rate is averaged over' },
   { path: 'hitFlash.seconds', check: (v) => typeof v === 'number' && v > 0 && v <= 2, describe: 'seconds above 0 and at most 2' },
   { path: 'hitFlash.peakIntensity', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an intensity between 0 and 1; 0 disables the full-body flash' },
   { path: 'hitFlash.riseFraction', check: (v) => typeof v === 'number' && v > 0 && v < 1, describe: 'a fraction above 0 and below 1 of the flash spent rising to its peak' },
