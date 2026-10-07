@@ -50,7 +50,7 @@ for (const [k, a] of Object.entries(o.animations)) {
   }
 }
 for (const [kind, art] of Object.entries(o.hazardArt)) {
-  for (const s of ['move', 'charge', 'dead']) {
+  for (const s of ['move', 'charge', 'attack', 'dead']) {
     const n = art[s];
     if (n === undefined) continue;
     const at = where(n) ? 'anim' : o.animations[n] ? 'anim' : null;

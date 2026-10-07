@@ -489,6 +489,30 @@ export interface Mechanisms {
        * metres read as a much bigger event, which is why its default is half.
        */
       knockbackScale: number;
+      /**
+       * The claw swing: how often it happens, when in the animation the grit leaves the claw, and where it goes.
+       *
+       * The boss is the only creature whose attack is an ANIMATION first and a hitbox second. Every other threat here
+       * announces itself with drawn geometry (a bow, a telegraph arc, a brightening plume); the boss announces this one
+       * by swinging its claw, which is why the moment the grit is released is expressed as a FRAME of `boss-attack`
+       * rather than as a number of seconds. Two clocks would be two things to keep in agreement, and the art is the one
+       * the player is actually reading.
+       */
+      /** Seconds between the end of one swing and the start of the next. */
+      attackEverySeconds: number;
+      /** Which frame of `animations.boss-attack` throws the grit -- the frame where the claw has just snapped shut. */
+      attackSprayFrame: number;
+      /** How many pieces of grit leave the claw in one swing. */
+      attackSprayCount: number;
+      /** The width the pieces are spread over, as a fraction of the lane, centred on the player's aim point. */
+      attackSpraySpread: number;
+      /** How far the grit takes to reach its target, in seconds. This is the dodge window. */
+      attackSpraySeconds: number;
+      /** Where the claw is, relative to the boss's own radius: +x is its front, -y is below it. */
+      attackSprayFromX: number;
+      attackSprayFromY: number;
+      /** Bow of each piece's curve, as a fraction of the distance travelled. 0 is a straight line. */
+      attackSprayBowRatio: number;
     };
     /** LEVEL 1's signature: the black smoker's lethal column. */
     vent: {
@@ -875,6 +899,8 @@ export interface Mechanisms {
       /** A picture name in `src/assets/`, or the NAME of an entry in `animations`. */
       move: string;
       charge?: string;
+      /** **攻击**: this creature throws something, and this is what it looks like while it does. */
+      attack?: string;
       /** **死亡动画**: this creature DIES rather than leaving (the boss), and this is what it becomes. */
       dead?: string;
       /** Overrides `hazardFront` for this kind. */
@@ -2256,6 +2282,14 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hitKnockback.meters', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'metres of recoil per landed hit, between 0 and 200; 0 turns the knockback off' },
   { path: 'hitKnockback.seconds', check: (v) => typeof v === 'number' && v > 0.01 && v <= 2, describe: 'seconds above 0.01 and at most 2, over which the recoil is spent' },
   { path: 'hazards.boss.knockbackScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier on hitKnockback.meters between 0 and 2; the boss holds station, so 0.5 is a nudge rather than a shove' },
+  { path: 'hazards.boss.attackEverySeconds', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 60, describe: 'seconds between claw swings, at least 0.5 and at most 60' },
+  { path: 'hazards.boss.attackSprayFrame', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 64, describe: 'a frame number of animations.boss-attack, from 1' },
+  { path: 'hazards.boss.attackSprayCount', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 40, describe: 'a whole number of grit pieces from 0 to 40; 0 makes the swing a pure animation' },
+  { path: 'hazards.boss.attackSpraySpread', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a lane fraction between 0 and 3' },
+  { path: 'hazards.boss.attackSpraySeconds', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 3, describe: 'seconds of travel between 0.05 and 3; this is the dodge window, so short is unfair and long is harmless' },
+  { path: 'hazards.boss.attackSprayFromX', check: (v) => typeof v === 'number' && v >= -4 && v <= 4, describe: 'a multiple of the boss radius between -4 and 4' },
+  { path: 'hazards.boss.attackSprayFromY', check: (v) => typeof v === 'number' && v >= -4 && v <= 4, describe: 'a multiple of the boss radius between -4 and 4; negative is below the body, which is where a claw is' },
+  { path: 'hazards.boss.attackSprayBowRatio', check: (v) => typeof v === 'number' && Math.abs(v) <= 2, describe: 'a bow as a fraction of the distance travelled, between -2 and 2' },
   { path: 'playerBubble.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string for the drawn bubble' },
   { path: 'playerBubble.imageAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'playerBubble.imageTint', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },

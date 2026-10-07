@@ -116,8 +116,8 @@
       "frame": {
         "h": 512,
         "w": 512,
-        "x": 1034,
-        "y": 518
+        "x": 2,
+        "y": 1034
       },
       "rotated": false,
       "sourceSize": {
@@ -130,7 +130,7 @@
       "frame": {
         "h": 512,
         "w": 512,
-        "x": 2,
+        "x": 518,
         "y": 1034
       },
       "rotated": false,
@@ -144,8 +144,106 @@
       "frame": {
         "h": 512,
         "w": 512,
+        "x": 2,
+        "y": 1550
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-待机-1.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
         "x": 518,
-        "y": 1034
+        "y": 1550
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-待机-2.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
+        "x": 2,
+        "y": 2066
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-待机-3.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
+        "x": 518,
+        "y": 2066
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-待机-4.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
+        "x": 2,
+        "y": 2582
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-攻击-1.png": {
+      "frame": {
+        "h": 590,
+        "w": 512,
+        "x": 2,
+        "y": 3098
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 590,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-攻击-2.png": {
+      "frame": {
+        "h": 590,
+        "w": 512,
+        "x": 518,
+        "y": 3098
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 590,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-死亡-1.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
+        "x": 518,
+        "y": 2582
       },
       "rotated": false,
       "sourceSize": {
@@ -157,7 +255,7 @@
   },
   "meta": {
     "app": "pack-atlas.py",
-    "decodedBytes": 9585216,
+    "decodedBytes": 15240576,
     "encoding": "lossless WebP",
     "encodingNote": "RGB under transparent pixels not preserved (invisible)",
     "format": "RGBA8888",
@@ -165,8 +263,8 @@
     "page": 1,
     "scale": "1",
     "size": {
-      "h": 1548,
-      "w": 1548
+      "h": 3692,
+      "w": 1032
     },
     "sources": {
       "冲锋拖尾.png": {
@@ -212,9 +310,37 @@
       "盲虾.png": {
         "bytes": 96631,
         "sha256": "8b3312b8c062e303fcaafda39579a1d8cfd8ae1e6a7462c22b69fba3f550267d"
+      },
+      "螃蟹-BOSS-待机-1.png": {
+        "bytes": 201211,
+        "sha256": "a4c37281f834c3d427069fc61834befaf57f9cebf01e7be010a01c050a53216f"
+      },
+      "螃蟹-BOSS-待机-2.png": {
+        "bytes": 203557,
+        "sha256": "2fc34515523ad8308dcf320ce13557eeef0e9f28e5b6fbc8e5ca3034a1fbadf4"
+      },
+      "螃蟹-BOSS-待机-3.png": {
+        "bytes": 206329,
+        "sha256": "3f44424f2aca116c9cdf9118235591582dc22fb4c5010478f04e4879c5c95df8"
+      },
+      "螃蟹-BOSS-待机-4.png": {
+        "bytes": 202191,
+        "sha256": "cc7b051de6af03e9d2f7d85f780af0189ff983a8acc708de4eb321174d3510d7"
+      },
+      "螃蟹-BOSS-攻击-1.png": {
+        "bytes": 236035,
+        "sha256": "1ddb24d32fcc532047f1d1e4a851de000a70cae5cb93000ea483142342789b42"
+      },
+      "螃蟹-BOSS-攻击-2.png": {
+        "bytes": 242123,
+        "sha256": "5c6d72369ef7ff40d1d6aee940c22bbb2336cc572b747f41161a31110d16ccbf"
+      },
+      "螃蟹-BOSS-死亡-1.png": {
+        "bytes": 191557,
+        "sha256": "b66624716f8a1ba337b748b020a559cebdd4d86cfb33b4b9765e95f017a8e851"
       }
     },
-    "textureBytes": 478588,
+    "textureBytes": 1663624,
     "version": "1.0"
   }
 }

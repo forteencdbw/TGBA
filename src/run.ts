@@ -900,6 +900,35 @@ this.sound('hit');
       effects.filter((e) => e.shot).map((e) => ({ kind: e.kind, x: e.shot!.x, y: e.shot!.y })),
     );
 
+    /**
+     * The boss's claw swing, turned into grit.
+     *
+     * The pieces are ordinary `mineral` creatures born at the claw and given a charge curve to the aim point, which
+     * is what makes this one line instead of a second projectile system: they collide, they hurt, they can be eaten
+     * by a big enough bubble and they finish their flight by rising like every other piece of vent grit. The curve's
+     * flight time comes from `charges.chargers.mineral` with its telegraph set to ZERO -- the wind-up the player
+     * reads is the claw swing itself, and a second drawn telegraph on top of it would be two warnings arguing.
+     */
+    for (const effect of effects) {
+      if (!effect.spray) continue;
+      const { fromX, fromY, targets, bow } = effect.spray;
+      for (const [index, target] of targets.entries()) {
+        const grit = this.makeHazard(world, 'mineral', fromX, fromY);
+        grit.charge = {
+          fromX,
+          fromY,
+          toX: target.x,
+          toY: target.y,
+          // Alternating, so the fan opens like a splash rather than sliding sideways as a block.
+          bow: (index % 2 === 0 ? 1 : -1) * bow * Math.hypot(target.x - fromX, target.y - fromY),
+          elapsed: 0,
+        };
+        // `makeHazard` builds one; the caller adds it -- the same two steps the level's own spawner takes, because a
+        // creature the field does not hold is a creature that never moves, never hurts anything and is never drawn.
+        this.hazards.hazards.push(grit);
+      }
+    }
+
     // Remove whatever the swarm ate. Done with a Set so a large bubble field does not cost a linear
     // scan per eaten bubble.
     if (ctx.eatenBubbleIds.length) {

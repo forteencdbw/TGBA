@@ -120,6 +120,20 @@ export interface HazardEffect {
    */
   shot?: { x: number; y: number };
   /**
+   * A claw swing's spray: mineral grit thrown from one point at a fan of aim points.
+   *
+   * The targets are resolved HERE rather than by the caller, because "aimed at where the player was when the claw
+   * shut" is a fact about the fight and the caller would have to be handed the player's position and the spread to
+   * work it out again. The bow travels with it so every piece can curve.
+   */
+  spray?: {
+    fromX: number;
+    fromY: number;
+    targets: { x: number; y: number }[];
+    /** Bow of each piece's curve as a fraction of its own distance. The sign alternates per piece. */
+    bow: number;
+  };
+  /**
    * A detonation in the water, at this position and this radius.
    *
    * Carried as an effect for the usual reason -- the field decides what happened and the caller decides what it looks
@@ -323,6 +337,17 @@ export interface Hazard {
    */
   deadSince?: number;
   deadDeadline?: number;
+  /**
+   * The claw swing: how long it has been going, and how long until the next one may start.
+   *
+   * `attackSince` is null while the boss is not attacking, which is the same shape as `charge` and for the same
+   * reason -- it is one fact ("is it mid-swing, and how far in"), and the value IS the animation's clock as well as
+   * the field's timer, so the picture and the moment the grit leaves the claw cannot disagree.
+   */
+  attackSince: number | null;
+  attackRest: number;
+  /** Whether this swing has already thrown its grit, so one swing cannot throw twice. */
+  attacked: boolean;
   /**
    * The white flash: when the current one started, and when the last one started, so hits can be rate-limited.
    *
@@ -1721,6 +1746,13 @@ export class HazardField {
       if (this.updateShooting(h, dt, ctx)) {
         effects.push({ kind: h.kind, broke: false, shot: { x: h.x, y: h.y } });
       }
+      /**
+       * And the boss's claw swing, in the same place and for the same reason as the trigger finger above: it is a
+       * decision about the frame, it has to be suppressed by every state that means "busy", and what it produces is
+       * an effect rather than a mutation of a field this module does not own.
+       */
+      const spray = this.updateAttack(h, dt, ctx);
+      if (spray) effects.push({ kind: h.kind, broke: false, spray });
     }
 
     // Emergence, in order: fish eat (which may split them), then the seeking hazards pick a target.
@@ -2066,6 +2098,11 @@ export class HazardField {
       // A random head start, so a group does not lunge in unison. Zero for a probe, where "did it lunge" must not be a
       // coin flip.
       chargeRest: headStart * Math.random() * (mech.charges.chargers[kind]?.cooldownSeconds ?? 0),
+      // The boss's swing starts on a random offset for the same reason a charge does: a player who re-enters the
+      // fight should not be able to time the first one by having watched the last one.
+      attackSince: null,
+      attackRest: headStart * Math.random() * mech.hazards.boss.attackEverySeconds,
+      attacked: false,
       // And a random offset on the trigger finger, so a colony does not volley.
       shootTimer: headStart * (Math.random() / Math.max(0.01, mech.enemyBullets.shooters[kind]?.perSecond ?? 1)),
       path: opts.path ?? null,
@@ -2431,6 +2468,72 @@ export class HazardField {
     h.shootTimer += gap;
     if (h.shootTimer <= 0) h.shootTimer = gap;
     return true;
+  }
+
+  /**
+   * The boss's claw swing: its clock, and the single frame of it that throws anything.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THE MOMENT IS A FRAME AND NOT A NUMBER OF SECONDS
+   * ---------------------------------------------------------------------------------------------
+   * Every other threat in this game announces itself with drawn geometry -- the charge's bow, the vent's brightening
+   * plume -- and the moment it lands is a time in the config. The boss announces this one by SWINGING ITS CLAW, so
+   * the moment the grit leaves is a frame of `boss-attack`, read from the same animation the painter is playing. Two
+   * clocks would be two things to keep in agreement, and the art is the one the player is actually reading: change
+   * the frame rate or the frame count and the spray still leaves on the frame where the claw shuts.
+   *
+   * The targets are resolved here because they are the player's position AT THIS INSTANT and never corrected
+   * afterwards. That is the whole fairness rule the shooters already live by, applied to a fan instead of one round:
+   * it can be read during the wind-up and stepped out of.
+   */
+  private updateAttack(h: Hazard, dt: number, ctx: HazardContext): HazardEffect['spray'] | null {
+    if (h.kind !== 'boss') return null;
+    // Never while it is dying or leaving: a death animation is not a threat, and a boss on its way out firing at the
+    // player would be the one hit in this game with no warning attached to it.
+    if (h.deadSince !== undefined || h.flee || h.entry) return null;
+    const animation = mech.animations[mech.hazardArt.boss?.attack ?? ''];
+    // No swing without its art: the attack is DEFINED by the animation (its release frame is a frame of it), so a
+    // boss with no claw-swing pictures is a boss that swings at nothing, which is worse than one that does not swing.
+    if (!animation) return null;
+
+    const cfg = mech.hazards.boss;
+    if (h.attackSince === null) {
+      h.attackRest -= dt;
+      if (h.attackRest > 0) return null;
+      h.attackSince = 0;
+      h.attacked = false;
+    }
+
+    h.attackSince += dt;
+    if (h.attackSince >= animationSeconds(animation)) {
+      h.attackSince = null;
+      h.attackRest = Math.max(0, cfg.attackEverySeconds);
+      return null;
+    }
+    if (h.attacked || animationFrameAt(animation, h.attackSince) < Math.max(0, cfg.attackSprayFrame - 1)) return null;
+    h.attacked = true;
+
+    /**
+     * The claw, and the fan it throws.
+     *
+     * The origin is mirrored to the side the player is on rather than to `h.facing`: `facing` is the PAINTER's field
+     * (it exists so the picture can turn), and a creature's attack should not depend on what the last drawn frame
+     * decided. The config's x is therefore "how far in front of the body", in the direction the fight is happening.
+     */
+    const radius = ctx.laneWidth * h.radiusFraction;
+    const towardPlayer = ctx.playerX >= h.x ? 1 : -1;
+    const fromX = h.x + cfg.attackSprayFromX * radius * towardPlayer;
+    const fromY = h.y + cfg.attackSprayFromY * radius;
+    const count = Math.max(0, Math.round(cfg.attackSprayCount));
+    const spread = Math.max(0, cfg.attackSpraySpread) * ctx.laneWidth;
+    const targets: { x: number; y: number }[] = [];
+    for (let index = 0; index < count; index++) {
+      // Centred on the player: -0.5 .. +0.5 of the spread, so one piece is aimed straight at them and the rest ask
+      // them to move rather than to memorise.
+      const offset = count <= 1 ? 0 : index / (count - 1) - 0.5;
+      targets.push({ x: Math.max(0, Math.min(ctx.laneWidth, ctx.playerX + offset * spread)), y: ctx.playerY });
+    }
+    return targets.length > 0 ? { fromX, fromY, targets, bow: cfg.attackSprayBowRatio } : null;
   }
 }
 
@@ -3528,17 +3631,20 @@ export function paintHazards(
       const telegraphSeconds = chargeRow?.telegraphSeconds ?? 0.75;
       const windingUp = h.charge !== null && h.charge.elapsed < telegraphSeconds;
       /**
-       * WHICH PICTURE, which is now three states rather than two.
+       * WHICH PICTURE, which is now four states rather than three.
        *
        * `dead` beats everything: a boss playing its death is not winding up and not swimming, and the clock it reads (how
-       * long it has been dead) is the same one the field uses to decide when to remove it. `charge` is the wind-up pose, and
+       * long it has been dead) is the same one the field uses to decide when to remove it. `attack` beats `charge` because
+       * a swing is a committed animation with its own clock -- the boss's only charge-shaped behaviour is the grit it
+       * throws, and those pieces are their own creatures by the time the curve is drawn. `charge` is the wind-up pose, and
        * only for the wind-up -- a curled shrimp through the whole lunge is a pose saying "I am about to spring" while it is
        * already springing.
        */
       const deadSince = h.deadSince;
       const dying = deadSince !== undefined;
-      const state = dying ? art.dead : windingUp ? (art.charge ?? art.move) : art.move;
-      const stateElapsed = dying ? deadSince : windingUp ? h.charge!.elapsed : h.phase;
+      const attacking = h.attackSince !== null && art.attack !== undefined;
+      const state = dying ? art.dead : attacking ? art.attack : windingUp ? (art.charge ?? art.move) : art.move;
+      const stateElapsed = dying ? deadSince : attacking ? h.attackSince! : windingUp ? h.charge!.elapsed : h.phase;
       const texture = state ? hazardArtState(state, stateElapsed) : null;
       if (texture) {
         let sprite = ART_SPRITES.get(h.id);

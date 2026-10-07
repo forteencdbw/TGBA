@@ -93,7 +93,7 @@ for (const file of sources) {
 const mech = JSON5.parse(readFileSync(join(root, 'config', 'mechanics.json5'), 'utf8'));
 const wanted = [];
 for (const [kind, art] of Object.entries(mech.hazardArt ?? {})) {
-  for (const state of ['move', 'charge', 'dead']) {
+  for (const state of ['move', 'charge', 'attack', 'dead']) {
     if (art[state] === undefined) continue;
     const animation = (mech.animations ?? {})[art[state]];
     if (animation) {
