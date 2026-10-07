@@ -2,7 +2,7 @@ import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
 import { LEVEL, LEVELS, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
-import { HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, KIND_TUNING, LURE_PROBE, paintHazards, setReducedFlash, stomachEffect, type HazardKind } from './hazards';
+import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, KIND_TUNING, LURE_PROBE, paintHazards, setReducedFlash, stomachEffect, type HazardKind } from './hazards';
 import { paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { diagnosticsOf } from './diagnostics';
@@ -1714,8 +1714,14 @@ class Game {
          */
         for (const h of this.run.hazards.hazards) {
           if (!h.charge) continue;
-          const row = mech.charges.chargers[h.kind];
-          const telegraph = row?.telegraphSeconds ?? (h.kind === 'angler' ? mech.hazards.angler.telegraphSeconds : 0.75);
+          /**
+           * The creature's own wind-up length, asked of the ONE function that answers it.
+           *
+           * This used to work it out here, with a special case for the anglerfish -- and that special case is exactly
+           * how the trail came to start 0.2s before the lunge did: the motion was reading the shared table's fallback
+           * for the same creature. See `chargeWindow`.
+           */
+          const telegraph = chargeWindow(h.kind).telegraphSeconds;
           if (h.charge.elapsed < telegraph) continue;
           // The dash's own direction, not the creature's velocity: the bubble should trail the geometry the player sees.
           const dx = h.charge.toX - h.charge.fromX;

@@ -2304,17 +2304,18 @@ export class HazardField {
      * and that IS the dodge window.
      */
     if (h.charge) {
-      const row = mech.charges.chargers[h.kind];
-      // A kind that stopped being a charger mid-run (the config changed under it) simply finishes the lunge it is on.
-      const cfg = row ?? { telegraphSeconds: 0.75, travelSeconds: 0.55, cooldownSeconds: 2.2, bowRatio: 0.3, triggerMeters: 300 };
+      // ONE answer to "how long is this creature's wind-up", shared with the drawn telegraph, the trail and the pose --
+      // see `chargeWindow`. It is not decoration: the first `telegraphSeconds` of a charge is spent holding station
+      // with the curve drawn on screen, and that IS the dodge window.
+      const window = chargeWindow(h.kind);
       h.charge.elapsed += dt;
-      if (h.charge.elapsed < cfg.telegraphSeconds) {
+      if (h.charge.elapsed < window.telegraphSeconds) {
         // Winding up: it holds station while the current carries it down with everything else. It does NOT reposition:
         // the lunge begins wherever it happens to be standing (see the commit below for why).
         h.y -= base * dt;
         return;
       }
-      const t = Math.min(1, (h.charge.elapsed - cfg.telegraphSeconds) / Math.max(0.05, cfg.travelSeconds));
+      const t = Math.min(1, (h.charge.elapsed - window.telegraphSeconds) / Math.max(0.05, window.travelSeconds));
       const { fromX, fromY, toX, toY, bow } = h.charge;
       /**
        * A quadratic Bezier through a bowed control point.
@@ -2333,7 +2334,7 @@ export class HazardField {
       h.y = u * u * fromY + 2 * u * t * ctrlY + t * t * toY;
       if (t >= 1) {
         h.charge = null;
-        h.chargeRest = cfg.cooldownSeconds;
+        h.chargeRest = window.cooldownSeconds;
       }
       return;
     }
@@ -2742,6 +2743,118 @@ function hazardArtState(name: string, elapsed: number): Texture | null {
     return frames[animationFrameAt(animation, elapsed)] ?? frames[frames.length - 1]!;
   }
   return assetTextureNow(name);
+}
+
+/**
+ * How long a creature's lunge winds up, how long the lunge takes, and how long until it may lunge again.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THIS IS ONE FUNCTION AND NOT THREE ANSWERS
+ * ---------------------------------------------------------------------------------------------
+ * Four consumers need the same numbers: the motion (which decides when the lunge starts), the drawn telegraph (which
+ * must stop promising when the promise is kept), the charge trail in `main.ts` (which must not appear during the
+ * wind-up), and which picture is showing. They used to work it out separately:
+ *
+ *   * the motion and the painter read `charges.chargers` and, for a creature with no row, took the FISH's 0.75;
+ *   * the trail in `main.ts` special-cased the anglerfish and read its own `hazards.angler.telegraphSeconds` (0.55).
+ *
+ * So the anglerfish dragged a bubble trail for 0.2 seconds while it was still hovering -- and "a bubble while it is
+ * still standing there would say 'it has gone'", which the trail's own comment says is the one thing it must never
+ * say. Its `travelSeconds` was read by nothing at all, and its own cooldown was overwritten by the fallback's 2.2 the
+ * moment a bite ended.
+ *
+ * A creature's OWN block wins, because that is where the config is going: `hazards.angler` already states its wind-up,
+ * its lunge and its cooldown as one creature's business, and the shared `charges.chargers` row is for the kinds whose
+ * charge is entirely generic. Nothing here invents a number -- every fallback is the value the code was already using
+ * -- so only a creature that states its own numbers changes behaviour, and it changes to what it asked for.
+ */
+export function chargeWindow(kind: HazardKind): {
+  telegraphSeconds: number;
+  travelSeconds: number;
+  cooldownSeconds: number;
+} {
+  const own = (
+    mech.hazards as unknown as Record<
+      string,
+      { telegraphSeconds?: number; travelSeconds?: number; cooldownSeconds?: number } | undefined
+    >
+  )[kind];
+  const row = mech.charges.chargers[kind];
+  return {
+    telegraphSeconds: own?.telegraphSeconds ?? row?.telegraphSeconds ?? 0.75,
+    travelSeconds: own?.travelSeconds ?? row?.travelSeconds ?? 0.55,
+    cooldownSeconds: own?.cooldownSeconds ?? row?.cooldownSeconds ?? 2.2,
+  };
+}
+
+/**
+ * One creature's art block, as `config/mechanics.json5` writes it.
+ */
+type HazardArtEntry = NonNullable<(typeof mech.hazardArt)[string]>;
+
+/**
+ * Which picture a creature shows, and the clock that picture reads.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * THE FOURTH PER-CREATURE TABLE
+ * ---------------------------------------------------------------------------------------------
+ * Motion, drawing and contact are already one function per creature. Which PICTURE a creature shows was still one
+ * shared branch, and that shared branch is what broke the anglerfish: a charge has two halves -- the wind-up and the
+ * lunge -- and "show the charge picture" means opposite things to the two creatures that charge.
+ *
+ *   * The SHRIMP curls into `盲虾-蓄力` while it winds up and uncurls as it springs, so its charge picture belongs to
+ *     the WIND-UP. It was fixed to work that way, and that fix was described as "the wind-up pose belongs to the
+ *     wind-up" -- true for a shrimp, and it silently re-timed the anglerfish.
+ *   * The ANGLERFISH's charge picture is its OPEN MOUTH, which IS the bite. Under the shared rule it opened its jaws
+ *     during the wind-up and then swam at the player with its mouth shut: the warning was the attack and the attack
+ *     was the warning.
+ *
+ * So the choice is per kind. `poseOnWindup` is the default because most creatures' charge picture is a wind-up pose.
+ */
+export interface HazardArtPose {
+  /** The picture's name (or an animation's name), or undefined when this creature has none for this state. */
+  state: string | undefined;
+  /** Seconds in THIS state, which is the clock an animated pose reads. */
+  elapsed: number;
+}
+
+/** The usual rule: the charge picture while winding up, the moving picture the rest of the time. */
+function poseOnWindup(h: Hazard, art: HazardArtEntry, telegraphSeconds: number): HazardArtPose {
+  const windingUp = h.charge !== null && h.charge.elapsed < telegraphSeconds;
+  return windingUp
+    ? { state: art.charge ?? art.move, elapsed: h.charge!.elapsed }
+    : { state: art.move, elapsed: h.phase };
+}
+
+/**
+ * The anglerfish: its charge picture is the bite, so it belongs to the LUNGE, and the clock starts when the lunge does
+ * rather than when the charge did -- otherwise a multi-frame bite would be half over before the jaws moved.
+ */
+function poseOnLunge(h: Hazard, art: HazardArtEntry, telegraphSeconds: number): HazardArtPose {
+  const lunging = h.charge !== null && h.charge.elapsed >= telegraphSeconds;
+  return lunging
+    ? { state: art.charge ?? art.move, elapsed: h.charge!.elapsed - telegraphSeconds }
+    : { state: art.move, elapsed: h.phase };
+}
+
+/** Which creatures bite with their charge picture instead of winding up with it. */
+const CHARGE_PICTURE_IS_THE_LUNGE: Partial<Record<HazardKind, true>> = { angler: true };
+
+/**
+ * The picture one creature shows this frame, and what clock it reads.
+ *
+ * Exported because this decision is worth being able to ASK about: the anglerfish bug was invisible to the compiler and
+ * to every probe in the repository, and as a pure function a probe can put a wind-up and a lunge through it and read
+ * the answer. Death and the boss's swing are settled here for every creature, so no per-kind rule can forget them.
+ */
+export function hazardArtPose(h: Hazard, art: HazardArtEntry, telegraphSeconds: number): HazardArtPose {
+  // `dead` beats everything: a boss playing its death is not winding up and not swimming, and the clock it reads (how
+  // long it has been dead) is the same one the field uses to decide when to remove it.
+  if (h.deadSince !== undefined) return { state: art.dead, elapsed: h.deadSince };
+  // `attack` beats `charge`: a swing is a committed animation with its own clock, and the boss's charge-shaped
+  // behaviour is the grit it throws -- those pieces are creatures of their own by the time a curve is drawn.
+  if (h.attackSince !== null && art.attack !== undefined) return { state: art.attack, elapsed: h.attackSince };
+  return (CHARGE_PICTURE_IS_THE_LUNGE[h.kind] ? poseOnLunge : poseOnWindup)(h, art, telegraphSeconds);
 }
 
 /**
@@ -3577,16 +3690,16 @@ export function paintHazards(
      */
     if (h.charge) {
       const cfg = mech.charges;
-      const row = cfg.chargers[h.kind];
-      const window = row?.telegraphSeconds ?? 0.75;
+      // The same window the motion uses, so the promise stops being drawn on the frame the lunge starts.
+      const window = chargeWindow(h.kind);
       const { fromX, fromY, toX, toY, bow, elapsed: chargeAge } = h.charge;
       const midX = (fromX + toX) / 2;
       const midY = (fromY + toY) / 2;
       const span = Math.hypot(toX - fromX, toY - fromY) || 1;
       const ctrlX = midX + (-(toY - fromY) / span) * bow;
       const ctrlY = midY + ((toX - fromX) / span) * bow;
-      const winding = chargeAge < window;
-      const head = winding ? 1 : Math.min(1, (chargeAge - window) / Math.max(0.05, row?.travelSeconds ?? 0.55));
+      const winding = chargeAge < window.telegraphSeconds;
+      const head = winding ? 1 : Math.min(1, (chargeAge - window.telegraphSeconds) / Math.max(0.05, window.travelSeconds));
       const STEPS = 12;
       g.moveTo(fromX, fromY);
       for (let i = 1; i <= STEPS; i++) {
@@ -3620,31 +3733,20 @@ export function paintHazards(
     const art = mech.hazardArt[h.kind];
     if (art) {
       /**
-       * The wind-up pose belongs to the WIND-UP, not to the whole charge.
+       * WHICH PICTURE -- asked of the creature itself, not decided here.
        *
-       * It used to be shown whenever `h.charge` was set, which meant a curled shrimp stayed curled through the lunge and the
-       * recovery as well -- the pose said "I am about to spring" for the entire move, including the part where it has already
-       * sprung. The telegraph duration is read from the same row the charge geometry uses, so "the pose ends when the wind-up
-       * ends" is true by construction rather than by two numbers agreeing.
-       */
-      const chargeRow = mech.charges.chargers[h.kind];
-      const telegraphSeconds = chargeRow?.telegraphSeconds ?? 0.75;
-      const windingUp = h.charge !== null && h.charge.elapsed < telegraphSeconds;
-      /**
-       * WHICH PICTURE, which is now four states rather than three.
+       * This used to be one shared branch, and the branch was written for a SHRIMP: "the charge picture belongs to the
+       * wind-up". That is right for a shrimp (it curls up before it springs) and exactly wrong for the anglerfish,
+       * whose charge picture is its open mouth -- the bite itself. See `hazardArtPose` and the table beside it.
        *
-       * `dead` beats everything: a boss playing its death is not winding up and not swimming, and the clock it reads (how
-       * long it has been dead) is the same one the field uses to decide when to remove it. `attack` beats `charge` because
-       * a swing is a committed animation with its own clock -- the boss's only charge-shaped behaviour is the grit it
-       * throws, and those pieces are their own creatures by the time the curve is drawn. `charge` is the wind-up pose, and
-       * only for the wind-up -- a curled shrimp through the whole lunge is a pose saying "I am about to spring" while it is
-       * already springing.
+       * The telegraph duration comes from the same row the charge geometry uses, so "the pose changes when the
+       * wind-up ends" is true by construction rather than by two numbers agreeing.
        */
       const deadSince = h.deadSince;
       const dying = deadSince !== undefined;
-      const attacking = h.attackSince !== null && art.attack !== undefined;
-      const state = dying ? art.dead : attacking ? art.attack : windingUp ? (art.charge ?? art.move) : art.move;
-      const stateElapsed = dying ? deadSince : attacking ? h.attackSince! : windingUp ? h.charge!.elapsed : h.phase;
+      const pose = hazardArtPose(h, art, chargeWindow(h.kind).telegraphSeconds);
+      const state = pose.state;
+      const stateElapsed = pose.elapsed;
       const texture = state ? hazardArtState(state, stateElapsed) : null;
       if (texture) {
         let sprite = ART_SPRITES.get(h.id);
