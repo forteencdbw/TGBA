@@ -227,6 +227,19 @@ async function loadPage(id: string): Promise<Spritesheet | null> {
 
   const task = (async (): Promise<Spritesheet | null> => {
     const texture = await Assets.load<Texture>(page.url);
+    /**
+     * NEAREST, because every picture on the page is now pixel art at a consistent density.
+     *
+     * The artwork is pixelated so that one texel is about 1.4 screen pixels wide at the size the game draws it (see
+     * the README's pixelation section), and linear sampling smears exactly the structure that produced. This was
+     * deliberately NOT set before that pass: sampling is a property of the TEXTURE, so it applies to every picture on
+     * the page, and back then the small creatures were drawn at 4-20% of their texture size, where nearest drops
+     * texels and shimmers as they move. At ~1.4x magnification it is the correct filter and nothing is minified.
+     *
+     * `update()` after the change because the style is read when the texture is bound.
+     */
+    texture.source.scaleMode = 'nearest';
+    texture.source.update();
     // PixiJS's own spritesheet parsing over the committed manifest. `trimmed: false` in every frame is what keeps
     // `texture.width` equal to the picture's own width -- see the packer.
     const sheet = new Spritesheet(texture, page.data);
