@@ -1,19 +1,55 @@
 /**
- * Level and player art, resolved by the NAME THE OWNER USES.
+ * Level and player art, resolved by the NAME THE OWNER USES -- now out of PixiJS spritesheet atlases.
  *
  * ---------------------------------------------------------------------------------------------
- * WHY AN IMPORT RATHER THAN A PATH IN `public/`
+ * WHAT CHANGED, AND WHAT STAYED
  * ---------------------------------------------------------------------------------------------
- * These pictures are meant to be replaced BY HAND, so they are named in Chinese after what they are -- and a file in
- * `public/` is served by its own path, which means the URL carries those characters. That failed in a way worth
- * recording: the request came back 200 and the browser refused the bytes with "the source image could not be decoded",
- * which points hard at "the file is corrupt" when the file was fine and the PATH was the problem.
+ * It used to be one picture per file: `src/assets/*.png`, imported through Vite so each one got its own URL. Callers
+ * still ask for a picture by the name the config writes (`assetTextureNow('灯笼鱼-移动')`, `loadAnimationTextures`),
+ * and every painter still scales what it gets as `size / texture.width` -- none of that moved.
  *
- * Importing through Vite fixes it at the root: the file is read at build time and emitted with an ASCII hashed name and
- * the right content type, while the config keeps the name the owner knows. The extension is OPTIONAL too, so replacing a
- * `.jpg` with a `.png` of the same name needs no config change.
+ * What moved is underneath: the pictures are packed into a few page textures plus a TexturePacker Hash manifest per
+ * page, and this module hands out the rectangle for a name. 19 pictures became 3 pages, which is 19 requests and 19
+ * GPU textures fewer: what a caller receives is a `Texture` either way.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THE ATLAS IS COMMITTED, AND WHY THAT IS THE ONE THING TO REMEMBER
+ * ---------------------------------------------------------------------------------------------
+ * `src/assets/atlas/` is generated (`scripts/pack-atlas.py`, run as `pnpm atlas`) and it is IN GIT rather than built
+ * into the bundle, because the deploy runs `pnpm exec vite build` on a clean Node runner and a packer there would put
+ * a Python image library on the critical path of every deploy.
+ *
+ * The price is that the atlas can be STALE: replace a picture, forget to re-pack, and the game goes on showing the
+ * old one with nothing to announce it. `pnpm atlas:check` answers that in a second (it compares every source's size
+ * and hash against what the manifests recorded), and the pictures are no longer in the bundle at all -- so a picture
+ * that was never packed is simply missing, and `assetUrl` names it in the console rather than half-showing it.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THE PICTURES ARE STILL SEPARATE FILES ON DISK
+ * ---------------------------------------------------------------------------------------------
+ * Because "replace the anglerfish by dropping a new PNG over the old one" is the workflow this project actually uses,
+ * and an atlas does not have to take it away: the pictures stay in `src/assets/`, they are simply an input to the
+ * packer instead of an input to the bundle. Replacing one is still replacing one file; it now needs `pnpm atlas`.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THE NAME IS STILL AN IMPORT RATHER THAN A PATH IN `public/`
+ * ---------------------------------------------------------------------------------------------
+ * This is the bug the first version of this module was written around, and it is worth keeping: the pictures are named
+ * in Chinese after what they are, and a file in `public/` is served by its own path, so the URL carries those
+ * characters. The request came back 200 and the browser refused the bytes with "the source image could not be
+ * decoded", which points hard at "the file is corrupt" when the file was fine and the PATH was the problem.
+ *
+ * The atlas texture names are ASCII (`atlas-1.webp`), so that particular trap is gone for them -- but they are still
+ * imported rather than parked in `public/`, for the other half of the reason: Vite emits them with a content hash, so
+ * a repacked page can never be served from a stale cache entry, and the manifest is a real module dependency, so
+ * editing a picture and re-packing reaches the running page through the dev server's own graph.
+ *
+ * The two JPEG backdrops are the exception and stay individual files: they are full-screen images no sprite ever
+ * draws from, they are the biggest pictures in the game, and `parallax.ts` wants an ordinary `<img>` failure for
+ * them. They are the only pictures `assetUrl` still answers for.
  */
-import { Assets, Texture } from 'pixi.js';
+import { Assets, Spritesheet, Texture } from 'pixi.js';
+import type { SpritesheetData } from 'pixi.js';
 
 /**
  * One animation as `config/mechanics.json5` writes it, and the shape a creature's art points at.
@@ -32,12 +68,6 @@ export interface AssetAnimation {
   /** Play once and hold the last frame rather than looping. For a death. */
   once?: boolean;
 }
-
-const ASSETS = import.meta.glob('./assets/**/*.{jpg,jpeg,png,webp}', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>;
 
 /**
  * The picture names one animation is made of, in order.
@@ -73,18 +103,6 @@ export function animationFrameAt(animation: AssetAnimation, elapsed: number): nu
   return Math.min(frames - 1, raw);
 }
 
-/** Resolve a bare file name (extension optional) to the URL Vite emitted for it. Empty when there is no such file. */
-export function assetUrl(name: string): string {
-  if (!name) return '';
-  const bare = name.replace(/\.[^.]+$/, '');
-  for (const [path, url] of Object.entries(ASSETS)) {
-    const file = path.replace(/^\.\/assets\//, '');
-    if (file === name || file.replace(/\.[^.]+$/, '') === bare) return url;
-  }
-  console.warn('[assets] no picture called "' + name + '". Available: ' + Object.keys(ASSETS).map((k) => k.replace('./assets/', '')).join(', '));
-  return '';
-}
-
 /**
  * Whether the chain of parents above \`node\` flips the Y axis.
  *
@@ -101,13 +119,173 @@ export function isYFlipped(node: { parent: unknown }): boolean {
   return scaleY < 0;
 }
 
-/** Every picture the game can show, as the names the config uses. */
-export function allAssetNames(): string[] {
-  return Object.keys(ASSETS).map((path) => path.replace(/^\.\/assets\//, ''));
+// ---------------------------------------------------------------------------------------------
+// The atlas: what `scripts/pack-atlas.py` wrote, read at BUILD time.
+// ---------------------------------------------------------------------------------------------
+
+/** A picture packed into a page: which page, which key in its manifest, and the size it draws at. */
+interface AtlasFrame {
+  /** The page id (`atlas-1`), which is the file's name without its extension. */
+  page: string;
+  /** The manifest's own key: the picture's file name, extension included. */
+  key: string;
+  width: number;
+  height: number;
+}
+
+/** One page: its manifest and the URL of its texture. */
+interface AtlasPage {
+  id: string;
+  data: SpritesheetData;
+  url: string;
 }
 
 /**
- * Load one picture through Pixi's asset manager and return its texture.
+ * The manifests, as OBJECTS rather than as URLs to fetch.
+ *
+ * Imported this way for two reasons and both are about not guessing: the texture's name is in `meta.image` (written by
+ * the packer) but Vite emits it fingerprinted, so a loader that had to resolve `meta.image` against the manifest's own
+ * URL would be looking for the wrong file name -- and handing the parsed manifest straight to PixiJS's `Spritesheet`
+ * sidesteps the question entirely. The second is that the manifest is then a module dependency, which is what makes
+ * `pnpm atlas` during a dev session actually reach the page in the browser.
+ */
+const MANIFESTS = import.meta.glob('./assets/atlas/*.json', { eager: true, import: 'default' }) as Record<
+  string,
+  SpritesheetData
+>;
+
+/** The page textures, fingerprinted by Vite. Both encodings: the packer keeps whichever came out smaller. */
+const PAGE_TEXTURES = import.meta.glob('./assets/atlas/*.{webp,png}', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+/** Pictures that are their own file, which is now only the JPEG backdrops. */
+const LOOSE_PICTURES = import.meta.glob('./assets/**/*.{jpg,jpeg}', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+/** A file name without its directory or its extension -- the form every lookup here is keyed by. */
+function withoutExtension(path: string): string {
+  return path.replace(/^.*\//, '').replace(/\.[^.]+$/, '');
+}
+
+/** Every picture, by bare name (extension optional at the call site, as it always was). */
+const FRAMES = new Map<string, AtlasFrame>();
+/** Every page, by id. */
+const PAGES = new Map<string, AtlasPage>();
+/** Every picture that is still its own file, by bare name. */
+const LOOSE = new Map<string, string>();
+
+for (const [path, data] of Object.entries(MANIFESTS)) {
+  const id = withoutExtension(path);
+  const url = Object.entries(PAGE_TEXTURES).find(([texture]) => withoutExtension(texture) === id)?.[1];
+  if (!url) {
+    console.warn(`[assets] the atlas manifest ${id}.json has no texture beside it -- was the pack interrupted?`);
+    continue;
+  }
+  PAGES.set(id, { id, data, url });
+  for (const [key, frame] of Object.entries(data.frames ?? {})) {
+    // The page's own copy wins on a duplicate name, which cannot happen: the packer refuses to pack a picture twice.
+    if (FRAMES.has(withoutExtension(key))) continue;
+    FRAMES.set(withoutExtension(key), { page: id, key, width: frame.frame.w, height: frame.frame.h });
+  }
+}
+for (const [path, url] of Object.entries(LOOSE_PICTURES)) LOOSE.set(withoutExtension(path), url);
+
+/**
+ * The parsed pages, and the loads in flight.
+ *
+ * A page is parsed ONCE for the whole session: the boss's eight frames are four on each of two pages and are drawn on
+ * every frame of a fight, and re-parsing a page per lookup would rebuild 4 textures per creature per frame. The
+ * in-flight map is not tidiness either -- `preloadAssets` and the first creature that needs the art can ask for the
+ * same page in the same tick, and without it both would start their own parse.
+ */
+const SHEETS = new Map<string, Spritesheet>();
+const SHEETS_LOADING = new Map<string, Promise<Spritesheet | null>>();
+
+/** Load and parse one page, once. Null when the page or its texture could not be had. */
+async function loadPage(id: string): Promise<Spritesheet | null> {
+  const ready = SHEETS.get(id);
+  if (ready) return ready;
+  const inFlight = SHEETS_LOADING.get(id);
+  if (inFlight) return inFlight;
+  const page = PAGES.get(id);
+  if (!page) return null;
+
+  const task = (async (): Promise<Spritesheet | null> => {
+    const texture = await Assets.load<Texture>(page.url);
+    // PixiJS's own spritesheet parsing over the committed manifest. `trimmed: false` in every frame is what keeps
+    // `texture.width` equal to the picture's own width -- see the packer.
+    const sheet = new Spritesheet(texture, page.data);
+    await sheet.parse();
+    SHEETS.set(id, sheet);
+    return sheet;
+  })()
+    .catch((error: unknown) => {
+      console.warn(`[assets] could not load atlas page ${id}: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    })
+    .finally(() => {
+      SHEETS_LOADING.delete(id);
+    });
+
+  SHEETS_LOADING.set(id, task);
+  return task;
+}
+
+/** The frame texture for a name IF its page is already parsed, without starting a load. Null until then. */
+function atlasTextureNow(name: string): Texture | null {
+  const frame = FRAMES.get(name);
+  if (!frame) return null;
+  const texture = SHEETS.get(frame.page)?.textures[frame.key];
+  return texture && texture.width > 0 ? texture : null;
+}
+
+/**
+ * Test hook: which page a picture lives on, and where Vite put that page's texture.
+ *
+ * Here because the link this change turns on is three string matchings in a row -- the name in the config, the key in
+ * the manifest, the URL Vite emitted for the texture -- and every one of them fails SILENTLY into "no art". Nothing in
+ * the type system can see it and the packer cannot see it either (it never runs through Vite), so
+ * `scripts/probe-atlas.mjs` asks this and checks the URL against a real file.
+ */
+export function atlasPageForTest(name: string): { page: string; url: string } | null {
+  const frame = FRAMES.get(withoutExtension(name));
+  if (!frame) return null;
+  const page = PAGES.get(frame.page);
+  return page ? { page: page.id, url: page.url } : null;
+}
+
+/**
+ * Resolve a bare file name (extension optional) to the URL Vite emitted for it. Empty when there is no such file.
+ *
+ * This now answers for the JPEG backdrops only. A picture in the atlas deliberately has no single-file URL -- it is a
+ * rectangle inside a page -- so the honest answer for one is an empty string, and asking for a name that exists in
+ * the atlas through this function is a caller using the wrong door, which is what the warning says.
+ */
+export function assetUrl(name: string): string {
+  if (!name) return '';
+  const bare = withoutExtension(name);
+  const loose = LOOSE.get(bare);
+  if (loose) return loose;
+  if (FRAMES.has(bare)) return '';
+  console.warn(
+    '[assets] no separate file called "' + name + '". Its own file: ' + [...LOOSE.keys()].join(', '),
+  );
+  return '';
+}
+
+/** Every picture the game can show, as the names the config uses -- atlas and loose together. */
+export function allAssetNames(): string[] {
+  return [...[...FRAMES.values()].map((frame) => frame.key), ...Object.keys(LOOSE_PICTURES).map((path) => path.replace(/^\.\/assets\//, ''))];
+}
+
+/**
+ * Load one picture and return its texture.
  *
  * ---------------------------------------------------------------------------------------------
  * WHY `Assets` RATHER THAN AN `<img>` AND `Texture.from`
@@ -117,19 +295,33 @@ export function allAssetNames(): string[] {
  * frame of the fight -- and it re-uploads 5 MB of PNG to the GPU to do it. `Assets.load` is idempotent: the second call for
  * a URL resolves from the cache with no request and no upload.
  *
- * The measurement that used to stand against this (a JPEG the plain `<img>` rendered happily being refused with "the source
- * image could not be decoded") was the URL, not the loader: the same sheet loads here and reports its real size. The one
- * caller that still uses an `<img>` is the backdrop, which wants an image-level failure message.
+ * For an atlas picture the cache that matters is one level up: the PAGE is what is fetched and uploaded, so this
+ * awaits the page and then hands out the rectangle. Twenty creatures from one page is one request.
  *
  * Resolves `null` rather than rejecting: a picture is an upgrade to a creature, never a precondition, so the callers all
  * fall back to drawing.
  */
 export async function loadAssetTexture(name: string): Promise<Texture | null> {
-  const url = assetUrl(name);
-  if (!url) return null;
+  const bare = withoutExtension(name);
+  const frame = FRAMES.get(bare);
+  if (frame) {
+    const sheet = await loadPage(frame.page);
+    const texture = sheet?.textures[frame.key];
+    if (!texture || texture.width <= 0) {
+      console.warn(`[assets] ${name} is in ${frame.page} but came out empty`);
+      return null;
+    }
+    return texture;
+  }
+
+  const url = LOOSE.get(bare);
+  if (!url) {
+    console.warn('[assets] no picture called "' + name + '". Available: ' + allAssetNames().join(', '));
+    return null;
+  }
   try {
     const texture = await Assets.load<Texture>(url);
-    if (!texture || texture.width <= 0 || texture.height <= 0) {
+    if (!texture || texture.width <= 0) {
       // A zero-width texture is the bug that made the player's bubble enormous twice; it must not reach a sprite.
       console.warn('[assets] ' + name + ' decoded to an empty texture');
       return null;
@@ -155,7 +347,9 @@ export function loadAnimationTextures(animation: AssetAnimation): Promise<Textur
 
 /** The texture for a name IF it has already been loaded, without starting a load. Null until then. */
 export function assetTextureNow(name: string): Texture | null {
-  const url = assetUrl(name);
+  const bare = withoutExtension(name);
+  if (FRAMES.has(bare)) return atlasTextureNow(bare);
+  const url = LOOSE.get(bare);
   if (!url) return null;
   const texture = Assets.get<Texture>(url);
   return texture && texture.width > 0 ? texture : null;
@@ -165,7 +359,7 @@ export function assetTextureNow(name: string): Texture | null {
 const BYTE_SIZES = new Map<string, number>();
 
 /**
- * How big each picture is, asked of the server rather than guessed.
+ * How big each URL is, asked of the server rather than guessed.
  *
  * A HEAD per file, because the sizes have to be true at RUNTIME: the number the loading page reports is the number the
  * server served, and a manifest baked at build time would be a second source of truth that goes stale the moment a
@@ -175,15 +369,13 @@ const BYTE_SIZES = new Map<string, number>();
  * A file the server will not describe (no `Content-Length`, a HEAD it refuses) counts as 0 rather than as a failure:
  * these numbers are a REPORT about the download, and a report must never be able to stop it.
  */
-export async function assetByteSizes(names: readonly string[]): Promise<Map<string, number>> {
+async function byteSizes(urls: readonly string[]): Promise<Map<string, number>> {
   const sizes = new Map<string, number>();
   await Promise.all(
-    names.map(async (name) => {
-      const url = assetUrl(name);
-      if (!url) return;
+    urls.map(async (url) => {
       const known = BYTE_SIZES.get(url);
       if (known !== undefined) {
-        sizes.set(name, known);
+        sizes.set(url, known);
         return;
       }
       let bytes = 0;
@@ -196,24 +388,28 @@ export async function assetByteSizes(names: readonly string[]): Promise<Map<stri
         // See above: the pictures are the point, and the sizes are a report about them.
       }
       BYTE_SIZES.set(url, bytes);
-      sizes.set(name, bytes);
+      sizes.set(url, bytes);
     }),
   );
   return sizes;
 }
 
 /**
- * What the loading page is told, once per picture that lands.
+ * What the loading page is told, once per file that lands.
  *
  * The BYTES are the reason this is an object rather than two counters: "12 of 17 pictures" is a progress bar that
  * stalls on a big file, and a page that claims to be a download has to report what a download reports -- how much has
  * arrived, out of how much, at what rate. `seconds` comes from here rather than from the caller's own clock so that
  * the rate and the counts are measured against the same start.
+ *
+ * **The unit is the FILE, and after the atlas change a file is usually a PAGE**: three pages carry all nineteen
+ * pictures, so `total` is 5 on this project (three atlas pages and two JPEG backdrops) rather than 21. That is the
+ * honest number -- it is what the network does -- and it is why the loading page says "files" rather than "pictures".
  */
 export interface PreloadProgress {
-  /** Pictures that have landed. */
+  /** Files that have landed. */
   done: number;
-  /** Pictures to fetch. */
+  /** Files to fetch. */
   total: number;
   /** Bytes of the ones that have landed, as far as the server has said. */
   bytesDone: number;
@@ -226,10 +422,14 @@ export interface PreloadProgress {
 /**
  * Fetch pictures and wait until they can be DRAWN, reporting progress as each one lands.
  *
- * `Assets.load` per name rather than one call with the whole list, because that path reports progress and this one is
- * called by NAME: a name with no file is counted as done rather than failing the load, since a missing picture should cost
- * one creature its art and not the whole level. The textures land in Pixi's cache, so every later request -- a creature's
- * art, a sprite sheet's frames -- is a cache hit rather than a second decode.
+ * The names are grouped into the FILES they actually are -- one entry per atlas page, one per loose picture -- because
+ * that is what the download is: asking for four of the boss's frames must not fetch the same page four times, and a
+ * progress bar that counted pictures would count the same 2 MB four times.
+ *
+ * `Assets.load` per file rather than one call with the whole list, because that path reports progress and this one is
+ * called by NAME: a name with no file is counted as done rather than failing the load, since a missing picture should
+ * cost one creature its art and not the whole level. The textures land in Pixi's cache, so every later request -- a
+ * creature's art, a sprite sheet's frames -- is a cache hit rather than a second decode.
  *
  * The SIZES are asked for in the background and never awaited. Awaiting them would put a round trip in front of the
  * pictures -- and worse, a HEAD per file would queue on the same handful of connections the pictures need -- so the
@@ -239,33 +439,47 @@ export async function preloadAssets(
   names: string[],
   onProgress: (progress: PreloadProgress) => void,
 ): Promise<void> {
-  const todo = [...new Set(names)].filter((name) => name.length > 0);
+  const pages = new Set<string>();
+  const loose = new Set<string>();
+  for (const name of names) {
+    if (name.length === 0) continue;
+    const bare = withoutExtension(name);
+    const frame = FRAMES.get(bare);
+    if (frame) pages.add(frame.page);
+    else if (LOOSE.has(bare)) loose.add(bare);
+  }
+
+  const targets: { url: string; load: () => Promise<unknown> }[] = [
+    ...[...pages].sort().map((id) => ({ url: PAGES.get(id)?.url ?? '', load: () => loadPage(id) })),
+    ...[...loose].sort().map((bare) => ({ url: LOOSE.get(bare) ?? '', load: () => loadAssetTexture(bare) })),
+  ];
+
   const started = performance.now();
   const sizes = new Map<string, number>();
   const landed: string[] = [];
   /** Summed on demand rather than accumulated: a total that is recomputed cannot drift from the map it comes from. */
-  const bytesOf = (from: readonly string[]): number => from.reduce((sum, name) => sum + (sizes.get(name) ?? 0), 0);
+  const bytesOf = (from: readonly string[]): number => from.reduce((sum, url) => sum + (sizes.get(url) ?? 0), 0);
   const report = (): void =>
     onProgress({
       done: landed.length,
-      total: todo.length,
+      total: targets.length,
       bytesDone: bytesOf(landed),
-      bytesTotal: bytesOf(todo),
+      bytesTotal: bytesOf(targets.map((target) => target.url)),
       seconds: (performance.now() - started) / 1000,
     });
 
   report();
-  void assetByteSizes(todo).then((found) => {
-    for (const [name, bytes] of found) sizes.set(name, bytes);
-    // A picture that landed before its size was known is counted now, which is the whole reason the totals are
+  void byteSizes(targets.map((target) => target.url).filter((url) => url.length > 0)).then((found) => {
+    for (const [url, bytes] of found) sizes.set(url, bytes);
+    // A file that landed before its size was known is counted now, which is the whole reason the totals are
     // summed from the two lists rather than added up as they arrive.
     report();
   });
 
   await Promise.all(
-    todo.map(async (name) => {
-      await loadAssetTexture(name);
-      landed.push(name);
+    targets.map(async (target) => {
+      await target.load();
+      landed.push(target.url);
       report();
     }),
   );

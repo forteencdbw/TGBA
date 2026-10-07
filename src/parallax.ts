@@ -83,10 +83,12 @@ export class Backdrop {
     /**
      * Loaded as a plain `<img>` rather than through Pixi's loader, and it is the LAST place that does so.
      *
-     * Everything else goes through `loadAssetTexture` (see `src/assets.ts`) so that one file is one GPU texture. A backdrop
-     * is the exception for a reason particular to it: these are the biggest pictures in the game and the most likely to be
-     * re-exported by hand mid-session, and an `<img>` fails in the ordinary browser way, naming the file in the message
-     * below. Pixi's cache would also hold a broken decode for the life of the page; this asks again next level.
+     * Everything else goes through `loadAssetTexture` (see `src/assets.ts`) and is now served out of an atlas page: one
+     * picture is a rectangle inside a shared texture, so asking for one means asking for its page. A backdrop is the
+     * exception for a reason particular to it: these are the biggest pictures in the game and the most likely to be
+     * re-exported by hand mid-session, they are not packed (JPEG, and no sprite draws from them), and an `<img>` fails
+     * in the ordinary browser way, naming the file in the message below. Pixi's cache would also hold a broken decode
+     * for the life of the page; this asks again next level.
      */
     const image = new Image();
     image.decoding = 'async';

@@ -134,8 +134,10 @@ export class LoadingScreen {
     /**
      * The bar is the BYTES when the server told us how big they are, which is the same thing the numbers say.
      *
-     * The count of pictures is the stand-in for a server that would not describe its files: a bar that cannot be
-     * drawn from bytes is still better drawn from something real than left at zero for the whole load.
+     * The count of FILES is the stand-in for a server that would not describe them: a bar that cannot be drawn from
+     * bytes is still better drawn from something real than left at zero for the whole load. A file here is usually an
+     * atlas PAGE -- three of them carry all nineteen pictures -- so the fallback says "files" rather than "pictures",
+     * because that is what the network is doing and a count that disagrees with the bytes beside it reads as a bug.
      */
     this.progress =
       progress.bytesTotal > 0
@@ -149,7 +151,7 @@ export class LoadingScreen {
             `已下载  ${megabytes(progress.bytesDone)} MB / ${megabytes(progress.bytesTotal)} MB`,
             `速度  ${megabytes(this.speed)} MB/s`,
           ]
-        : [`图片  ${progress.done} / ${progress.total}`];
+        : [`文件  ${progress.done} / ${progress.total}`];
     this.redraw();
   }
 

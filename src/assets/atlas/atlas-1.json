@@ -1,0 +1,220 @@
+{
+  "frames": {
+    "冲锋拖尾.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
+        "x": 2,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "水母-待机-1.png": {
+      "frame": {
+        "h": 174,
+        "w": 118,
+        "x": 518,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 174,
+        "w": 118
+      },
+      "trimmed": false
+    },
+    "水母-待机-2.png": {
+      "frame": {
+        "h": 174,
+        "w": 118,
+        "x": 640,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 174,
+        "w": 118
+      },
+      "trimmed": false
+    },
+    "水母-待机-3.png": {
+      "frame": {
+        "h": 174,
+        "w": 118,
+        "x": 762,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 174,
+        "w": 118
+      },
+      "trimmed": false
+    },
+    "水母-待机-4.png": {
+      "frame": {
+        "h": 174,
+        "w": 118,
+        "x": 884,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 174,
+        "w": 118
+      },
+      "trimmed": false
+    },
+    "灯笼鱼-冲锋.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
+        "x": 2,
+        "y": 518
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "灯笼鱼-移动.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
+        "x": 518,
+        "y": 518
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "玩家子弹.png": {
+      "frame": {
+        "h": 256,
+        "w": 256,
+        "x": 518,
+        "y": 180
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 256,
+        "w": 256
+      },
+      "trimmed": false
+    },
+    "玩家气泡.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
+        "x": 1034,
+        "y": 518
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "盲虾-蓄力.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
+        "x": 2,
+        "y": 1034
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    },
+    "盲虾.png": {
+      "frame": {
+        "h": 512,
+        "w": 512,
+        "x": 518,
+        "y": 1034
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 512,
+        "w": 512
+      },
+      "trimmed": false
+    }
+  },
+  "meta": {
+    "app": "pack-atlas.py",
+    "decodedBytes": 9585216,
+    "encoding": "lossless WebP",
+    "encodingNote": "RGB under transparent pixels not preserved (invisible)",
+    "format": "RGBA8888",
+    "image": "atlas-1.webp",
+    "page": 1,
+    "scale": "1",
+    "size": {
+      "h": 1548,
+      "w": 1548
+    },
+    "sources": {
+      "冲锋拖尾.png": {
+        "bytes": 29821,
+        "sha256": "808c28d0f14a4f90824a25da1d56e49b9f423d209575171ebc03101aae550209"
+      },
+      "水母-待机-1.png": {
+        "bytes": 13749,
+        "sha256": "254dadaaf32807b0e1eb6a1c9cf54be55120ecd4f682c2a9b388033f167717e1"
+      },
+      "水母-待机-2.png": {
+        "bytes": 12714,
+        "sha256": "3859715e71f74d07598738b222d43a3ea32585e0bb3c1db66e7dc2492156bf52"
+      },
+      "水母-待机-3.png": {
+        "bytes": 20429,
+        "sha256": "7c3f849e0bd8d68a594880d691fa32e869d4068af634d811ab6f7239bbf1a89e"
+      },
+      "水母-待机-4.png": {
+        "bytes": 13835,
+        "sha256": "7fb155613b3981d53a355ea89ead3348d0e63d08d1ab11ce8387c1651e98f929"
+      },
+      "灯笼鱼-冲锋.png": {
+        "bytes": 126596,
+        "sha256": "241bb376ce2e6a363c2bcfa40553683432dc8d7f70888167559f363c692b14ad"
+      },
+      "灯笼鱼-移动.png": {
+        "bytes": 123213,
+        "sha256": "58271d36ffae69ed8643e21591ca8412460ea963ba42aac80c991ddda73169cb"
+      },
+      "玩家子弹.png": {
+        "bytes": 25791,
+        "sha256": "38f94f17e39b3174ba6def9f9810e72d47659b8660cc66ffffdba8d0e831076a"
+      },
+      "玩家气泡.png": {
+        "bytes": 82344,
+        "sha256": "071279e62eedf35f29ccfb31f32c15f27638f93c5937476b33260178d2308ea9"
+      },
+      "盲虾-蓄力.png": {
+        "bytes": 134331,
+        "sha256": "78300cbe028a7077752e0f47d687737213ac51e250cd7e9841cb578d9e1e9c9b"
+      },
+      "盲虾.png": {
+        "bytes": 96631,
+        "sha256": "8b3312b8c062e303fcaafda39579a1d8cfd8ae1e6a7462c22b69fba3f550267d"
+      }
+    },
+    "textureBytes": 478588,
+    "version": "1.0"
+  }
+}

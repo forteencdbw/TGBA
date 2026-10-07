@@ -25,8 +25,8 @@ import { suctionRadiusFraction } from './suction';
 import { Stomach, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
-import { Assets, Sprite, Texture } from 'pixi.js';
-import { allAssetNames, assetTextureNow, assetUrl, preloadAssets } from './assets';
+import { Sprite } from 'pixi.js';
+import { allAssetNames, assetTextureNow, loadAssetTexture, preloadAssets } from './assets';
 import { ParticleField } from './particles';
 import { ChargeTrail } from './chargeTrail';
 import { LoadingScreen } from './loading';
@@ -648,14 +648,11 @@ class Game {
    * than a rewrite.
    */
   async probeAssetsLoad(name: string): Promise<string> {
-    const url = assetUrl(name);
-    if (!url) return 'no url for ' + name;
-    try {
-      const texture = await Assets.load<Texture>(url);
-      return 'loaded ' + texture.width + 'x' + texture.height;
-    } catch (error) {
-      return 'failed: ' + (error instanceof Error ? error.message : String(error));
-    }
+    // Through `loadAssetTexture`, which for a packed picture means the ATLAS page: the number it reports is still the
+    // picture's own size, because the packer writes `trimmed: false` for exactly that reason.
+    const texture = await loadAssetTexture(name);
+    if (!texture) return 'no texture for ' + name;
+    return 'loaded ' + texture.width + 'x' + texture.height;
   }
 
   /** Test hook: one creature's trail sprite, for measuring where it sits. */
