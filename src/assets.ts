@@ -161,8 +161,17 @@ const PAGE_TEXTURES = import.meta.glob('./assets/atlas/*.{webp,png}', {
   import: 'default',
 }) as Record<string, string>;
 
-/** Pictures that are their own file, which is now only the JPEG backdrops. */
-const LOOSE_PICTURES = import.meta.glob('./assets/**/*.{jpg,jpeg}', {
+/**
+ * Pictures that are their own file, which today means the JPEG backdrops.
+ *
+ * The rule, in one line: **a top-level PNG is the packer's input, everything else is its own file.** So this glob is
+ * "every picture under `assets/`, except those inputs and except the pages themselves". Spelled out as an exclusion
+ * rather than as "jpg only", because the widened glob it replaced WAS fully recursive -- a hand-authored backdrop saved
+ * as a PNG in a subdirectory used to work, and a `jpg`-only glob would have dropped it silently, with the backdrop's
+ * own "no such image" as the only clue. Backdrops live in a subdirectory for exactly this reason; a PNG in the TOP level
+ * is a packed picture and nothing else.
+ */
+const LOOSE_PICTURES = import.meta.glob(['./assets/**/*.{jpg,jpeg,png,webp}', '!./assets/*.png', '!./assets/atlas/**'], {
   eager: true,
   query: '?url',
   import: 'default',
