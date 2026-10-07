@@ -156,106 +156,232 @@
     },
     "螃蟹-BOSS-待机-1.png": {
       "frame": {
-        "h": 512,
-        "w": 512,
-        "x": 518,
-        "y": 1550
+        "h": 192,
+        "w": 192,
+        "x": 778,
+        "y": 180
       },
       "rotated": false,
       "sourceSize": {
-        "h": 512,
-        "w": 512
+        "h": 192,
+        "w": 192
       },
       "trimmed": false
     },
     "螃蟹-BOSS-待机-2.png": {
       "frame": {
-        "h": 512,
-        "w": 512,
-        "x": 2,
-        "y": 2066
+        "h": 192,
+        "w": 192,
+        "x": 518,
+        "y": 1550
       },
       "rotated": false,
       "sourceSize": {
-        "h": 512,
-        "w": 512
+        "h": 192,
+        "w": 192
       },
       "trimmed": false
     },
     "螃蟹-BOSS-待机-3.png": {
       "frame": {
-        "h": 512,
-        "w": 512,
-        "x": 518,
-        "y": 2066
+        "h": 192,
+        "w": 192,
+        "x": 714,
+        "y": 1550
       },
       "rotated": false,
       "sourceSize": {
-        "h": 512,
-        "w": 512
+        "h": 192,
+        "w": 192
       },
       "trimmed": false
     },
     "螃蟹-BOSS-待机-4.png": {
       "frame": {
-        "h": 512,
-        "w": 512,
-        "x": 2,
-        "y": 2582
+        "h": 192,
+        "w": 192,
+        "x": 518,
+        "y": 1746
       },
       "rotated": false,
       "sourceSize": {
-        "h": 512,
-        "w": 512
+        "h": 192,
+        "w": 192
       },
       "trimmed": false
     },
     "螃蟹-BOSS-攻击-1.png": {
       "frame": {
-        "h": 590,
-        "w": 512,
+        "h": 221,
+        "w": 192,
         "x": 2,
-        "y": 3098
+        "y": 2066
       },
       "rotated": false,
       "sourceSize": {
-        "h": 590,
-        "w": 512
+        "h": 221,
+        "w": 192
       },
       "trimmed": false
     },
     "螃蟹-BOSS-攻击-2.png": {
       "frame": {
-        "h": 590,
-        "w": 512,
-        "x": 518,
-        "y": 3098
+        "h": 221,
+        "w": 192,
+        "x": 198,
+        "y": 2066
       },
       "rotated": false,
       "sourceSize": {
-        "h": 590,
-        "w": 512
+        "h": 221,
+        "w": 192
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-攻击-3.png": {
+      "frame": {
+        "h": 221,
+        "w": 192,
+        "x": 394,
+        "y": 2066
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 221,
+        "w": 192
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-攻击-4.png": {
+      "frame": {
+        "h": 221,
+        "w": 192,
+        "x": 590,
+        "y": 2066
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 221,
+        "w": 192
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-攻击-5.png": {
+      "frame": {
+        "h": 221,
+        "w": 192,
+        "x": 786,
+        "y": 2066
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 221,
+        "w": 192
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-攻击-6.png": {
+      "frame": {
+        "h": 221,
+        "w": 192,
+        "x": 2,
+        "y": 2291
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 221,
+        "w": 192
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-攻击-7.png": {
+      "frame": {
+        "h": 221,
+        "w": 192,
+        "x": 198,
+        "y": 2291
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 221,
+        "w": 192
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-攻击-8.png": {
+      "frame": {
+        "h": 221,
+        "w": 192,
+        "x": 394,
+        "y": 2291
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 221,
+        "w": 192
       },
       "trimmed": false
     },
     "螃蟹-BOSS-死亡-1.png": {
       "frame": {
-        "h": 512,
-        "w": 512,
-        "x": 518,
-        "y": 2582
+        "h": 192,
+        "w": 192,
+        "x": 714,
+        "y": 1746
       },
       "rotated": false,
       "sourceSize": {
-        "h": 512,
-        "w": 512
+        "h": 192,
+        "w": 192
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-死亡-2.png": {
+      "frame": {
+        "h": 192,
+        "w": 192,
+        "x": 590,
+        "y": 2291
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 192,
+        "w": 192
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-死亡-3.png": {
+      "frame": {
+        "h": 192,
+        "w": 192,
+        "x": 786,
+        "y": 2291
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 192,
+        "w": 192
+      },
+      "trimmed": false
+    },
+    "螃蟹-BOSS-死亡-4.png": {
+      "frame": {
+        "h": 192,
+        "w": 192,
+        "x": 2,
+        "y": 2516
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 192,
+        "w": 192
       },
       "trimmed": false
     }
   },
   "meta": {
     "app": "pack-atlas.py",
-    "decodedBytes": 15240576,
+    "decodedBytes": 11195136,
     "encoding": "lossless WebP",
     "encodingNote": "RGB under transparent pixels not preserved (invisible)",
     "format": "RGBA8888",
@@ -263,7 +389,7 @@
     "page": 1,
     "scale": "1",
     "size": {
-      "h": 3692,
+      "h": 2712,
       "w": 1032
     },
     "sources": {
@@ -312,35 +438,71 @@
         "sha256": "8b3312b8c062e303fcaafda39579a1d8cfd8ae1e6a7462c22b69fba3f550267d"
       },
       "螃蟹-BOSS-待机-1.png": {
-        "bytes": 201211,
-        "sha256": "a4c37281f834c3d427069fc61834befaf57f9cebf01e7be010a01c050a53216f"
+        "bytes": 28746,
+        "sha256": "f680b0e9202d74e6275f476be728732a8e4c7d53d3b518751666c09f23ba34e8"
       },
       "螃蟹-BOSS-待机-2.png": {
-        "bytes": 203557,
-        "sha256": "2fc34515523ad8308dcf320ce13557eeef0e9f28e5b6fbc8e5ca3034a1fbadf4"
+        "bytes": 29998,
+        "sha256": "6a1f5c9c81ec0c36cb1006b922cc60d9dbfa3009fef76133d4f746c3a4f5e548"
       },
       "螃蟹-BOSS-待机-3.png": {
-        "bytes": 206329,
-        "sha256": "3f44424f2aca116c9cdf9118235591582dc22fb4c5010478f04e4879c5c95df8"
+        "bytes": 29226,
+        "sha256": "4f2d0e91ee3a3aab93e5eb276222431a788731b13d36f721c144eebc50efa86f"
       },
       "螃蟹-BOSS-待机-4.png": {
-        "bytes": 202191,
-        "sha256": "cc7b051de6af03e9d2f7d85f780af0189ff983a8acc708de4eb321174d3510d7"
+        "bytes": 27826,
+        "sha256": "589d662b5b04c5edc23c40a23ffed382419e3abf960a70f3e0dedccc16c70fc4"
       },
       "螃蟹-BOSS-攻击-1.png": {
-        "bytes": 236035,
-        "sha256": "1ddb24d32fcc532047f1d1e4a851de000a70cae5cb93000ea483142342789b42"
+        "bytes": 30894,
+        "sha256": "e7e44519940487e41c475e591c0af299ed98966516b6555c30b436dc6a799a17"
       },
       "螃蟹-BOSS-攻击-2.png": {
-        "bytes": 242123,
-        "sha256": "5c6d72369ef7ff40d1d6aee940c22bbb2336cc572b747f41161a31110d16ccbf"
+        "bytes": 32198,
+        "sha256": "1b072a2525f65d23e6eaface82b738802e63a9ba8fb2dfb858b8fb32cf1fc407"
+      },
+      "螃蟹-BOSS-攻击-3.png": {
+        "bytes": 26332,
+        "sha256": "b99ca767cc5ab272dd7113958e615a8f6d6a0af243fd65fa36ecb9396e29304f"
+      },
+      "螃蟹-BOSS-攻击-4.png": {
+        "bytes": 34212,
+        "sha256": "6e27dc184050a87229f7d3425a4aa2bcc27a1f1b2787c2fee6d338db2329ce39"
+      },
+      "螃蟹-BOSS-攻击-5.png": {
+        "bytes": 32716,
+        "sha256": "60684c2cc70e7e748b052b337e352103297521e2d9068bcf629ba1f71d5a2789"
+      },
+      "螃蟹-BOSS-攻击-6.png": {
+        "bytes": 30378,
+        "sha256": "c92346b8ed0c50f05646f51e4393bc762405669c3ac386025b3910a2c6464b66"
+      },
+      "螃蟹-BOSS-攻击-7.png": {
+        "bytes": 29460,
+        "sha256": "6f696ef2208523690eb4b5f69d72bb1fd70142229de7c26b3f655f5784b650e2"
+      },
+      "螃蟹-BOSS-攻击-8.png": {
+        "bytes": 31036,
+        "sha256": "54861770a6530cda24e777a1a5567d84e328b9ddb71543d76e55dd9207309b21"
       },
       "螃蟹-BOSS-死亡-1.png": {
-        "bytes": 191557,
-        "sha256": "b66624716f8a1ba337b748b020a559cebdd4d86cfb33b4b9765e95f017a8e851"
+        "bytes": 29170,
+        "sha256": "86a494ad5cfe1dcf680c605974f8bc98be5b7c06344dc3ebea34e8b1e74c680b"
+      },
+      "螃蟹-BOSS-死亡-2.png": {
+        "bytes": 29153,
+        "sha256": "ae8fae2de6474b6cd8a31fc90494ea9d873b9098729462afb1bac385a96b0afa"
+      },
+      "螃蟹-BOSS-死亡-3.png": {
+        "bytes": 38203,
+        "sha256": "d2ac2b37a84dde6f5669a7280991b6ca7f99dfa77acad7ba5287929297d67e99"
+      },
+      "螃蟹-BOSS-死亡-4.png": {
+        "bytes": 13729,
+        "sha256": "0fc2ad3d2c24e9dd6fd297f12821c2df37dae2a8e6cf4fcc6ce97eda5b0bf6a8"
       }
     },
-    "textureBytes": 1663624,
+    "textureBytes": 788554,
     "version": "1.0"
   }
 }
