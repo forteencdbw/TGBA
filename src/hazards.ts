@@ -2800,16 +2800,17 @@ type HazardArtEntry = NonNullable<(typeof mech.hazardArt)[string]>;
  * ---------------------------------------------------------------------------------------------
  * Motion, drawing and contact are already one function per creature. Which PICTURE a creature shows was still one
  * shared branch, and that shared branch is what broke the anglerfish: a charge has two halves -- the wind-up and the
- * lunge -- and "show the charge picture" means opposite things to the two creatures that charge.
+ * lunge -- and "show the charge picture" means something different to each creature that charges.
  *
  *   * The SHRIMP curls into `盲虾-蓄力` while it winds up and uncurls as it springs, so its charge picture belongs to
  *     the WIND-UP. It was fixed to work that way, and that fix was described as "the wind-up pose belongs to the
  *     wind-up" -- true for a shrimp, and it silently re-timed the anglerfish.
- *   * The ANGLERFISH's charge picture is its OPEN MOUTH, which IS the bite. Under the shared rule it opened its jaws
- *     during the wind-up and then swam at the player with its mouth shut: the warning was the attack and the attack
- *     was the warning.
+ *   * The ANGLERFISH's charge picture is its OPEN MOUTH with the teeth out, and it is shown for the WHOLE charge: the
+ *     open jaws are the warning AND the bite. Half of that is wrong either way round -- jaws that open only once it
+ *     has already sprung are not a warning, and jaws that shut again as it comes at you are not a bite.
  *
- * So the choice is per kind. `poseOnWindup` is the default because most creatures' charge picture is a wind-up pose.
+ * So the rule is a function per kind rather than a branch, which is also what lets a third creature want a third
+ * timing later without touching these two.
  */
 export interface HazardArtPose {
   /** The picture's name (or an animation's name), or undefined when this creature has none for this state. */
@@ -2817,6 +2818,9 @@ export interface HazardArtPose {
   /** Seconds in THIS state, which is the clock an animated pose reads. */
   elapsed: number;
 }
+
+/** One creature's answer: which picture now, and what clock it reads. */
+type PoseRule = (h: Hazard, art: HazardArtEntry, telegraphSeconds: number) => HazardArtPose;
 
 /** The usual rule: the charge picture while winding up, the moving picture the rest of the time. */
 function poseOnWindup(h: Hazard, art: HazardArtEntry, telegraphSeconds: number): HazardArtPose {
@@ -2827,18 +2831,19 @@ function poseOnWindup(h: Hazard, art: HazardArtEntry, telegraphSeconds: number):
 }
 
 /**
- * The anglerfish: its charge picture is the bite, so it belongs to the LUNGE, and the clock starts when the lunge does
- * rather than when the charge did -- otherwise a multi-frame bite would be half over before the jaws moved.
+ * The anglerfish: the charge picture runs for the WHOLE charge, wind-up included.
+ *
+ * The clock is the charge's own, so if this picture ever becomes a multi-frame animation it plays from the moment the
+ * jaws open rather than from the moment the fish springs.
  */
-function poseOnLunge(h: Hazard, art: HazardArtEntry, telegraphSeconds: number): HazardArtPose {
-  const lunging = h.charge !== null && h.charge.elapsed >= telegraphSeconds;
-  return lunging
-    ? { state: art.charge ?? art.move, elapsed: h.charge!.elapsed - telegraphSeconds }
+function poseOnWholeCharge(h: Hazard, art: HazardArtEntry, _telegraphSeconds: number): HazardArtPose {
+  return h.charge !== null
+    ? { state: art.charge ?? art.move, elapsed: h.charge.elapsed }
     : { state: art.move, elapsed: h.phase };
 }
 
-/** Which creatures bite with their charge picture instead of winding up with it. */
-const CHARGE_PICTURE_IS_THE_LUNGE: Partial<Record<HazardKind, true>> = { angler: true };
+/** Which creatures do not use the default rule. */
+const POSE_RULES: Partial<Record<HazardKind, PoseRule>> = { angler: poseOnWholeCharge };
 
 /**
  * The picture one creature shows this frame, and what clock it reads.
@@ -2854,7 +2859,7 @@ export function hazardArtPose(h: Hazard, art: HazardArtEntry, telegraphSeconds: 
   // `attack` beats `charge`: a swing is a committed animation with its own clock, and the boss's charge-shaped
   // behaviour is the grit it throws -- those pieces are creatures of their own by the time a curve is drawn.
   if (h.attackSince !== null && art.attack !== undefined) return { state: art.attack, elapsed: h.attackSince };
-  return (CHARGE_PICTURE_IS_THE_LUNGE[h.kind] ? poseOnLunge : poseOnWindup)(h, art, telegraphSeconds);
+  return (POSE_RULES[h.kind] ?? poseOnWindup)(h, art, telegraphSeconds);
 }
 
 /**

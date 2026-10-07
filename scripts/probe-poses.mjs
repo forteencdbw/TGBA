@@ -65,17 +65,18 @@ try {
 
     if (kind === 'angler') {
       const [wind, lunge, after] = shown;
-      if (wind !== art.move) {
+      // The jaws ARE the warning and the bite: open for the whole charge, shut before and after.
+      if (wind !== art.charge) {
         failures++;
-        console.log(`  FAIL: the anglerfish shows ${wind} while winding up -- it should be ${art.move} (mouth shut)`);
+        console.log(`  FAIL: the anglerfish shows ${wind} while winding up -- it should be ${art.charge} (jaws open)`);
       }
       if (lunge !== art.charge) {
         failures++;
-        console.log(`  FAIL: the anglerfish shows ${lunge} while lunging -- it should be ${art.charge} (mouth open)`);
+        console.log(`  FAIL: the anglerfish shows ${lunge} while lunging -- it should be ${art.charge} (jaws open)`);
       }
       if (after !== art.move) {
         failures++;
-        console.log(`  FAIL: the anglerfish shows ${after} after the charge -- it should be ${art.move}`);
+        console.log(`  FAIL: the anglerfish shows ${after} after the charge -- it should be ${art.move} (jaws shut)`);
       }
       if (art.charge === undefined || art.move === undefined) {
         failures++;
