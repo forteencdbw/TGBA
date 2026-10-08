@@ -682,7 +682,7 @@ playing → cleared → ascend → intro（下一关）
 **图像**：`src/assets/螃蟹-BOSS-攻击-1..8.png`，8 帧、512×590、`once: true`（播完停在第 8 帧，也就是回到待机姿势）。
 生成用的参考图就是**待机帧自己**（`generated-images/boss-attack/reference.png`），所以是同一只螃蟹；
 8 帧的构图靠"同尺寸画布 + 底部对齐 + 左右居中"钉住（钳子挥动时身体不跟着漂），细节见
-`generated-images/boss-attack/frames.spec.json`。
+`generated-images/boss-attack/frames.spec.json`。（**`generated-images/boss-attack/` 已随中间产物删除**。）
 
 ### 图集：所有贴图打进 Pixi 图集（`pnpm atlas`）
 
@@ -701,7 +701,7 @@ playing → cleared → ascend → intro（下一关）
 2. BOSS 那一组**像素化到 192 宽**：~17 MB → 2.4 MB。
 3. **其余 11 张图也像素化**（按各自"画出来多大"定网格，见下面"像素化"一节）：图集 770 KB / 10.68 MB → **219 KB / 3.39 MB**。
    1024 的原始图在导入它的那次提交里；512 那版在 `generated-images/boss-512-before-pixelation/`、
-   像素化前那版在 `generated-images/before-pixel-pass/`（都未入库）。
+   像素化前那版在 `generated-images/before-pixel-pass/`（**已入库**，见下面"原图"一节）。
 
 **换图的工作流没变，多一步**：还是把新 PNG 覆盖到 `src/assets/` 同名文件上，然后跑一次
 
@@ -809,7 +809,35 @@ pnpm atlas                                   # 重新打包
 ```
 
 `TARGET_TEXEL_PX = 1.4` 在第一个脚本里；改成 1.0 就是整体更细一档（那时 BOSS 也要跟着回到 256 才一致）。
-像素化前的原图都在 `generated-images/before-pixel-pass/`（未入库），BOSS 的 512 版在 `generated-images/boss-512-before-pixelation/`。
+像素化前的原图都在 `generated-images/before-pixel-pass/`（**已入库**），BOSS 的 512 版在 `generated-images/boss-512-before-pixelation/`。
+
+### 原图：`generated-images/` 里只留"入过库的那几张图的原图"
+
+`generated-images/` 现在**只有 29 个文件**，都是已经进了 `src/assets/` 的图的原图；管线跑出来的中间产物
+（各种 `sheet/`、棋盘格对比图、GIF、像素候选、`alpha-*` / `probe` / `edge-test` 这类探针、分层实验）
+**已经全部删除**，目录从 264 个文件 / 203 MB 降到 29 个 / 5.1 MB。
+
+| 目录 | 是什么 | 它对应的成品 |
+|---|---|---|
+| `before-pixel-pass/`（11 张） | 像素化**之前**的那张 | 冲锋拖尾 / 水母 / 灯笼鱼 ×2 / 玩家子弹 / 玩家气泡 / 盲虾 ×2 |
+| `boss-512-before-pixelation/`（16 张） | 缩到 512 之后、像素化之前 | `螃蟹-BOSS-*` 16 帧 |
+| `tuna-sheet/raw.png` | 手画的那张金枪鱼 sprite sheet（`scripts/import-sheet.py` 的输入） | `金枪鱼-游动-1..4` |
+| `tuna/reference.png` | 金枪鱼的参考图 | 同上（`reference-raw.png` 与它逐字节相同，删掉了） |
+
+**为什么留原图而不是只留 `src/assets/`**：`src/assets/` 里是**压过一轮的成品**（像素化 + 缩到画出来那么大，
+512 的 BOSS 只剩 29–37 KB），拿它当再加工的输入就是二次采样——把已经糊过的图再缩一次，出来更糊。要重做一遍，
+起点必须是像素化之前的那张。
+
+**为什么中间产物可以删**：它们是每一步的中间快照，而**每一步的脚本都还在**——`.scratch/pixelate-*.py`、
+`scripts/import-sheet.py`（依赖 `refs/asset_pipeline.py`）；拿原图重跑一遍就有，留着的唯一区别是不用等。
+注意 `.scratch/**.py` 按 `.gitignore` 是**本机草稿、不入库**，所以"重跑一遍"这条**只在这台机器上**成立。
+
+**两处要记住的例外**（都跟"删掉的那批"有关）：
+- **水母现在这四帧不是从上面那张来的**：`before-pixel-pass/水母-待机-*` 是 **118×174 的旧版**的原图，
+  而线上这四帧（52×77）是从一张 **1024 原图**重做的（见上面"水母是从 1024 原图重做的"）——那张 1024
+  在 `generated-images/jellyfish-alpha/frames/`，已随中间产物删除。要重做水母，得先有那张 1024。
+- **BOSS 攻击那 8 帧同理**：最初的 1024 版在 `generated-images/boss-attack/`，也已删除；
+  留下的 `boss-512-before-pixelation/` 是**已经缩到 512** 的那一版，再往上放大会是糊的。
 
 ### 金枪鱼：新敌人 `tuna`（`金枪鱼-游动-1..4`，4 帧游动，**只动尾巴**）
 
@@ -860,6 +888,9 @@ python .scratch\compose-tuna-tail.py     # 切尾柄、转尾巴、拼四帧（�
 python .scratch\import-tuna-tail.py      # 按头部重新对齐 + 逐像素验证身体没动 + 导入 src/assets + 出预览图
 pnpm atlas                               # 重新打包图集
 ```
+
+（`generated-images/tuna-tail/` 已随中间产物删除——它本来就是上面前两条命令的**输出**，重跑就会重新长出来。
+留下的原图是 `generated-images/tuna-sheet/raw.png` 和 `generated-images/tuna/reference.png`。）
 
 **一个你可能想统一的地方**：金枪鱼这 4 帧是管线 `sheet` 直接出的，**约 290 种颜色/帧**（四帧并集 529），
 而手写像素化的那批（BOSS / 水母 / 灯笼鱼 / 盲虾…）是**每只共享 40 色**。
@@ -1315,7 +1346,7 @@ canvas，headless 跑不起来（这正是要拆它的原因）。这一步的�
 ### 水母：贴图导入（待机 4 帧）
 
 - **图**：`src/assets/水母-待机-1..4.png`，各 **118×174**，四张共 **59.3 KB**；`hazardArt.jelly` = `front: "left"` / `move: "jelly-idle"` / `scale: 1.45`。
-- **动画**：`animations.jelly-idle` = 4 帧、**5.5 帧/秒（182 毫秒一帧）**、一轮约 0.73 秒。这几张图是资产管线（`generated-images/jellyfish-alpha/`，未入库）像素化 + 对齐之后的成品。
+- **动画**：`animations.jelly-idle` = 4 帧、**5.5 帧/秒（182 毫秒一帧）**、一轮约 0.73 秒。这几张图是资产管线（`generated-images/jellyfish-alpha/`）像素化 + 对齐之后的成品。（**该目录已随中间产物删除**；这一版水母现在**没有原图留在库里**，见"原图"一节的例外。）
 - **为什么导进来的是"等尺寸帧"而不是每帧各自裁剪的图**——这一条是这次唯一需要解释的决定：绘制时按**图片宽度**统一缩放（`hazards.ts` 的 `unit = size / texture.width`），而水母四帧的宽度**本来就不一样**（77 / 69 / 118 / 72 px，伞盖的收缩与张开**就是**这个宽度差）。逐帧裁剪后直接导入，等于每帧除以自己的宽度——**动画会剩下触手在动、伞盖不动**。所以四帧是从对齐好的长条上**用同一扇窗口**裁的（四帧内容的并集，`(27,19,145,193)`），尺寸一致 → 一个 `scale` 管住全部四帧，**管线做过的对齐一像素没动**。
 - **`scale: 1.45` 是怎么来的**：图片框宽 118 px，其中**伞盖**最宽 81 px（框宽是散开的触手撑出来的）。`radius.jelly = 0.062` 画出来的伞盖本来就是 2r 宽，`118 / 81 = 1.46` 就是"**伞盖和碰撞圈一样宽**"那一档。画面里觉得小就往上调（触手先出画）、觉得大就往下调（伞盖小于碰撞圈，看着像被空气撞）。
 - **实测**：四张图和管线自己的 `sheet/frame-N.png` **逐像素逐字节一致**（`4/4`，含"写出去再读回来"这一遍）✓；`check-art-names` → **ALL RESOLVE** ✓；`pnpm build` 四张图都在产物里（12.7 / 13.7 / 13.8 / 20.4 KB）✓；`preloadAssets(allAssetNames())` 自动带上它们（加载页那一套不用改）✓。

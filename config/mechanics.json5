@@ -1020,7 +1020,7 @@
       "once": true
     },
     // 水母的待机：4 帧循环，一轮约 0.73 秒（4 ÷ 5.5），和资产管线算出来的 180 毫秒一帧一致。
-    // 四张图来自 `generated-images/jellyfish-alpha/`（像素化 + 对齐之后），导进 src/assets 的是
+    // 四张图来自 `generated-images/jellyfish-alpha/`（像素化 + 对齐之后，该目录已随中间产物删除），导进 src/assets 的是
     // **同一扇裁剪窗口裁出来的等尺寸帧**（都是 118×174），这一点不是洁癖：
     // 绘制时按**图片宽度**统一缩放（hazards.ts 的 `unit = size / texture.width`），
     // 四帧宽度不一样的话每帧的缩放倍率就跟着不一样 —— 而伞盖的收缩/张开**正是宽度差**，
