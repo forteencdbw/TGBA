@@ -294,6 +294,20 @@
       },
       "trimmed": false
     },
+    "珊瑚.png": {
+      "frame": {
+        "h": 71,
+        "w": 83,
+        "x": 514,
+        "y": 141
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 71,
+        "w": 83
+      },
+      "trimmed": false
+    },
     "盲虾-蓄力.png": {
       "frame": {
         "h": 56,
@@ -312,7 +326,7 @@
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 514,
+        "x": 601,
         "y": 141
       },
       "rotated": false,
@@ -375,6 +389,20 @@
       "sourceSize": {
         "h": 79,
         "w": 79
+      },
+      "trimmed": false
+    },
+    "管虫.png": {
+      "frame": {
+        "h": 78,
+        "w": 48,
+        "x": 502,
+        "y": 290
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 78,
+        "w": 48
       },
       "trimmed": false
     },
@@ -757,6 +785,10 @@
         "bytes": 1131,
         "sha256": "9c3625f8835fd1b4bc19b98aa849ef20c796ed336170d69b8419891dae9c51be"
       },
+      "珊瑚.png": {
+        "bytes": 11377,
+        "sha256": "116e542855d0b0dc26b9c30e8ad885879acb4f2c0a32ed6ab16b834c526a6a1f"
+      },
       "盲虾-蓄力.png": {
         "bytes": 2952,
         "sha256": "fc4f18d0f6b631a57f5263fdb3c216aff9f509c44737423a67caea54b8fffb06"
@@ -780,6 +812,10 @@
       "章鱼-游动-4.png": {
         "bytes": 9317,
         "sha256": "b5c45a27fa350642273d0ea2fdd5bd367c3313eec650acdd177a8167304c5a31"
+      },
+      "管虫.png": {
+        "bytes": 6238,
+        "sha256": "eaf2f735433d917016b63727f9e5dbffb660c3751bfdf400a1916d2e5854a80e"
       },
       "螃蟹-BOSS-待机-1.png": {
         "bytes": 28746,
@@ -862,7 +898,7 @@
         "sha256": "c5f17cde9ff9364db5b4a0643a51c80e01c7fde4ab2d6c84a7b8f0cf1c118627"
       }
     },
-    "textureBytes": 245624,
+    "textureBytes": 254070,
     "version": "1.0"
   }
 }

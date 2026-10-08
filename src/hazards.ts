@@ -2780,19 +2780,38 @@ let ART_NOW = 0;
 const ART_ANIMATIONS = new Map<string, Texture[]>();
 const ART_ANIMATIONS_LOADING = new Set<string>();
 
-function animationTextures(name: string): Texture[] | null {
-  const ready = ART_ANIMATIONS.get(name);
-  if (ready) return ready;
+function loadAnimation(name: string): Promise<void> {
   const animation = mech.animations[name];
-  if (!animation || ART_ANIMATIONS_LOADING.has(name)) return null;
+  if (!animation || ART_ANIMATIONS.has(name) || ART_ANIMATIONS_LOADING.has(name)) return Promise.resolve();
   ART_ANIMATIONS_LOADING.add(name);
-  void loadAnimationTextures(animation).then((textures) => {
+  return loadAnimationTextures(animation).then((textures) => {
     ART_ANIMATIONS_LOADING.delete(name);
     if (textures.length > 0) ART_ANIMATIONS.set(name, textures);
   });
+}
+
+function animationTextures(name: string): Texture[] | null {
+  const ready = ART_ANIMATIONS.get(name);
+  if (ready) return ready;
+  void loadAnimation(name);
   // Nothing yet: the caller falls back to the drawn body for as long as that lasts, so a picture is an upgrade to the
   // creature rather than a precondition for it.
   return null;
+}
+
+/**
+ * Ask for every animation's textures up front, so that the first creature of a kind does not have to.
+ *
+ * The lazy path above is the right shape for the WATER: a creature that arrives mid-level falls back to its drawn
+ * body for a frame or two and nobody can see it. It is the wrong shape for the bestiary, whose card is painted
+ * ONCE -- a card drawn before its animation was ever asked for keeps the drawn body for as long as it is on
+ * screen, which is how a whale came to be illustrated in the book by a generic fish.
+ *
+ * Called from the loading screen, which exists to load everything once and already promises exactly this for every
+ * other picture in the game. Awaiting it is the point: the cards are drawn after the loading screen finishes.
+ */
+export function warmAnimations(): Promise<void[]> {
+  return Promise.all(Object.keys(mech.animations).map((name) => loadAnimation(name)));
 }
 
 /**

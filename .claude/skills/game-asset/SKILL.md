@@ -98,6 +98,7 @@ Two smaller substitutions for things the old harness provided:
 
 scripts/seedream.py                                    sends a plan's calls to Ark and downloads the results
 scripts/import-sheet.py, scripts/compose-swim-tail.py  the project's own importers
+scripts/import-picture.py                              one still picture, at the project's density
 .env.local                                             ARK_API_KEY. Gitignored. Never commit its contents.
 ```
 
@@ -233,6 +234,27 @@ Two gotchas, both real:
   hardcoded in the regex. For any other creature pass `--drawn <width in screen px>` (or `--grid`) explicitly,
   and read `hazards.radius.<kind>` × `hazardArt.<kind>.scale` × 412 yourself.
 - **`--name` defaults to `金枪鱼-游动`.** Forgetting it writes over the tuna's frames.
+
+### A picture that does not animate
+
+```powershell
+& $py scripts\import-picture.py 珊瑚1.png --name 珊瑚 --drawn 111
+```
+
+Scenery, a prop, a backdrop element: one image, no alignment, no shared palette across frames because there are no
+frames. `import-sheet.py` will take a single picture, but it writes `珊瑚-1.png` — a name that implies a second
+frame that is never coming — and it aligns on the head, which a coral does not have.
+
+**Neither `--drawn` nor `--grid` has a default, and that is deliberate**: the grid is the width the game draws the
+thing at, divided by 1.4, and the width comes from the config
+(`2 × radius × 412 × scale`, from `hazards.radius` or `obstacles.radius`). State it. `import-sheet.py` reads the
+TUNA's numbers out of the config when given neither, which is the trap this one exists without.
+
+**If it needs to move and it has no tail**, do not reach for frames — reach for a rotation about the bottom. That
+is what `obstacles.art`'s `swayDegrees`/`swaySeconds` are: one picture, turned about its own base, with the
+amplitude and the period as two config numbers. The body is then the same pixels in every orientation by
+construction, which is the same argument the tail composition makes, and it is one line of renderer instead of a
+frame set that boils.
 
 ### A swim cycle where only the tail moves
 

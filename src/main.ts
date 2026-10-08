@@ -2,7 +2,7 @@ import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
 import { LEVEL, LEVELS, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
-import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, KIND_TUNING, LURE_PROBE, paintHazards, setReducedFlash, stomachEffect, type HazardKind } from './hazards';
+import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, KIND_TUNING, LURE_PROBE, paintHazards, setReducedFlash, stomachEffect, warmAnimations, type HazardKind } from './hazards';
 import { paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { diagnosticsOf } from './diagnostics';
@@ -1936,6 +1936,10 @@ class Game {
     this.touch.releaseAll();
     this.loading.begin();
     await preloadAssets(allAssetNames(), (progress) => this.loading.update(progress));
+    // The animations are kept in their own cache and would otherwise wait for a creature of that kind to appear,
+    // which the bestiary never does -- see `warmAnimations`. The frames themselves are already in memory by now, so
+    // this is bookkeeping rather than a download.
+    await warmAnimations();
     if (this.pendingType) {
       const type = this.pendingType;
       this.pendingType = null;
@@ -2271,6 +2275,24 @@ class Game {
   private enterCodex(): void {
     this.run.phase = 'codex';
     this.codex.show();
+    /**
+     * A card is painted ONCE, and a creature whose picture is not in memory at that moment is drawn as its code body
+     * instead. The loading screen fetches everything on the way into a RUN -- but the book is reachable straight from
+     * the MENU, where none of it has been fetched, and the result was a bestiary illustrating a whale with a generic
+     * fish.
+     *
+     * So the book loads what it needs for itself. That is the same set the loading screen asks for, through the same
+     * two calls, and Pixi's asset manager is what makes asking twice free -- after one run this resolves immediately
+     * and nothing is redrawn.
+     *
+     * `refresh` rather than `show`: the player may already be paging through the book by the time this lands, and
+     * being thrown back to page 1 by a background load would be worse than the fish.
+     */
+    void preloadAssets(allAssetNames(), () => {})
+      .then(() => warmAnimations())
+      .then(() => {
+        if (this.run.phase === 'codex') this.codex.refresh();
+      });
   }
 
   /** Leave the codex, back to the menu. */

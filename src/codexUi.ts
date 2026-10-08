@@ -60,6 +60,19 @@ interface Rect {
 interface Card {
   rect: Rect;
   entry: CodexEntry;
+  /**
+   * The id the card's ICON proxy is given, in a range the water never uses.
+   *
+   * The painters pool their sprites by the id of the thing being drawn, and a card's creature is a throwaway
+   * one-object field whose ids start at 1 every time -- so every card on a page claimed the SAME pooled sprite and
+   * only the last one drawn got it. That was invisible while the book had no artwork, because a creature with no
+   * picture is drawn by code and the pool is only consulted for pictures; the moment the book started loading its
+   * own, every card but the last went blank.
+   *
+   * NEGATIVE because water ids are positive and count up from 1, so a card can never collide with a live creature
+   * or with a stale sprite left over from one.
+   */
+  iconId: number;
 }
 
 export class CodexUi {
@@ -183,6 +196,16 @@ export class CodexUi {
     if (this.laidOut) this.redraw();
   }
 
+  /**
+   * Redraw the page in place, without resetting it.
+   *
+   * `show` is the way IN and it starts at page 1, which is exactly wrong for a redraw that happens while the player
+   * is already reading -- which is what the animation warm-up in `main.ts` needs. See `enterCodex`.
+   */
+  refresh(): void {
+    if (this.laidOut) this.redraw();
+  }
+
   layout(viewport: Viewport): void {
     const cfg = mech.codex;
     const s = designScale(viewport.width, viewport.height);
@@ -283,6 +306,9 @@ export class CodexUi {
       const row = Math.floor(i / cfg.columns);
       return {
         entry,
+        // Stable for as long as the card is on the page, so its sprite is REUSED across redraws rather than
+        // rebuilt -- and distinct per card, which is the whole point. See `Card.iconId`.
+        iconId: -(i + 1),
         rect: {
           x: this.grid.left + col * (this.grid.cellW + this.grid.gap),
           y: this.grid.top + row * (this.grid.cellH + this.grid.gap),
@@ -618,13 +644,16 @@ export class CodexUi {
        * said out loud instead.
        */
       const field = new HazardField();
-      const card = field.spawnAt(kind, cx, cy, { deterministic: true });
+      // `proxy` rather than `card`: it is a stand-in for the creature, and the name it used to have shadowed the
+      // card this function was handed -- which is how the id below came to be forgotten in the first place.
+      const proxy = field.spawnAt(kind, cx, cy, { deterministic: true });
+      proxy.id = card.iconId;
       // The pose is the card's, not the water's.
-      card.phase = ICON_PHASE;
+      proxy.phase = ICON_PHASE;
       // And nothing is burning down or about to break up: a card shows the CREATURE, not the state it is in.
-      card.fuse = 0;
-      card.foamLife = 0;
-      field.hazards = [card];
+      proxy.fuse = 0;
+      proxy.foamLife = 0;
+      field.hazards = [proxy];
       // Not edible and drawn at rest: the card shows the CREATURE, not the state of the water it happens to be in.
       // `in-play` because a card is of a creature that has not been driven off, and a dimmed one on a card would
       // read as a rendering fault rather than as "this one is leaving".
@@ -638,7 +667,9 @@ export class CodexUi {
       const field = new ObstacleField();
       field.obstacles = [
         {
-          id: 0,
+          // The card's own id, not 0: `paintObstacles` pools its sprites by id too, and every card used to claim
+          // the same one. See `Card.iconId`.
+          id: card.iconId,
           kind: icon.obstacle,
           x: cx,
           y: cy,

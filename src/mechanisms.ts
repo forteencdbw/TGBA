@@ -1245,6 +1245,19 @@ export interface Mechanisms {
     tubeRimColor: number;
     crackWidthRatio: number;
     damagedDarken: number;
+    /**
+     * Optional pictures, one row per kind, for obstacles drawn from art instead of from code.
+     *
+     * Sparse by design: a kind that is not listed keeps its drawn body, and a listed kind FALLS BACK to it while
+     * the texture loads -- so "the picture has not arrived yet" can never be "the obstacle is invisible".
+     *
+     * `image` is a picture name, and only a picture name: an obstacle's animation is its SWAY, not a frame set.
+     * `swayDegrees`/`swaySeconds` are therefore the whole animation -- the picture turns about its own bottom
+     * centre by that many degrees, once every that many seconds. One picture plus a rotation rather than frames,
+     * because a composed rotation keeps the body perfectly still while a generated frame set does not (measured:
+     * 30-40/255 mean difference between generated frames, against 1.4/255 for a composition).
+     */
+    art: Record<string, { image: string; scale: number; alpha: number; swayDegrees: number; swaySeconds: number }>;
   };
   /**
    * The volatile bubble: the second playable type.
@@ -2491,6 +2504,24 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'obstacles.tubeRimColor', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'obstacles.netMesh', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 2 && v <= 10, describe: 'a whole number of mesh lines between 2 and 10' },
   { path: 'obstacles.crackWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.5, describe: 'a stroke width ratio between 0 and 0.5' },  { path: 'obstacles.damagedDarken', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
+  {
+    path: 'obstacles.art',
+    check: (v) => {
+      if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+      return Object.values(v as Record<string, unknown>).every((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        return (
+          typeof r.image === 'string' && r.image.length > 0 &&
+          typeof r.scale === 'number' && r.scale > 0.05 && r.scale <= 6 &&
+          typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1 &&
+          typeof r.swayDegrees === 'number' && r.swayDegrees >= 0 && r.swayDegrees <= 45 &&
+          typeof r.swaySeconds === 'number' && r.swaySeconds > 0.05 && r.swaySeconds <= 60
+        );
+      });
+    },
+    describe: 'an object of obstacle kind -> { image, scale, alpha, swayDegrees, swaySeconds }, where image is a picture name',
+  },
   { path: 'emergence.fishPerceptionBaseMeters', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'emergence.fishPerceptionPerVolume', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'emergence.fishFeedToSplit', check: (v) => typeof v === 'number' && v >= 2, describe: '2 or more, or nothing would ever split' },

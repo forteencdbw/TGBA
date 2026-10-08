@@ -1,4 +1,5 @@
-import { Graphics } from 'pixi.js';
+import { Graphics, Sprite } from 'pixi.js';
+import { assetTextureNow } from './assets';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
 
 /**
@@ -439,19 +440,120 @@ export class ObstacleField {
 }
 
 /**
+ * The sprites a pictured obstacle is drawn with, and the counter that retires them.
+ *
+ * A `Sprite` is not something a `Graphics` can accumulate, so a picture has to be a sibling of `g` in the display
+ * list rather than part of what `g` draws. That is the same call the creatures and the bullets make, for the same
+ * reason, and this is the same shape of cache as `hazards.ts` keeps for them.
+ *
+ * Retirement is by NOT BEING SEEN rather than by a removal callback: obstacles are destroyed in several places
+ * (broken, rammed, scrolled past) and a cache that trusted each of them to announce itself would leak the one
+ * that forgot. `ART_NOW` counts paints, so the TTL is in paints rather than seconds -- at the frame rates this
+ * game actually runs at, they are the same order and this needs no clock.
+ */
+const ART_SPRITES = new Map<number, Sprite>();
+const ART_SEEN = new Map<number, number>();
+let ART_NOW = 0;
+const ART_SPRITE_TTL_PAINTS = 2;
+
+/**
+ * How far apart two obstacles' sways are, in radians.
+ *
+ * The golden angle, so that a `barrier` row of tube worms -- which is the one arrangement where several of these
+ * are on screen at once -- never falls into a repeating pattern of who leans when. `o.id` alone would have every
+ * fourth one in step, and four tubes swaying in unison read as a fence moving rather than as animals.
+ */
+const SWAY_PHASE_STEP = 2.399963;
+
+function pruneArtSprites(): void {
+  if (ART_SPRITES.size === 0) return;
+  for (const [id, sprite] of ART_SPRITES) {
+    if (ART_NOW - (ART_SEEN.get(id) ?? 0) > ART_SPRITE_TTL_PAINTS) {
+      sprite.destroy();
+      ART_SPRITES.delete(id);
+      ART_SEEN.delete(id);
+    }
+  }
+}
+
+/** Test hook: the sprite an obstacle with a picture is currently drawn with, or null if it is drawn by code. */
+export function obstacleArtSpriteForTest(id: number): Sprite | null {
+  return ART_SPRITES.get(id) ?? null;
+}
+
+/**
  * Draw the obstacles.
  *
  * Crates are boxy and coral is organic, and the difference matters: the player has to tell at a glance which one
  * is worth shooting and which one is worth avoiding. Damage shows as cracks rather than as a health bar, because
  * a bar on every crate would be more UI than scenery.
+ *
+ * A kind with a row in `obstacles.art` is drawn from its PICTURE instead of from its branch below, and the two
+ * damage passes still run over it: the cracks are strokes in this same `Graphics`, and the white flash is its own
+ * pass. So a pictured coral takes damage like a drawn one, and the only thing the picture has to answer for is
+ * its own colour at full health.
  */
 export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: number): void {
+  ART_NOW += 1;
+  pruneArtSprites();
   for (const o of field.obstacles) {
     const r = laneWidth * o.radiusFraction;
     const damaged = 1 - o.healthFraction;
     const darken = 1 - damaged * mech.obstacles.damagedDarken;
 
-    if (o.kind === 'crate') {
+    const art = mech.obstacles.art[o.kind];
+    // Asked every frame, so a picture that has not finished loading falls through to the drawn body and the
+    // obstacle is never invisible -- art is an upgrade here exactly as it is for a creature.
+    const texture = art ? assetTextureNow(art.image) : null;
+
+    if (art && texture) {
+      let sprite = ART_SPRITES.get(o.id);
+      if (!sprite) {
+        sprite = new Sprite(texture);
+        sprite.eventMode = 'none';
+        /**
+         * The anchor is the picture's BOTTOM, because that is the point a swaying thing pivots about.
+         *
+         * With `scale.y` negative (see below, and the world is Y-flipped), an anchor of `y: 1` puts the picture
+         * entirely ABOVE its own position: the point the obstacle is at stays planted and the picture leans over
+         * it. Anchored at the centre -- where the creatures are anchored -- a leaning coral would swing its base
+         * out from under itself.
+         */
+        sprite.anchor.set(0.5, 1);
+        const parent = g.parent;
+        if (parent) parent.addChildAt(sprite, Math.max(0, parent.getChildIndex(g)));
+        ART_SPRITES.set(o.id, sprite);
+      }
+      ART_SEEN.set(o.id, ART_NOW);
+
+      const size = r * 2 * art.scale;
+      const unit = size / texture.width;
+      sprite.texture = texture;
+      sprite.visible = true;
+      sprite.x = o.x;
+      sprite.y = o.y;
+      sprite.alpha = art.alpha;
+      // Damage darkens the picture the same way it darkens the drawn colours, by tinting rather than by shading
+      // anything -- `shade` on white is what `darken` already means.
+      sprite.tint = shade(0xffffff, darken);
+      // Negative Y counters the world's flip, so the picture is not upside down; see the player bubble.
+      sprite.scale.set(unit, -unit);
+      /**
+       * The sway: the whole animation, and the reason this kind has no frame set.
+       *
+       * `o.age` is the obstacle's own clock (it already existed for the drawn coral's slow shimmer), so every
+       * obstacle sways independently of every other and of the run. `o.id` offsets the phase so a row of them is
+       * not a chorus.
+       *
+       * The sign is not what it looks like: rotation happens in the sprite's LOCAL space, which is flipped
+       * relative to the world, so a positive angle here leans the picture the other way on screen. A sway is
+       * symmetric, so nothing depends on which -- but do not read it as clockwise.
+       */
+      sprite.rotation =
+        art.swayDegrees === 0
+          ? 0
+          : (art.swayDegrees * Math.PI / 180) * Math.sin((o.age / art.swaySeconds) * Math.PI * 2 + o.id * SWAY_PHASE_STEP);
+    } else if (o.kind === 'crate') {
       const body = shade(mech.obstacles.crateColor, darken);
       const rim = shade(mech.obstacles.crateRimColor, darken);
       // A box, with plank lines so it reads as wood rather than as a generic square.

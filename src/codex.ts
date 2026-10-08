@@ -265,6 +265,47 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
       '数量多、体型小，是"随手吃两口"的来源；真正要躲的东西从来不是它。',
     ],
   },
+  /**
+   * LEVEL 4's four predators, and they share one tagline idea: nothing here is a second behaviour, everything is a
+   * SIZE. Their cards are therefore written about what each size costs the player rather than about what each one
+   * does, because what they do is identical.
+   */
+  {
+    kind: 'dolphin',
+    tagline: '海豚：四个猎食者里唯一可以吃的那一个',
+    notes: [
+      '**只有 3 点血，和一条小鱼一样薄**，第 3 档就能吞下去——所以它不是威胁，是这一关先发给你的一次胜利。',
+      '它也是四个里最快的（前摇 0.55 秒、冷却 1.8 秒）：追得紧，但追上了也不致命。',
+      '一关全是啃不动的东西，玩家记住的就只有"躲"。它是这一关的第一课：**这里的东西可以很大，而大的也可以是食物**。',
+    ],
+  },
+  {
+    kind: 'octopus',
+    tagline: '章鱼：这一关最懒的那个猎食者',
+    notes: [
+      '前摇 0.9 秒、冷却 2.6 秒，是四个里最容易看穿的——**它的作用是让另外三个显得快**。',
+      '体型和大白鲨一样（radius 0.07），但它是软体：怒火爆发推得动它、清不掉，喷出去的分量也按软体算。',
+      '它是唯一"可以忽略一会儿"的东西——而"哪个可以忽略"本身也是这一关要你做的判断。',
+    ],
+  },
+  {
+    kind: 'shark',
+    tagline: '大白鲨：前摇 0.6 秒、冲刺 0.4 秒，这一关的招牌',
+    notes: [
+      '它是四个里最"已经决定了"的那个：从摆架势到撞上来只有 1 秒。**这 1 秒就是它全部的公平性。**',
+      '6 点血、第 4 档才吞得下——遇到它就得先决定是打还是绕，因为它不给你第三个选项。',
+      '它排在 900m 才登场：到那时玩家已经见过鱼群、也被温跃层逼着换过高度，知道"大"在这个游戏里是什么意思了。',
+    ],
+  },
+  {
+    kind: 'whale',
+    tagline: '座头鲸：全场最大、最厚、也最慢的一个',
+    notes: [
+      '**8 点血、画出来 154px 宽**，是游戏里最大的东西。但它前摇 1.1 秒——大到这个程度，慢就是它给你的礼貌。',
+      '它一次只来一只。屏幕被占住就是它的机制，所以它放在收尾段：刚躲完一串快的东西，慢的才最压人。',
+      '第 4 档才吞得下，而吃下去值 0.6 质量——全场最重的一口。',
+    ],
+  },
 ];
 
 function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[]): CodexEntry {
