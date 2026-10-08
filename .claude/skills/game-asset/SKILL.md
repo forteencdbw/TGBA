@@ -1,6 +1,6 @@
 ---
 name: game-asset
-description: Turn a render that already exists into a shippable sprite for 冒泡大作战 / Bubble Battle - seed transparency, write the frame spec, pixelate and anchor-align the frames, then import into src/assets/ and repack the atlas. Use when adding or redoing creature, prop, pickup or HUD art (an idle/walk/attack animation, sprite frames, a sprite sheet, a transparent PNG asset, a TexturePacker atlas JSON), or when asked to re-pixelate, re-align, resize or re-pack existing frames, or when a new creature needs art wired into config/mechanics.json5.
+description: Generate and ship art for 冒泡大作战 / Bubble Battle - call the Seedream image API (transparency, interactive editing by coordinate, layer decomposition), then seed transparency, pixelate and anchor-align the frames, import into src/assets/ and repack the atlas. Use when adding or redoing creature, prop, pickup, background or HUD art (an idle/walk/attack animation, sprite frames, a sprite sheet, a transparent PNG asset, a TexturePacker atlas JSON), when asked to generate or regenerate a picture with Seedream / Doubao / Ark, or to re-pixelate, re-align, resize or re-pack existing frames, or when a new creature needs art wired into config/mechanics.json5.
 ---
 
 # Game asset pipeline
@@ -9,25 +9,58 @@ The pipeline that produced every picture in `src/assets/`: transparency, pixelat
 anchor alignment, packing, and a check that decodes the result back to pixels. It is subject-agnostic —
 nothing in it knows whether it is drawing a crab or a bullet.
 
-It was written and run under a different harness (dsh), where the image model was a host tool. **Read the next
-section before following any step below**, because that tool does not exist here.
+It was written and run under a different harness (dsh), where the image model was a host tool. It is not a host
+tool here — it is an HTTP API — so the way in which the first step runs has changed. Read the next section before
+following any step below.
 
-## What can and cannot run here
+## Generating the render, and the key it needs
 
-| Step | Tool | Here? |
-|---|---|---|
-| 1. Generate the reference render | `generate_image` (Volcengine Ark / Doubao Seedream) | **No** — a dsh host tool, not present in this environment, and nothing in this repo calls Ark |
-| 2. Seed transparency (`grant` / `key`) | `scripts/asset_pipeline.py` | yes |
-| 3. Write the frame spec, resolve the plan (`plan`) | `scripts/asset_pipeline.py` | `plan` yes; the `generate_image` calls it prints are step 1's problem |
-| 4. Pixelate, align, verify (`sheet`, `atlas`, `verify`) | `scripts/asset_pipeline.py` | yes |
-| 5. Import into this game | `scripts/import-sheet.py`, `scripts/compose-swim-tail.py`, `pnpm atlas` | yes |
+The model is **Volcengine Ark** (Doubao Seedream), called over HTTP:
 
-So the runnable half is **"a render already exists, make it shippable"**. The render comes from outside: The
-owner draws it, or it is generated elsewhere. Do not claim to have generated an image.
+```
+POST https://ark.cn-beijing.volces.com/api/v3/images/generations
+Authorization: Bearer $ARK_API_KEY
+```
 
-Two smaller substitutions:
+`reference/seedream.md` is the request reference — model IDs, parameters, sizes, input constraints, limits — and
+`reference/api-notes.md` is what this pipeline measured against the live endpoint.
 
-- **`read_image`** (how the dsh Web UI showed a picture) does not exist either. Use the **Read** tool on a PNG —
+**It needs `ARK_API_KEY`, and that is not set in this environment.** Checked 2026-10-09: not in the environment,
+not in `~/.dsh/.env`, and nothing in this repo reads it. So as things stand this skill cannot generate a picture,
+and the honest move is to ask the owner to export a key or to supply the render. Never invent a key, and never
+claim to have generated an image you did not.
+
+With the key exported, generation is a `curl` (curl is present here) or a Python call, and the loop is:
+
+1. **Choose the model**: `doubao-seedream-5-0-pro-260628` for quality, `doubao-seedream-5-0-flash-260915` for
+   speed and price. Only these two have transparent output, interactive editing and layer decomposition; 4.5 and
+   4.0 are JPEG-only with no transparency mode at all, so their only route to an RGBA frame is a local key —
+   which the rule below says is the worse one.
+2. **Generate the reference** with a clean flat background — pure black for anything that glows.
+3. **Seed it** with `grant` (see the rule below): Ark refuses to produce transparency from a fully opaque input.
+4. **Write the frame spec, then generate.** Put the per-frame prompts in JSON *first*, so they are reviewable
+   before anything is paid for and re-runnable afterwards — the same reference and the same subject wording on
+   every frame, with only the phase description differing. `<pipeline> plan --spec frames.spec.json --out
+   frames.plan.json` generates nothing: it resolves the spec into the exact request body per frame and refuses
+   early when the reference is missing or has no alpha channel. Then one request per frame.
+5. **Pixelate, align, verify**, then import.
+
+That reference has the rest of it: the resolution tiers per model and the aspect ratios they map to, the prompt
+budget (≤ 300 Chinese characters), passing a local file as `data:image/png;base64,…`, and the 24-hour expiry on
+every returned URL.
+
+Two capabilities of 5.0 pro/flash are worth reaching for, because they do what prompts do badly:
+
+- **Interactive editing** — write the location as a normalized coordinate (`0–999`) in the prompt:
+  `把图1 <bbox>120 180 640 760</bbox> 区域替换成花园`. This is how to say "the thing *there*" rather than "the
+  creature on the left", which the model keeps misreading.
+- **Layer decomposition** — one picture into a base plus up to 16 transparent layers, each with the box and
+  z-order needed to put it back. That is the shape of a parallax backdrop. It is a *generation*, not a
+  segmentation: the layers are redrawn, so it is not a lossless split of the input.
+
+Two smaller substitutions for things the old harness provided:
+
+- **`read_image`** (how the dsh Web UI showed a picture) does not exist here. Use the **Read** tool on a PNG —
   it renders the image. Read the **`-checker`** file when there is one: transparency is invisible on a white
   background, which is where a broken cutout hides.
 - **The loading snippet in step 5 of the original skill is wrong for this project.** It uses `fetch` +
@@ -40,7 +73,8 @@ Two smaller substitutions:
 ```
 .claude/skills/game-asset/scripts/asset_pipeline.py    the pipeline (self-contained copy)
 .claude/skills/game-asset/scripts/run.ps1              finds a Python with Pillow and forwards every argument
-.claude/skills/game-asset/reference/api-notes.md       the measured API behaviour behind every default
+.claude/skills/game-asset/reference/seedream.md        the Ark API as documented (request, params, limits)
+.claude/skills/game-asset/reference/api-notes.md       the Ark API as measured by this pipeline
 ```
 
 `refs/asset_pipeline.py` is the project's other copy, and the two were **byte-identical at migration**
@@ -93,7 +127,10 @@ Measured against the live API when the pipeline was built:
 
 So transparency has to be **seeded**, and one pixel is enough: a 1×1 transparent corner produced the same
 silhouette as a careful local cutout. Do not spend effort segmenting the reference — `grant` writes 64
-transparent pixels into a corner and stops there.
+transparent pixels into a corner and stops there. The vendor documentation states the same thing as three
+constraints: `background` applies to image-to-image only, to exactly **one** input image, and that image must
+already carry an alpha channel; transparent mode is PNG-only, so `output_format: "jpeg"` beside it is an error
+(and a jpeg *input* is too). See `reference/seedream.md — Transparency`.
 
 ```powershell
 <pipeline> grant raw\reference.png -o keyed\reference.png
@@ -227,11 +264,14 @@ State the numbers the tools printed: canvas size, frame count, file size, decode
 pixels per texel it implies, and the anchor-check result. Then **show the picture**: Read the `-checker` PNG, and
 the level's own screenshot if you changed how something looks in play.
 
+If you generated anything, say which model and which size you asked for, and **save every returned image to disk
+before doing anything else** — the URLs expire in 24 hours.
+
 Then commit — bump `version` in `package.json` in the same commit and push to `origin main`, per `AGENTS.md`.
 
 ## Traps worth remembering
 
-Every one of these was a real bug in this pipeline:
+**Pipeline side — every one of these was a real bug here:**
 
 - **`Image.paste(frame, pos, frame)` is not a copy.** Passing an image as its own mask makes PIL composite it; on
   PIL 12.3 that rewrote 36,234 of a 204×205 frame's pixels while the sizes still matched, so it was invisible.
@@ -241,11 +281,22 @@ Every one of these was a real bug in this pipeline:
   extra "frame". When the directory has an `animation.json`, treat its frame list as authoritative.
 - **Alignment is translation only.** If frames still look wrong after it, the cause is a size difference (use
   `--scale content-width`) or the model drew a different creature (regenerate).
-- **Aspect ratio.** Pick the frame shape in the prompt and keep it consistent; the pipeline crops to content, so
-  a drifting aspect ratio becomes visible drift.
 - **Two routes to a swim cycle, and they are not interchangeable.** Per-frame renders keep the artist's own poses
   and boil; a composed tail-only cycle is perfectly stable and has one pose rotated. Pick deliberately — the tuna
   has been through both.
 
-`reference/api-notes.md` has the full measured API behaviour, the model-ID rules (the version suffix is
-mandatory), the per-model capability matrix, and the numbers behind every default above.
+**API side:**
+
+- **Download immediately.** Every generated URL is deleted after 24 hours, and there is no second chance.
+- **A tier is a class, not a dimension.** `size: "2K"` came back 1584×2816 for a 9:16 prompt. Read the size you
+  actually got, and ask for the aspect ratio in the prompt rather than assuming the tier set it.
+- **The model ID's date suffix is required.** `doubao-seedream-5-0-flash` is a 404; `…-260915` is the model.
+- **One frame per call.** Batch generation (`sequential_image_generation`) does not exist on 5.0 pro/flash — the
+  only models with transparency — so a frame set is N requests and N decisions, not one.
+- **Aspect ratio.** Pick the frame shape in the prompt and keep it consistent; the pipeline crops to content, so
+  a drifting aspect ratio becomes visible drift.
+
+`reference/seedream.md` is the API as documented — every request parameter, the size tables, the input
+constraints, interactive editing, layer decomposition and the IPM limits. `reference/api-notes.md` is the API as
+measured, and wins where the two disagree: the model-ID rules, the three transparency refusals, and the numbers
+behind every default above.
