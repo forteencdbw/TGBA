@@ -51,12 +51,18 @@
     { at: 250, kind: 'skill', x: 0.4 },
     { at: 300, kind: 'torpedo', x: 0.5, from: 'right', enterSpeed: 46 },
     { at: 360, kind: 'fish', count: 5, arrange: 'line' },
+    // --- 猎食者登场。先给**海豚**：四个里它最小、最薄（3 点血）、食谱门槛最低，所以它教的是
+    // "这一关的东西也可以很大、而且大的也能是食物"。先让玩家赢一次，再给他看赢不了的。 ---
+    { at: 390, kind: 'dolphin', x: 0.78 },
     { at: 420, kind: 'upgrade', x: 0.65 },
 
     // --- 温跃层：上下同时来东西，逼玩家换高度。 ---
     { at: 480, kind: 'fish', count: 5, arrange: 'spread', span: 40, from: 'left', depth: 0.62 },
     { at: 520, kind: 'fish', count: 5, arrange: 'spread', span: 40, from: 'right', depth: 0.42 },
     { at: 580, kind: 'bombfish', count: 2, arrange: 'spread', span: 30, x: 0.5 },
+    // 章鱼：从侧面**横着**进来（enterSpeed 比别的慢），因为它是四个里最懒的那个——前摇 0.9 秒、冷却 2.6 秒，
+    // 它是"可以忽略一会儿"的猎食者，作用是让别的三个显得更快。
+    { at: 610, kind: 'octopus', x: 0.3, from: 'left', enterSpeed: 34 },
     { at: 640, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'left', enterSpeed: 46 },
     { at: 700, kind: 'angler', count: 2, arrange: 'line' },
     { at: 760, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.2, x: 0.5, from: 'bottom' },
@@ -64,11 +70,19 @@
     // --- 冷水层：猎食者密集，速度更快。 ---
     { at: 830, kind: 'crab', count: 3, arrange: 'line' },
     { at: 880, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.5, from: 'right', enterSpeed: 46 },
+    // **招牌**：大白鲨。前摇只有 0.6 秒、冲刺 0.4 秒，是四个里最"已经决定了"的那个。
+    // 放在这里而不是开场，是因为到这一步玩家已经见过鱼群、见过温跃层逼他换高度，知道"大"在这个游戏里是什么意思了。
+    { at: 900, kind: 'shark', x: 0.55 },
     { at: 940, kind: 'rate', x: 0.3 },
     { at: 1000, kind: 'fish', count: 6, arrange: 'spread', span: 30, from: 'left', depth: 0.55 },
     { at: 1060, kind: 'bombfish', count: 3, arrange: 'spread', span: 40, x: 0.6 },
     { at: 1120, kind: 'angler', count: 3, arrange: 'spread', span: 40, x: 0.4 },
+    // 座头鲸：一次只来一只。它是全场最慢（前摇 1.1 秒）也最厚（8 点血）的东西，
+    // 放在收尾段是因为**慢的东西在一段快的东西后面才最吓人**——玩家刚躲完一串快攻，会明显感到屏幕被占住了。
+    { at: 1080, kind: 'whale', x: 0.45 },
     { at: 1200, kind: 'fish', count: 10, arrange: 'line' },
     { at: 1260, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.7, from: 'bottom' },
+    // 最后把海豚放回来两只：它现在是"已知的、吃得下的那种大东西"，用来让 BOSS 之前那口气不空。
+    { at: 1290, kind: 'dolphin', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', enterSpeed: 40 },
   ],
 }

@@ -519,6 +519,13 @@ export function spitImpact(kind: HazardKind): number {
     // A bigger fish hits harder than a small one, and it is still a soft body: between the fish's slap and the
     // trash bag's thump, well short of the crab's battering ram.
     tuna: 1.0,
+    // LEVEL 4, and the scale is the point: what you swallowed is what you throw, so a dolphin is worth more than
+    // a fish and a whale is worth more than anything. The octopus is the odd one at its size -- soft-bodied, so it
+    // throws like the jellyfish it resembles in texture rather than like the shark it matches in weight.
+    dolphin: 1.1,
+    octopus: 0.8,
+    shark: 1.4,
+    whale: 1.7,
     jelly: 0.6,
     trash: 0.9,
     crab: 1.6,

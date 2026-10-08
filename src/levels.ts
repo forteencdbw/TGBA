@@ -196,6 +196,11 @@ export type SpawnKind =
   | 'rain'
   /** The tuna: a size up from `fish`, and it hunts the same way. */
   | 'tuna'
+  /** LEVEL 4's four predators, in ascending order of how much screen they take up. */
+  | 'dolphin'
+  | 'octopus'
+  | 'shark'
+  | 'whale'
   | ObstacleKind;
 
 /** The arrangement vocabulary: how a block's `count` things are laid out. */

@@ -90,7 +90,27 @@ export type HazardKind =
   | 'foam'
   | 'rain'
   /** A tuna: the open-water hunter, a size up from the small fish and built the same way. */
-  | 'tuna';
+  | 'tuna'
+  /**
+   * LEVEL 4 -- 猎食者温跃层, the open-water predators.
+   *
+   * Four creatures, four sizes, one behaviour: they hunt and lunge exactly as the fish and the tuna do, and what
+   * tells them apart is the SIZE of the thing coming at you. That is the level's idea -- its thermocline is where
+   * the water stops being a place with fish in it and becomes a place with predators in it -- so the mechanic the
+   * player learns is "how big is that", not a fourth movement rule.
+   *
+   * `whale`    the largest thing in the game and the slowest to bring down. Slow enough to read, big enough that
+   *            being under it is the mistake.
+   * `shark`    mid-sized and the level's signature: fast, and it is the one that looks like it is already
+   *            committed before it moves.
+   * `dolphin`  smaller than the shark, quicker, and the only one of the four that a well-grown bubble can eat
+   *            early -- the predator that is also food.
+   * `octopus`  the same size as the shark and soft-bodied: it lunges less like a fish and drifts more.
+   */
+  | 'whale'
+  | 'dolphin'
+  | 'shark'
+  | 'octopus';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
@@ -632,6 +652,23 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
    * SIZE -- which is exactly what `hazards.radius.tuna` and `hazardArt.tuna.scale` are for.
    */
   tuna: { radius: 0.045, colour: 0x4f86b8, spin: 0 },
+  /**
+   * LEVEL 4's predators: four sizes of the same hunter.
+   *
+   * Each colour is taken from the picture rather than invented, because these four are the only creatures in the
+   * game drawn from art the owner brought in rather than art the game generated to specification -- the colour here
+   * is what the procedure-drawn fallback uses before (or instead of) that picture loading, and a fallback that
+   * contradicted the picture would be a bug you only see on the frame the atlas fails.
+   *
+   * The radii climb 0.055 -> 0.085, which is the whole point of the level: the fish at 0.035 is a nuisance, and the
+   * thing at 0.085 is a decision. `hazards.radius` in the config is where these are tuned, and changing one
+   * changes the creature's pixelation grid too -- see `hazardArt.<kind>.scale` and the README's pixelation
+   * section, or the picture comes out at the wrong density.
+   */
+  dolphin: { radius: 0.055, colour: 0x7fa8d4, spin: 0 },
+  octopus: { radius: 0.07, colour: 0xd9663a, spin: 0.1 },
+  shark: { radius: 0.07, colour: 0x8494a4, spin: 0 },
+  whale: { radius: 0.085, colour: 0x3c4a5e, spin: 0 },
   jelly: { radius: 0.062, colour: 0xc79bff, spin: 0 },
   trash: { radius: 0.05, colour: 0xb08a5a, spin: 0.6 },
   crab: { radius: 0.045, colour: 0xff9b6b, spin: 0 },
@@ -1168,6 +1205,12 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
   // The tuna MOVES like a fish: it chases and it commits to the same kind of lunge. What makes it a different
   // creature is its size, not a second behaviour -- `charges.chargers.tuna` is where a different rhythm would go.
   tuna: stepFish,
+  // LEVEL 4's four predators, by the same reasoning as the tuna: a whale that hunted differently would be a fifth
+  // mechanic to learn in a level whose idea is SIZE. Their rhythm lives in `charges.chargers.<kind>`.
+  whale: stepFish,
+  dolphin: stepFish,
+  shark: stepFish,
+  octopus: stepFish,
   jelly: stepJelly,
   trash: stepTrash,
   crab: stepCrab,
@@ -1376,6 +1419,12 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   fish: contactFish,
   // Same contact rule as the fish, for the same reason as `CREATURES`: it is a bigger fish, not a new mechanic.
   tuna: contactFish,
+  // Same again for the four predators: touching a shark and touching a fish are the same event, and the difference
+  // the player feels is how much screen the thing occupies.
+  whale: contactFish,
+  dolphin: contactFish,
+  shark: contactFish,
+  octopus: contactFish,
   jelly: contactJelly,
   trash: contactTrash,
   crab: contactCrab,
@@ -2124,7 +2173,10 @@ export class HazardField {
   }
 
   private spawn(ctx: HazardContext): Hazard {
-    const kinds: HazardKind[] = ['fish', 'tuna', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain'];
+    // Hand-maintained, and the one place a new kind can be forgotten without the compiler saying so -- every
+    // `Record<HazardKind, ...>` table is total, this is an array. Level 4's four are here for the same reason the
+    // tuna is: a random pass should be able to produce anything the game can produce.
+    const kinds: HazardKind[] = ['fish', 'tuna', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain', 'dolphin', 'octopus', 'shark', 'whale'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
@@ -3571,6 +3623,10 @@ const CREATURE_DRAWING: Record<HazardKind, CreatureDraw> = {
   // The drawn fallback, used until the picture loads (or if it never does): the same body the fish gets, at the
   // tuna's larger radius. The painted body is an upgrade to a creature, never a precondition for it.
   tuna: drawFish,
+  whale: drawFish,
+  dolphin: drawFish,
+  shark: drawFish,
+  octopus: drawFish,
   jelly: drawJelly,
   trash: drawTrash,
   crab: drawCrab,

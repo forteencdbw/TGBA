@@ -64,6 +64,27 @@ alpha renders the body's dark parts nearly transparent, so the creature washes
 out. The model's version keeps it. Prefer `grant` unless you specifically need
 alpha the model would not produce.
 
+## Per-frame renders boil, and here is the number for it
+
+Four frames of one subject, generated one call each, are four complete re-renders. Measured 2026-10-09 on an
+octopus (flash, `1K`, one 1024x1024 RGBA reference), after pixelation onto the game's grid with one shared
+40-colour palette:
+
+| | mean \|dRGB\| | pixels differing by >32 levels |
+|---|---|---|
+| the four generated frames | **30.7 - 39.5 / 255** | **38 - 58%** |
+| a composed tail cycle (tuna, shark), shipped | 1.0 - 2.1 / 255 | 1.3 - 2.2% |
+
+The generated set was rejected on those numbers. What makes them decisive is the second measurement: the
+differences are not concentrated in the part that should move. The octopus's MANTLE -- the one region that must
+hold still -- differed on 55-73% of its own area, as much as the arms did. So this is not "the artist drew four
+poses", it is "the creature shimmers", and no amount of alignment or palette work removes it, because every
+pixel was repainted.
+
+Before rejecting a set on a hunch, measure it this way: compare only pixels that are opaque in BOTH frames, and
+report the mean absolute RGB difference rather than counting unequal pixels. Exact inequality says 100% differ
+on these frames, including the fully transparent corners, which is true and useless.
+
 ## Model IDs carry a version suffix
 
 ```
@@ -83,6 +104,22 @@ $key = "<ARK_API_KEY>"
 
 `status: "Shutdown"` is retired; `"Retiring"` still works; absent status is live.
 A 404 for a plausible-looking ID almost always means a missing date suffix.
+
+### In the model list is NOT the same as activated on the account
+
+Measured 2026-10-09, on the account this repo's key belongs to:
+
+```
+doubao-seedream-5-0-pro-260628   listed live in /api/v3/models
+POST with that model          -> 404 ModelNotOpen
+   "Your account 2132701805 has not activated the model doubao-seedream-5-0-pro-260628.
+    Please activate the model service in the Ark Console."
+doubao-seedream-5-0-flash-260915 -> 200
+```
+
+So the model list is a catalogue, not a licence. `scripts/seedream.py` echoes Ark's error body for exactly this
+reason -- the refusal names the model and the account, and it is the only place that says so. Ask before assuming
+a live model is usable; flash was the one that worked.
 
 ## What each model supports
 

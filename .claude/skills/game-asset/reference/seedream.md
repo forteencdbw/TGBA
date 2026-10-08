@@ -201,6 +201,17 @@ always PNG. A request reserves 17 IPM (16 layers + base) against the 500 IPM acc
 illustration that wants to be a base plus separately-movable pieces. Note that the split is a *generation*, not
 a segmentation: the layers are redrawn, so a split is not a lossless decomposition of the input.
 
+**It does not split one animal into its parts.** Measured 2026-10-09 on a single octopus on transparency
+(flash, `1K`, no prompt): two pieces came back — the empty base at `z_index` 0, and one layer holding
+
+> 完整的像素风格橙色章鱼本体，包含头部、所有触手、吸盘和黄色眼睛，无多余背景元素
+> ("the whole pixel-art orange octopus, head, all tentacles, suckers and yellow eye, no extra background")
+
+So the model returned the creature whole and found nothing to separate. Ask it for a creature's arms as their
+own layer and you get an empty question: decomposition separates a SUBJECT from its SURROUNDINGS, which is what
+it is for (posters, thumbnails, collage). It is not rigging. For "only this part moves", compose it
+geometrically from one drawing instead — that is what `compose-swim-tail.py` does.
+
 ## Limits
 
 - **IPM 500** per model version per minute, counted in generated pictures. Exceeding it errors.

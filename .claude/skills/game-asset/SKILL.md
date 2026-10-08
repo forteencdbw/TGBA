@@ -237,17 +237,37 @@ Two gotchas, both real:
 ### A swim cycle where only the tail moves
 
 ```powershell
-& $py scripts\compose-swim-tail.py sheet.png --out <目录> [--amplitude 15] [--body-frame 2]
+& $py scripts\compose-swim-tail.py picture.png --out <目录> [--amplitude 15]
 & $py scripts\import-sheet.py <目录> --cols 4 --rows 1        # the four frames are already frame-sized
 ```
 
 The other route, with the opposite trade-off: the body is not redrawn, so it is **byte-identical in every frame**
 (no boiling, nothing to align), and the tail is a rotation about the peduncle, so the amplitude is one number.
-What you give up is that the tail is a rotation of one drawing rather than a second pose for it. The frames are
-read in reading order and the SECOND is used as the body; the peduncle is measured as the waist where the
-silhouette stops thinning, not as the narrowest column — the tip of a crescent fin is thinner still. Prompting
-cannot deliver "only the tail moves": four renders of the same reference measured 30–73% of the *body's* pixels
-different, each frame carrying its own dithering pattern.
+What you give up is that the tail is a rotation of one drawing rather than a second pose for it. The peduncle is
+measured as the waist where the silhouette stops thinning, not as the narrowest column — the tip of a crescent
+fin is thinner still.
+
+Three things about that pair of commands that cost time to find:
+
+- **It takes ONE picture, not a sheet**, despite the docstring. `--body-frame`, `--cols` and `--rows` are
+  declared and then never read, so passing them changes nothing.
+- **The directory is the handoff, and it only works because `import-sheet.py` accepts one.** It used to
+  `Image.open()` its argument, so following the command the composer prints ended in `PermissionError` on
+  Windows. The directory path also pixelates the frames on the canvas they SHARE rather than cropping each to
+  its own content box — a swinging tail changes the content box (measured on a whale: 983 / 982 / 974 / 958),
+  and cropping each frame to its own box made `pixelate()` scale them differently, so the body came out a
+  different size frame to frame. That one cost 1752 differing body pixels before it was found.
+- **`--amplitude` is the only knob that decides whether you can SEE it.** At the default 15 the sweep is
+  ±14.1°, which on a small creature is a couple of texels. The octopus needed 28 before its arm read as moving.
+
+Prompting cannot deliver "only the tail moves": four renders of the same reference measured 30–73% of the
+*body's* pixels different, each frame carrying its own dithering pattern. Measured again, differently, on the
+octopus — see `reference/api-notes.md`, which has the number and the way to measure it.
+
+**A subject with no tail cannot use this route**, and it will not say so. The octopus has eight arms and no
+peduncle; the composer found a "waist" at x=844 of 1024 and rotated the rightmost 180px, which is a cut through
+the animal, not a hinge. Look at what it produces before importing it — the waist it picks is a measurement, not
+a judgement.
 
 ### Wire it into the game
 
