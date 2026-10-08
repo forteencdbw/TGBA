@@ -41,6 +41,17 @@ signal. Evidence, on the same opaque crate render:
 
 All five produce the subject's silhouette, not the seed's shape.
 
+### The subject is opaque but almost never exactly 255
+
+Measured 2026-10-09 on a real `doubao-seedream-5-0-flash-260915` cutout (1K, one frame, granted 512×512
+reference): the frame came back 1024×1024 with corners at alpha 0 and **84.9% of it transparent**, and the
+subject covering 15.1% of the frame. Of those subject pixels, **86.0% were alpha ≥ 250 but only 19.3% were
+exactly 255**.
+
+So the body is opaque and the remainder is edge softness, not a translucent sprite — but a check written as
+`alpha == 255` under-reports the subject by more than 4x. Threshold at 250, or use `content_box`'s own
+threshold, which is what all of this pipeline's alignment and cropping already do.
+
 ### The model's cutout beats a local luminance key on emissive subjects
 
 | Route | Fully transparent | Partial | Fully opaque |

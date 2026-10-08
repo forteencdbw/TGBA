@@ -6,6 +6,13 @@ dist/
 *.tmpdir/
 .*.tmp
 
+# Local secrets.
+#
+# `*.local` above already covers this file; the line is repeated here so that the REASON is written down where
+# someone tempted to tighten that rule will read it. THIS REPOSITORY IS PUBLIC. `ARK_API_KEY` lives in
+# `.env.local` for `scripts/seedream.py` and the game-asset skill, and committing it would publish a live key.
+.env.local
+
 # Dev-server runtime artifacts: pid files and logs are per-machine and are recreated on start.
 .devserver.pid
 .devserver.log

@@ -25,12 +25,27 @@ Authorization: Bearer $ARK_API_KEY
 `reference/seedream.md` is the request reference — model IDs, parameters, sizes, input constraints, limits — and
 `reference/api-notes.md` is what this pipeline measured against the live endpoint.
 
-**It needs `ARK_API_KEY`, and that is not set in this environment.** Checked 2026-10-09: not in the environment,
-not in `~/.dsh/.env`, and nothing in this repo reads it. So as things stand this skill cannot generate a picture,
-and the honest move is to ask the owner to export a key or to supply the render. Never invent a key, and never
-claim to have generated an image you did not.
+**It needs `ARK_API_KEY`, which lives in `.env.local` at the repo root** — gitignored by the `*.local` rule, and
+verified working 2026-10-09 against the model list, where `doubao-seedream-5-0-pro-260628` and
+`…-5-0-flash-260915` are both live. **This repository is public**, so the key never goes in a tracked file, is
+never printed, and is never sent anywhere but Ark. If it is missing, ask the owner for one rather than inventing
+it; and never claim to have generated an image you did not.
 
-With the key exported, generation is a `curl` (curl is present here) or a Python call, and the loop is:
+`scripts/seedream.py` is the runner — the half of the seam that the old harness used to provide:
+
+```powershell
+$py = pwsh -NoProfile -File .claude\skills\game-asset\scripts\run.ps1 python   # see the note on pwsh below
+& $py .claude\skills\game-asset\scripts\asset_pipeline.py plan --spec frames.spec.json --out frames.plan.json
+& $py scripts\seedream.py --plan frames.plan.json --dry-run     # print the requests, send nothing
+& $py scripts\seedream.py --plan frames.plan.json               # send them
+```
+
+It reads the plan's `calls[]` verbatim, sends one request per frame, downloads each result to its `output_path`,
+and exits non-zero if any frame failed — a missing frame otherwise looks exactly like a frame the pipeline has
+not reached yet. `--dry-run` costs nothing and is the right first move. `--model` overrides the model for the
+whole run. `--only <frame-id>` regenerates a single frame rather than the set.
+
+The loop is:
 
 1. **Choose the model**: `doubao-seedream-5-0-pro-260628` for quality, `doubao-seedream-5-0-flash-260915` for
    speed and price. Only these two have transparent output, interactive editing and layer decomposition; 4.5 and
@@ -40,10 +55,15 @@ With the key exported, generation is a `curl` (curl is present here) or a Python
 3. **Seed it** with `grant` (see the rule below): Ark refuses to produce transparency from a fully opaque input.
 4. **Write the frame spec, then generate.** Put the per-frame prompts in JSON *first*, so they are reviewable
    before anything is paid for and re-runnable afterwards — the same reference and the same subject wording on
-   every frame, with only the phase description differing. `<pipeline> plan --spec frames.spec.json --out
-   frames.plan.json` generates nothing: it resolves the spec into the exact request body per frame and refuses
-   early when the reference is missing or has no alpha channel. Then one request per frame.
+   every frame, with only the phase description differing. `plan` generates nothing: it resolves the spec into
+   the exact request per frame and refuses early when the reference is missing or has no alpha channel. Then
+   `scripts/seedream.py` sends them.
 5. **Pixelate, align, verify**, then import.
+
+Measured on a real run of the above (2026-10-09, flash, `1K`, one frame from a granted 512×512 reference): 9
+seconds, one image, 4096 tokens, 1024×1024 back. Corners at alpha 0 and 84.9% of the frame transparent, so the
+transparency path works end to end. Note that the model renders smooth — the prompt asked for pixel art and got
+none of it, exactly as the traps below say. Step 5 is what pixelates.
 
 That reference has the rest of it: the resolution tiers per model and the aspect ratios they map to, the prompt
 budget (≤ 300 Chinese characters), passing a local file as `data:image/png;base64,…`, and the 24-hour expiry on
@@ -75,6 +95,10 @@ Two smaller substitutions for things the old harness provided:
 .claude/skills/game-asset/scripts/run.ps1              finds a Python with Pillow and forwards every argument
 .claude/skills/game-asset/reference/seedream.md        the Ark API as documented (request, params, limits)
 .claude/skills/game-asset/reference/api-notes.md       the Ark API as measured by this pipeline
+
+scripts/seedream.py                                    sends a plan's calls to Ark and downloads the results
+scripts/import-sheet.py, scripts/compose-swim-tail.py  the project's own importers
+.env.local                                             ARK_API_KEY. Gitignored. Never commit its contents.
 ```
 
 `refs/asset_pipeline.py` is the project's other copy, and the two were **byte-identical at migration**
@@ -95,6 +119,14 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .claude\skills\game-asset\scripts\
 ```
 
 Without `pwsh`, the same file runs under `powershell -ExecutionPolicy Bypass -File ...`.
+
+**`pwsh` is not reliably on PATH on this machine**, so the line above can fail with `command not found` even
+though PowerShell 7.6 is installed — its App Execution Alias sits in a versioned subdirectory
+(`…\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe`) instead of in `WindowsApps` itself, which is what
+a PATH lookup expects. Checked 2026-10-09; Windows PowerShell 5.1 is at
+`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe` and works. If neither resolves, skip the wrapper
+entirely: it only finds a Python with Pillow and forwards its arguments, and the three-file probe order is
+written out three paragraphs down — call `asset_pipeline.py` with that interpreter directly.
 
 Subcommands: `grant`, `key`, `plan`, `sheet`, `atlas`, `verify`. `run.ps1 --help` lists them. Below,
 `<pipeline>` stands for that whole invocation, so `<pipeline> verify --dir sheet` means the command above with
