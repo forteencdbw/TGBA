@@ -1,0 +1,74 @@
+// =====================================================================================================
+// 第 4 关：thermocline
+// =====================================================================================================
+// 一个关卡一个文件。**文件名前面的编号就是关卡顺序**（加载顺序 = 解锁顺序），所以插入新关卡用 01b- 这样的号，
+// 不用把后面所有文件改名。
+//
+// 这块水域有什么、刷什么怪、什么颜色，全在这个文件里；每一项能写什么见 config/levels.json5 顶部的说明。
+// 本文件是数据，写完刷新页面即可，不用重新构建；写错会在控制台指名报错（哪个文件、哪一项）。
+// =====================================================================================================
+
+// =====================================================================================================
+// 第四关：猎食者温跃层
+// =====================================================================================================
+//
+// 环境：上下水层温差明显，能看到折射造成的扭曲边界。鱼群大量出现，生态活动比深海激烈得多。
+// 温跃层不断上下移动，把战场分成两种状态：下层寒冷黏滞（慢，但敌人不活跃）、上层温暖轻盈（快，但猎食者密集）。
+//
+// 招牌机制（**尚未实现**，见 .scratch/levels/issues/）：冷热形态——温水里子弹更大更慢、冷水里更小更快。
+{
+  id: 'thermocline',
+  name: '猎食者温跃层',
+  // 猎食者温跃层：水体折射与温差，开阔、偏冷绿。
+  palette: {
+    deep: 0x04202a,
+    shallow: 0x2fa8b8,
+    bloom: 0xd8ffe8,
+    tint: 0x2f8f7a,
+    tintStrength: 0.16
+  },
+  scrollLength: 1500,
+
+  boss: {
+    at: 1300,
+    health: 240,
+    name: '长尾鲨',
+    colour: 0x3f5f7a
+  },
+
+  scrollSpeed: 34,
+  playerLeadLimit: 120,
+  landmarks: [
+    { depth: 1150, label: '暖水层' },
+    { depth: 750, label: '温跃层' },
+    { depth: 300, label: '冷水层' },
+  ],
+  spawns: [
+    // --- 开场：鱼群本身就是内容（沙丁鱼群不主动攻击，但受惊会集体转向）。 ---
+    { at: 30, span: 200, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
+    { at: 100, kind: 'fish', count: 4, arrange: 'line' },
+    { at: 180, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5 },
+    { at: 250, kind: 'skill', x: 0.4 },
+    { at: 300, kind: 'torpedo', x: 0.5, from: 'right', enterSpeed: 46 },
+    { at: 360, kind: 'fish', count: 5, arrange: 'line' },
+    { at: 420, kind: 'upgrade', x: 0.65 },
+
+    // --- 温跃层：上下同时来东西，逼玩家换高度。 ---
+    { at: 480, kind: 'fish', count: 5, arrange: 'spread', span: 40, from: 'left', depth: 0.62 },
+    { at: 520, kind: 'fish', count: 5, arrange: 'spread', span: 40, from: 'right', depth: 0.42 },
+    { at: 580, kind: 'bombfish', count: 2, arrange: 'spread', span: 30, x: 0.5 },
+    { at: 640, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'left', enterSpeed: 46 },
+    { at: 700, kind: 'angler', count: 2, arrange: 'line' },
+    { at: 760, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.2, x: 0.5, from: 'bottom' },
+
+    // --- 冷水层：猎食者密集，速度更快。 ---
+    { at: 830, kind: 'crab', count: 3, arrange: 'line' },
+    { at: 880, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.5, from: 'right', enterSpeed: 46 },
+    { at: 940, kind: 'rate', x: 0.3 },
+    { at: 1000, kind: 'fish', count: 6, arrange: 'spread', span: 30, from: 'left', depth: 0.55 },
+    { at: 1060, kind: 'bombfish', count: 3, arrange: 'spread', span: 40, x: 0.6 },
+    { at: 1120, kind: 'angler', count: 3, arrange: 'spread', span: 40, x: 0.4 },
+    { at: 1200, kind: 'fish', count: 10, arrange: 'line' },
+    { at: 1260, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.7, from: 'bottom' },
+  ],
+}

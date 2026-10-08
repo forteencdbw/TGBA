@@ -1,0 +1,75 @@
+// =====================================================================================================
+// 第 5 关：storm-surge
+// =====================================================================================================
+// 一个关卡一个文件。**文件名前面的编号就是关卡顺序**（加载顺序 = 解锁顺序），所以插入新关卡用 01b- 这样的号，
+// 不用把后面所有文件改名。
+//
+// 这块水域有什么、刷什么怪、什么颜色，全在这个文件里；每一项能写什么见 config/levels.json5 顶部的说明。
+// 本文件是数据，写完刷新页面即可，不用重新构建；写错会在控制台指名报错（哪个文件、哪一项）。
+// =====================================================================================================
+
+// =====================================================================================================
+// 第五关：风暴暗流
+// =====================================================================================================
+//
+// 环境：接近海面，上方正在经历暴风雨。巨浪通过水体产生周期性压力，雨滴撞击海面形成向下穿透的冲击，
+// 闪电照亮整个区域。**场景明亮，却比深海更混乱**：背景里能看到船只、浮标与渔网的剪影。
+//
+// 招牌机制（**尚未实现**）：压力节拍——海面变暗预告浪潮、水体向下压迫抵消浮力、暗流横向翻转、短暂平静。
+{
+  id: 'storm-surge',
+  name: '风暴暗流',
+  // 风暴暗流：接近海面但正在暴风雨。明亮的铅灰蓝，闪电感。
+  palette: {
+    deep: 0x0a1420,
+    shallow: 0x5f7f9f,
+    bloom: 0xffffff,
+    tint: 0x3a4a5f,
+    tintStrength: 0.24
+  },
+  scrollLength: 1600,
+
+  boss: {
+    at: 1400,
+    health: 280,
+    name: '废网巨鲨',
+    colour: 0x5a5f66
+  },
+
+  scrollSpeed: 36,
+  playerLeadLimit: 130,
+  landmarks: [
+    { depth: 1250, label: '浪涌' },
+    { depth: 800, label: '暴雨层' },
+    { depth: 350, label: '废网' },
+  ],
+  spawns: [
+    // --- 开场：渔网团和暗流一起摆，通道本身就是危险。 ---
+    { at: 30, span: 200, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.45, 0.6, 0.4] },
+    { at: 110, kind: 'net', count: 4, arrange: 'line' },
+    { at: 180, kind: 'fish', count: 5, arrange: 'spread', span: 40, x: 0.5, from: 'bottom' },
+    { at: 240, kind: 'skill', x: 0.6 },
+    { at: 300, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.19 },
+    { at: 360, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'left', enterSpeed: 50 },
+    { at: 420, kind: 'upgrade', x: 0.3 },
+
+    // --- 暴雨层：从上往下穿透的冲击 + 高速穿刺的东西。 ---
+    { at: 480, kind: 'mineral', count: 6, arrange: 'spread', span: 50, amplitude: 0.3, x: 0.5, from: 'bottom' },
+    { at: 540, kind: 'shrimp', count: 3, arrange: 'spread', span: 40, x: 0.4, from: 'right', depth: 0.6 },
+    { at: 600, kind: 'net', count: 5, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.19 },
+    { at: 660, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.6, from: 'right', enterSpeed: 50 },
+    { at: 720, kind: 'crab', count: 3, arrange: 'line' },
+    { at: 780, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.24, x: 0.5, from: 'bottom' },
+    { at: 840, kind: 'rate', x: 0.7 },
+
+    // --- 废网区：网 + 木箱 + 钩（用珊瑚和木箱代替），路线被反复切断。 ---
+    { at: 900, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
+    { at: 960, kind: 'net', count: 4, arrange: 'line' },
+    { at: 1020, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.3, from: 'left', enterSpeed: 50 },
+    { at: 1080, kind: 'wall', count: 6, arrange: 'barrier', gapAt: 0.65, gapWidth: 0.18 },
+    { at: 1150, kind: 'shrimp', count: 4, arrange: 'spread', span: 50, x: 0.5, from: 'left', depth: 0.5 },
+    { at: 1220, kind: 'mineral', count: 8, arrange: 'spread', span: 60, amplitude: 0.28, x: 0.5, from: 'bottom' },
+    { at: 1300, kind: 'crab', count: 4, arrange: 'line' },
+    { at: 1360, kind: 'fish', count: 10, arrange: 'line' },
+  ],
+}

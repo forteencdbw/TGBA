@@ -1,7 +1,43 @@
 import JSON5 from 'json5';
-import rawLevels from '../config/levels.json5?raw';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
 import { rowGapIsPassable, type ObstacleKind } from './obstacles';
+
+/**
+ * The level files, one per level, and the ORDER OF THE LEVELS is the order they are read in.
+ *
+ * A glob rather than a list of imports, because a list is a second place to remember: adding a level would mean
+ * writing the file AND editing an index here, and forgetting the second half looks exactly like a level that does not
+ * exist. Every `config/levels/*.json5` is a level, sorted by file name -- which is why they are numbered
+ * (`01-black-smokers.json5`, `02-wreck-gorge.json5`, …): the numbers ARE the progression, in the same spirit as `at:`
+ * being metres rather than seconds. A level inserted between two others gets a free number (`01b-…`) rather than
+ * forcing every later file to be renamed, and the progression is still readable at a glance.
+ *
+ * `config/levels.json5` is read too, AFTER the directory, when it exists: it is the file the levels used to live in,
+ * kept working so the split did not have to be a flag day. Nothing depends on it.
+ */
+const LEVEL_FILES = import.meta.glob('../config/levels/*.json5', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const COMBINED_LEVELS = import.meta.glob('../config/levels.json5', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
+/** Every level source, in progression order: the numbered files first, then the file they came from. */
+function levelSources(): (readonly [string, unknown])[] {
+  const sources: (readonly [string, unknown])[] = [];
+  for (const [path, text] of Object.entries(LEVEL_FILES).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    sources.push([path.replace('../config/', ''), parseLevelFile(path, text)]);
+  }
+  for (const [path, text] of Object.entries(COMBINED_LEVELS)) {
+    sources.push([path.replace('../config/', ''), parseLevelFile(path, text)]);
+  }
+  return sources;
+}
+
+/** One file's text as JSON5, with the file named when it is not valid. */
+function parseLevelFile(path: string, text: string): unknown {
+  try {
+    return JSON5.parse(text);
+  } catch (e) {
+    fail(path.replace('../config/', ''), `is not valid JSON5 (${(e as Error).message}).`);
+  }
+}
 
 /**
  * Levels, in the arcade vertical-scroller form.
@@ -26,7 +62,7 @@ import { rowGapIsPassable, type ObstacleKind } from './obstacles';
  * to say "four fish, left of centre" -- so the level could only be tuned by whoever was willing to
  * open the editor.
  *
- * They are now data: `config/levels.json5`, one block per batch of content, validated on load by
+ * They are now data: one file per level in `config/levels/`, one block per batch of content, validated on load by
  * `readSpawns` below. The helpers in this file are unchanged and still do the geometry -- they are the
  * mechanism, and the file is the content. A block names an arrangement and gives it numbers.
  *
@@ -161,7 +197,7 @@ export type SpawnKind =
 export type Arrange = 'single' | 'line' | 'column' | 'spread' | 'barrier';
 
 /**
- * One block from `config/levels.json5`, after validation: exactly what the file allows, with the defaults filled in.
+ * One block from a level file, after validation: exactly what the file allows, with the defaults filled in.
  *
  * Typed separately from `LevelEntry` because the two are different things: a block is what a human writes, an entry
  * is one object in the water. One block becomes many entries, and that expansion is the whole point of the file.
@@ -427,7 +463,7 @@ const weave = (amplitude: number, centre = 0.5, wavelength = 6) => (i: number) =
 const sizes = (pattern: readonly number[]) => (i: number) => pattern[i % pattern.length] as number;
 
 // =====================================================================================================
-// Reading `config/levels.json5`
+// Reading the level files
 // =====================================================================================================
 
 /** Every kind a block may name. */
@@ -501,7 +537,7 @@ const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpee
 /** Throw with the offending place named, so a typo in the file is a message rather than a mystery. */
 function fail(where: string, message: string): never {
   throw new Error(
-    `config/levels.json5 is invalid: ${where} ${message}\n` +
+    `the level files are invalid: ${where} ${message}\n` +
       'The file is JSON5, so it allows // comments, trailing commas, unquoted keys and hex literals.',
   );
 }
@@ -685,173 +721,241 @@ function optColour(node: Record<string, unknown>, key: string, where: string, fa
   return value;
 }
 
-function readLevels(text: string): { start: string; levels: Level[] } {
-  let parsed: unknown;
-  try {
-    parsed = JSON5.parse(text);
-  } catch (e) {
-    fail('the file', `is not valid JSON5 (${(e as Error).message}).`);
-  }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) fail('the top level', 'must be an object.');
-  const root = parsed as Record<string, unknown>;
-  const rawLevels = root['levels'];
-  if (!Array.isArray(rawLevels) || !rawLevels.length) fail('"levels"', 'must be a non-empty list.');
+/**
+ * Read one level out of a parsed object, named by where it came from.
+ *
+ * `where` is the file (or the `levels[i]` slot) the level came from, so every validation message says WHICH FILE to
+ * open. Since levels moved into one file each, "levels[3] is invalid" would be a worse message than the one it
+ * replaced: the reader would have to count objects in an editor to find out which file that is.
+ */
+function readLevel(node: Record<string, unknown>, where: string): Level {
+  const id = pick(node, 'id', where, null, [String(node['id'])]);
+  const name = typeof node['name'] === 'string' ? (node['name'] as string) : id;
+  const extra = Object.keys(node).filter((k) => !LEVEL_KEYS.includes(k));
+  if (extra.length) fail(`${where} (level "${id}")`, `has keys that do nothing here: ${extra.join(', ')}. Known keys: ${LEVEL_KEYS.join(', ')}.`);
 
-  const levels: Level[] = [];
-  for (const [index, rawLevel] of rawLevels.entries()) {
-    if (rawLevel === null || typeof rawLevel !== 'object' || Array.isArray(rawLevel)) {
-      fail(`levels[${index}]`, 'must be an object.');
-    }
-    const node = rawLevel as Record<string, unknown>;
-    const id = pick(node, 'id', `levels[${index}]`, null, [String(node['id'])]);
-    const name = typeof node['name'] === 'string' ? (node['name'] as string) : id;
-    const extra = Object.keys(node).filter((k) => !LEVEL_KEYS.includes(k));
-    if (extra.length) fail(`levels["${id}"]`, `has keys that do nothing here: ${extra.join(', ')}. Known keys: ${LEVEL_KEYS.join(', ')}.`);
+  const rawSpawns = node['spawns'];
+  if (!Array.isArray(rawSpawns) || !rawSpawns.length) fail(`${where} (level "${id}")`, '"spawns" must be a non-empty list.');
 
-    const rawSpawns = node['spawns'];
-    if (!Array.isArray(rawSpawns) || !rawSpawns.length) fail(`levels["${id}"]`, '"spawns" must be a non-empty list.');
+  const blocks = rawSpawns.map((raw, i) => readBlock(raw, id, i));
+  const entries = blocks.flatMap(expandBlock).sort((a, b) => a.at - b.at);
+  const landmarks = Array.isArray(node['landmarks'])
+    ? (node['landmarks'] as { depth: number; label: string }[])
+    : undefined;
 
-    const blocks = rawSpawns.map((raw, i) => readBlock(raw, id, i));
-    const entries = blocks.flatMap(expandBlock).sort((a, b) => a.at - b.at);
-    const landmarks = Array.isArray(node['landmarks'])
-      ? (node['landmarks'] as { depth: number; label: string }[])
-      : undefined;
+  const scrollLength = reqNum(node, 'scrollLength', `${where} (level "${id}")`, 1, 1000000);
+/**
+ * The boss, validated against the level's own length.
+ *
+ * `at` must be INSIDE the level, because the scroll stops at `scrollLength`: a boss scheduled past that point would
+ * never arrive, and the level could never be completed. That is a config error that looks exactly like the game
+ * hanging at the end of a level, so it is caught here with the numbers in the message.
+ */
+/**
+ * The palette: four colours and a strength.
+ *
+ * Defaulted rather than required, so a level written before palettes existed still loads -- and the default is the
+ * ramp this game shipped with, which is also a reasonable no-opinion answer.
+ */
+const rawPalette = node['palette'];
+const paletteNode = (rawPalette && typeof rawPalette === 'object' && !Array.isArray(rawPalette) ? rawPalette : {}) as Record<string, unknown>;
+const palette: LevelPalette = {
+  waterAlpha: optNum(paletteNode, 'waterAlpha', `${where}.palette`, 1, 0, 1),
+  deep: optColour(paletteNode, 'deep', `${where}.palette`, 0x020710),
+  shallow: optColour(paletteNode, 'shallow', `${where}.palette`, 0x2e8fc4),
+  bloom: optColour(paletteNode, 'bloom', `${where}.palette`, 0xbff0ff),
+  tint: optColour(paletteNode, 'tint', `${where}.palette`, 0xffffff),
+  tintStrength: optNum(paletteNode, 'tintStrength', `${where}.palette`, 0, 0, 1),
+};
 
-    const scrollLength = reqNum(node, 'scrollLength', `levels["${id}"]`, 1, 1000000);
-    /**
-     * The boss, validated against the level's own length.
-     *
-     * `at` must be INSIDE the level, because the scroll stops at `scrollLength`: a boss scheduled past that point would
-     * never arrive, and the level could never be completed. That is a config error that looks exactly like the game
-     * hanging at the end of a level, so it is caught here with the numbers in the message.
-     */
-    /**
-     * The palette: four colours and a strength.
-     *
-     * Defaulted rather than required, so a level written before palettes existed still loads -- and the default is the
-     * ramp this game shipped with, which is also a reasonable no-opinion answer.
-     */
-    const rawPalette = node['palette'];
-    const paletteNode = (rawPalette && typeof rawPalette === 'object' && !Array.isArray(rawPalette) ? rawPalette : {}) as Record<string, unknown>;
-    const palette: LevelPalette = {
-      waterAlpha: optNum(paletteNode, 'waterAlpha', 'levels[' + id + '].palette', 1, 0, 1),
-      deep: optColour(paletteNode, 'deep', `levels[${id}].palette`, 0x020710),
-      shallow: optColour(paletteNode, 'shallow', `levels[${id}].palette`, 0x2e8fc4),
-      bloom: optColour(paletteNode, 'bloom', `levels[${id}].palette`, 0xbff0ff),
-      tint: optColour(paletteNode, 'tint', `levels[${id}].palette`, 0xffffff),
-      tintStrength: optNum(paletteNode, 'tintStrength', `levels[${id}].palette`, 0, 0, 1),
-    };
-
-    /**
-     * The named paths, validated as they are read.
-     *
-     * A path with fewer than two points is not a spline and a path with a zero duration never finishes, and both would
-     * look like "the creatures I placed are not moving" rather than like a config error -- so both are refused here,
-     * with the level and the path named.
-     */
-    /**
-     * The backdrop layer list, read as an array.
-     *
-     * A single object is accepted and wrapped, so a level with one picture (or a config written before this became a
-     * list) keeps working: the shape of the data follows the common case, and the common case for a while was one image.
-     */
-    const rawBackdrop = node['backdrop'] ?? node['backdrops'];
-    const rawList = Array.isArray(rawBackdrop) ? rawBackdrop : rawBackdrop === undefined ? [] : [rawBackdrop];
-    const backdrops: BackdropSpec[] | undefined =
-      rawList.length === 0
-        ? undefined
-        : rawList.map((raw, i) => {
-            const bd = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
-            const where = 'levels[' + id + '].backdrops[' + i + ']';
-            if (typeof bd['image'] !== 'string') fail(where + '.image', 'must be the file name of a picture.');
-            return {
-              image: bd['image'] as string,
-              speedFactor: optNum(bd, 'speedFactor', where, 0.03, 0, 1),
-              heightScreens: optNum(bd, 'heightScreens', where, 1.15, 0.2, 6),
-              alpha: optNum(bd, 'alpha', where, 0.55, 0, 1),
-              tint: optColour(bd, 'tint', where, 0xffffff),
-            };
-          });
-    let paths: Record<string, PathSpec> | undefined;
-    if (node['paths'] !== undefined) {
-      const rawPaths = node['paths'];
-      if (rawPaths === null || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) {
-        fail(`levels[${id}].paths`, 'must be an object of path name to path.');
-      }
-      paths = {};
-      for (const [name, rawPath] of Object.entries(rawPaths as Record<string, unknown>)) {
-        const pathNode = (rawPath && typeof rawPath === 'object' && !Array.isArray(rawPath) ? rawPath : {}) as Record<string, unknown>;
-        const rawPoints = pathNode['points'];
-        if (!Array.isArray(rawPoints) || rawPoints.length < 2) {
-          fail(`levels[${id}].paths.${name}.points`, 'must be a list of at least two points, or there is no spline to follow.');
-        }
-        const points = rawPoints.map((raw, i) => {
-          const pt = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
-          return {
-            x: reqNum(pt, 'x', `levels[${id}].paths.${name}.points[${i}]`, -20, 20),
-            y: reqNum(pt, 'y', `levels[${id}].paths.${name}.points[${i}]`, -100000, 100000),
-          };
-        });
-        paths[name] = {
-          points,
-          seconds: reqNum(pathNode, 'seconds', `levels[${id}].paths.${name}`, 0.1, 600),
+/**
+ * The named paths, validated as they are read.
+ *
+ * A path with fewer than two points is not a spline and a path with a zero duration never finishes, and both would
+ * look like "the creatures I placed are not moving" rather than like a config error -- so both are refused here,
+ * with the level and the path named.
+ */
+/**
+ * The backdrop layer list, read as an array.
+ *
+ * A single object is accepted and wrapped, so a level with one picture (or a config written before this became a
+ * list) keeps working: the shape of the data follows the common case, and the common case for a while was one image.
+ */
+const rawBackdrop = node['backdrop'] ?? node['backdrops'];
+const rawList = Array.isArray(rawBackdrop) ? rawBackdrop : rawBackdrop === undefined ? [] : [rawBackdrop];
+const backdrops: BackdropSpec[] | undefined =
+  rawList.length === 0
+    ? undefined
+    : rawList.map((raw, i) => {
+        const bd = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+        // Its own name: shadowing `where` with a string built from `where` is a self-reference, not a refinement.
+        const at = `${where}.backdrops[${i}]`;
+        if (typeof bd['image'] !== 'string') fail(at + '.image', 'must be the file name of a picture.');
+        return {
+          image: bd['image'] as string,
+          speedFactor: optNum(bd, 'speedFactor', at, 0.03, 0, 1),
+          heightScreens: optNum(bd, 'heightScreens', at, 1.15, 0.2, 6),
+          alpha: optNum(bd, 'alpha', at, 0.55, 0, 1),
+          tint: optColour(bd, 'tint', at, 0xffffff),
         };
-      }
+      });
+let paths: Record<string, PathSpec> | undefined;
+if (node['paths'] !== undefined) {
+  const rawPaths = node['paths'];
+  if (rawPaths === null || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) {
+    fail(`${where}.paths`, 'must be an object of path name to path.');
+  }
+  paths = {};
+  for (const [name, rawPath] of Object.entries(rawPaths as Record<string, unknown>)) {
+    const pathNode = (rawPath && typeof rawPath === 'object' && !Array.isArray(rawPath) ? rawPath : {}) as Record<string, unknown>;
+    const rawPoints = pathNode['points'];
+    if (!Array.isArray(rawPoints) || rawPoints.length < 2) {
+      fail(`${where}.paths.${name}.points`, 'must be a list of at least two points, or there is no spline to follow.');
     }
-
-    const rawBoss = node['boss'];
-    if (rawBoss === null || typeof rawBoss !== 'object' || Array.isArray(rawBoss)) {
-      fail(`levels["${id}"].boss`, 'is missing. Every level ends when its boss is defeated, so a level must name one.');
-    }
-    const bossNode = rawBoss as Record<string, unknown>;
-    const bossAt = reqNum(bossNode, 'at', `levels["${id}"].boss`, 0, 1000000);
-    if (bossAt >= scrollLength) {
-      fail(
-        `levels["${id}"].boss.at`,
-        `is ${bossAt}, but the level is only ${scrollLength} long and the scroll stops there -- the boss would never arrive and the level could never end. Put it below ${scrollLength}.`,
-      );
-    }
-    const boss: BossSpec = {
-      at: bossAt,
-      health: reqNum(bossNode, 'health', `levels["${id}"].boss`, 1, 100000),
-      name: typeof bossNode['name'] === 'string' ? (bossNode['name'] as string) : 'BOSS',
-      ...(bossNode['colour'] === undefined
-        ? {}
-        : { colour: reqNum(bossNode, 'colour', `levels["${id}"].boss`, 0, 0xffffff) }),
-    };
-
-    levels.push({
-      id,
-      name,
-      scrollLength,
-      scrollSpeed: reqNum(node, 'scrollSpeed', `levels["${id}"]`, 0.001, 10000),
-      ...(node['playerLeadLimit'] === undefined
-        ? {}
-        : { playerLeadLimit: optNum(node, 'playerLeadLimit', `levels["${id}"]`, 0, 0, 10000) }),
-      ...(landmarks ? { landmarks } : {}),
-      boss,
-      palette,
-      ...(paths ? { paths } : {}),
-      ...(backdrops ? { backdrops } : {}),
-      entries,
-      blocks,
+    const points = rawPoints.map((raw, i) => {
+      const pt = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+      return {
+        x: reqNum(pt, 'x', `${where}.paths.${name}.points[${i}]`, -20, 20),
+        y: reqNum(pt, 'y', `${where}.paths.${name}.points[${i}]`, -100000, 100000),
+      };
     });
+    paths[name] = {
+      points,
+      seconds: reqNum(pathNode, 'seconds', `${where}.paths.${name}`, 0.1, 600),
+    };
+  }
+}
+
+const rawBoss = node['boss'];
+if (rawBoss === null || typeof rawBoss !== 'object' || Array.isArray(rawBoss)) {
+  fail(`${where}.boss`, 'is missing. Every level ends when its boss is defeated, so a level must name one.');
+}
+const bossNode = rawBoss as Record<string, unknown>;
+const bossAt = reqNum(bossNode, 'at', `${where}.boss`, 0, 1000000);
+if (bossAt >= scrollLength) {
+  fail(
+    `${where}.boss.at`,
+    `is ${bossAt}, but the level is only ${scrollLength} long and the scroll stops there -- the boss would never arrive and the level could never end. Put it below ${scrollLength}.`,
+  );
+}
+const boss: BossSpec = {
+  at: bossAt,
+  health: reqNum(bossNode, 'health', `${where}.boss`, 1, 100000),
+  name: typeof bossNode['name'] === 'string' ? (bossNode['name'] as string) : 'BOSS',
+  ...(bossNode['colour'] === undefined
+    ? {}
+    : { colour: reqNum(bossNode, 'colour', `${where}.boss`, 0, 0xffffff) }),
+};
+
+  return {
+    id,
+    name,
+    scrollLength,
+    scrollSpeed: reqNum(node, 'scrollSpeed', `${where} (level "${id}")`, 0.001, 10000),
+    ...(node['playerLeadLimit'] === undefined
+      ? {}
+      : { playerLeadLimit: optNum(node, 'playerLeadLimit', `${where} (level "${id}")`, 0, 0, 10000) }),
+    ...(landmarks ? { landmarks } : {}),
+    boss,
+    palette,
+    ...(paths ? { paths } : {}),
+    ...(backdrops ? { backdrops } : {}),
+    entries,
+    blocks,
+  };
+}
+
+/**
+ * Read the whole level set out of one or more parsed files.
+ *
+ * `sources` is `[file name, parsed object]` per file: the name is only ever used to SAY WHERE a mistake is, which is
+ * the whole reason levels moved into one file each -- a message that reads `black-smokers.json5: paths.weave.points`
+ * sends the reader to the file to open, where `levels[3].paths.weave.points` sent them counting objects in an editor.
+ *
+ * The order of `sources` is the ORDER OF THE LEVELS, because that order is the progression: each level unlocks the
+ * next. A file that holds a single level (the usual case now) and an older file that holds `levels: [...]` are both
+ * accepted, so the split did not have to be a flag day.
+ */
+function readLevels(sources: readonly (readonly [string, unknown])[]): { start: string | undefined; levels: Level[] } {
+  const levels: Level[] = [];
+  const perFile: { file: string; start?: unknown; ids: string[] }[] = [];
+
+  for (const [file, parsed] of sources) {
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      fail(file, 'must be an object. A level file holds one level, or a list of them under "levels".');
+    }
+    const node = parsed as Record<string, unknown>;
+    /**
+     * The two accepted shapes: the level's own keys at the top of the file, or the same keys nested under `levels`.
+     *
+     * Decided by looking for a key only a level has, rather than by a `version` field: a file that is neither shape
+     * then fails with the message that says what a level file is, instead of with "id is missing".
+     */
+    const looksLikeLevel = typeof node['id'] === 'string' || Array.isArray(node['spawns']) || node['scrollLength'] !== undefined;
+    const nested = node['levels'];
+    let nodes: Record<string, unknown>[];
+    if (looksLikeLevel) {
+      nodes = [node];
+    } else if (Array.isArray(nested) && nested.length > 0) {
+      nodes = nested.map((raw, index) => {
+        if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) fail(`${file} levels[${index}]`, 'must be an object.');
+        return raw as Record<string, unknown>;
+      });
+    } else if (Array.isArray(nested)) {
+      /**
+       * A file with an EMPTY `levels: []` contributes nothing, which is what the combined file became when the levels
+       * moved out into their own files. It is kept because that file also holds the field documentation -- the only
+       * written description of what a spawn block may contain -- and a documentation file should not be something the
+       * loader chokes on.
+       */
+      continue;
+    } else {
+      fail(file, 'is not a level file: it has no "id" (one level), and no non-empty "levels" list.');
+    }
+
+    const ids: string[] = [];
+    for (const [index, levelNode] of nodes.entries()) {
+      const where = nodes.length === 1 ? file : `${file} levels[${index}]`;
+      const level = readLevel(levelNode, where);
+      ids.push(level.id);
+      levels.push(level);
+    }
+    perFile.push({ file, start: node['start'], ids });
   }
 
-  const start = typeof root['start'] === 'string' ? (root['start'] as string) : (levels[0] as Level).id;
+  if (levels.length === 0) fail('the level files', 'are all empty: there is nothing to play.');
+  const duplicates = levels.map((l) => l.id).filter((id, i, all) => all.indexOf(id) !== i);
+  if (duplicates.length) {
+    fail('the level files', `each define a level called "${duplicates[0]}". Ids must be unique across the files.`);
+  }
+
+  /**
+   * Which level a fresh player begins on.
+   *
+   * A file may still say `start:` and it wins (an old combined file, or an owner who wants the first level to open on
+   * a different one), otherwise it is the FIRST LEVEL OF THE FIRST FILE -- which is the progression order, and needs
+   * no `start` key at all now that each level has a file of its own.
+   */
+  const declared = perFile.map((entry) => entry.start).find((value) => typeof value === 'string') as string | undefined;
+  const start = declared ?? (levels[0] as Level).id;
   if (!levels.some((l) => l.id === start)) {
     fail('"start"', `names "${start}", but there is no level with that id. Levels: ${levels.map((l) => l.id).join(', ')}.`);
   }
   return { start, levels };
 }
 
-const FILE = readLevels(rawLevels);
+const FILE = readLevels(levelSources());
 
-/** Every level in the file, in file order. THIS IS THE PROGRESSION ORDER: each level unlocks the next. */
+/** Every level in the files, in file order. THIS IS THE PROGRESSION ORDER: each level unlocks the next. */
 export const LEVELS: readonly Level[] = FILE.levels;
 
-/** The level the file names as `start`, which is where a fresh player begins. */
-export const START_LEVEL_ID: string = FILE.start;
+/**
+ * The level a fresh player begins on: the first level of the first file, unless a file says otherwise.
+ *
+ * `readLevels` guarantees this names a real level (it fails the load otherwise), so the `??` here is the compiler
+ * being told what the loader already proved rather than a second fallback.
+ */
+export const START_LEVEL_ID: string = FILE.start ?? (LEVELS[0] as Level).id;
 
 /**
  * The level currently being played.

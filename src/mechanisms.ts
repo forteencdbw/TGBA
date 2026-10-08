@@ -1413,7 +1413,7 @@ export interface Mechanisms {
     fishHardCap: number;
     seekBiggestRangeMeters: number;
   };
-  /** Defaults for how content arrives from the sides and from below. Per-level content lives in levels.json5. */
+  /** Defaults for how content arrives from the sides and from below. Per-level content lives in config/levels/*.json5. */
   spawning: {
     enterSpeedMps: number;
     offscreenMarginRatio: number;

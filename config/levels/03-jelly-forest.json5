@@ -1,0 +1,76 @@
+// =====================================================================================================
+// 第 3 关：jelly-forest
+// =====================================================================================================
+// 一个关卡一个文件。**文件名前面的编号就是关卡顺序**（加载顺序 = 解锁顺序），所以插入新关卡用 01b- 这样的号，
+// 不用把后面所有文件改名。
+//
+// 这块水域有什么、刷什么怪、什么颜色，全在这个文件里；每一项能写什么见 config/levels.json5 顶部的说明。
+// 本文件是数据，写完刷新页面即可，不用重新构建；写错会在控制台指名报错（哪个文件、哪一项）。
+// =====================================================================================================
+
+// =====================================================================================================
+// 第三关：发光水母林
+// =====================================================================================================
+//
+// 环境：中层海域。巨型水母像树冠一样悬着，触须垂下形成垂直的"森林"。背景开始有微弱的阳光，
+// 主色转成蓝紫 / 青 / 粉。**这一关强调路线观察**：战斗压力比前两关低，环境危险高。
+//
+// 招牌机制：**导电连锁**（已实现）。气泡不会被电立刻击破，而是**积累电荷**；带电时靠近另一只水母
+// 就会引爆连锁，于是同一个机制同时是危险、武器、以及路线解谜（把电导向封路的触须）。
+{
+  id: 'jelly-forest',
+  name: '发光水母林',
+  // 发光水母林：中层海域，蓝紫 / 青 / 粉。
+  palette: {
+    deep: 0x0a0a24,
+    shallow: 0x4a6fd0,
+    bloom: 0xd8b8ff,
+    tint: 0x8a4fd0,
+    tintStrength: 0.3
+  },
+  scrollLength: 1400,
+
+  boss: {
+    at: 1200,
+    health: 200,
+    name: '冠冕水母',
+    colour: 0xb98cff
+  },
+
+  scrollSpeed: 28,
+  playerLeadLimit: 110,
+  landmarks: [
+    { depth: 1050, label: '水母树冠' },
+    { depth: 650, label: '触须森林' },
+    { depth: 250, label: '冠冕' },
+  ],
+  spawns: [
+    // --- 开场：水母很多，但都很软。这一关的压力来自"电"，不来自追杀。 ---
+    { at: 30, span: 180, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.2, sizes: [0.4, 0.5, 0.35] },
+    { at: 120, kind: 'zapper', x: 0.35 },
+    { at: 180, kind: 'zapper', x: 0.68 },
+    { at: 240, kind: 'skill', x: 0.5 },
+
+    // --- 触须森林：竖直的水母列 + 之间夹着电击水母，路线要么穿过去、要么带电炸开。 ---
+    { at: 300, kind: 'zapper', count: 4, arrange: 'column', span: 90, x: 0.3 },
+    { at: 340, kind: 'zapper', count: 4, arrange: 'column', span: 90, x: 0.7 },
+    { at: 400, kind: 'upgrade', x: 0.5 },
+    { at: 450, kind: 'zapper', count: 3, arrange: 'line' },
+    { at: 500, kind: 'jelly', count: 4, arrange: 'line' },
+    { at: 560, kind: 'zapper', count: 5, arrange: 'line' },
+
+    // --- 中段：孢子鱼群和伪装者混进来，路线观察开始变难。 ---
+    { at: 620, kind: 'fish', count: 4, arrange: 'spread', span: 30, from: 'left', depth: 0.6 },
+    { at: 660, kind: 'shrimp', count: 3, arrange: 'spread', span: 30, x: 0.6, from: 'right', depth: 0.5 },
+    { at: 720, kind: 'zapper', count: 3, arrange: 'spread', span: 40, x: 0.5 },
+    { at: 780, kind: 'rate', x: 0.35 },
+    { at: 830, kind: 'zapper', count: 5, arrange: 'line' },
+    { at: 880, kind: 'jelly', count: 4, arrange: 'spread', span: 50, x: 0.5 },
+
+    // --- 终段：一连串带电的窄缝，然后进 BOSS。 ---
+    { at: 950, span: 60, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.45, 0.6] },
+    { at: 1000, kind: 'zapper', count: 4, arrange: 'line' },
+    { at: 1060, kind: 'zapper', count: 3, arrange: 'spread', span: 30, x: 0.35 },
+    { at: 1120, kind: 'mineral', count: 4, arrange: 'spread', span: 40, x: 0.6, from: 'bottom' },
+  ],
+}

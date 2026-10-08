@@ -1,0 +1,83 @@
+// =====================================================================================================
+// 第 2 关：wreck-gorge
+// =====================================================================================================
+// 一个关卡一个文件。**文件名前面的编号就是关卡顺序**（加载顺序 = 解锁顺序），所以插入新关卡用 01b- 这样的号，
+// 不用把后面所有文件改名。
+//
+// 这块水域有什么、刷什么怪、什么颜色，全在这个文件里；每一项能写什么见 config/levels.json5 顶部的说明。
+// 本文件是数据，写完刷新页面即可，不用重新构建；写错会在控制台指名报错（哪个文件、哪一项）。
+// =====================================================================================================
+
+// =====================================================================================================
+// 第二关：沉船幽谷
+// =====================================================================================================
+//
+// 环境：沉船、锚链和货物残骸构成的峡谷。破损船舱形成狭窄通道，漂浮物随暗流慢慢移动。
+// 光线仍然昏暗，但船舱里的灯、荧光生物和反光金属让场景更容易辨认——所以这一关的颜色比第一关暖。
+//
+// 内容取向（不是长度）：通道更窄（木箱/船体/网混着来）、两侧都有东西进来、而且第一次出现**会转向的**敌人。
+{
+  id: 'wreck-gorge',
+  name: '沉船幽谷',
+  // 沉船幽谷：昏暗，但舱灯与反光金属让它更好辨认。褐绿 + 一点暖灯色。
+  palette: {
+    deep: 0x04090d,
+    shallow: 0x1d4a4a,
+    bloom: 0xbfe4d8,
+    tint: 0x6b4a2a,
+    tintStrength: 0.2
+  },
+  scrollLength: 1100,
+
+  boss: {
+    at: 950,
+    health: 220,
+    // 藏在船头残骸里：用触手封锁通道，吸进附近的漂浮物再喷向玩家。触手被破坏后船体坍塌，战场改变。
+    name: '寄居沉船章鱼',
+    colour: 0x6b4a3a
+  },
+
+  scrollSpeed: 32,
+  playerLeadLimit: 110,
+  landmarks: [
+    { depth: 820, label: '船首残骸' },
+    { depth: 520, label: '货舱通道' },
+    { depth: 240, label: '锚链' },
+  ],
+  spawns: [
+    // --- 开场：这一关从第一秒就有侧向进场（玩家已经会玩了）。 ---
+    { at: 20, span: 160, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.3, sizes: [0.35, 0.5] },
+    { at: 40, kind: 'crab', count: 2, arrange: 'spread', span: 20, from: 'left', depth: 0.6 },
+    { at: 90, kind: 'crate', x: 0.7, from: 'right', enterSpeed: 26 },
+
+    // --- 货舱通道：木板、酒桶、船体板和网交替，缝比第一关窄。 ---
+    { at: 150, kind: 'crate', count: 4, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
+    { at: 200, kind: 'net', count: 3, arrange: 'line' },
+    { at: 240, kind: 'wall', count: 4, arrange: 'barrier', gapAt: 0.62, gapWidth: 0.19 },
+    { at: 280, kind: 'skill', x: 0.55 },
+
+    // --- 灯笼鱼第一次出现：唯一一个"自己会发光"的敌人，而光是诱饵。 ---
+    { at: 330, kind: 'angler', x: 0.4 },
+    { at: 370, kind: 'crab', count: 3, arrange: 'spread', span: 24, x: 0.6, from: 'right', depth: 0.55 },
+    { at: 410, kind: 'jelly', count: 3, arrange: 'line' },
+
+    // --- 失控鱼雷：从船舱里射出来，直飞一段之后开始追。 ---
+    { at: 450, kind: 'torpedo', x: 0.5, from: 'right', enterSpeed: 40 },
+    { at: 490, kind: 'crate', count: 5, arrange: 'barrier', gapAt: 0.45, gapWidth: 0.19 },
+    { at: 520, kind: 'upgrade', x: 0.3 },
+    { at: 560, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.6, from: 'left', enterSpeed: 40 },
+
+    // --- 锚链：珊瑚（藤壶/锈蚀结构）竖直排成链，中间夹着漂浮残骸。 ---
+    { at: 600, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.19 },
+    { at: 640, kind: 'crab', count: 2, arrange: 'spread', span: 30, x: 0.3, from: 'left', depth: 0.65 },
+    { at: 680, kind: 'angler', count: 2, arrange: 'line' },
+    { at: 720, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
+    { at: 760, kind: 'torpedo', x: 0.25, from: 'right', enterSpeed: 40 },
+    { at: 800, span: 60, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.25, sizes: [0.5, 0.7] },
+
+    // --- 800-950m：船头残骸。两侧同时来东西，中间是窄缝。 ---
+    { at: 840, kind: 'jelly', count: 2, arrange: 'spread', span: 24, from: 'left', depth: 0.5 },
+    { at: 870, kind: 'crab', count: 3, arrange: 'line' },
+    { at: 900, kind: 'net', count: 3, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.2 },
+  ],
+}

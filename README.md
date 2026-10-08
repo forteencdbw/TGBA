@@ -149,10 +149,36 @@ v1.0.0 · 51be519 (uncommitted)
 留在代码里（`src/skills.ts` 的 `SKILLS`、`src/talents.ts` 的 `TALENTS`）：那是内容，不是旋钮。
 `Skills` 那一块的六个键是**写死在类型里**的，所以加一个技能却忘了给它数值是**编译错误**，不是运行时的 `undefined`。
 
-### 关卡：`config/levels.json5`（手工配置刷怪）
+### 关卡：一关一个文件，在 `config/levels/`（手工配置刷怪）
 
-**关卡不再是代码。** 一个关卡 = 一段水域 + 一张刷怪表，全在 [`config/levels.json5`](config/levels.json5) 里，
-中文注释，和机制配置一样是 JSON5、一样**逐项校验并指名报错**。
+**关卡不再是代码。** 一个关卡 = 一段水域 + 一张刷怪表 = **一个文件**：
+
+```
+config/levels/
+  01-black-smokers.json5     第一关 黑烟囱墓场
+  02-wreck-gorge.json5       第二关 沉船幽谷
+  03-jelly-forest.json5      第三关 发光水母林
+  04-thermocline.json5       第四关 猎食者温跃层
+  05-storm-surge.json5       第五关 风暴暗流
+  06-dawn-surface.json5      第六关 破晓海面
+```
+
+**文件名前面的编号就是关卡顺序**（加载顺序 = 解锁顺序）。加载器是 `import.meta.glob('../config/levels/*.json5')`
+按文件名字典序读，所以：
+
+- **加一关** = 加一个文件，不用改代码、不用改索引——没有"第二处要记得改"的地方。
+- **在两关之间插一关** = 用 `01b-xxx.json5` 这种号，**不用把后面所有文件改名**，顺序仍然一眼看得出来。
+- `config/levels.json5` 还在，但它只是**字段说明文档**（一个关卡能写什么，全在那份注释里），里面的 `levels: []`
+  是空的，加载器会跳过空列表；关卡数据不在那儿了。
+
+每一关的文件格式和以前一样：**一个 JSON5 对象**（不再是列表里的一项），除了没有 `start`（换成"第一个文件的第一关"）
+和没有末尾那个逗号，字段一字未变。中文注释和机制配置一样**逐项校验并指名报错**，而且现在报错**直接说文件名**：
+
+```
+levels/03-jelly-forest.json5 (level "jelly-forest"): paths.weave.points[0].y should be a number …
+```
+
+（以前是 `levels[2].paths.weave.points[0].y`——得在编辑器里数到第三个对象才知道是哪个文件。）
 
 **一块刷怪**（`spawns` 里的一项）说清楚四件事：
 
@@ -176,7 +202,7 @@ v1.0.0 · 51be519 (uncommitted)
 - 每块可以覆盖 `enterSpeed`；默认值和"出生点在画面外多远""切入高度"这些手感数字在
   `config/mechanics.json5` 的 `spawning` 段，全关卡共用。
 
-**例子**（`config/levels.json5` 里就有这三块，可以改也可以删）：
+**例子**（第一关 `config/levels/01-black-smokers.json5` 里就有这几块，可以改也可以删）：
 
 ```json5
 // 一小队鱼从左边游进来，散在 24 米里
@@ -505,7 +531,7 @@ playing → cleared → ascend → intro（下一关）
 | 被冲击波怎么处理 | 同上 → `angry.burst.hazardMode` | `angler` |
 | **体型（碰撞+绘制半径+图鉴卡片）** | `config/mechanics.json5` → `hazards.radius` | `angler`（现在 **0.09** = 原来 0.045 的 **2 倍**） |
 | **冲锋**（前摇/时长/冷却/弧线/触发距离） | `config/mechanics.json5` → `charges.chargers` | `angler` 那一行 |
-| **放在哪一关、哪个深度、从哪边进、几号** | `config/levels.json5` → 该关 `spawns` | `kind: 'angler'` 的行（`at` `x` `from` `count`） |
+| **放在哪一关、哪个深度、从哪边进、几号** | `config/levels/<编号>-<关卡>.json5` → 该关 `spawns` | `kind: 'angler'` 的行（`at` `x` `from` `count`） |
 | **全屏预览里显示多大** | `src/codexUi.ts`（画布短边 62%） | `drawPreview` 里的 `0.62` |
 
 **注意**：`hazards.health` / `mass` / `edibleAtTier` / `angry.burst.hazardMode` 这几张表**必须列出每一种敌人**（漏一行启动时报错并点名），所以加新敌人时要顺手补上。
@@ -622,7 +648,7 @@ playing → cleared → ascend → intro（下一关）
 
 ### 螃蟹 BOSS 的挥螯：8 帧动画 + 喷矿物颗粒（第一关设计稿里那两件事）
 
-`config/levels.json5` 里第一关 BOSS 写的是"**横向挥螯、喷矿物颗粒**、堵住喷口制造一次猛烈爆发"。前两件现在实现了，
+第一关 BOSS 的配置（`config/levels/01-black-smokers.json5`）写的是"**横向挥螯、喷矿物颗粒**、堵住喷口制造一次猛烈爆发"。前两件现在实现了，
 所以**第一关的 BOSS 第一次有了攻击**（它以前只会悬在那儿、横着游弋、撞到才扣血）。
 
 **它做什么**：每 `attackEverySeconds`（默认 4.6 秒）挥一次螯 → 8 帧动画（抬钳 → 高举 → 下砸 → 合上 → 收势 → 回位，
@@ -816,7 +842,7 @@ pnpm atlas                                   # 重新打包
 | `codex.ts` 的 `HAZARD_NAMES` | `'金枪鱼'`（**图鉴卡片本身还没写**：`ENEMY_PROSE` 是手写的散文，不是全量表，所以它现在不会出现在书里） |
 | `spit.ts` 的 `spitImpact` | 1.0（鱼 0.8，螃蟹 1.6）—— 更大的鱼砸得更重，但仍然是软体 |
 
-**它现在出现在哪一关？还没有**：关卡是手写的（`config/levels.json5` 的 spawn 块），我故意没动你的关卡编排。
+**它现在出现在哪一关？还没有**：关卡是手写的（`config/levels/*.json5` 的 spawn 块），我故意没动你的关卡编排。
 在任意 spawn 块里加一行 `{ "kind": "tuna", … }` 就行；想先在游戏里看它，控制台 `__GB.game.debugSpawnHazardOnPlayer('tuna')`
 （那个钩子会**生成在玩家身上**，所以看的时候先往旁边走两步）。
 
@@ -1444,7 +1470,7 @@ src/assets/levels/黑烟囱墓场-最远景.jpg
 **怎么引用**：关卡文件里写**文件名本身**（不是路径）：
 
 ```json5
-// config/levels.json5 → levels["black-smokers"]
+// config/levels/01-black-smokers.json5
 backdrop: { image: '黑烟囱墓场-最远景.jpg', speedFactor: 0.03, heightScreens: 1.15, alpha: 0.62, tint: 0x8f6a7a }
 ```
 
@@ -1515,7 +1541,7 @@ backdrop: {
 
 ### 每关自己的水色与音乐
 
-**水体渐变按关卡配置**（`config/levels.json5` 每关一个 `palette`）：`deep`（海床）、`shallow`（这一关爬升的终点）、`bloom`（海面透下来的光）、`tint` + `tintStrength`（盖在整条渐变上的气氛色）。
+**水体渐变按关卡配置**（每关自己的文件里一个 `palette`）：`deep`（海床）、`shallow`（这一关爬升的终点）、`bloom`（海面透下来的光）、`tint` + `tintStrength`（盖在整条渐变上的气氛色）。
 
 | 关卡 | 气氛色 | 说明 |
 |---|---|---|
@@ -1623,7 +1649,7 @@ BOSS 悬在画面外，玩家永远看不到它；而这一关只有打死它才
 
 ### 两关的配置
 
-`config/levels.json5` 里是**两关**，各自的环境、地标与内容取向都写在文件的注释里：
+`config/levels/` 里是**六关**，各自的环境、地标与内容取向都写在文件的注释里：
 
 | | 黑烟囱墓场 `black-smokers` | 沉船幽谷 `wreck-gorge` |
 |---|---|---|
@@ -1653,7 +1679,7 @@ BOSS 悬在画面外，玩家永远看不到它；而这一关只有打死它才
 
 | 写在哪 | 内容 |
 |---|---|
-| `config/levels.json5` 的 `boss` | `at`（走到多少米它出现，**必须 < scrollLength**，否则加载就报错）、`health`、`name`、`colour`。这是**关卡强度**：两只 BOSS 可以不一样厚、不一样颜色。 |
+| 每关文件里的 `boss` | `at`（走到多少米它出现，**必须 < scrollLength**，否则加载就报错）、`health`、`name`、`colour`。这是**关卡强度**：两只 BOSS 可以不一样厚、不一样颜色。 |
 | `mechanics.json5` 的 `hazards.boss` | 它怎么动（`holdMeters` 悬停高度、`patrolAmplitude` / `patrolPeriodSeconds` 横向游弋、`seekSpeedFactor` 追你的速度）、`contactDamage`、`radiusRatio`（体型）、颜色与受击闪白 |
 | `enemyBullets.shooters.boss` | 它的枪：一次一波扇形（默认 5 发、±0.62 弧度） |
 
@@ -1979,7 +2005,7 @@ Pixi 的绘制调用，所以"气泡动了"没有诚实的 locator。钩子是**
 | `bubble-types` | 主菜单**提供的类型和游戏实际拥有的一致**（连顺序）、选谁就跑谁、**触屏层按类型摆按钮**（按旧喷吐键的位置不再有反应）、**吞噬气泡完全没变且不会获得怒气**、怒气只从存活下来的伤害来并会衰减、**冲撞撞开"任何体积都撞不碎"的木箱且花掉怒气**、**蓄力时方向锁定**、**爆破清小敌人 / 推尖锐的 / 震碎脆弱障碍且花光怒气**、**爆破半径随怒气变大**、**满怒进入失控倒计时、超时重伤但永不破裂**、**爆破与撞碎大型目标都能释放失控，撞碎木箱不能**、**没有任何气泡可以"只吞不吐"**（会吞就必须有吐出来的动词）、**暴躁气泡没有胃袋：碰到敌人是挨打而不是被吞，也不会因为过饱把自己炸死**（同一场景下吞噬气泡仍然会吞） |
 | `layout` | 手机铺满、宽窗封顶居中；resize 后控件仍在屏内（**含横屏/矮窗口**，那是按钮整列被顶出屏幕的地方）；2560 宽下面板仍能打开 |
 | `level-select` | 关卡选择与进度：**菜单列出的关卡和文件里的完全一致（连顺序和名字）**、新存档只有第一关能玩且菜单会说明解锁条件、**点锁着的关卡什么都不会发生**（不会变成选中、不会开局）、选中哪一关就**真的玩哪一关**（长度 / 节奏 / 刷怪表都是它自己的）、**抵达海面会解锁下一关**（跑完真关卡，不只是调钩子）、**解锁在选择重载页面后依然在**（读的是 `localStorage`，不是内存）、解锁规则是"前一关"而不是计数、**进度可以重置** |
-| `spawns` | 关卡刷怪表：**运行时报告的块数与 `config/levels.json5` 里的条数一致**（两个方向都校验，没有写死的数字）、**块的 `count` 决定刷出几个**（1+2+3+4+5 = 15）、写错的键 / 从侧面来的收集物 / 从下方来的布景 / 生物排成 barrier / 缺 `at` / 未知 `kind` **全部按名字拒绝**、**从左边进场的生物出生在泳道外**（x < 0，实测）然后游进来、**从下方进场的会一路升到和玩家齐平**（不是露个脸就掉回去）、**漂进来的障碍物停在配置给的位置且不会漂穿**、**发货的那一关真的会从左右下三边刷东西**（把卷轴加速跑完 1500 米，按边计数） |
+| `spawns` | 关卡刷怪表：**运行时报告的块数与关卡文件里的条数一致**（两个方向都校验，没有写死的数字）、**块的 `count` 决定刷出几个**（1+2+3+4+5 = 15）、写错的键 / 从侧面来的收集物 / 从下方来的布景 / 生物排成 barrier / 缺 `at` / 未知 `kind` **全部按名字拒绝**、**从左边进场的生物出生在泳道外**（x < 0，实测）然后游进来、**从下方进场的会一路升到和玩家齐平**（不是露个脸就掉回去）、**漂进来的障碍物停在配置给的位置且不会漂穿**、**发货的那一关真的会从左右下三边刷东西**（把卷轴加速跑完 1500 米，按边计数） |
 | `screenshots` | 只截图不断言（`pnpm test:shots`） |
 
 | 命令 | 作用 |
