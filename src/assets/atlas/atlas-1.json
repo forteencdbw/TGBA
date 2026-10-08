@@ -377,11 +377,67 @@
         "w": 192
       },
       "trimmed": false
+    },
+    "金枪鱼-游动-1.png": {
+      "frame": {
+        "h": 32,
+        "w": 55,
+        "x": 554,
+        "y": 18
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 32,
+        "w": 55
+      },
+      "trimmed": false
+    },
+    "金枪鱼-游动-2.png": {
+      "frame": {
+        "h": 32,
+        "w": 55,
+        "x": 613,
+        "y": 18
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 32,
+        "w": 55
+      },
+      "trimmed": false
+    },
+    "金枪鱼-游动-3.png": {
+      "frame": {
+        "h": 32,
+        "w": 55,
+        "x": 672,
+        "y": 18
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 32,
+        "w": 55
+      },
+      "trimmed": false
+    },
+    "金枪鱼-游动-4.png": {
+      "frame": {
+        "h": 32,
+        "w": 55,
+        "x": 731,
+        "y": 18
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 32,
+        "w": 55
+      },
+      "trimmed": false
     }
   },
   "meta": {
     "app": "pack-atlas.py",
-    "decodedBytes": 3549952,
+    "decodedBytes": 3568064,
     "encoding": "lossless WebP",
     "encodingNote": "pixel exact",
     "format": "RGBA8888",
@@ -390,7 +446,7 @@
     "scale": "1",
     "size": {
       "h": 1132,
-      "w": 784
+      "w": 788
     },
     "sources": {
       "冲锋拖尾.png": {
@@ -500,9 +556,25 @@
       "螃蟹-BOSS-死亡-4.png": {
         "bytes": 13729,
         "sha256": "0fc2ad3d2c24e9dd6fd297f12821c2df37dae2a8e6cf4fcc6ce97eda5b0bf6a8"
+      },
+      "金枪鱼-游动-1.png": {
+        "bytes": 2127,
+        "sha256": "dd959014606378a8551a83d8ddaafdc93f09eb3dde585b763edc7a58c7189332"
+      },
+      "金枪鱼-游动-2.png": {
+        "bytes": 2059,
+        "sha256": "5b289943825158a61addbb0a4cd2c686d803ab030bb82105aa0f7302fe855822"
+      },
+      "金枪鱼-游动-3.png": {
+        "bytes": 2194,
+        "sha256": "38ad64ce999ab4e8b967f8d397f279803c20e83e0c5adabc69074f6cf9ae83d9"
+      },
+      "金枪鱼-游动-4.png": {
+        "bytes": 2050,
+        "sha256": "1c531bd8f783a0c278fb00938d0cf1734ad03f1dca08db9511e50f1bb6376a20"
       }
     },
-    "textureBytes": 224700,
+    "textureBytes": 228710,
     "version": "1.0"
   }
 }
