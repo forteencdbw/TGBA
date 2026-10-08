@@ -380,57 +380,57 @@
     },
     "金枪鱼-游动-1.png": {
       "frame": {
-        "h": 39,
-        "w": 69,
+        "h": 38,
+        "w": 70,
         "x": 786,
         "y": 290
       },
       "rotated": false,
       "sourceSize": {
-        "h": 39,
-        "w": 69
+        "h": 38,
+        "w": 70
       },
       "trimmed": false
     },
     "金枪鱼-游动-2.png": {
       "frame": {
-        "h": 39,
-        "w": 69,
+        "h": 38,
+        "w": 70,
         "x": 786,
-        "y": 333
+        "y": 332
       },
       "rotated": false,
       "sourceSize": {
-        "h": 39,
-        "w": 69
+        "h": 38,
+        "w": 70
       },
       "trimmed": false
     },
     "金枪鱼-游动-3.png": {
       "frame": {
-        "h": 39,
-        "w": 69,
+        "h": 38,
+        "w": 70,
         "x": 786,
-        "y": 376
+        "y": 374
       },
       "rotated": false,
       "sourceSize": {
-        "h": 39,
-        "w": 69
+        "h": 38,
+        "w": 70
       },
       "trimmed": false
     },
     "金枪鱼-游动-4.png": {
       "frame": {
-        "h": 39,
-        "w": 69,
+        "h": 38,
+        "w": 70,
         "x": 786,
-        "y": 419
+        "y": 416
       },
       "rotated": false,
       "sourceSize": {
-        "h": 39,
-        "w": 69
+        "h": 38,
+        "w": 70
       },
       "trimmed": false
     }
@@ -558,23 +558,23 @@
         "sha256": "0fc2ad3d2c24e9dd6fd297f12821c2df37dae2a8e6cf4fcc6ce97eda5b0bf6a8"
       },
       "金枪鱼-游动-1.png": {
-        "bytes": 3044,
-        "sha256": "e194c3fe803524214a2ffcbd82a0c187c47f527d32eb7eac7bc04e367f4c4229"
+        "bytes": 3092,
+        "sha256": "35b861eb10fd44f0a67e6ff1c159d98f5d26438eb655c46edad7c2f581b179b0"
       },
       "金枪鱼-游动-2.png": {
-        "bytes": 2858,
-        "sha256": "261360acbf8925b422a0c333bab72b5bc99921bfa663cf68df55f9dc7aab4b64"
+        "bytes": 3058,
+        "sha256": "96e9bcc6aa2bb00026c479fdcab98f7ed26eaa40fc2d745f6450d8f3ccd0cdc2"
       },
       "金枪鱼-游动-3.png": {
-        "bytes": 3066,
-        "sha256": "5158ea0e64f10f008af9075017971116e04335e838365848741a9df335e86e6c"
+        "bytes": 3048,
+        "sha256": "a2210a8f7af324574c64e4a376dc5e2b599e5b8b770ede3bfbb7ed4fc9711f7a"
       },
       "金枪鱼-游动-4.png": {
-        "bytes": 2834,
-        "sha256": "7ef5cfd6482eec6efa7a2616a0a32229eb7dc9006727f44051e72355e836ac44"
+        "bytes": 3062,
+        "sha256": "c5f17cde9ff9364db5b4a0643a51c80e01c7fde4ab2d6c84a7b8f0cf1c118627"
       }
     },
-    "textureBytes": 231104,
+    "textureBytes": 228064,
     "version": "1.0"
   }
 }
