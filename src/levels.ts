@@ -162,7 +162,12 @@ export interface LevelEntry {
   depth?: number;
 }
 
-/** Every kind a level block may place. Spelled out so a typo in the config file is a type error here too. */
+/**
+ * Every kind a level block may place. Spelled out so a typo in the config file is a type error here too.
+ *
+ * The TYPE is the compile-time half and `SPAWN_KINDS` is the runtime half (the loader can only compare strings); a
+ * creature has to be in both, which is why the runtime one is derived from the config rather than listed.
+ */
 export type SpawnKind =
   | 'bubble'
   | 'fish'
@@ -466,34 +471,28 @@ const sizes = (pattern: readonly number[]) => (i: number) => pattern[i % pattern
 // Reading the level files
 // =====================================================================================================
 
-/** Every kind a block may name. */
+/**
+ * Every kind a block may name -- ASKED OF THE TABLES rather than written out again.
+ *
+ * Writing it out again is exactly how the tuna became a creature that could not be placed. The type `SpawnKind` below
+ * gained `'tuna'` and this list did not, so `{ at: 260, kind: 'tuna' }` in level 1 failed the load with "kind is
+ * 'tuna', but it should be one of …" -- a list that did not contain the kind the game had just learned to draw. The
+ * compiler cannot help here (the type is compile-time and this list is runtime), so the list must not exist.
+ *
+ * The creatures come from `hazards.health`, which the config checks against every hazard kind ON LOAD, in both
+ * directions and by name (see the check beside its rule in `mechanisms.ts`): a creature with no health row fails the
+ * load, and a health row for something that is not a creature fails it too. So this list is complete by construction
+ * for the same reason `isScenery` asks the obstacle table -- and the boss is the one creature filtered out, because a
+ * level does not place its boss in a spawn block, it names it in its own `boss` field.
+ */
 const SPAWN_KINDS: readonly string[] = [
+  // The pickups. Spelled out because they are not creatures: nothing about them lives in the hazard tables.
   'bubble',
-  'fish',
-  'jelly',
-  'trash',
-  'crab',
-  'urchin',
-  'bombfish',
-  'eel',
-  'rot',
-  'oil',
   'skill',
   'upgrade',
   'rate',
-  'vent',
-  'mineral',
-  'shrimp',
-  'angler',
-  'torpedo',
-  'zapper',
-  'foam',
-  'rain',
-  'crate',
-  'coral',
-  'wall',
-  'net',
-  'tube',
+  ...Object.keys(mech.hazards.health).filter((kind) => kind !== 'boss'),
+  ...OBSTACLE_KINDS,
 ];
 const ARRANGEMENTS: readonly string[] = ['single', 'line', 'column', 'spread', 'barrier'];
 /** Whether a kind is scenery. Asked of the config's own list, so a new obstacle kind is covered by construction. */

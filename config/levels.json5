@@ -13,12 +13,17 @@
 //               而不是让每一块相对关卡错位（这是关卡，不是难度曲线）。
 //   kind        必填。刷什么。可以是：
 //                 收集物   bubble
-//                 生物     fish / jelly / trash / crab / urchin / bombfish / eel / rot / oil
+//                 生物     **`hazards.health` 里列出的每一种**（就是 `config/mechanics.json5` 里那张表，
+//                          只是不含 BOSS——BOSS 由关卡自己的 `boss` 字段安排，不写在刷怪表里）：
+//                          fish / tuna / jelly / trash / crab / urchin / bombfish / eel / rot / oil /
+//                          vent / mineral / shrimp / angler / torpedo / zapper / foam / rain
+//                          **加一种新生物**：在 mechanics.json5 里给它补齐那几张"每种都要有一行"的表，
+//                          这里就自动能刷了——加载器照那张表认，不是照着这里的手写清单认。
 //                 技能泡   skill
 //                 能力升级 upgrade（火力 +1 排）
 //                 射速升级 rate（射速 +1 档，最高三档）
 //               掉落物可以**同时存在多个**，各自漂移、各自拾取：放在一起不会互相覆盖。
-//                 障碍物   crate / coral / wall / net
+//                 障碍物   crate / coral / wall / net / tube（布景清单在 mechanics.json5 的 obstacles 段）
 //   count       刷几个。默认 1。
 //   arrange     怎么摆。single（默认，count=1 时）/ line（横排）/ column（竖列）/
 //               spread（沿距离摊开，横向按正弦摆动，amplitude 控制幅度）/ barrier（留缺口的障碍横排）

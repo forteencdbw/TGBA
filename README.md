@@ -185,7 +185,7 @@ levels/03-jelly-forest.json5 (level "jelly-forest"): paths.weave.points[0].y sho
 | 你要决定的 | 写什么 |
 |---|---|
 | 什么时候 | `at`：相机走过多少米（**按距离，不按时间**，所以改节奏不会让关卡错位） |
-| 刷什么、几个 | `kind` + `count`。`kind` 可以是收集物、9 种生物、技能泡，或 4 种障碍物 |
+| 刷什么、几个 | `kind` + `count`。`kind` 可以是收集物、**`hazards.health` 里列出的每一种生物**（金枪鱼也在内）、技能泡，或障碍物 |
 | 怎么摆 | `arrange`：`single` / `line`（横排）/ `column`（竖列）/ `spread`（沿距离摊开，横向正弦摆动）/ `barrier`（留缺口的障碍横排） |
 | 从哪边进来 | `from`：`top`（默认）/ `left` / `right` / `bottom`，见下 |
 
