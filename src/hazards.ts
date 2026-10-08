@@ -88,7 +88,9 @@ export type HazardKind =
    * the mechanic that makes approaching the surface a decision rather than a straight line.
    */
   | 'foam'
-  | 'rain';
+  | 'rain'
+  /** A tuna: the open-water hunter, a size up from the small fish and built the same way. */
+  | 'tuna';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
@@ -623,6 +625,13 @@ export function blastRadiusFraction(kind: HazardKind): number {
  * a new creature could be edible at one size and painted at another.
  */
 export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; spin: number }> = {  fish: { radius: 0.035, colour: 0x9ad7ff, spin: 0 },
+  /**
+   * The tuna: a size up from the fish, and the colour of the picture rather than the fish's pale cyan.
+   *
+   * It hunts the way the fish does (see `CREATURES`), so the only thing that distinguishes it in the water is its
+   * SIZE -- which is exactly what `hazards.radius.tuna` and `hazardArt.tuna.scale` are for.
+   */
+  tuna: { radius: 0.045, colour: 0x4f86b8, spin: 0 },
   jelly: { radius: 0.062, colour: 0xc79bff, spin: 0 },
   trash: { radius: 0.05, colour: 0xb08a5a, spin: 0.6 },
   crab: { radius: 0.045, colour: 0xff9b6b, spin: 0 },
@@ -1156,6 +1165,9 @@ function stepOil(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext)
  */
 const CREATURES: Record<HazardKind, CreatureStep> = {
   fish: stepFish,
+  // The tuna MOVES like a fish: it chases and it commits to the same kind of lunge. What makes it a different
+  // creature is its size, not a second behaviour -- `charges.chargers.tuna` is where a different rhythm would go.
+  tuna: stepFish,
   jelly: stepJelly,
   trash: stepTrash,
   crab: stepCrab,
@@ -1362,6 +1374,8 @@ function contactBoss(_field: HazardField, h: Hazard, ctx: HazardContext, effects
  */
 const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   fish: contactFish,
+  // Same contact rule as the fish, for the same reason as `CREATURES`: it is a bigger fish, not a new mechanic.
+  tuna: contactFish,
   jelly: contactJelly,
   trash: contactTrash,
   crab: contactCrab,
@@ -2110,7 +2124,7 @@ export class HazardField {
   }
 
   private spawn(ctx: HazardContext): Hazard {
-    const kinds: HazardKind[] = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain'];
+    const kinds: HazardKind[] = ['fish', 'tuna', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
@@ -3554,6 +3568,9 @@ function drawOil(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed
  */
 const CREATURE_DRAWING: Record<HazardKind, CreatureDraw> = {
   fish: drawFish,
+  // The drawn fallback, used until the picture loads (or if it never does): the same body the fish gets, at the
+  // tuna's larger radius. The painted body is an upgrade to a creature, never a precondition for it.
+  tuna: drawFish,
   jelly: drawJelly,
   trash: drawTrash,
   crab: drawCrab,

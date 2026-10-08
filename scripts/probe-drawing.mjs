@@ -38,7 +38,7 @@ try {
   const hz = await server.ssrLoadModule('/src/hazards.ts');
   const pixi = await import((await import('node:url')).pathToFileURL((await import('node:module')).createRequire(root + '/package.json').resolve('pixi.js')).href);
 
-  const KINDS = ['fish', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain'];
+  const KINDS = ['fish', 'tuna', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain'];
 
   const digest = (g) => {
     const instructions = g.context?.instructions ?? [];

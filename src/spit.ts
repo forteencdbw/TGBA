@@ -516,6 +516,9 @@ export function spitRadiusFraction(kind: HazardKind): number {
 export function spitImpact(kind: HazardKind): number {
   const perKind: Record<HazardKind, number> = {
     fish: 0.8,
+    // A bigger fish hits harder than a small one, and it is still a soft body: between the fish's slap and the
+    // trash bag's thump, well short of the crab's battering ram.
+    tuna: 1.0,
     jelly: 0.6,
     trash: 0.9,
     crab: 1.6,

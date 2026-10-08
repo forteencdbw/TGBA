@@ -342,6 +342,7 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
  */
 const HAZARD_NAMES: Record<HazardKind, string> = {
   fish: '小鱼',
+  tuna: '金枪鱼',
   jelly: '水母',
   trash: '垃圾袋',
   crab: '螃蟹',

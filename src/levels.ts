@@ -153,6 +153,8 @@ export type SpawnKind =
   /** LEVEL 6's foam and rain. */
   | 'foam'
   | 'rain'
+  /** The tuna: a size up from `fish`, and it hunts the same way. */
+  | 'tuna'
   | ObstacleKind;
 
 /** The arrangement vocabulary: how a block's `count` things are laid out. */
