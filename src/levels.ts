@@ -116,6 +116,15 @@ export interface LevelEntry {
    */
   pathOffset?: number;
   /**
+   * Which of the kind's looks every creature in this BLOCK shows.
+   *
+   * A block is a school: `{ kind: 'fish', count: 6 }` is six fish that arrived together and are one shoal, and a
+   * shoal drawn half sardine and half perch is two shoals pretending to be one. So the number is the block's own
+   * index rather than a per-creature roll -- see `expandBlock` -- and a string on a spline is one school too, for
+   * the same reason.
+   */
+  variety?: number;
+  /**
    *
    * A fraction rather than metres so a lane stays a lane on every display: the play area's width
    * follows the canvas, so an absolute x would drift off-screen on a narrow phone.
@@ -662,10 +671,36 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
  * The helpers below are unchanged from when levels were written in code -- they were always the mechanism, and this
  * function is the only thing that changed: it reads a block instead of being handed arguments by a source file.
  */
-function expandBlock(block: SpawnBlock): LevelEntry[] {
+/**
+ * The variety number each block hands down, as a map, so `expandBlock` can stay a pure function of one block.
+ *
+ * Fish blocks are numbered among THEMSELVES rather than by their position in the file. That is the difference
+ * between "the number is different from the block before it" and "the number is different from the last school":
+ * a level interleaves bubbles, pickups, torpedoes and obstacles between its shoals, so a counter over every block
+ * lands on the same value four blocks apart -- which is exactly two shoals of the same fish with a gap between
+ * them, and the gap is what makes it look like a mistake.
+ *
+ * Everything else gets its own index, which costs nothing: a variety is only ever read by a kind that has variants,
+ * and no other kind does.
+ */
+function blockVarieties(blocks: readonly SpawnBlock[]): Map<SpawnBlock, number> {
+  const out = new Map<SpawnBlock, number>();
+  let schools = 0;
+  blocks.forEach((block, index) => out.set(block, block.kind === 'fish' ? schools++ : index));
+  return out;
+}
+
+function expandBlock(block: SpawnBlock, variety = 0): LevelEntry[] {
   const side: Pick<LevelEntry, 'from' | 'enterSpeed' | 'depth'> =
     block.from === 'top' ? {} : { from: block.from, enterSpeed: block.enterSpeed, depth: block.depth };
-  const tag = (entries: LevelEntry[]): LevelEntry[] => entries.map((e) => ({ ...e, ...side }));
+  /**
+   * EVERY CREATURE THE BLOCK PLACES GETS THE SAME `variety`.
+   *
+   * A block is a school: `{ kind: 'fish', count: 6 }` is six fish that arrived together, and a shoal drawn half
+   * sardine and half perch is two shoals pretending to be one. A string on a spline is one school for the same
+   * reason, and it arrives here as one block.
+   */
+  const tag = (entries: LevelEntry[]): LevelEntry[] => entries.map((e) => ({ ...e, ...side, variety }));
 
   /**
    * A block on a PATH is a STRING: `count` creatures, spread along the curve by their own index.
@@ -742,7 +777,8 @@ function readLevel(node: Record<string, unknown>, where: string): Level {
   if (!Array.isArray(rawSpawns) || !rawSpawns.length) fail(`${where} (level "${id}")`, '"spawns" must be a non-empty list.');
 
   const blocks = rawSpawns.map((raw, i) => readBlock(raw, id, i));
-  const entries = blocks.flatMap(expandBlock).sort((a, b) => a.at - b.at);
+  const varieties = blockVarieties(blocks);
+  const entries = blocks.flatMap((block) => expandBlock(block, varieties.get(block))).sort((a, b) => a.at - b.at);
   const landmarks = Array.isArray(node['landmarks'])
     ? (node['landmarks'] as { depth: number; label: string }[])
     : undefined;
@@ -1026,7 +1062,8 @@ export function currentSpawnBlocks(): readonly SpawnBlock[] {
  */
 export function installSpawnBlocks(blocks: readonly unknown[]): number {
   const parsed = blocks.map((raw, i) => readBlock(raw, LEVEL.id, i));
-  const entries = parsed.flatMap(expandBlock).sort((a, b) => a.at - b.at);
+  const varieties = blockVarieties(parsed);
+  const entries = parsed.flatMap((block) => expandBlock(block, varieties.get(block))).sort((a, b) => a.at - b.at);
   assertLevelSane({ ...LEVEL, entries, blocks: parsed });
   TIMELINE = entries;
   installedBlocks = parsed;

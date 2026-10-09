@@ -162,6 +162,8 @@ export function placeEntry(
   const opts: SpawnOptions = {};
   if (entering) opts.entry = entering;
   if (path) opts.path = path;
+  // The block's look, carried to the creature that has to draw it. Undefined for anything that is not a hazard.
+  if (entry.variety !== undefined) opts.variety = entry.variety;
   /**
    * Clamped into the lane ONLY when it is not arriving.
    *

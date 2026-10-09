@@ -206,6 +206,15 @@ export interface Hazard {
    * not noticed. Which of the two a kind does is `hazardArt.<kind>.facesPlayer`.
    */
   heading: number;
+  /**
+   * WHICH OF THE KIND'S LOOKS THIS ONE SHOWS, when `hazardArt.<kind>.variants` lists more than one.
+   *
+   * Decided when the creature is PLACED, not when it is drawn, because the agreement that matters is the school's:
+   * a block of twenty fish is one shoal, and a shoal drawn half sardine and half perch is two shoals pretending to
+   * be one. It is a plain integer rather than an index so a level can hand it down from its own block numbering
+   * without knowing how many looks a kind will have.
+   */
+  variety: number;
   /** Fish: the bait bubble it is currently fooled by, if any. */
   baitedUntil: number;
   /** Jellyfish: how much it has been squashed, 0..1, purely comic. */
@@ -868,6 +877,12 @@ export interface SpawnOptions {
   entry?: Hazard['entry'];
   /** The spline it follows, if a level put it on one. */
   path?: Hazard['path'];
+  /**
+   * Which of the kind's looks to show. A level hands down its own block number, so a BLOCK is one variety.
+   *
+   * Absent means 0 -- the first look -- which is what a probe, a test spawn and the bestiary all want.
+   */
+  variety?: number;
   /**
    * A probe's creature: no random phase and no random head start on its timers, so "did it lunge" is not a coin flip.
    *
@@ -2091,6 +2106,8 @@ export class HazardField {
             seed: Math.random() * 1000,
             // A split fish has not swum anywhere yet: it inherits nothing about where its parent was going.
             heading: 0,
+            // And it keeps its parent's look: two fish that split out of one shoal are still that shoal.
+            variety: h.variety,
             baitedUntil: 0,
             fed: 0,
             digest: hazardTuning.fishDigestSeconds,
@@ -2178,6 +2195,7 @@ export class HazardField {
       phase: opts.deterministic ? 0 : Math.random() * Math.PI * 2,
       seed: opts.deterministic ? 0 : Math.random() * 1000,
       heading: 0,
+      variety: opts.variety ?? 0,
       baitedUntil: 0,
       squashed: 0,
       gripping: false,
@@ -2222,7 +2240,10 @@ export class HazardField {
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
-    return this.spawnAt(kind, margin + Math.random() * Math.max(0.01, ctx.laneWidth - margin * 2), ctx.max + 20 + Math.random() * 40);
+    // A random look, because a lone spawn has no school to agree with: there is nothing here for it to match, so
+    // variety is the whole point. A level's blocks do the opposite and hand down ONE number for the whole block.
+    const variety = Math.floor(Math.random() * 8);
+    return this.spawnAt(kind, margin + Math.random() * Math.max(0.01, ctx.laneWidth - margin * 2), ctx.max + 20 + Math.random() * 40, { variety });
   }
 
   /**
@@ -2959,14 +2980,21 @@ export interface HazardArtPose {
 }
 
 /** One creature's answer: which picture now, and what clock it reads. */
-type PoseRule = (h: Hazard, art: HazardArtEntry, telegraphSeconds: number) => HazardArtPose;
+type PoseRule = (h: Hazard, art: HazardArtEntry, telegraphSeconds: number, move: string) => HazardArtPose;
 
-/** The usual rule: the charge picture while winding up, the moving picture the rest of the time. */
-function poseOnWindup(h: Hazard, art: HazardArtEntry, telegraphSeconds: number): HazardArtPose {
+/**
+ * The usual rule: the charge picture while winding up, the moving picture the rest of the time.
+ *
+ * `move` is passed in rather than read off `art` because a kind may have VARIANTS -- several pictures for one state,
+ * one of them chosen per instance -- and the pose rules are the only place that names the moving picture. Threading
+ * it through every rule means a kind with both a custom rule and variants still works, instead of silently showing
+ * variety zero.
+ */
+function poseOnWindup(h: Hazard, art: HazardArtEntry, telegraphSeconds: number, move: string): HazardArtPose {
   const windingUp = h.charge !== null && h.charge.elapsed < telegraphSeconds;
   return windingUp
-    ? { state: art.charge ?? art.move, elapsed: h.charge!.elapsed }
-    : { state: art.move, elapsed: h.phase };
+    ? { state: art.charge ?? move, elapsed: h.charge!.elapsed }
+    : { state: move, elapsed: h.phase };
 }
 
 /**
@@ -2975,10 +3003,10 @@ function poseOnWindup(h: Hazard, art: HazardArtEntry, telegraphSeconds: number):
  * The clock is the charge's own, so if this picture ever becomes a multi-frame animation it plays from the moment the
  * jaws open rather than from the moment the fish springs.
  */
-function poseOnWholeCharge(h: Hazard, art: HazardArtEntry, _telegraphSeconds: number): HazardArtPose {
+function poseOnWholeCharge(h: Hazard, art: HazardArtEntry, _telegraphSeconds: number, move: string): HazardArtPose {
   return h.charge !== null
-    ? { state: art.charge ?? art.move, elapsed: h.charge.elapsed }
-    : { state: art.move, elapsed: h.phase };
+    ? { state: art.charge ?? move, elapsed: h.charge.elapsed }
+    : { state: move, elapsed: h.phase };
 }
 
 /** Which creatures do not use the default rule. */
@@ -2991,14 +3019,14 @@ const POSE_RULES: Partial<Record<HazardKind, PoseRule>> = { angler: poseOnWholeC
  * to every probe in the repository, and as a pure function a probe can put a wind-up and a lunge through it and read
  * the answer. Death and the boss's swing are settled here for every creature, so no per-kind rule can forget them.
  */
-export function hazardArtPose(h: Hazard, art: HazardArtEntry, telegraphSeconds: number): HazardArtPose {
+export function hazardArtPose(h: Hazard, art: HazardArtEntry, telegraphSeconds: number, move = art.move ?? ''): HazardArtPose {
   // `dead` beats everything: a boss playing its death is not winding up and not swimming, and the clock it reads (how
   // long it has been dead) is the same one the field uses to decide when to remove it.
   if (h.deadSince !== undefined) return { state: art.dead, elapsed: h.deadSince };
   // `attack` beats `charge`: a swing is a committed animation with its own clock, and the boss's charge-shaped
   // behaviour is the grit it throws -- those pieces are creatures of their own by the time a curve is drawn.
   if (h.attackSince !== null && art.attack !== undefined) return { state: art.attack, elapsed: h.attackSince };
-  return (POSE_RULES[h.kind] ?? poseOnWindup)(h, art, telegraphSeconds);
+  return (POSE_RULES[h.kind] ?? poseOnWindup)(h, art, telegraphSeconds, move);
 }
 
 /**
@@ -3895,7 +3923,23 @@ export function paintHazards(
        */
       const deadSince = h.deadSince;
       const dying = deadSince !== undefined;
-      const pose = hazardArtPose(h, art, chargeWindow(h.kind).telegraphSeconds);
+      /**
+       * WHICH VARIETY, from the creature's `variety` rather than from randomness here.
+       *
+       * A kind may have several looks and show one per instance. Which one is decided when the creature is PLACED,
+       * because the thing that has to agree is the SCHOOL: a block of twenty fish is one shoal, and a shoal drawn
+       * half sardine and half perch is two shoals pretending to be one. The modulo is taken twice because `%` keeps
+       * the sign of its left operand and a variety is not guaranteed positive.
+       *
+       * The `??` chain below is not a fallback that can paper over a missing row -- the config's own validation
+       * (see the `hazardArt` rule in `mechanisms.ts`) requires either `move`+`scale` or a non-empty `variants`, so
+       * exactly one of the two branches is ever reachable.
+       */
+      const variants = art.variants;
+      const variant = variants && variants.length > 0 ? variants[((h.variety % variants.length) + variants.length) % variants.length] : undefined;
+      const move = variant?.move ?? art.move ?? '';
+      const artScale = variant?.scale ?? art.scale ?? 1;
+      const pose = hazardArtPose(h, art, chargeWindow(h.kind).telegraphSeconds, move);
       const state = pose.state;
       const stateElapsed = pose.elapsed;
       const texture = state ? hazardArtState(state, stateElapsed) : null;
@@ -3915,7 +3959,7 @@ export function paintHazards(
           ART_SPRITES.set(h.id, sprite);
         }
         ART_SEEN.set(h.id, ART_NOW);
-        const size = r * 2 * art.scale;
+        const size = r * 2 * artScale;
         sprite.texture = texture;
         sprite.visible = true;
         sprite.x = x;

@@ -909,8 +909,21 @@ export interface Mechanisms {
   hazardArt: Record<
     string,
     {
-      /** A picture name in `src/assets/`, or the NAME of an entry in `animations`. */
-      move: string;
+      /**
+       * A picture name in `src/assets/`, or the NAME of an entry in `animations`.
+       *
+       * Required unless `variants` is present, which lists the looks instead.
+       */
+      move?: string;
+      /**
+       * Several looks for one kind, one of which an instance shows -- the fish are the case: a shoal of sardines and
+       * a shoal of perch are the same creature to the game and two different things to look at.
+       *
+       * Which one is shown is the CREATURE's `variety`, decided where it is placed rather than where it is drawn, so
+       * that a level's block can make a whole school agree. The list replaces `move`/`scale` rather than extending
+       * them, so there is one place a look is written down and no way for the two to disagree.
+       */
+      variants?: readonly { move: string; scale: number }[];
       charge?: string;
       /** **攻击**: this creature throws something, and this is what it looks like while it does. */
       attack?: string;
@@ -949,7 +962,8 @@ export interface Mechanisms {
        * shows it must say how long "the swing" lasts.
        */
       attackSeconds?: number;
-      scale: number;
+      /** Required unless `variants` is present, which carries a scale per look. */
+      scale?: number;
       alpha: number;
       lure?: {
         stemAngle: number;
@@ -2243,10 +2257,25 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
         if (r.spin !== undefined && (typeof r.spin !== 'number' || r.spin < -6 || r.spin > 6)) return false;
         if (r.facesPlayer !== undefined && typeof r.facesPlayer !== 'boolean') return false;
         if (r.attackSeconds !== undefined && (typeof r.attackSeconds !== 'number' || r.attackSeconds <= 0.02 || r.attackSeconds > 30)) return false;
-        return isArtState(r.move) && typeof r.scale === 'number' && r.scale > 0.05 && r.scale <= 6 && typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1;
+        /**
+         * EITHER a single look or a LIST of them, and never a quiet mixture of the two.
+         *
+         * A row with `variants` carries no `move`/`scale` of its own, and a row without them must carry both. Making
+         * that exclusive is what lets the painter resolve a look without a fallback worth worrying about: `move ?? ''`
+         * and `scale ?? 1` would otherwise be two defaults that can hide a row written wrongly.
+         */
+        const variants = r.variants;
+        if (variants !== undefined) {
+          if (!Array.isArray(variants) || variants.length === 0) return false;
+          if (r.move !== undefined || r.scale !== undefined) return false;
+          if (!variants.every((v) => v && typeof v === 'object' && isArtState(v.move) && typeof v.scale === 'number' && v.scale > 0.05 && v.scale <= 6)) return false;
+        } else if (!isArtState(r.move) || typeof r.scale !== 'number' || r.scale <= 0.05 || r.scale > 6) {
+          return false;
+        }
+        return typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1;
       });
     },
-    describe: 'an object of kind -> { move, charge?, attack?, dead?, front?, spriteFlashScale?, spin?, attackSeconds?, scale, alpha, lure? }, where each state is a picture name or an animation',
+    describe: 'an object of kind -> { move, scale } or { variants: [{ move, scale }], and either way charge?, attack?, dead?, front?, spriteFlashScale?, spin?, attackSeconds?, alpha, lure? }, where each state is a picture name or an animation',
   },
   {
     path: 'animations',
