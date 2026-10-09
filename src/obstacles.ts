@@ -502,11 +502,23 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
     const darken = 1 - damaged * mech.obstacles.damagedDarken;
 
     const art = mech.obstacles.art[o.kind];
+    /**
+     * WHICH FACE, chosen from the obstacle's own id.
+     *
+     * No randomness, so a given obstacle shows the same coral for its whole life and a redraw never reshuffles the
+     * reef; no memory, so a variant costs nothing to keep. Ids are handed out in spawn order, so a row of them
+     * cycles through the set -- and the variation a level actually gets comes mostly from its own spacing anyway.
+     *
+     * The modulo is TAKEN TWICE because `%` in JavaScript keeps the sign of the left operand, and ids are not all
+     * positive: the bestiary passes a NEGATIVE id for its card proxy (see `Card.iconId`), and `-1 % 6` is `-1`, so
+     * the single-modulo version would index off the end of the array and the card would draw nothing at all.
+     */
+    const variant = art ? art.variants[((o.id % art.variants.length) + art.variants.length) % art.variants.length] : undefined;
     // Asked every frame, so a picture that has not finished loading falls through to the drawn body and the
     // obstacle is never invisible -- art is an upgrade here exactly as it is for a creature.
-    const texture = art ? assetTextureNow(art.image) : null;
+    const texture = variant ? assetTextureNow(variant.image) : null;
 
-    if (art && texture) {
+    if (art && variant && texture) {
       let sprite = ART_SPRITES.get(o.id);
       if (!sprite) {
         sprite = new Sprite(texture);
@@ -526,7 +538,7 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
       }
       ART_SEEN.set(o.id, ART_NOW);
 
-      const size = r * 2 * art.scale;
+      const size = r * 2 * variant.scale;
       const unit = size / texture.width;
       sprite.texture = texture;
       sprite.visible = true;

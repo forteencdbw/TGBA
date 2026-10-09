@@ -1175,6 +1175,17 @@ function stepEel(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext)
    */
   h.y -= ctx.descentSpeed * 0.3 * dt;
   h.x += Math.sin(h.phase * 2.6 + h.seed) * ctx.laneWidth * 0.055 * dt;
+  /**
+   * The discharge pose's own clock.
+   *
+   * `attackSince` is set the moment the eel fires (see the shooting call in `HazardField.update`) and is null the
+   * rest of the time, which is the shape `hazardArtPose` reads: `attack` beats `charge` and `move`, so the
+   * crackling picture is up for `attackSeconds` after each bolt and the idle one is up in between.
+   */
+  if (h.attackSince !== null) {
+    h.attackSince += dt;
+    if (h.attackSince >= (mech.hazardArt.eel?.attackSeconds ?? 0.45)) h.attackSince = null;
+  }
   return;
 }
 function stepRot(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
@@ -1808,6 +1819,15 @@ export class HazardField {
        */
       if (this.updateShooting(h, dt, ctx)) {
         effects.push({ kind: h.kind, broke: false, shot: { x: h.x, y: h.y } });
+        /**
+         * The eel's discharge, which is its own firing pose rather than a second attack.
+         *
+         * It already throws electric bolts (see `enemyBullets.shooters.eel`), so "the eel discharges" needs no new
+         * mechanic: the body crackles for as long as it is shooting. Set HERE, where the fact that it fired is
+         * known, rather than on a second clock inside `stepEel` counting the same thing -- the pose and the shot
+         * would then be two answers to one question, and the day they disagree the picture lies about the threat.
+         */
+        if (h.kind === 'eel') h.attackSince = 0;
       }
       /**
        * And the boss's claw swing, in the same place and for the same reason as the trigger finger above: it is a
@@ -3915,6 +3935,17 @@ export function paintHazards(
         }
         const facing = h.facing;
         sprite.scale.set(unit * facing, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
+        /**
+         * SPIN, for a kind whose picture is a radial thing.
+         *
+         * Off `h.phase`, which is the creature's own clock in seconds, so the rate is radians per second and every
+         * instance turns at its own angle -- a row of urchins tumbling in lockstep would read as one object drawn
+         * several times. `h.seed` offsets it so two spawned on the same frame are not twins.
+         *
+         * The screen direction is the OPPOSITE of the sign here, because the sprite's own space is flipped; that is
+         * harmless for the one kind that uses this (an urchin has no handedness) and would matter for one that did.
+         */
+        sprite.rotation = (art.spin ?? 0) * h.phase + (h.seed ?? 0);
         /**
          * The white flash, as a filter ON THE SPRITE.
          *

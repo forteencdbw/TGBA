@@ -912,6 +912,21 @@ export interface Mechanisms {
        * as everything else", 0 is "this one does not flash".
        */
       spriteFlashScale?: number;
+      /**
+       * Radians per second the PICTURE turns about its own centre. Absent or 0 means it does not turn.
+       *
+       * Distinct from `KIND_TUNING[kind].spin`, which the drawn bodies use for their own shapes; this one turns the
+       * sprite, so the two are only the same number when a kind happens to want the same rate in both.
+       */
+      spin?: number;
+      /**
+       * How long the `attack` picture stands, when that picture is a single file rather than an animation.
+       *
+       * An `attack` that names an `animations.<id>` already has its length -- that is what `maxSeconds` and
+       * `framesPerSecond` are for -- and this is ignored for it. A single picture has no such clock, so a kind that
+       * shows it must say how long "the swing" lasts.
+       */
+      attackSeconds?: number;
       scale: number;
       alpha: number;
       lure?: {
@@ -1251,13 +1266,24 @@ export interface Mechanisms {
      * Sparse by design: a kind that is not listed keeps its drawn body, and a listed kind FALLS BACK to it while
      * the texture loads -- so "the picture has not arrived yet" can never be "the obstacle is invisible".
      *
-     * `image` is a picture name, and only a picture name: an obstacle's animation is its SWAY, not a frame set.
-     * `swayDegrees`/`swaySeconds` are therefore the whole animation -- the picture turns about its own bottom
-     * centre by that many degrees, once every that many seconds. One picture plus a rotation rather than frames,
-     * because a composed rotation keeps the body perfectly still while a generated frame set does not (measured:
-     * 30-40/255 mean difference between generated frames, against 1.4/255 for a composition).
+     * `variants` is a list of FACES for the one kind: `image` is a picture name and only a picture name, and each
+     * obstacle picks one by its own id. Same collision, same health, same break-up -- a thicket of coral is one
+     * thing with several shapes, not several things.
+     *
+     * `swayDegrees`/`swaySeconds` are the whole animation -- the picture turns about its own bottom centre by that
+     * many degrees, once every that many seconds. One picture plus a rotation rather than frames, because a
+     * composed rotation keeps the body perfectly still while a generated frame set does not (measured: 30-40/255
+     * mean difference between generated frames, against 1.4/255 for a composition).
      */
-    art: Record<string, { image: string; scale: number; alpha: number; swayDegrees: number; swaySeconds: number }>;
+    art: Record<
+      string,
+      {
+        variants: readonly { image: string; scale: number }[];
+        alpha: number;
+        swayDegrees: number;
+        swaySeconds: number;
+      }
+    >;
   };
   /**
    * The volatile bubble: the second playable type.
@@ -2191,10 +2217,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
         if (r.charge !== undefined && !isArtState(r.charge)) return false;
         if (r.dead !== undefined && !isArtState(r.dead)) return false;
         if (r.spriteFlashScale !== undefined && (typeof r.spriteFlashScale !== 'number' || r.spriteFlashScale < 0 || r.spriteFlashScale > 2)) return false;
+        if (r.spin !== undefined && (typeof r.spin !== 'number' || r.spin < -6 || r.spin > 6)) return false;
+        if (r.attackSeconds !== undefined && (typeof r.attackSeconds !== 'number' || r.attackSeconds <= 0.02 || r.attackSeconds > 30)) return false;
         return isArtState(r.move) && typeof r.scale === 'number' && r.scale > 0.05 && r.scale <= 6 && typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1;
       });
     },
-    describe: 'an object of kind -> { move, charge?, dead?, front?, spriteFlashScale?, scale, alpha, lure? }, where each state is a picture name or an animation',
+    describe: 'an object of kind -> { move, charge?, attack?, dead?, front?, spriteFlashScale?, spin?, attackSeconds?, scale, alpha, lure? }, where each state is a picture name or an animation',
   },
   {
     path: 'animations',
@@ -2511,16 +2539,16 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
       return Object.values(v as Record<string, unknown>).every((row) => {
         if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
         const r = row as Record<string, unknown>;
+        if (!Array.isArray(r.variants) || r.variants.length === 0) return false;
+        if (!r.variants.every((v) => v && typeof v === 'object' && typeof v.image === 'string' && v.image.length > 0 && typeof v.scale === 'number' && v.scale > 0.05 && v.scale <= 6)) return false;
         return (
-          typeof r.image === 'string' && r.image.length > 0 &&
-          typeof r.scale === 'number' && r.scale > 0.05 && r.scale <= 6 &&
           typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1 &&
           typeof r.swayDegrees === 'number' && r.swayDegrees >= 0 && r.swayDegrees <= 45 &&
           typeof r.swaySeconds === 'number' && r.swaySeconds > 0.05 && r.swaySeconds <= 60
         );
       });
     },
-    describe: 'an object of obstacle kind -> { image, scale, alpha, swayDegrees, swaySeconds }, where image is a picture name',
+    describe: 'an object of obstacle kind -> { variants: [{ image, scale }], alpha, swayDegrees, swaySeconds }; each obstacle picks one variant by its own id',
   },
   { path: 'emergence.fishPerceptionBaseMeters', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'emergence.fishPerceptionPerVolume', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },

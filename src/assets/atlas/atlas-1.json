@@ -182,35 +182,21 @@
       },
       "trimmed": false
     },
-    "海豚-游动-1.png": {
+    "海胆.png": {
       "frame": {
-        "h": 50,
-        "w": 66,
+        "h": 48,
+        "w": 51,
         "x": 698,
         "y": 2
       },
       "rotated": false,
       "sourceSize": {
-        "h": 50,
-        "w": 66
+        "h": 48,
+        "w": 51
       },
       "trimmed": false
     },
-    "海豚-游动-2.png": {
-      "frame": {
-        "h": 50,
-        "w": 66,
-        "x": 768,
-        "y": 2
-      },
-      "rotated": false,
-      "sourceSize": {
-        "h": 50,
-        "w": 66
-      },
-      "trimmed": false
-    },
-    "海豚-游动-3.png": {
+    "海豚-游动-1.png": {
       "frame": {
         "h": 50,
         "w": 66,
@@ -224,11 +210,39 @@
       },
       "trimmed": false
     },
-    "海豚-游动-4.png": {
+    "海豚-游动-2.png": {
       "frame": {
         "h": 50,
         "w": 66,
         "x": 360,
+        "y": 222
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 50,
+        "w": 66
+      },
+      "trimmed": false
+    },
+    "海豚-游动-3.png": {
+      "frame": {
+        "h": 50,
+        "w": 66,
+        "x": 430,
+        "y": 222
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 50,
+        "w": 66
+      },
+      "trimmed": false
+    },
+    "海豚-游动-4.png": {
+      "frame": {
+        "h": 50,
+        "w": 66,
+        "x": 500,
         "y": 222
       },
       "rotated": false,
@@ -270,7 +284,7 @@
       "frame": {
         "h": 12,
         "w": 12,
-        "x": 838,
+        "x": 753,
         "y": 2
       },
       "rotated": false,
@@ -284,7 +298,7 @@
       "frame": {
         "h": 36,
         "w": 36,
-        "x": 430,
+        "x": 570,
         "y": 222
       },
       "rotated": false,
@@ -294,12 +308,82 @@
       },
       "trimmed": false
     },
+    "珊瑚-团状.png": {
+      "frame": {
+        "h": 87,
+        "w": 87,
+        "x": 2,
+        "y": 374
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 87,
+        "w": 87
+      },
+      "trimmed": false
+    },
+    "珊瑚-扇形.png": {
+      "frame": {
+        "h": 75,
+        "w": 78,
+        "x": 514,
+        "y": 141
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 75,
+        "w": 78
+      },
+      "trimmed": false
+    },
+    "珊瑚-枝状.png": {
+      "frame": {
+        "h": 71,
+        "w": 67,
+        "x": 596,
+        "y": 141
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 71,
+        "w": 67
+      },
+      "trimmed": false
+    },
+    "珊瑚-桌状.png": {
+      "frame": {
+        "h": 66,
+        "w": 90,
+        "x": 750,
+        "y": 67
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 66,
+        "w": 90
+      },
+      "trimmed": false
+    },
+    "珊瑚-管状.png": {
+      "frame": {
+        "h": 58,
+        "w": 84,
+        "x": 667,
+        "y": 141
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 58,
+        "w": 84
+      },
+      "trimmed": false
+    },
     "珊瑚.png": {
       "frame": {
         "h": 71,
         "w": 83,
-        "x": 514,
-        "y": 141
+        "x": 170,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -308,12 +392,40 @@
       },
       "trimmed": false
     },
+    "电鳗-放电.png": {
+      "frame": {
+        "h": 53,
+        "w": 78,
+        "x": 755,
+        "y": 141
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 53,
+        "w": 78
+      },
+      "trimmed": false
+    },
+    "电鳗.png": {
+      "frame": {
+        "h": 66,
+        "w": 78,
+        "x": 257,
+        "y": 290
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 66,
+        "w": 78
+      },
+      "trimmed": false
+    },
     "盲虾-蓄力.png": {
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 750,
-        "y": 67
+        "x": 339,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -326,8 +438,8 @@
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 601,
-        "y": 141
+        "x": 399,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -340,8 +452,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 170,
-        "y": 290
+        "x": 93,
+        "y": 374
       },
       "rotated": false,
       "sourceSize": {
@@ -354,8 +466,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 253,
-        "y": 290
+        "x": 176,
+        "y": 374
       },
       "rotated": false,
       "sourceSize": {
@@ -368,8 +480,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 336,
-        "y": 290
+        "x": 259,
+        "y": 374
       },
       "rotated": false,
       "sourceSize": {
@@ -382,8 +494,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 419,
-        "y": 290
+        "x": 342,
+        "y": 374
       },
       "rotated": false,
       "sourceSize": {
@@ -396,8 +508,8 @@
       "frame": {
         "h": 78,
         "w": 48,
-        "x": 502,
-        "y": 290
+        "x": 425,
+        "y": 374
       },
       "rotated": false,
       "sourceSize": {
@@ -411,7 +523,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 374
+        "y": 465
       },
       "rotated": false,
       "sourceSize": {
@@ -425,7 +537,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 374
+        "y": 465
       },
       "rotated": false,
       "sourceSize": {
@@ -439,7 +551,7 @@
         "h": 192,
         "w": 192,
         "x": 394,
-        "y": 374
+        "y": 465
       },
       "rotated": false,
       "sourceSize": {
@@ -453,7 +565,7 @@
         "h": 192,
         "w": 192,
         "x": 590,
-        "y": 374
+        "y": 465
       },
       "rotated": false,
       "sourceSize": {
@@ -467,7 +579,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 570
+        "y": 661
       },
       "rotated": false,
       "sourceSize": {
@@ -481,7 +593,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 570
+        "y": 661
       },
       "rotated": false,
       "sourceSize": {
@@ -495,7 +607,7 @@
         "h": 221,
         "w": 192,
         "x": 394,
-        "y": 570
+        "y": 661
       },
       "rotated": false,
       "sourceSize": {
@@ -509,7 +621,7 @@
         "h": 221,
         "w": 192,
         "x": 590,
-        "y": 570
+        "y": 661
       },
       "rotated": false,
       "sourceSize": {
@@ -523,7 +635,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 795
+        "y": 886
       },
       "rotated": false,
       "sourceSize": {
@@ -537,7 +649,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 795
+        "y": 886
       },
       "rotated": false,
       "sourceSize": {
@@ -551,7 +663,7 @@
         "h": 221,
         "w": 192,
         "x": 394,
-        "y": 795
+        "y": 886
       },
       "rotated": false,
       "sourceSize": {
@@ -565,7 +677,7 @@
         "h": 221,
         "w": 192,
         "x": 590,
-        "y": 795
+        "y": 886
       },
       "rotated": false,
       "sourceSize": {
@@ -579,7 +691,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 1020
+        "y": 1111
       },
       "rotated": false,
       "sourceSize": {
@@ -593,7 +705,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 1020
+        "y": 1111
       },
       "rotated": false,
       "sourceSize": {
@@ -607,7 +719,7 @@
         "h": 192,
         "w": 192,
         "x": 394,
-        "y": 1020
+        "y": 1111
       },
       "rotated": false,
       "sourceSize": {
@@ -621,7 +733,7 @@
         "h": 192,
         "w": 192,
         "x": 590,
-        "y": 1020
+        "y": 1111
       },
       "rotated": false,
       "sourceSize": {
@@ -635,7 +747,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 374
+        "y": 465
       },
       "rotated": false,
       "sourceSize": {
@@ -649,7 +761,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 416
+        "y": 507
       },
       "rotated": false,
       "sourceSize": {
@@ -663,7 +775,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 458
+        "y": 549
       },
       "rotated": false,
       "sourceSize": {
@@ -677,7 +789,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 500
+        "y": 591
       },
       "rotated": false,
       "sourceSize": {
@@ -689,7 +801,7 @@
   },
   "meta": {
     "app": "pack-atlas.py",
-    "decodedBytes": 4183040,
+    "decodedBytes": 4499520,
     "encoding": "lossless WebP",
     "encodingNote": "pixel exact",
     "format": "RGBA8888",
@@ -697,7 +809,7 @@
     "page": 1,
     "scale": "1",
     "size": {
-      "h": 1216,
+      "h": 1308,
       "w": 860
     },
     "sources": {
@@ -753,6 +865,10 @@
         "bytes": 4927,
         "sha256": "b1b6111d49c292adc74f809348c953240beb56d1e4c10f3fbc7de6e0325c0473"
       },
+      "海胆.png": {
+        "bytes": 5230,
+        "sha256": "5677ed2df413f1a01cc4185f33102cc27a47bc5e1c5d4e1e14cf29cac62e831a"
+      },
       "海豚-游动-1.png": {
         "bytes": 3693,
         "sha256": "772cd61abafad7b1739a76998681b26617af8b7d5ab0e303b58667eb5f12f003"
@@ -785,9 +901,37 @@
         "bytes": 1131,
         "sha256": "9c3625f8835fd1b4bc19b98aa849ef20c796ed336170d69b8419891dae9c51be"
       },
+      "珊瑚-团状.png": {
+        "bytes": 10909,
+        "sha256": "6e2ea9470b8b39e58e09a43d6c0f29a3449d1d690b02963042615207186079eb"
+      },
+      "珊瑚-扇形.png": {
+        "bytes": 13971,
+        "sha256": "d88470b6d618114ffc05faf21ae1acaff897a30d65f0d4a1bc3f413c88c5347f"
+      },
+      "珊瑚-枝状.png": {
+        "bytes": 7189,
+        "sha256": "ec58d64ca86a1c5f85709c2f7b7084307981c1d6c73fa1614466695dbe003d0c"
+      },
+      "珊瑚-桌状.png": {
+        "bytes": 8610,
+        "sha256": "8f5b0b483ebb61b12d245b88dab06cf3203d3b7d9fae09a2309e5ccceaf8e33a"
+      },
+      "珊瑚-管状.png": {
+        "bytes": 7346,
+        "sha256": "eb2ccb835261b5933042ad5fd1ef57c6ef8ff2ea8f68dc79ba28e525e6326739"
+      },
       "珊瑚.png": {
         "bytes": 11377,
         "sha256": "116e542855d0b0dc26b9c30e8ad885879acb4f2c0a32ed6ab16b834c526a6a1f"
+      },
+      "电鳗-放电.png": {
+        "bytes": 5767,
+        "sha256": "5e52e9cfb24f1f7ffa017e9ba4c15fcef6a41da64c06449d6fb26b77ade8f860"
+      },
+      "电鳗.png": {
+        "bytes": 3332,
+        "sha256": "7f5648a14dbb8ea588b8f305d02a70f78df2284289a16f851b65305561e3b2a7"
       },
       "盲虾-蓄力.png": {
         "bytes": 2952,
@@ -898,7 +1042,7 @@
         "sha256": "c5f17cde9ff9364db5b4a0643a51c80e01c7fde4ab2d6c84a7b8f0cf1c118627"
       }
     },
-    "textureBytes": 254070,
+    "textureBytes": 285406,
     "version": "1.0"
   }
 }

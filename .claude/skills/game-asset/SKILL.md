@@ -308,6 +308,21 @@ a judgement.
 5. **Place it**: `config/levels/<level>.json5`, `spawns: [{ at, kind, … }]`.
 6. **Repack**: `pnpm atlas`, then `pnpm atlas:check` to confirm nothing is stale.
 
+Two art-row fields that are easy to miss, because neither is animation frames:
+
+- **`spin`** (radians per second) turns the sprite about its own centre, for a creature whose picture is a radial
+  thing — an urchin is a ball of spikes and the rotation IS its animation. It is off the creature's own clock, so
+  a row of them is not in lockstep. Without it a radial sprite reads as frozen.
+- **`attackSeconds`** is how long a SINGLE-PICTURE `attack` stands. An `attack` that names an `animations.<id>`
+  already knows its own length; a picture does not, so a kind that shows one has to say. Pick it as a fraction of
+  the thing's cadence — the eel's discharge is half the gap between its shots, so the lightning flashes and goes
+  out rather than becoming the creature's normal face.
+
+And for scenery, `obstacles.art.<kind>` takes **`variants`**, a list of `{image, scale}` that one obstacle kind
+picks from by its own id. That is how a level gets a reef rather than one coral repeated: same collision, same
+health, several faces. Give each variant the `scale` that goes with its own picture — the widths are what the
+world sees, and a thicket where every plant is the same size looks printed.
+
 **The compiler is the checklist.** The per-kind tables in `src/hazards.ts` are typed `Record<HazardKind, …>`
 (`KIND_TUNING`, `CREATURES`, `CONTACT_EFFECTS`, `CREATURE_DRAWING`), so a new kind that is wired into some of them
 and not others is a `pnpm typecheck` error rather than a creature that silently does not move. Add the kind first
