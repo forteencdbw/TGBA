@@ -193,6 +193,19 @@ export interface Hazard {
   /** Per-instance randomness so a group does not move in lockstep. */
   phase: number;
   seed: number;
+  /**
+   * WHICH WAY IT IS SWIMMING: -1 left, +1 right, 0 when nothing has decided yet.
+   *
+   * Separate from `facing`, which is the mirror the SPRITE is drawn with and carries a cooldown so a creature
+   * cannot strobe as the player drifts across its centre line. This one is a fact about the creature -- written by
+   * the movement that knows, at the moment it moves -- and not every kind has an opinion about it: a jellyfish
+   * drifts and a vent does not move at all, and both leave it at 0.
+   *
+   * It exists because looking at the player is a choice rather than a rule. A fish that is hunting should face
+   * where it is going; a creature that is merely drifting past should not spin round to stare at a bubble it has
+   * not noticed. Which of the two a kind does is `hazardArt.<kind>.facesPlayer`.
+   */
+  heading: number;
   /** Fish: the bait bubble it is currently fooled by, if any. */
   baitedUntil: number;
   /** Jellyfish: how much it has been squashed, 0..1, purely comic. */
@@ -889,6 +902,7 @@ function stepFish(field: HazardField, h: Hazard, dt: number, ctx: HazardContext)
   if (h.baitedUntil > ctx.elapsed) {
     // Wander: drift sideways away from the player.
     h.x += Math.sign(h.x - ctx.playerX) * 6 * dt;
+    h.heading = Math.sign(h.x - ctx.playerX) || h.heading;
     h.y -= ctx.descentSpeed * 0.5 * dt;
     return;
   }
@@ -905,7 +919,11 @@ function stepFish(field: HazardField, h: Hazard, dt: number, ctx: HazardContext)
   const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
   if (dist > perceive) {
     // Idle drift: keeps its own course, does not converge.
-    h.x += Math.sin(h.phase * 1.3 + h.seed) * 5 * dt;
+    const sway = Math.sin(h.phase * 1.3 + h.seed) * 5 * dt;
+    h.x += sway;
+    // The DRIFT is what says which way it is going here, not the player -- this branch is the one that does not
+    // converge, and it is most of the fish on screen at any moment.
+    if (sway !== 0) h.heading = Math.sign(sway);
     h.y -= ctx.descentSpeed * 0.42 * dt;
     return;
   }
@@ -914,6 +932,7 @@ function stepFish(field: HazardField, h: Hazard, dt: number, ctx: HazardContext)
   const dx = ctx.playerX - h.x;
   const steer = Math.max(-1, Math.min(1, dx / Math.max(1, ctx.laneWidth * 0.25)));
   h.x += steer * ctx.laneWidth * hazardTuning.fishSpeedFactor * dt;
+  if (steer !== 0) h.heading = Math.sign(steer);
   h.y -= ctx.descentSpeed * 0.55 * dt;
   return;
 }
@@ -2070,6 +2089,8 @@ export class HazardField {
             radiusFraction: h.radiusFraction * 0.88,
             phase: Math.random() * Math.PI * 2,
             seed: Math.random() * 1000,
+            // A split fish has not swum anywhere yet: it inherits nothing about where its parent was going.
+            heading: 0,
             baitedUntil: 0,
             fed: 0,
             digest: hazardTuning.fishDigestSeconds,
@@ -2156,6 +2177,7 @@ export class HazardField {
       radiusFraction,
       phase: opts.deterministic ? 0 : Math.random() * Math.PI * 2,
       seed: opts.deterministic ? 0 : Math.random() * 1000,
+      heading: 0,
       baitedUntil: 0,
       squashed: 0,
       gripping: false,
@@ -2468,6 +2490,12 @@ export class HazardField {
           bow: (onLeft ? 1 : -1) * charger.bowRatio * span,
           elapsed: 0,
         };
+        /**
+         * A lunge is a heading too, and the creature's own step does not run while it lasts -- a charge REPLACES the
+         * kind's motion (see the field on `charge`). Without this the fish would spend its whole lunge facing
+         * whatever it happened to be doing the frame before it committed, which is a fish attacking backwards.
+         */
+        h.heading = onLeft ? 1 : -1;
         this.charges++;
         return;
       }
@@ -2497,8 +2525,14 @@ export class HazardField {
        */
       h.x = at.x * ctx.laneWidth;
       h.y = h.path.startY + at.y;
-      // The facing follows the tangent, so a fish swimming left is drawn swimming left.
-      if (Math.abs(h.x - before.x) > 0.001) h.seed = Math.sign(h.x - before.x) > 0 ? Math.abs(h.seed) : -Math.abs(h.seed);
+      /**
+       * The heading follows the tangent, so a fish swimming left is drawn swimming left.
+       *
+       * This used to write the SIGN of `h.seed` instead, which is where the idea came from and where it stopped: the
+       * seed is a per-instance random used as a phase, and nothing ever read its sign. `heading` is the field that
+       * means what this line is trying to say.
+       */
+      if (Math.abs(h.x - before.x) > 0.001) h.heading = Math.sign(h.x - before.x);
       /**
        * The END of the path retires it, and only that: a path may start and finish outside the lane, so the usual cull
        * would delete the whole string on the frame it spawned.
@@ -3917,7 +3951,22 @@ export function paintHazards(
          */
         const exitSide = h.flee === 'left' ? 'left' : h.flee === 'right' ? 'right' : null;
         const playerIsLeft = playerX < h.x;
-        const wantFrontLeft = exitSide ? exitSide === 'left' : playerIsLeft;
+        /**
+         * WHAT IT LOOKS AT, which is a choice rather than a rule.
+         *
+         * A hunter should face the thing it is hunting, and most of them do. A school of fish should not: most fish on
+         * screen are NOT chasing anybody -- `stepFish` only converges inside a perception radius and merely drifts
+         * outside it -- so tracking the player made every drifting fish in the water swing round to stare at a bubble
+         * it had not noticed, and a BAITED one conspicuously turn to face the fish it was swimming away from.
+         *
+         * `heading <= 0` covers the undecided case for free: a creature that has never swum anywhere is drawn as the
+         * artist left it (facing left), rather than mirroring on a heading of zero.
+         */
+        const wantFrontLeft = exitSide
+          ? exitSide === 'left'
+          : (art.facesPlayer ?? true)
+            ? playerIsLeft
+            : h.heading <= 0;
         /**
          * The turn is COMMITTED for `cooldownSeconds`, which is the whole point of this block.
          *

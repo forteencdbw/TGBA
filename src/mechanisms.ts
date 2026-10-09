@@ -926,6 +926,15 @@ export interface Mechanisms {
        */
       spriteFlashScale?: number;
       /**
+       * Whether the picture turns to face the player. Default true, because a hunter should face what it hunts.
+       *
+       * Set it false for something that is usually NOT hunting anybody: most fish on screen are drifting, and a
+       * drifter that swings round to stare at the bubble has a tell it was never meant to have. A kind that opts out
+       * faces its own `heading` instead -- which way it is actually swimming -- and falls back to the artist's
+       * orientation before it has swum anywhere.
+       */
+      facesPlayer?: boolean;
+      /**
        * Radians per second the PICTURE turns about its own centre. Absent or 0 means it does not turn.
        *
        * Distinct from `KIND_TUNING[kind].spin`, which the drawn bodies use for their own shapes; this one turns the
@@ -2232,6 +2241,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
         if (r.dead !== undefined && !isArtState(r.dead)) return false;
         if (r.spriteFlashScale !== undefined && (typeof r.spriteFlashScale !== 'number' || r.spriteFlashScale < 0 || r.spriteFlashScale > 2)) return false;
         if (r.spin !== undefined && (typeof r.spin !== 'number' || r.spin < -6 || r.spin > 6)) return false;
+        if (r.facesPlayer !== undefined && typeof r.facesPlayer !== 'boolean') return false;
         if (r.attackSeconds !== undefined && (typeof r.attackSeconds !== 'number' || r.attackSeconds <= 0.02 || r.attackSeconds > 30)) return false;
         return isArtState(r.move) && typeof r.scale === 'number' && r.scale > 0.05 && r.scale <= 6 && typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1;
       });
