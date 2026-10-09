@@ -102,11 +102,13 @@ try {
     if (!name) {
       console.log('skip path · this level has no paths');
     } else {
-      const { w } = place({ kind: 'fish', x: 0.5, path: name, pathOffset: 0.5 }, 750);
+      const { w } = place({ kind: 'fish', x: 0.5, path: name, pathDelaySeconds: 0.5 }, 750);
       const h = w.hazards.hazards[0];
       const spec = LEVEL.paths[name];
       check('path · anchored at the spawn', [h.path?.startX, h.path?.startY, h.path?.points.length], [50, 750, spec.points.length]);
-      check('path · advanced by the offset', Number(h.path?.elapsed.toFixed(3)), Number((spec.seconds * 0.5).toFixed(3)));
+      // WAITING, not advanced: a member of a string that has not set off yet holds a negative clock, which the
+      // path reader clamps to the head of the curve. See `LevelEntry.pathDelaySeconds`.
+      check('path · waits at the head for its turn', Number(h.path?.elapsed.toFixed(3)), -0.5);
       check('path · seconds from the level', h.path?.seconds, spec.seconds);
     }
   }

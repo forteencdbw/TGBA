@@ -107,14 +107,18 @@ export interface LevelEntry {
   /** The named spline this entry follows, if any. See `PathSpec`. */
   path?: string;
   /**
-   * How far along that spline this entry starts, 0..1.
+   * How many seconds LATE this entry leaves the start of its spline.
    *
-   * A string is spaced along its curve by THIS rather than by when each member happens to spawn. The timeline stagger
-   * cannot do it: members that spawn in the same frame (a level reached by teleport, a fast scroll) start together and
-   * stay locked together for the whole crossing, which is the pile the owner saw. Spacing by index is deterministic and
-   * depends on neither the frame rate nor the scroll speed.
+   * A string is spaced by TIME, not by position: every member is created at the head of the curve and waits there
+   * until its turn, so the school visibly sets off from the start and swims the whole line. The earlier version
+   * seeded each member part-way along the curve instead (`elapsed = seconds * i / n`), which meant most of a string
+   * simply APPEARED in the middle of its own path, already at speed, with nothing to say how it got there.
+   *
+   * Waiting at the head only works when the head is off-screen -- every path in this game enters from beyond the
+   * lane edge -- because a queue that waits where it can be seen is a pile. See `SpawnBlock.pathSpacingSeconds` for
+   * how far apart the turns are.
    */
-  pathOffset?: number;
+  pathDelaySeconds?: number;
   /**
    * Which of the kind's looks every creature in this BLOCK shows.
    *
@@ -222,8 +226,23 @@ export type Arrange = 'single' | 'line' | 'column' | 'spread' | 'barrier';
  * is one object in the water. One block becomes many entries, and that expansion is the whole point of the file.
  */
 export interface SpawnBlock {
-  /** Put this block's creatures on a named spline; `count` becomes a staggered string. */
+  /**
+   * Put this block's creatures on a named spline.
+   *
+   * `count` then means "a string of this many": they all start at the head of the same curve and set off one after
+   * another, which is the whole effect. `pathSpacingSeconds` is how long one waits behind the one before it -- see
+   * `LevelEntry.pathDelaySeconds`. Times rather than distances, because a gap measured along the curve would stretch
+   * and bunch as the curve speeds up and slows down, and a school with a rhythm is a squad.
+   */
   path?: string;
+  /**
+   * Seconds between one member of a string setting off and the next. Default `DEFAULT_PATH_SPACING_SECONDS`.
+   *
+   * This is the knob for how tight a school is, and it is the one to reach for: the same count over a shorter gap is
+   * a tighter school, over a longer gap it is a looser line. `count` alone no longer decides -- it decides the
+   * LENGTH of the string, which is the honest reading of "ten fish, two a second".
+   */
+  pathSpacingSeconds?: number;
   at: number;
   kind: SpawnKind;
   count: number;
@@ -265,15 +284,6 @@ export interface Level {
   entries: readonly LevelEntry[];
   /** The blocks the entries were expanded from, kept so a test can prove the file and the timeline agree. */
   blocks: readonly SpawnBlock[];
-  /**
-   * Put this block's creatures on a named spline.
-   *
-   * `count` then means "a string of this many": each member takes its own place along the same curve (`pathOffset`), so
-   * they enter one after another and follow the same line, which is the whole effect. The spacing is a fraction of the
-   * path rather than a distance or a delay, which is what keeps a string from collapsing into a pile -- see
-   * `LevelEntry.pathOffset`.
-   */
-  path?: string;
   /** Signposts, at depths from the surface, for the HUD. */
   landmarks?: readonly { depth: number; label: string }[];
   /**
@@ -525,8 +535,18 @@ const isPickup = (kind: string): boolean => (PICKUP_KINDS as readonly string[]).
 const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom'];
 
 /** The keys a block may use. Anything else is an error rather than a silent no-op -- see `readBlock`. */
+/**
+ * Seconds between one member of a spline string setting off and the next, when a block does not say.
+ *
+ * Half a second is a school with visible water between the fish. It replaced a spacing that was a fraction of the
+ * CURVE (`seconds / count`), which for level 1's weave worked out at 0.75-1.25 seconds a fish -- about a body and a
+ * half of clear water, which the owner read as a scattered line rather than a shoal.
+ */
+const DEFAULT_PATH_SPACING_SECONDS = 0.5;
+
 const BLOCK_KEYS: readonly string[] = [
   'path',
+  'pathSpacingSeconds',
   'at',
   'kind',
   'count',
@@ -659,6 +679,7 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
     // The block's PATH, if it names one. Checked against the level's own path table later (the block is read before the
     // level finishes parsing), so a typo here is reported once the table is known rather than silently ignored.
     ...(typeof node['path'] === 'string' ? { path: node['path'] } : {}),
+    pathSpacingSeconds: optNum(node, 'pathSpacingSeconds', where, DEFAULT_PATH_SPACING_SECONDS, 0.02, 10),
     // (a school key used to live here; schools are splines now)
 
     // that silently disappears between the file and the water. (That is exactly how path failed the first time.)
@@ -711,11 +732,13 @@ function expandBlock(block: SpawnBlock, variety = 0): LevelEntry[] {
 
   if (block.path) {
     const n = Math.max(1, block.count);
+    const spacing = block.pathSpacingSeconds ?? DEFAULT_PATH_SPACING_SECONDS;
     return tag(
       Array.from({ length: n }, (_, i) => ({
         ...place.one(block.at, block.kind, block.x, block.sizes?.[i % Math.max(1, block.sizes?.length ?? 1)]),
         path: block.path as string,
-        pathOffset: n > 1 ? i / n : 0,
+        // The first one has no delay at all, so a string always begins where the level said it would.
+        pathDelaySeconds: i * spacing,
       })),
     );
   }

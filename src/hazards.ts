@@ -2533,7 +2533,15 @@ export class HazardField {
      */
     if (h.path) {
       h.path.elapsed += dt;
-      const t = Math.min(1, h.path.elapsed / Math.max(0.1, h.path.seconds));
+      /**
+       * Clamped at BOTH ends, and the low end is not decoration.
+       *
+       * `elapsed` starts negative for every member of a string except the first -- that is how a school sets off one
+       * fish at a time instead of appearing mid-curve (see `LevelEntry.pathDelaySeconds`). Catmull-Rom is a function
+       * of `t`, so a negative `t` is not "the start", it is a point extrapolated off the front of the curve, and the
+       * whole queue would have been strung out behind the beginning where nobody could see it approach.
+       */
+      const t = Math.max(0, Math.min(1, h.path.elapsed / Math.max(0.1, h.path.seconds)));
       const at = pathPoint(h.path.points, t);
       const before = { x: h.x, y: h.y };
       /**

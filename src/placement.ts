@@ -154,7 +154,9 @@ export function placeEntry(
     ? {
         points: pathSpec.points,
         seconds: pathSpec.seconds,
-        elapsed: pathSpec.seconds * Math.min(0.95, Math.max(0, entry.pathOffset ?? 0)),
+        // NEGATIVE while it waits its turn at the head of the curve. `pathPoint` is clamped at 0 there, so a member
+        // that has not set off yet simply sits at the start -- off-screen, which is the only place a queue can wait.
+        elapsed: -(entry.pathDelaySeconds ?? 0),
         startX: spawnX,
         startY: spawnY,
       }

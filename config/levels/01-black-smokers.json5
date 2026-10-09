@@ -114,16 +114,22 @@
     { at: 30, span: 200, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.4, 0.5, 0.35] },
     // 第一批颗粒是**从下面上来的**：这一关第一个新方向。
     { at: 120, span: 60, count: 4, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
+    { at: 150, kind: 'tuna', x: 0.9 },
     { at: 200, kind: 'skill', x: 0.3 },
+    { at: 210, kind: 'tuna', x: 0.0 },
     { at: 260, kind: 'upgrade', x: 0.7 },
-    { at: 260, kind: 'tuna', x: 0.7 },
+    { at: 260, kind: 'tuna', x: 0.2 },
 
     // --- 250-500m：第一个喷口。它单独出现，因为它是这一关的招牌机制。 ---
     // 喷口在泳道中间，两边各留一条能过的缝：所以"横向离开"是唯一的解法，而不是"绕远路"。
     { at: 320, kind: 'vent', x: 0.5 },
     { at: 340, span: 50, count: 3, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
     // 第一串"鱼贯"：从右边进来、上下摆两次、从左边出去。单独出现，因为它是新形状。
-    { at: 400, kind: 'fish', count: 6, path: 'weave', x: 1 },
+    //
+    // **它们从曲线的起点出发**：整串一起在起点待命，然后每隔 `pathSpacingSeconds` 走一条，
+    // 所以看到的是"一群鱼游进来"，而不是"几条鱼凭空出现在曲线的这个位置"。
+    // **这个数就是鱼群的松紧**：调小更密、调大更散；`count` 现在决定的是这一串有多长，不是有多密。
+    { at: 400, kind: 'fish', count: 6, path: 'weave', x: 1, pathSpacingSeconds: 0.5 },
     { at: 430, kind: 'shrimp', x: 0.2, from: 'left', depth: 0.6 },
     { at: 470, kind: 'shrimp', x: 0.8, from: 'right', depth: 0.55 },
 
@@ -139,13 +145,13 @@
     // --- 800-1100m：两个喷口 + 管虫，开始要求连续横移。 ---
     { at: 820, kind: 'tube', count: 5, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.19 },
     { at: 870, kind: 'vent', x: 0.5 },
-    // 第二串：同一和张曲线，但更密，配合喷口一起读。
-    { at: 890, kind: 'fish', count: 8, path: 'weave', x: 1 },
+    // 第二串：同一条曲线、同一个松紧，但更长（8 条）——配合喷口一起读。
+    { at: 890, kind: 'fish', count: 8, path: 'weave', x: 1, pathSpacingSeconds: 0.5 },
     // **深海鱼（灯笼鱼）**：这一关一共 10 点血，比小鱼小虾硬得多，所以它出现在中段以后，而且单独放——
     // 它的触角是这一关唯一会发光的东西，混在别的敌人里就白瞎了。
     // **鱼群用 spline**：一串小鱼沿同一条曲线游过去（就是上面 paths 里的 weave）。
-    // count 是这一串有多少条；它们沿曲线按序号分开，所以 count 越大越密。
-    { at: 470, kind: 'fish', count: 10, path: 'weave', x: 1 },
+    // 最长的一串（10 条），所以它横跨的弧也最长——这一段最像"一队鱼从你身边游过"。
+    { at: 470, kind: 'fish', count: 10, path: 'weave', x: 1, pathSpacingSeconds: 0.5 },
     { at: 520, kind: 'angler', x: 0.28, from: 'left' },
     { at: 760, kind: 'angler', x: 0.72, from: 'right' },
     { at: 1010, kind: 'angler', x: 0.5 },
