@@ -3936,16 +3936,24 @@ export function paintHazards(
         const facing = h.facing;
         sprite.scale.set(unit * facing, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
         /**
-         * SPIN, for a kind whose picture is a radial thing.
+         * SPIN, for a kind whose picture is a radial thing, and NOTHING AT ALL for every other kind.
          *
-         * Off `h.phase`, which is the creature's own clock in seconds, so the rate is radians per second and every
-         * instance turns at its own angle -- a row of urchins tumbling in lockstep would read as one object drawn
-         * several times. `h.seed` offsets it so two spawned on the same frame are not twins.
+         * `h.seed` is a per-instance random in the hundreds (`Math.random() * 1000`), and it belongs INSIDE the spin
+         * as a phase offset -- two urchins spawned on the same frame should start their tumble at different angles.
+         * It must not be added to the angle, which is what this line said for one commit: with `spin` absent the
+         * whole expression collapsed to `rotation = h.seed`, so every creature with a picture came out turned by a
+         * random 0-1000 radians. Fish swam on their sides and upside down, and so did every other kind whose art had
+         * landed -- and it looked like a drawing fault rather than a maths one, which is why it is written as a
+         * product now: no spin, no rotation, by construction rather than by a guard someone can drop.
+         *
+         * Off `h.phase`, the creature's own clock, so the rate is radians per second and each instance turns at its
+         * own angle rather than a row of them reading as one object drawn several times.
          *
          * The screen direction is the OPPOSITE of the sign here, because the sprite's own space is flipped; that is
          * harmless for the one kind that uses this (an urchin has no handedness) and would matter for one that did.
          */
-        sprite.rotation = (art.spin ?? 0) * h.phase + (h.seed ?? 0);
+        const spin = art.spin ?? 0;
+        sprite.rotation = spin * (h.phase + (h.seed ?? 0));
         /**
          * The white flash, as a filter ON THE SPRITE.
          *
