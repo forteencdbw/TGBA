@@ -446,11 +446,25 @@ export class Run {
       // Scenery is cover for both sides -- the same call the player's own rounds make.
       blocks: (x, y, hitRadius) => this.obstacles.blocks(x, y, hitRadius),
     });
-    if (live && landed > 0) {
-      for (let i = 0; i < landed; i++) {
+    if (live && landed.length > 0) {
+      for (const kind of landed) {
         this.takeHit();
         // A hit can end the run; nothing after this may assume there is still a bubble.
         if (this.phase !== 'playing') return;
+        /**
+         * AN ELECTRIC ROUND TAKES THE CONTROLS WITH IT.
+         *
+         * The eel is the creature whose cost is paid by the player's hands, and until now the only way to pay it was
+         * to swallow one -- so the mechanic was invisible to anyone who left the eels alone, and invisible in the one
+         * moment it should have been loudest, the moment the discharge leaves. Being shot by the discharge is being
+         * shocked, so it reverses the steering for `boltShockSeconds`.
+         *
+         * The same `applyMisfire` the stomach uses, so the two combine the way two eels already do -- by EXTENDING
+         * rather than replacing (see `Player.applyMisfire`) -- and the bubble wears the same jagged ring either way.
+         * Only the eel's rounds do this, and the round's own `kind` is what says so: a second shooter that happens to
+         * fire something electric would have to ask for it here rather than inherit it.
+         */
+        if (kind === 'eel') this.player.applyMisfire(mech.hazards.eel.boltShockSeconds);
       }
     }
   }

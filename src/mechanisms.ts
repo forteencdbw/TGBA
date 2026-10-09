@@ -683,8 +683,21 @@ export interface Mechanisms {
     urchin: { drainPerSecond: number };
 
 
-    /** The eel: how often it shocks, and for how long. Zero duration disables the side effect entirely. */
-    eel: { shockPeriodSeconds: number; shockSeconds: number; shockColor: number; shockWidthRatio: number };
+    /**
+     * The eel: how often it shocks, and for how long -- from BOTH of its sources.
+     *
+     * `shockSeconds` is the stomach (a pulse every `shockPeriodSeconds` while it is inside). `boltShockSeconds` is
+     * its rounds landing on the player. Two numbers rather than one because the cadences are nothing alike, and a
+     * shared one would mean softening the bolts also softened the thing in your stomach. Either at 0 disables that
+     * source alone.
+     */
+    eel: {
+      shockPeriodSeconds: number;
+      shockSeconds: number;
+      boltShockSeconds: number;
+      shockColor: number;
+      shockWidthRatio: number;
+    };
     /** The rot: what it multiplies the digestion rate by while it is inside. 1 means no effect. */
     rot: { digestScale: number };
     /** The oil: the chance a spit attempt gets it out. 0 is a permanent clog, 1 is an ordinary item. */
@@ -2090,6 +2103,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
 
 
   { path: 'hazards.eel.shockPeriodSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
+  { path: 'hazards.eel.boltShockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: "seconds between 0 and 10; 0 disables the control loss an eel's bolt causes" },
   { path: 'hazards.eel.shockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10; 0 disables the eel\'s loss of control' },
   { path: 'hazards.rot.digestScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier between 0 and 2; 1 means the rot does not slow digestion' },
   { path: 'hazards.oil.spitChance', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a probability between 0 and 1; 0 is a permanent clog' },

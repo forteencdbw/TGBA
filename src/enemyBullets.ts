@@ -143,10 +143,17 @@ export class EnemyBulletField {
    * @return how many rounds landed on the player this frame. Counted rather than applied, because the field does not
    *   own the player: the caller takes the hit, and it is also the caller that knows whether the run is still going.
    */
-  update(dt: number, ctx: EnemyBulletContext): number {
+  /**
+   * Advance the rounds and report WHICH KINDS landed on the player, in the order they did.
+   *
+   * A list of kinds rather than a count, because a round carries the effects of the creature that fired it and one
+   * of those effects is not damage: an electric round takes the player's controls with it (see the caller). A count
+   * could say "something hit you", which is enough to take a hit point off and not enough to decide anything else.
+   */
+  update(dt: number, ctx: EnemyBulletContext): string[] {
     const cfg = mech.enemyBullets;
     const radius = ctx.laneWidth * cfg.radiusRatio;
-    let landed = 0;
+    const landed: string[] = [];
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i]!;
       b.age += dt;
@@ -162,7 +169,7 @@ export class EnemyBulletField {
         const dx = ctx.playerX - b.x;
         const dy = ctx.playerY - b.y;
         if (dx * dx + dy * dy <= reach * reach) {
-          landed++;
+          landed.push(b.kind);
           this.hits++;
           spent = true;
         }
