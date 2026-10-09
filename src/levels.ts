@@ -104,7 +104,13 @@ export type EntrySide = 'top' | 'left' | 'right' | 'bottom';
 export interface LevelEntry {
   /** Metres of scroll at which this enters. */
   at: number;
-  /** The named spline this entry follows, if any. See `PathSpec`. */
+  /**
+   * The named spline this entry follows, if any. See `PathSpec`.
+   *
+   * A creature on a path ignores every other motion rule -- it does not chase, which is what keeps an authored shape
+   * the shape that was authored -- and its `x` here only decides where it sits on the frame it spawns, since the
+   * curve's own first point takes over on the next.
+   */
   path?: string;
   /**
    * How many seconds LATE this entry leaves the start of its spline.
@@ -313,8 +319,12 @@ export interface Level {
    * makes it a string rather than a shoal -- and because the world keeps scrolling underneath, the same path reads
    * differently at different scroll speeds without being re-authored.
    *
-   * Coordinates are relative to where the creature spawned: `x` is a lane fraction (below 0 and above 1 are off the
-   * screen, which is how entering and leaving work) and `y` is metres ABOVE that spawn point.
+   * Coordinates are relative to where the creature spawned, and the two axes use different units on purpose: `x` is a
+   * LANE fraction (below 0 and above 1 are off the screen, which is how entering and leaving work -- the lane is a
+   * fixed 361 metres wide, so this is the same place on every device), and `y` is a SCREEN fraction, one unit being
+   * one visible screen, positive upward: -0.5 is the middle of the glass, -1 the bottom edge. Metres would not do for
+   * the height, because how many of them fit on the screen depends on the device -- 433 on a desktop window against
+   * 781 on a phone -- and "pass the middle of the screen" is the thing being authored. See `LevelEntry.path`.
    */
   paths?: Record<string, PathSpec>;
   /**
@@ -356,7 +366,12 @@ export interface BackdropSpec {
 
 /** A spline for creatures to follow, as written in the level file. */
 export interface PathSpec {
-  /** The waypoints, in order. At least two: a spline needs something to run through. */
+  /**
+   * The waypoints, in order. At least two: a spline needs something to run through.
+   *
+   * `x` is a lane fraction and `y` a screen fraction, both from the spawn point -- see `Level.paths` for why the two
+   * axes are measured in different things.
+   */
   points: { x: number; y: number }[];
   /** Seconds to travel the whole spline. */
   seconds: number;
@@ -879,7 +894,10 @@ if (node['paths'] !== undefined) {
       const pt = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
       return {
         x: reqNum(pt, 'x', `${where}.paths.${name}.points[${i}]`, -20, 20),
-        y: reqNum(pt, 'y', `${where}.paths.${name}.points[${i}]`, -100000, 100000),
+        // Screens, not metres -- so a `y` in the hundreds is a spline authored in the OLD unit, and it would fly off
+        // at 300 screens a second without ever looking like an error. Refusing it by range is what turns that into a
+        // message naming the file, which is the whole reason the level files are loaded through this function.
+        y: reqNum(pt, 'y', `${where}.paths.${name}.points[${i}]`, -8, 8),
       };
     });
     paths[name] = {

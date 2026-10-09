@@ -2545,15 +2545,21 @@ export class HazardField {
       const at = pathPoint(h.path.points, t);
       const before = { x: h.x, y: h.y };
       /**
-       * `x` is ABSOLUTE (a lane fraction from the lane's left edge), `y` is relative to the spawn.
+       * `x` is a fraction of the LANE, `y` a fraction of the SCREEN -- both measured from the spawn.
        *
-       * The asymmetry is deliberate. Where a thing IS on screen is what a path is for -- "come in at the right edge and
-       * leave past the left one" is a statement about the screen -- while its height is a statement about the level,
-       * where the only meaningful origin is the point it entered at. Adding the spawn's x to the path's x (as this
-       * first did) put a fish authored at x=1.25 at 2.25 lanes, which is what "the string never arrives" looks like.
+       * The two units differ because the two rulers differ, and getting this wrong is what makes an authored shape
+       * device-dependent. The lane is a fixed 361 metres, so a lane fraction is the same place on every screen; the
+       * height of a screen is NOT a fixed number of metres, it is `height / scale`, so the same 200 metres is a third
+       * of the glass on a desktop window and a quarter of it on a phone (measured: 433 m against 781 m). A path is
+       * authored to say "come in at the right edge, pass the middle of the screen and leave through the top", and
+       * only a screen-relative height says that on both. So one unit of `y` is one visible screen: 0 is where the
+       * creature spawned, -0.5 is the middle of the glass, -1 the bottom edge, and positive is above the top.
+       *
+       * Adding the spawn's x to the path's x (as this first did) put a fish authored at x=1.25 at 2.25 lanes, which is
+       * what "the string never arrives" looks like.
        */
       h.x = at.x * ctx.laneWidth;
-      h.y = h.path.startY + at.y;
+      h.y = h.path.startY + at.y * (ctx.max - ctx.min);
       /**
        * The heading follows the tangent, so a fish swimming left is drawn swimming left.
        *

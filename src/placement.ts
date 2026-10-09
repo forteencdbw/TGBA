@@ -142,12 +142,13 @@ export function placeEntry(
   /**
    * A creature on a path carries the spline, anchored at where it spawned.
    *
-   * The waypoints are level coordinates RELATIVE to the spawn point (`x` in lane fractions, `y` in metres above), so
-   * one authored weave can be placed anywhere in the level without being re-authored -- and the same path works at any
+   * The waypoints are RELATIVE to the spawn point (`x` a lane fraction, `y` a screen fraction, positive upward), so one
+   * authored weave can be placed anywhere in the level without being re-authored -- and the same path works at any
    * scroll speed, because the world keeps moving underneath it.
    *
-   * The spline is advanced to this member's place in the string: `elapsed` starts at the member's offset rather than at
-   * zero, so a string is spread ALONG its curve from the first frame instead of arriving in a heap and unravelling.
+   * The member's place in the string is a DELAY, not an offset along the curve: `elapsed` starts negative by its turn,
+   * so it waits at the head of the curve -- which is off-screen, where a queue belongs -- and then swims the whole
+   * line. Seeding it part-way along instead meant most of a string simply appeared in the middle of its own path.
    */
   const pathSpec = entry.path ? LEVEL.paths?.[entry.path] : undefined;
   const path: Hazard['path'] = pathSpec
