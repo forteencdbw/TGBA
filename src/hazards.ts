@@ -3973,6 +3973,26 @@ export function paintHazards(
             width: Math.max(1, r * mech.hitFeedback.heavyOutlineWidthRatio * (0.6 + outline)),
           });
         }
+        /**
+         * THE BAITED STARE, which a picture would otherwise quietly delete.
+         *
+         * A baited fish is one that has stopped chasing AND cannot hurt the player (see `stepFish` and
+         * `contactFish`), so "which of these fish are currently lured" is the state of the threat, not a flourish.
+         * The drawn body said it by REPLACING the eye with a blank white dot; a picture arrives with its own eye
+         * already painted in, so the mark has to be laid back over the top or the cue disappears along with the
+         * drawing.
+         *
+         * It follows `facing` rather than re-deriving a direction, because `facing` is the mirror the sprite itself
+         * was given -- a dot placed by a second opinion would sit on the tail of every fish that turned around. The
+         * offsets are fractions of the picture's own width, so a kind drawn larger keeps the mark on its head.
+         */
+        if (h.baitedUntil > elapsed) {
+          // Sizes are fractions of the PICTURE, and they are the drawn version's own proportions: it used `r * 0.16`
+          // for the dot against a `r * 0.2` eye, and `2r × scale` is the picture's width, so that is `size * 0.04`
+          // here. The first attempt was nearly twice this and read as a headlight rather than as a dazed eye.
+          const head = x - facing * 0.35 * size;
+          g.circle(head, y, Math.max(1, size * 0.045)).fill({ color: 0xffffff, alpha: 0.92 });
+        }
         if (art.lure) paintLure(g, x, y, r, art.lure, elapsed);
         continue;
       }

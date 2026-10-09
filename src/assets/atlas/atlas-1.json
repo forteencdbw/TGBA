@@ -70,6 +70,62 @@
       },
       "trimmed": false
     },
+    "小鱼-游动-1.png": {
+      "frame": {
+        "h": 21,
+        "w": 41,
+        "x": 698,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 21,
+        "w": 41
+      },
+      "trimmed": false
+    },
+    "小鱼-游动-2.png": {
+      "frame": {
+        "h": 21,
+        "w": 41,
+        "x": 743,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 21,
+        "w": 41
+      },
+      "trimmed": false
+    },
+    "小鱼-游动-3.png": {
+      "frame": {
+        "h": 21,
+        "w": 41,
+        "x": 788,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 21,
+        "w": 41
+      },
+      "trimmed": false
+    },
+    "小鱼-游动-4.png": {
+      "frame": {
+        "h": 21,
+        "w": 41,
+        "x": 698,
+        "y": 27
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 21,
+        "w": 41
+      },
+      "trimmed": false
+    },
     "座头鲸-游动-1.png": {
       "frame": {
         "h": 70,
@@ -186,8 +242,8 @@
       "frame": {
         "h": 48,
         "w": 51,
-        "x": 698,
-        "y": 2
+        "x": 290,
+        "y": 222
       },
       "rotated": false,
       "sourceSize": {
@@ -200,8 +256,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 290,
-        "y": 222
+        "x": 750,
+        "y": 67
       },
       "rotated": false,
       "sourceSize": {
@@ -214,8 +270,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 360,
-        "y": 222
+        "x": 514,
+        "y": 141
       },
       "rotated": false,
       "sourceSize": {
@@ -228,8 +284,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 430,
-        "y": 222
+        "x": 584,
+        "y": 141
       },
       "rotated": false,
       "sourceSize": {
@@ -242,8 +298,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 500,
-        "y": 222
+        "x": 654,
+        "y": 141
       },
       "rotated": false,
       "sourceSize": {
@@ -284,8 +340,8 @@
       "frame": {
         "h": 12,
         "w": 12,
-        "x": 753,
-        "y": 2
+        "x": 290,
+        "y": 274
       },
       "rotated": false,
       "sourceSize": {
@@ -298,8 +354,8 @@
       "frame": {
         "h": 36,
         "w": 36,
-        "x": 570,
-        "y": 222
+        "x": 820,
+        "y": 67
       },
       "rotated": false,
       "sourceSize": {
@@ -326,8 +382,8 @@
       "frame": {
         "h": 75,
         "w": 78,
-        "x": 514,
-        "y": 141
+        "x": 170,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -340,8 +396,8 @@
       "frame": {
         "h": 71,
         "w": 67,
-        "x": 596,
-        "y": 141
+        "x": 252,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -354,8 +410,8 @@
       "frame": {
         "h": 66,
         "w": 90,
-        "x": 750,
-        "y": 67
+        "x": 323,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -368,8 +424,8 @@
       "frame": {
         "h": 58,
         "w": 84,
-        "x": 667,
-        "y": 141
+        "x": 417,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -382,8 +438,8 @@
       "frame": {
         "h": 71,
         "w": 83,
-        "x": 170,
-        "y": 290
+        "x": 93,
+        "y": 374
       },
       "rotated": false,
       "sourceSize": {
@@ -396,8 +452,8 @@
       "frame": {
         "h": 53,
         "w": 78,
-        "x": 755,
-        "y": 141
+        "x": 505,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -410,8 +466,8 @@
       "frame": {
         "h": 66,
         "w": 78,
-        "x": 257,
-        "y": 290
+        "x": 180,
+        "y": 374
       },
       "rotated": false,
       "sourceSize": {
@@ -424,8 +480,8 @@
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 339,
-        "y": 290
+        "x": 262,
+        "y": 374
       },
       "rotated": false,
       "sourceSize": {
@@ -438,8 +494,8 @@
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 399,
-        "y": 290
+        "x": 322,
+        "y": 374
       },
       "rotated": false,
       "sourceSize": {
@@ -452,8 +508,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 93,
-        "y": 374
+        "x": 2,
+        "y": 465
       },
       "rotated": false,
       "sourceSize": {
@@ -466,8 +522,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 176,
-        "y": 374
+        "x": 85,
+        "y": 465
       },
       "rotated": false,
       "sourceSize": {
@@ -480,8 +536,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 259,
-        "y": 374
+        "x": 168,
+        "y": 465
       },
       "rotated": false,
       "sourceSize": {
@@ -494,8 +550,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 342,
-        "y": 374
+        "x": 251,
+        "y": 465
       },
       "rotated": false,
       "sourceSize": {
@@ -508,8 +564,8 @@
       "frame": {
         "h": 78,
         "w": 48,
-        "x": 425,
-        "y": 374
+        "x": 334,
+        "y": 465
       },
       "rotated": false,
       "sourceSize": {
@@ -523,7 +579,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 465
+        "y": 548
       },
       "rotated": false,
       "sourceSize": {
@@ -537,7 +593,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 465
+        "y": 548
       },
       "rotated": false,
       "sourceSize": {
@@ -551,7 +607,7 @@
         "h": 192,
         "w": 192,
         "x": 394,
-        "y": 465
+        "y": 548
       },
       "rotated": false,
       "sourceSize": {
@@ -565,7 +621,7 @@
         "h": 192,
         "w": 192,
         "x": 590,
-        "y": 465
+        "y": 548
       },
       "rotated": false,
       "sourceSize": {
@@ -579,7 +635,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 661
+        "y": 744
       },
       "rotated": false,
       "sourceSize": {
@@ -593,7 +649,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 661
+        "y": 744
       },
       "rotated": false,
       "sourceSize": {
@@ -607,7 +663,7 @@
         "h": 221,
         "w": 192,
         "x": 394,
-        "y": 661
+        "y": 744
       },
       "rotated": false,
       "sourceSize": {
@@ -621,7 +677,7 @@
         "h": 221,
         "w": 192,
         "x": 590,
-        "y": 661
+        "y": 744
       },
       "rotated": false,
       "sourceSize": {
@@ -635,7 +691,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 886
+        "y": 969
       },
       "rotated": false,
       "sourceSize": {
@@ -649,7 +705,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 886
+        "y": 969
       },
       "rotated": false,
       "sourceSize": {
@@ -663,7 +719,7 @@
         "h": 221,
         "w": 192,
         "x": 394,
-        "y": 886
+        "y": 969
       },
       "rotated": false,
       "sourceSize": {
@@ -677,7 +733,7 @@
         "h": 221,
         "w": 192,
         "x": 590,
-        "y": 886
+        "y": 969
       },
       "rotated": false,
       "sourceSize": {
@@ -691,7 +747,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 1111
+        "y": 1194
       },
       "rotated": false,
       "sourceSize": {
@@ -705,7 +761,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 1111
+        "y": 1194
       },
       "rotated": false,
       "sourceSize": {
@@ -719,7 +775,7 @@
         "h": 192,
         "w": 192,
         "x": 394,
-        "y": 1111
+        "y": 1194
       },
       "rotated": false,
       "sourceSize": {
@@ -733,7 +789,7 @@
         "h": 192,
         "w": 192,
         "x": 590,
-        "y": 1111
+        "y": 1194
       },
       "rotated": false,
       "sourceSize": {
@@ -747,7 +803,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 465
+        "y": 548
       },
       "rotated": false,
       "sourceSize": {
@@ -761,7 +817,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 507
+        "y": 590
       },
       "rotated": false,
       "sourceSize": {
@@ -775,7 +831,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 549
+        "y": 632
       },
       "rotated": false,
       "sourceSize": {
@@ -789,7 +845,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 591
+        "y": 674
       },
       "rotated": false,
       "sourceSize": {
@@ -801,7 +857,7 @@
   },
   "meta": {
     "app": "pack-atlas.py",
-    "decodedBytes": 4499520,
+    "decodedBytes": 4774720,
     "encoding": "lossless WebP",
     "encodingNote": "pixel exact",
     "format": "RGBA8888",
@@ -809,7 +865,7 @@
     "page": 1,
     "scale": "1",
     "size": {
-      "h": 1308,
+      "h": 1388,
       "w": 860
     },
     "sources": {
@@ -832,6 +888,22 @@
       "大白鲨-游动-4.png": {
         "bytes": 7150,
         "sha256": "fd5b8fdf2814f9f6140cdfe58a0b7e5a53397ed4e13be92abce7c364812a81e1"
+      },
+      "小鱼-游动-1.png": {
+        "bytes": 1532,
+        "sha256": "5d0b51ed4069fb354acc3c1f4916558df75272435bd8cd976455294ae7c9255a"
+      },
+      "小鱼-游动-2.png": {
+        "bytes": 1539,
+        "sha256": "0f96fc63b7374a8cf7b9b2f2b19c4cf2aa9f50ce9b674316d85efb4e62215c56"
+      },
+      "小鱼-游动-3.png": {
+        "bytes": 1524,
+        "sha256": "b69564cb28fd575900a33a015f858a95e99c1c6551f508b38238ccf29aca80b0"
+      },
+      "小鱼-游动-4.png": {
+        "bytes": 1520,
+        "sha256": "a7d065af753f91bc0a848356ebd1293c4c89aa5db9cf7b18f8729ba2eb36794a"
       },
       "座头鲸-游动-1.png": {
         "bytes": 8341,
@@ -1042,7 +1114,7 @@
         "sha256": "c5f17cde9ff9364db5b4a0643a51c80e01c7fde4ab2d6c84a7b8f0cf1c118627"
       }
     },
-    "textureBytes": 285406,
+    "textureBytes": 286080,
     "version": "1.0"
   }
 }
