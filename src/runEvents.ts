@@ -29,6 +29,7 @@ export type RunEvent =
   | { kind: 'scorePopup'; x: number; y: number; points: number }
   | { kind: 'damagePopup'; x: number; y: number; amount: number }
   | { kind: 'graze'; x: number; y: number }
+  | { kind: 'callout'; x: number; y: number; text: string }
   | { kind: 'skillSlot'; carried: boolean }
   | { kind: 'blast'; x: number; y: number; radius: number }
   | { kind: 'splash' }
@@ -65,6 +66,17 @@ export function sayDamage(events: RunEvent[], x: number, y: number, amount: numb
  */
 export function sayGraze(events: RunEvent[], x: number, y: number): void {
   events.push({ kind: 'graze', x, y });
+}
+
+/**
+ * A small skill callout: 「擦」「贴脸」「拆弹」-- a word where the trick happened.
+ *
+ * The graze's word is its own event because it carries a slow-motion beat; these three are the
+ * graze's small change -- the same idea without the ceremony -- and they share one event, one style
+ * and one volume so they read as one CLASS of feedback rather than three more voices.
+ */
+export function sayCallout(events: RunEvent[], x: number, y: number, text: string): void {
+  events.push({ kind: 'callout', x, y, text });
 }
 
 /** Whether the carried skill's button exists. Input surface, so it is an OUTPUT of the run rather than a rule. */

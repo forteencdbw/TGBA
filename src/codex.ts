@@ -463,7 +463,10 @@ const ENVIRONMENT: readonly CodexEntry[] = [
     name: '突变',
     tagline: '攒满突变值，冻结三选一',
     facts: [
-      { label: '来源', value: `随时间 ${num(mech.mutation.autoPerSecond, 1)}/秒  ·  打跑/吞噬 ${mech.mutation.gain.drivenOff}  ·  擦边 ${mech.mutation.gain.graze}  ·  BOSS ${mech.mutation.gain.boss}` },
+      {
+        label: '来源',
+        value: `随时间 ${num(mech.mutation.autoPerSecond, 1)}/秒  ·  打跑/吞噬 ${mech.mutation.gain.drivenOff}  ·  子弹擦边 ${mech.mutation.gain.bulletGraze}  ·  贴脸 ${mech.mutation.gain.pointBlank}  ·  拆弹 ${mech.mutation.gain.defuse}  ·  擦边 ${mech.mutation.gain.graze}  ·  BOSS ${mech.mutation.gain.boss}`,
+      },
       { label: '首级', value: `${mech.mutation.first} 点，每级 ×${mech.mutation.growth}` },
       { label: '持续', value: '跨关保留，死亡清零' },
     ],
@@ -471,6 +474,7 @@ const ENVIRONMENT: readonly CodexEntry[] = [
       '擦边是**过点判定**：冲锋的怪不再朝你过来、又还在接触半径 2 倍的圈内才算——冲着脸来的全程不判，躲开它、它擦身而过的那一帧到账。',
       '碰到过你的冲锋永不判擦边（挨过一下的冲锋什么也不欠你）；一次冲锋只算一次。',
       '擦边的瞬间整个世界慢放半秒——后怕节拍：怪已经过去了，世界慢下来让你看清刚才发生了什么。',
+      '三条小技巧同构：子弹擦边（电鳗的闪电擦身、小字「擦」）、贴脸（接触圈内枪毙、小字「贴脸」）、拆弹（爆炸半径外打死炸弹鱼、小字「拆弹」）——都不慢动作。',
       '三种来源刻意拉开速率：挂机最慢、战斗居中、玩命最快——想快，就把脸凑过去。',
       '枪管、射速和技能都在这里出：地图上不再有任何可拾取的道具，一切成长都走突变。',
     ],

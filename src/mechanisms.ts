@@ -361,12 +361,29 @@ export interface Mechanisms {
     /** Mutation points per second of simply being alive. The slowest source, by design. */
     autoPerSecond: number;
     /** Points per event, keyed by `XpEvent` in `src/xp.ts`. */
-    gain: { drivenOff: number; eaten: number; graze: number; boss: number };
+    gain: {
+      drivenOff: number;
+      eaten: number;
+      graze: number;
+      bulletGraze: number;
+      pointBlank: number;
+      defuse: number;
+      boss: number;
+    };
     /** The ladder: level N costs first × growth^(N-1). */
     first: number;
     growth: number;
     /** Invulnerability granted when the pick closes and the world resumes. */
     resumeInvulnerableSeconds: number;
+    /**
+     * The point-blank test: a gun kill inside contact-radius × this counts as 贴脸.
+     *
+     * Above 1, so "point blank" is a little wider than "touching" -- the bullet has to come from
+     * somewhere, and the ring between the two is where the creature can still reach you.
+     */
+    pointBlankRadius: number;
+    /** The three small skill callouts (擦 / 贴脸 / 拆弹) share one style, smaller than the graze's word. */
+    callouts: PopupStyle;
     /** How much one pick of each numeric card is worth. The cards' text is content, in `src/mutations.ts`. */
     pool: {
       damagePerPick: number;
@@ -1852,11 +1869,13 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'graze.recoverSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'seconds between 0 and 3' },
   ...popupRules('grazePopups'),
   { path: 'mutation.autoPerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 50, describe: 'mutation points per second between 0 and 50' },
-  ...['drivenOff', 'eaten', 'graze', 'boss'].map((event) => ({
+  ...['drivenOff', 'eaten', 'graze', 'bulletGraze', 'pointBlank', 'defuse', 'boss'].map((event) => ({
     path: `mutation.gain.${event}`,
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 10000,
     describe: 'mutation points for this event, between 0 and 10000; 0 takes the event out of the economy',
   })),
+  { path: 'mutation.pointBlankRadius', check: (v) => typeof v === 'number' && v >= 1 && v <= 3, describe: 'a multiple of the contact radius, at least 1 and at most 3' },
+  ...popupRules('mutation.callouts'),
   { path: 'mutation.first', check: (v) => typeof v === 'number' && v >= 1 && v <= 100000, describe: 'the cost of the first level, between 1 and 100000' },
   { path: 'mutation.growth', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'the per-level cost multiplier, at least 1 and at most 4' },
   { path: 'mutation.resumeInvulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'seconds between 0 and 3' },

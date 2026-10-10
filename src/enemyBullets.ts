@@ -54,6 +54,13 @@ export interface EnemyBullet {
    * should keep the shape it was fired with -- otherwise tuning a creature's look would redraw every round in flight.
    */
   shape: BulletShape;
+  /**
+   * Whether this round has already paid a bullet graze.
+   *
+   * On the round rather than as a cooldown, because a round is short-lived and one-shot: the flag's
+   * lifetime IS the "once per round" rule, with nothing to reset. See the graze branch in `update`.
+   */
+  grazed: boolean;
 }
 
 /** What the field needs from the world to advance and resolve its rounds. */
@@ -67,6 +74,13 @@ export interface EnemyBulletContext {
   playerY: number;
   /** The player's hit radius this frame. */
   playerRadius: number;
+  /**
+   * Whether the player is invulnerable, in which case no graze is judged.
+   *
+   * The same rule the charge graze follows: a near-miss you could not have been hurt by anyway is a
+   * gift, not a risk, and the blink is not the time to be paid for bravery.
+   */
+  invulnerable: boolean;
   /**
    * Scenery stops them, exactly as it stops the player's own fire -- so a crate is cover for both sides.
    *
@@ -87,11 +101,19 @@ export class EnemyBulletField {
    */
   fired = 0;
   hits = 0;
+  /**
+   * Bullet grazes paid this run, monotonic like the counters beside it.
+   *
+   * A round is in the water for seconds, so "how many near-misses happened" is only answerable from a
+   * count -- and the mutation ledger's own count is the thing this one is checked against.
+   */
+  grazes = 0;
 
   reset(): void {
     this.bullets.length = 0;
     this.fired = 0;
     this.hits = 0;
+    this.grazes = 0;
   }
 
   /** How many rounds this field will make this frame, for a HUD or a probe. */
@@ -131,6 +153,7 @@ export class EnemyBulletField {
         age: 0,
         kind,
         shape: row.shape ?? 'bolt',
+        grazed: false,
       });
       this.fired++;
     }
@@ -144,16 +167,20 @@ export class EnemyBulletField {
    *   own the player: the caller takes the hit, and it is also the caller that knows whether the run is still going.
    */
   /**
-   * Advance the rounds and report WHICH KINDS landed on the player, in the order they did.
+   * Advance the rounds, report WHICH KINDS landed on the player, and WHERE the grazes happened.
    *
    * A list of kinds rather than a count, because a round carries the effects of the creature that fired it and one
    * of those effects is not damage: an electric round takes the player's controls with it (see the caller). A count
    * could say "something hit you", which is enough to take a hit point off and not enough to decide anything else.
+   *
+   * The grazes come back as POSITIONS rather than kinds, because what the caller needs is where to say
+   * the word -- the mutation ledger does not care what fired the round, and neither does the player.
    */
-  update(dt: number, ctx: EnemyBulletContext): string[] {
+  update(dt: number, ctx: EnemyBulletContext): { landed: string[]; grazedAt: { x: number; y: number }[] } {
     const cfg = mech.enemyBullets;
     const radius = ctx.laneWidth * cfg.radiusRatio;
     const landed: string[] = [];
+    const grazedAt: { x: number; y: number }[] = [];
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i]!;
       b.age += dt;
@@ -172,6 +199,30 @@ export class EnemyBulletField {
           landed.push(b.kind);
           this.hits++;
           spent = true;
+        } else {
+          /**
+           * THE BULLET GRAZE: a round that went by, without going in.
+           *
+           * The same two tests as the charge graze, one frame apart in the same water: a circle at the
+           * contact radius times the shared multiplier, and THE PASS-BY -- the round's velocity no
+           * longer points at the player (the dot with the line to the player at zero or below). A
+           * round flying straight at you pays nothing on its way in, exactly as a charging creature
+           * does not; the payment is for the sidestep, and it lands on the frame the round goes by.
+           *
+           * `grazed` on the round makes it once per round; a round that HITS you takes the `landed`
+           * branch above and never reaches this one, so the hit pays nothing at all.
+           */
+          const grazeReach = reach * mech.graze.radiusMultiplier;
+          if (
+            !ctx.invulnerable &&
+            !b.grazed &&
+            dx * dx + dy * dy <= grazeReach * grazeReach &&
+            b.vx * dx + b.vy * dy <= 0
+          ) {
+            b.grazed = true;
+            this.grazes++;
+            grazedAt.push({ x: b.x, y: b.y });
+          }
         }
       }
 
@@ -179,7 +230,7 @@ export class EnemyBulletField {
         this.bullets.splice(i, 1);
       }
     }
-    return landed;
+    return { landed, grazedAt };
   }
 }
 

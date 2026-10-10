@@ -30,7 +30,7 @@ import { updateProjectiles } from './spit';
 import { obstacleHealth, obstacleName } from './obstacles';
 import { placeEntry } from './placement';
 import { endOverload, gainRage, hitRage, slamDamage, spendRage, tickRage } from './rage';
-import { sayBlast, sayGraze } from './runEvents';
+import { sayBlast, sayCallout, sayGraze } from './runEvents';
 import { findSkill } from './skills';
 import { digestEnergy, spitDirection, spitRadiusFraction } from './spit';
 import { recordAbsorb, stageName, stageRadiusFraction } from './stages';
@@ -426,6 +426,32 @@ export class Run {
       for (const at of shots.driven) this.scorePopup(at.x, at.y, points / shots.drivenOff);
       // The mutation ladder pays the same event the score does -- one site, one event, two ledgers.
       this.xp.gain('drivenOff', shots.drivenOff);
+      /**
+       * THE RISK PRICING of a gun kill, per creature at the position it fell.
+       *
+       * 贴脸: inside contact × `pointBlankRadius` -- the shot was taken from where the creature could
+       * still reach you, which is the gun's answer to the graze's question (one pays the dodge, the
+       * other pays standing in). 拆弹: a bombfish finished from OUTSIDE its blast -- the whole trade
+       * of shooting one is choosing where it goes off, and doing that from beyond the bang is the
+       * clean version of it. Both pay IN ADDITION to the drivenOff they rode in on, and to any graze
+       * the creature's charge paid: dodging a lunge and finishing the lunger point blank are two acts.
+       */
+      const playerX = this.player.x * laneWidth;
+      const playerR = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
+      for (const at of shots.driven) {
+        const dist = Math.hypot(at.x - playerX, at.y - this.player.y);
+        if (dist <= (playerR + at.r) * mech.mutation.pointBlankRadius) {
+          this.xp.gain('pointBlank');
+          sayCallout(this.events, at.x, at.y, '贴脸');
+        }
+        if (at.kind === 'bombfish') {
+          const blast = laneWidth * mech.hazards.bombfish.blastRadiusRatio;
+          if (dist > blast) {
+            this.xp.gain('defuse');
+            sayCallout(this.events, at.x, at.y, '拆弹');
+          }
+        }
+      }
     }
     /**
      * And what each round TOOK OFF, at the creature it landed on.
@@ -465,13 +491,14 @@ export class Run {
         this.enemyBullets.fire(shot.kind, shot.x, shot.y, this.player.x * laneWidth, this.player.y, laneWidth);
       }
     }
-    const landed = this.enemyBullets.update(dt, {
+    const { landed, grazedAt } = this.enemyBullets.update(dt, {
       min,
       max,
       laneWidth,
       playerX: this.player.x * laneWidth,
       playerY: this.player.y,
       playerRadius,
+      invulnerable: this.invulnerable > 0,
       // Scenery is cover for both sides -- the same call the player's own rounds make.
       blocks: (x, y, hitRadius) => this.obstacles.blocks(x, y, hitRadius),
     });
@@ -494,6 +521,18 @@ export class Run {
          * fire something electric would have to ask for it here rather than inherit it.
          */
         if (kind === 'eel') this.player.applyMisfire(mech.hazards.eel.boltShockSeconds);
+      }
+    }
+    /**
+     * The bullet grazes the frame paid: one small word each, where the round went by.
+     *
+     * The test (the pass-by dot) already ran inside the field; the PAYMENT is gated on `live`, the same
+     * gate the hits use, because a graze during the ending is not a risk anyone took.
+     */
+    if (live) {
+      for (const at of grazedAt) {
+        this.xp.gain('bulletGraze');
+        sayCallout(this.events, at.x, at.y, '擦');
       }
     }
   }

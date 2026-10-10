@@ -117,15 +117,15 @@ export class BulletField {
     hits: number;
     drivenOff: number;
     fired: number;
-    driven: readonly { x: number; y: number }[];
+    driven: readonly { x: number; y: number; kind: string; r: number }[];
     struck: readonly { x: number; y: number; amount: number }[];
   } {
     const cfg = mech.bullets;
     let landed = 0;
     let drivenOff = 0;
     let fired = 0;
-    /** Positions of creatures finished this frame, for whatever the caller wants to draw there. */
-    const driven: { x: number; y: number }[] = [];
+  /** Positions of creatures finished this frame, with what they were: the caller prices risk by proximity. */
+  const driven: { x: number; y: number; kind: string; r: number }[] = [];
     /** Every round that landed on a creature this frame, with the damage it dealt. */
     const struck: { x: number; y: number; amount: number }[] = [];
 
@@ -183,7 +183,9 @@ export class BulletField {
           struck.push({ x: h.x, y: h.y, amount: ctx.damage });
           if (outcome === 'fled') {
             drivenOff++;
-            driven.push({ x: h.x, y: h.y });
+            // Kind and radius travel with the position: the caller's risk pricing (贴脸 / 拆弹) needs
+            // WHAT it was and how big it was, not just where it stood.
+            driven.push({ x: h.x, y: h.y, kind: h.kind, r: ctx.laneWidth * h.radiusFraction });
           }
           spent = true;
           break;

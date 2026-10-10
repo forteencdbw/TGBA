@@ -304,6 +304,9 @@
     { at: 1030, kind: 'tube', count: 5, arrange: 'barrier', gapAt: 0.25, gapWidth: 0.19 },
     { at: 1055, kind: 'fish', count: 5, path: 'dive', x: 0.5, pathSpacingSeconds: 0.35 },
     { at: 1080, kind: 'vent', x: 0.66 },
+    // **电鳗**：这一关唯一的"射手"。它枪打不死（0 血），只能躲——躲得漂亮（子弹擦边）有突变值拿。
+    // 单独放在进 BOSS 前的空档里，让"水里出现了会放电的东西"读得出来；被它的闪电碰到会短暂反向，教学关只放一条。
+    { at: 1120, kind: 'eel', x: 0.6 },
 
     // --- 1100-1300m：进 BOSS 前的最后一段。给一点食物，然后压力上来。 ---
     { at: 1160, span: 70, count: 7, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.45, 0.6, 0.5] },

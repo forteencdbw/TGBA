@@ -297,7 +297,7 @@ class Game {
     this.flash.visible = false;
     // The score popups sit over the water and under the flash and the HUD: they belong to the event they mark, not
     // to the interface, but they are readouts and nothing the player steers by may be drawn over them.
-    this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.grazePopups.root, this.flash, this.hud.root, this.touch.root);
+    this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.grazePopups.root, this.callouts.root, this.flash, this.hud.root, this.touch.root);
 
     this.finishBanner.anchor.set(0.5);
     this.finishBanner.alpha = 0;
@@ -1200,6 +1200,14 @@ class Game {
    */
   private readonly grazePopups = new NumberPopups(mech.grazePopups);
   /**
+   * The small skill callouts: 「擦」「贴脸」「拆弹」where the trick happened.
+   *
+   * One instance and one style for all three, because they are one CLASS of feedback -- the graze's
+   * small change, a word without the ceremony -- and three separate styles would be three volumes
+   * competing. Says words rather than numbers, like the graze's word does.
+   */
+  private readonly callouts = new NumberPopups(mech.mutation.callouts);
+  /**
    * The mutation pick: the freeze, the three cards, the one choice.
    *
    * Own layer like the settings panel, opened only from `playing` -- see `openLevelUp`. The pick is
@@ -1381,6 +1389,7 @@ class Game {
     this.popups.layout(viewport);
     this.damagePopups.layout(viewport);
     this.grazePopups.layout(viewport);
+    this.callouts.layout(viewport);
     this.touch.layout(viewport.left, viewport.laneWidthPx, screenW, screenH);
     this.settings.layout(viewport);
     this.levelup.layout(viewport);
@@ -2741,6 +2750,10 @@ class Game {
           this.grazePopups.say(e.x, e.y, mech.grazePopups.prefix, this.camera);
           this.grazeSlow = mech.graze.slowSeconds + mech.graze.recoverSeconds;
           break;
+        case 'callout':
+          // The graze's small change: a word where the trick happened, and nothing else.
+          this.callouts.say(e.x, e.y, e.text, this.camera);
+          break;
         case 'skillSlot':
           this.touch.setHasSkill(e.carried);
           break;
@@ -2817,6 +2830,7 @@ class Game {
       this.popups.update(dt);
       this.damagePopups.update(dt);
       this.grazePopups.update(dt);
+      this.callouts.update(dt);
       this.hud.update({
         score: this.run.score.value,
         boss: this.bossView,
@@ -2900,10 +2914,12 @@ class Game {
     this.popups.root.visible = !fullScreenPage;
     this.damagePopups.root.visible = !fullScreenPage;
     this.grazePopups.root.visible = !fullScreenPage;
+    this.callouts.root.visible = !fullScreenPage;
     if (fullScreenPage) {
       this.popups.clear();
       this.damagePopups.clear();
       this.grazePopups.clear();
+      this.callouts.clear();
     }
     // The mutation pick draws only while it is the phase -- it is a freeze the run is inside, not a page
     // the run is behind, so it needs no clearing: there is nothing in flight that outlives it.
