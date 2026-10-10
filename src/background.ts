@@ -575,8 +575,17 @@ export interface HudState {
     name: string;
     absorbedInStage: number;
     neededForNext: number | null;
-    /** False for a type that does not grow from absorbing at all, which has no next stage to count toward. */
+    /** False for a form that does not grow from absorbing at all, which has no next stage to count toward. */
     grows: boolean;
+    /**
+     * The route this run committed to, or null while it is still the base bubble.
+     *
+     * The subline prefixes the stage line with it -- "吞噬 · 幼泡 1阶 0/12" -- because the route is the run's
+     * identity and the stage is its progress, and the two read best as one line. Null shows no prefix at all
+     * rather than "小气泡": every run starts there, so the prefix would be noise for the part of the run
+     * before the choice.
+     */
+    route: string | null;
     /**
      * The mutation meter, for every type: the bar that fills toward the next freeze.
      *
@@ -1078,11 +1087,16 @@ export class Hud {
         : stage.neededForNext === null
           ? `${stage.name} ${stage.stage}阶 满`
           : `${stage.name} ${stage.stage}阶 ${stage.absorbedInStage}/${stage.neededForNext}`);
+    /**
+     * The route's name prefixes the whole line once a route is picked. Null before the choice shows nothing --
+     * "base" is where every run starts, and naming it would be noise for the minute it lasts.
+     */
+    const identity = stage.route ? `${stage.route} · ` : '';
     this.subline.text = tags
-      ? `${stageText}   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
+      ? `${identity}${stageText}   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
       : this.seedLabel
-        ? `${stageText}   ·   ${this.seedLabel}`
-        : stageText;
+        ? `${identity}${stageText}   ·   ${this.seedLabel}`
+        : `${identity}${stageText}`;
 
     /**
      * The second resource gets its OWN line, in its own colour, rather than a slot in the subline.

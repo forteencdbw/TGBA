@@ -3,7 +3,7 @@ import { KIND_TUNING, type HazardKind } from './hazards';
 import { OBSTACLE_NAMES } from './obstacles';
 import { SKILLS, activationFor, type SkillId } from './skills';
 import { TALENTS, type TalentId } from './talents';
-import { BUBBLE_TYPES, type BubbleType, type BubbleTypeId, type ControlId } from './bubbleTypes';
+import { BASE_TYPE, formForRoute, ROUTES, type ControlId, type Route, type RouteId } from './bubbleTypes';
 
 /**
  * The codex: one card per thing in the game, reached from the main menu.
@@ -34,7 +34,7 @@ export type CodexCategory = 'enemy' | 'environment' | 'bubble' | 'skill' | 'tale
 export const CODEX_CATEGORIES: readonly { id: CodexCategory; label: string }[] = [
   { id: 'enemy', label: '敌人' },
   { id: 'environment', label: '环境' },
-  { id: 'bubble', label: '气泡' },
+  { id: 'bubble', label: '气泡与路线' },
   { id: 'skill', label: '技能' },
   { id: 'talent', label: '天赋' },
 ];
@@ -56,7 +56,7 @@ export type CodexGlyph =
   | 'suction'
   | 'stages'
   | 'collectable'
-  | 'angry'
+  | 'boil'
   | 'rageGauge'
   | 'charge'
   | 'rageBurst'
@@ -80,7 +80,7 @@ export interface CodexEntry {
    * "every type in the game has a card". Both of those are about the TYPE rather than about the card, so the field
    * lives here rather than being re-derived from the id at each use.
    */
-  type?: BubbleTypeId;
+  type?: 'base' | RouteId;
   name: string;
   tagline: string;
   facts: readonly CodexFact[];
@@ -493,299 +493,136 @@ const CONTROL_LABELS: Record<ControlId, string> = {
 };
 
 /**
- * The bubble tab: one card per type, and one per signature mechanic of that type.
+ * The base bubble's own card: what every run starts as, before any route is picked.
  *
- * ---------------------------------------------------------------------------------------------
- * WHY THIS IS A LOOP OVER `BUBBLE_TYPES` RATHER THAN A HAND-WRITTEN LIST
- * ---------------------------------------------------------------------------------------------
- * The first version of this tab documented the only bubble there was, in a flat array whose five cards read as if
- * they were the RULES of the game rather than the abilities of one character: "absorb", "spit", "digest" were
- * written as though every bubble could do them, and for one commit that was true. A second type made it false.
- *
- * So the cards are generated: one per entry in `BUBBLE_TYPES`, each followed by that type's own mechanics, with the
- * prose keyed by the game's own type id. A third type with no prose throws at load, and `e2e/codex.spec.ts` asserts
- * the same thing from the outside -- every type in the game has a card. The facts stay DERIVED: which buttons a type
- * has, what its colours follow, what it costs.
+ * One card and no feature cards -- the base has no signature mechanics beyond what the whole game shares
+ * (growth, the gun), and a card about nothing would be the flat-array mistake again.
  */
-interface BubbleProse {
-  /** The card for the type itself. */
-  self: { tagline: string; glyph: CodexGlyph; notes: readonly string[] };
-  /** One card per signature mechanic, in reading order. `key` completes the id as `bubble:<type>:<key>`. */
-  features: readonly {
-    key: string;
-    name: string;
-    glyph: CodexGlyph;
-    tagline: string;
-    facts: () => readonly CodexFact[];
-    notes: readonly string[];
-  }[];
-}
+const BASE_PROSE: { tagline: string; glyph: CodexGlyph; notes: readonly string[] } = {
+  tagline: '每局的开局形态：枪、成长、你的操作',
+  glyph: 'player',
+  notes: [
+    '它有技能钮（技能是突变给的道具，不是气泡的能力）、有枪、会因吸收而成长，体积就是血量——这是所有形态共享的地基。',
+    '它没有吸附、不能吞危险物、没有怒气：这些是路线的事，而路线是第一次升级时的三选一，在水里选。',
+    '血量按体积算：一次受击固定扣一点，吃得越多越能挨，也越难躲——"要不要继续吃"从第一颗泡泡起就是真取舍。',
+  ],
+};
 
-/** The facts that describe a type rather than a mechanic: what it is, and what it has. */
-function typeFacts(type: BubbleType): readonly CodexFact[] {
-  const facts: CodexFact[] = [
-    { label: '按钮', value: type.controls.map((c) => CONTROL_LABELS[c]).join(' · ') },
-    /**
-     * Whether touching a creature is a meal or a wound.
-     *
-     * Derived rather than authored, so a third type cannot ship with a card describing the wrong one -- and the
-     * wording says what the answer MEANS rather than only yes or no, because "cannot swallow" is interesting once you
-     * know that touching a creature is therefore a wound instead of a meal.
-     */
-    {
-      label: '吞噬',
-      value: type.swallowsHazards
-        ? '有：贴脸碰到吞得动的危险物直接吃下——体积、分数、经验立即到账'
-        : '没有：碰到敌人不会被吞掉，而是挨打',
-    },
-    {
-      label: '颜色',
-      value:
-        type.look === 'rage'
-          ? `随怒气：${mech.angry.appearance.map((a) => a.name).join(' → ')}`
-          : type.look === 'plain'
-            ? '不随任何东西：没有状态可以显示'
-            : `随成长阶段：${mech.stages.appearance.map((a) => a.name).join(' → ')}`,
-    },
-  ];
-  // The bubble's own numbers, identical for every type, because they are facts about BEING a bubble.
-  facts.push(
-    { label: '开局体积', value: num(mech.volume.start, 1) },
-    { label: '上限', value: num(mech.volume.max, 1) },
-    {
-      label: '一次受击',
-      value:
-        type.hitsToPop !== null
-          ? `直接爆开：血量固定 ${type.hitsToPop} 点，与体积无关`
-          : `-${num(mech.volume.hitCost, 1)}（固定值，与当前体积无关）`,
-    },
-    { label: '无敌时间', value: `${num(mech.hazards.invulnerableSeconds, 1)}s` },
-  );
-  /**
-   * The growth stages are speed tiers for every type that grows -- the type only changes what the COLOUR follows --
-   * so they are one fact about being a bubble rather than a card of their own on the volatile bubble's side.
-   *
-   * A type that does NOT grow gets the fact that replaces them instead. It is derived from the type rather than
-   * authored, because a card that listed "absorb 12 to promote" for a bubble that can never be promoted would be the
-   * codex teaching the wrong game.
-   */
-  facts.push(
-    type.growsByAbsorbing
-      ? {
-          label: '成长阶段',
-          value: `吸收 ${mech.stages.absorbToStage2} / ${mech.stages.absorbToStage3} 颗晋升 · 速度 ${mech.stages.speedMultiplier.map((m) => `×${num(m)}`).join(' → ')}`,
-        }
-      : {
-          label: '成长',
-          value: `不会长大：吸收一个泡泡 +${num(mech.score.absorb, 1)} 分，体积和速度始终不变`,
-        },
-  );
-  return facts;
-}
-
-/** The creatures a burst clears, and the ones it only pushes -- both read from the config table. */
-function burstSplit(): readonly CodexFact[] {
-  const mode = mech.angry.burst.hazardMode;
-  const of = (want: 'destroy' | 'push') =>
-    Object.keys(mode)
-      .filter((kind) => mode[kind] === want)
-      .map((kind) => HAZARD_NAMES[kind as HazardKind] ?? kind)
-      .join('、');
-  return [
-    { label: '清除', value: of('destroy') },
-    { label: '推开', value: of('push') },
-  ];
-}
-
-const BUBBLE_PROSE: Record<BubbleTypeId, BubbleProse> = {
+/**
+ * The route cards' prose. The FACTS beside each are derived from the running config by `routeFacts` below --
+ * the same numbers the game uses, so the page cannot describe a route the game no longer has.
+ */
+const ROUTE_PROSE: Record<RouteId, { glyph: CodexGlyph; notes: readonly string[] }> = {
   devour: {
-    self: {
-      tagline: '体积就是血量，也是判定框',
-      glyph: 'player',
-      notes: [
-        '受击固定扣一个命中点，所以能挨几下随体积增长——这是变大的收益；而变大的代价是更大的判定框。',
-        '用"按当前体积比例扣血"试过：大泡泡能挨 13 下、小的 8 下，变大反而更容易，和设计相反。',
-        '它靠吸附把食物拉过来，贴脸碰到吞得动的危险物就直接吃下——体积、分数与经验立即到账，没有库存要管。',
-      ],
-    },
-    features: [
-      {
-        key: 'stages',
-        name: '成长阶段',
-        glyph: 'stages',
-        tagline: '吃得越多，越难躲',
-        facts: () => [
-          { label: '晋升', value: `吸收 ${mech.stages.absorbToStage2} / ${mech.stages.absorbToStage3} 颗` },
-          { label: '速度', value: mech.stages.speedMultiplier.map((m) => `×${num(m)}`).join(' → ') },
-          { label: '外观', value: mech.stages.appearance.map((a) => a.name).join(' → ') },
-        ],
-        notes: [
-          '阶段是速度档位，不是视觉大小：大小由体积连续决定，所以"刚升到阶段2"和"阶段2 又吃了五颗"看不出区别，颜色才能回答"我在第几阶段"。',
-          '这是整个设计的核心张力：吃得越多，越难躲，所以"要不要继续吃"是真取舍。',
-        ],
-      },
-      {
-        key: 'suction',
-        name: '吸附',
-        glyph: 'suction',
-        tagline: '按住产生吸力，代价是几乎躲不开',
-        facts: () => [
-          { label: '半径', value: `${pct(mech.suction.radiusRatio)} 泳道 + 每点体积 ${pct(mech.suction.radiusPerVolume)}` },
-          { label: '上限', value: `${pct(mech.suction.maxRadiusRatio)} 泳道` },
-          { label: '移动', value: `×${num(mech.suction.moveSpeedFactor)}` },
-          { label: '拉重物', value: `质量比 ≥ ${num(mech.suction.heavyRatio, 1)} 时只剩 ${pct(mech.suction.heavyFloor)}` },
-        ],
-        notes: [
-          '只负责拉近，不负责吃：拉到位之后仍走档位判定，所以把吃不了的螃蟹吸过来等于加速把它拉到脸上。',
-          '危险物一样会被吸——一个对它们无效的场会取消使用它的全部风险，"什么时候按住"就不再是决定。',
-          '拖动难度按目标/玩家质量比算，于是吸力自动随成长变强，不需要第二套成长系统。',
-        ],
-      },
+    glyph: 'suction',
+    notes: [
+      '选它的那一刻：吸附按钮出现（技能钮的按住形态），贴脸碰到吞得动的危险物直接吃下——体积、分数、突变经验立即到账，外加短暂无敌。',
+      '吸附只负责拉近，不负责吃：把吃不了的螃蟹吸过来，等于加速把危险物拉到脸上。两重代价合起来，"什么时候按住"才是决定。',
+      '专属卡：吸取范围、吞噬无敌、大胃口（比体积说的话多吃一档）。本局另外两条路线的卡永不再出。',
     ],
   },
-  angry: {
-    self: {
-      tagline: '挨打积怒，把怒气撞出去',
-      glyph: 'angry',
-      notes: [
-        '它没有吸附、也不能吞危险物：碰到敌人只有挨打——那正是它的怒气来源。',
-        '它只吃气泡（食物），而且靠接触、不靠吸力，所以收集得笨——这是设计给它的弱点，不是没做完。',
-        '它只有两个动作：蓄力冲撞和怒气爆破，两个都花怒气。怒气从哪来只有一条路——挨打，而且得活下来。',
-        '平静时它看起来就是个普通气泡（颜色也接近），差别要等它开始挨打才出现。设计有意让"受伤"成为角色本身。',
-      ],
-    },
-    features: [
-      {
-        key: 'rage',
-        name: '怒气',
-        glyph: 'rageGauge',
-        tagline: '只从"挨打但没破"来',
-        facts: () => [
-          { label: '范围', value: `0 ~ ${mech.angry.rage.max}` },
-          { label: '每次受伤', value: `+${mech.angry.rage.perHit}（挨满上限要 ${Math.ceil(mech.angry.rage.max / mech.angry.rage.perHit)} 次）` },
-          { label: '衰减', value: `安全 ${num(mech.angry.rage.decayDelaySeconds, 1)}s 后每秒 -${mech.angry.rage.decayPerSecond}` },
-          {
-            label: '阶段',
-            value: mech.angry.appearance.map((a) => `${a.name} ≥${a.minRage}`).join(' · '),
-          },
-        ],
-        notes: [
-          '致命伤会结束这一局，没有状态可以携带怒气——所以也不存在"死了还赚怒气"这种事。',
-          '挨打在这游戏里不免费：血量就是体积。所以它的武器（冲撞）的破坏力只看怒气、不看体积，否则"残血反打"会变成死循环。',
-          '满怒不是终点，是一段倒计时——见「失控」那张。',
-        ],
-      },
-      {
-        key: 'charge',
-        name: '蓄力冲撞',
-        glyph: 'charge',
-        tagline: '按住瞄准，松手撞出去',
-        facts: () => [
-          {
-            label: '破坏力',
-            value: `${num(mech.angry.charge.slamDamageBase, 1)} × (1 + ${num(mech.angry.charge.slamRageScale, 1)} × 怒气/${mech.angry.rage.max})，满怒 ${num(mech.angry.charge.slamDamageBase * (1 + mech.angry.charge.slamRageScale), 1)} 倍`,
-          },
-          { label: '花费', value: `撞中 -${mech.angry.charge.rageCostPerHit} · 撞碎 -${mech.angry.charge.rageCostPerBreak}` },
-          { label: '猛撞窗口', value: `${num(mech.angry.charge.slamSeconds, 2)}s（这段时间内的接触才算撞）` },
-          { label: '方向', value: '按住时跟随拖动/方向键，松开就锁定' },
-          { label: '代价', value: '不掉血：它是玩家自己的攻击' },
-        ],
-        notes: [
-          '破坏力只看怒气，不看体积——这是对"受伤换怒气、但受伤又让你变小"那个矛盾的正面回答：变小不会让武器失效。',
-          '撞中不会停下：位移用的是一条衰减冲量，而冲量本来就不管撞到什么，所以一次冲撞可以连撞几个目标。',
-          '怒气够高时它能撞碎封路木箱——那种"任何体积都撞不碎"的东西。同一道题的第三个答案，代价是怒气。',
-        ],
-      },
-      {
-        key: 'burst',
-        name: '怒气爆破',
-        glyph: 'rageBurst',
-        tagline: '一次花光全部怒气',
-        facts: () => [
-          { label: '花费', value: '全部（所以它没有冷却）' },
-          { label: '半径', value: `${pct(mech.angry.burst.radiusBaseRatio)} → ${pct(mech.angry.burst.radiusMaxRatio)} 泳道（随怒气变大）` },
-          ...burstSplit(),
-          { label: '障碍伤害', value: `${num(mech.angry.burst.obstacleDamage, 1)}（木箱 ${num(mech.obstacles.health.crate ?? 0, 1)}、渔网 ${num(mech.obstacles.health.net ?? 0, 1)} 碎；珊瑚 ${num(mech.obstacles.health.coral ?? 0, 1)}、封路木箱 ${num(mech.obstacles.health.wall ?? 0, 1)} 只掉一层皮）` },
-        ],
-        notes: [
-          '三种处理方式对应三种东西：清掉软的、推开清不掉的、震碎脆的。哪些算哪一类写在配置里，每种危险物都必须有一行。',
-          '障碍伤害刻意低于珊瑚和封路木箱：撞开木箱是冲撞的活。如果一个爆破就能开路，冲撞这个动词就没有存在理由了。',
-          '没有最低怒气门槛：0 怒气时它就是一圈很小的波，没用但不撒谎——一个按下去什么都不发生的按钮读起来就是坏的。',
-        ],
-      },
-      {
-        key: 'overload',
-        name: '失控',
-        glyph: 'overload',
-        tagline: '怒气满了就是一段倒计时',
-        facts: () => [
-          { label: '倒计时', value: `${num(mech.angry.overload.seconds, 1)}s` },
-          { label: '期间', value: `判定 +${pct(mech.angry.overload.radiusBonus)} · 转向 ×${num(mech.angry.overload.steerFactor, 2)} · 撞击免费且破坏力 ${num(mech.angry.overload.ramDamage, 1)}` },
-          { label: '释放', value: `怒气爆破，或撞碎血量 ≥ ${num(mech.angry.overload.releaseHealth, 1)} 的目标（珊瑚、封路木箱）` },
-          { label: '没释放', value: `-${mech.angry.overload.punishHits} 个命中点，并清空怒气` },
-        ],
-        notes: [
-          '"怒气既是资源，也是倒计时"：满怒不是可以放着不管的状态，是一个必须马上做点什么的时刻。',
-          '失控期间撞击不花怒气：如果花，玩家可以一路撞到空槽，然后没有怒气可以释放——那个"必须释放"的状态会变成"让释放不可能"的状态。',
-          '没释放的惩罚永远不会让气泡破裂（只掉到还剩 1 个命中点为止）：体积和怒气同时没了，代价已经够真。',
-          '撞碎木箱不算释放——设计列的是"大型目标"，否则一碰布景失控就结束了，那不叫决定。',
-        ],
-      },
+  boil: {
+    glyph: 'boil',
+    notes: [
+      '选它的那一刻：怒气槽出现（空槽起步），蓄力冲撞与爆破按钮到位，配色换成怒气阶段——气泡的颜色从此在说"我有多烫"。',
+      '怒气只从"挨打但没破"来；冲撞的破坏力只看怒气不看体积，所以残血反打是可行的。满怒不是终点，是一段倒计时（失控）。',
+      '专属卡：怒气积攒、爆破半径、余温（怒气衰减更慢）。本局另外两条路线的卡永不再出。',
     ],
   },
-  /**
-   * The plain bubble: no features at all, and the card says so.
-   *
-   * An empty `features` list is the honest documentation of a type whose design IS the absence of mechanics. Giving it
-   * a feature card would mean either inventing an ability or writing a card about nothing, and the tab's whole
-   * structure says that a card is a mechanic.
-   */
-  plain: {
-    self: {
-      tagline: '一滴血，什么都不会 —— 只有一把枪',
-      glyph: 'player',
-      notes: [
-        '血量是**恒定的 1 点**，不随体积增长：碰到任何敌人就破裂，不管已经长到多大。',
-        '它也**不会长大**：吸收一个泡泡只是加分，体积和速度从头到尾不变——所以它不存在"变大变慢"这件事。',
-        '它没有吸附、也不能吞危险物；捡到的技能仍然可以用（技能是关卡给的东西，不是这个气泡的能力）。',
-      ],
-    },
-    features: [],
+  barrage: {
+    glyph: 'stages',
+    notes: [
+      '选它的那一刻：枪管 +1 立刻到账。没有新按钮——这条路线的动词就是基础气泡已有的那把枪，只是更深。',
+      '专属卡：弹速、大弹丸（判定和画面同一个数）、射程。它们只在这条路线的池里出现。',
+      '通用枪卡（枪管/射速/伤害）人人可抽：枪是每个形态的基础武器，这条路线赢在把它堆得更狠。',
+    ],
   },
 };
 
 /**
- * Build the bubble tab from the game's own type list.
+ * A route card's facts, all derived from the running config.
  *
- * Throws for a type with no prose, which is the load-time half of the coverage guarantee; the test is the other half.
+ * The verbs come from the form the route produces (`formForRoute`), the economy from the block that owns it --
+ * consumption for eating, angry for rage, bullets for the gun -- and the route's own cards from the mutation
+ * pool's per-pick amounts. Nothing is authored twice.
+ */
+function routeFacts(route: Route): readonly CodexFact[] {
+  const form = formForRoute(route);
+  const facts: CodexFact[] = [{ label: '按钮', value: form.controls.map((c) => CONTROL_LABELS[c]).join(' · ') }];
+  const pool = mech.mutation.pool;
+  if (route.id === 'devour') {
+    facts.push(
+      { label: '可吞档位', value: `体积档位 ≥ ${mech.consumption.edibleAtTier.fish} 起能吃鱼；大胃口每张 +1 档` },
+      { label: '吃下到账', value: `质量 ×${num(mech.consumption.massEfficiency)} · 无敌 ${num(mech.consumption.eatInvulnerableSeconds, 2)}s` },
+      { label: '专属卡', value: `吸取范围 +${Math.round(pool.suctionPerPick * 100)}% · 吞噬无敌 +${num(pool.eatInvulnSecondsPerPick, 1)}s · 大胃口 +${pool.appetiteTiersPerPick} 档` },
+    );
+  } else if (route.id === 'boil') {
+    facts.push(
+      { label: '怒气', value: `受伤 +${mech.angry.rage.perHit} · 安全 ${num(mech.angry.rage.decayDelaySeconds, 1)}s 后每秒 -${mech.angry.rage.decayPerSecond}` },
+      { label: '失控', value: `满怒 ${num(mech.angry.overload.seconds, 1)}s 倒计时，不放掉扣 ${mech.angry.overload.punishHits} 点但不破` },
+      { label: '专属卡', value: `怒气积攒 +${Math.round(pool.ragePerPick * 100)}% · 爆破半径 +${Math.round(pool.burstRadiusPerPick * 100)}% · 余温 -${Math.round(pool.rageDecayReductionPerPick * 100)}% 衰减` },
+    );
+  } else {
+    facts.push(
+      { label: '立刻到账', value: `枪管 +1（上限 ${mech.bullets.maxStreams} 排）` },
+      { label: '专属卡', value: `弹速 +${Math.round(pool.bulletSpeedPerPick * 100)}% · 大弹丸 +${Math.round(pool.bulletRadiusPerPick * 100)}% · 射程 +${Math.round(pool.bulletRangePerPick * 100)}%` },
+      { label: '通用枪卡', value: '枪管 / 射速 / 伤害：所有形态都能抽到' },
+    );
+  }
+  return facts;
+}
+
+/**
+ * The base bubble's own facts: what it has, and the numbers of being a bubble at all.
+ *
+ * Derived rather than authored -- which buttons, whether contact is a meal -- for the same reason the old
+ * per-type facts were: a fact that is copied can describe the wrong game, a fact that is read cannot.
+ */
+function baseFacts(): readonly CodexFact[] {
+  return [
+    { label: '按钮', value: BASE_TYPE.controls.map((c) => CONTROL_LABELS[c]).join(' · ') },
+    { label: '吞噬', value: '没有：碰到敌人不会被吞掉，而是挨打——吃是路线的事' },
+    { label: '颜色', value: `随成长阶段：${mech.stages.appearance.map((a) => a.name).join(' → ')}` },
+    { label: '成长', value: `吸收 ${mech.stages.absorbToStage2} / ${mech.stages.absorbToStage3} 颗晋升 · 速度 ${mech.stages.speedMultiplier.map((m) => `×${num(m)}`).join(' → ')}` },
+    { label: '开局体积', value: num(mech.volume.start, 1) },
+    { label: '上限', value: num(mech.volume.max, 1) },
+    { label: '一次受击', value: `-${num(mech.volume.hitCost, 1)}（固定值，与当前体积无关）` },
+    { label: '无敌时间', value: `${num(mech.hazards.invulnerableSeconds, 1)}s` },
+  ];
+}
+
+/**
+ * Build the bubble tab from the game's own form list: the base bubble, then every route.
+ *
+ * Throws for a route with no prose, which is the load-time half of the coverage guarantee; the test is the other
+ * half. Every fact on a route's card is derived from the running config by `routeFacts`.
  */
 function bubbleCards(): readonly CodexEntry[] {
-  const out: CodexEntry[] = [];
-  for (const type of BUBBLE_TYPES) {
-    const prose = BUBBLE_PROSE[type.id];
-    if (!prose) throw new Error(`codex: no prose for bubble type "${type.id}" -- add it to BUBBLE_PROSE`);
-    out.push({
-      id: `bubble:${type.id}`,
+  const out: CodexEntry[] = [
+    {
+      id: `bubble:${BASE_TYPE.id}`,
       category: 'bubble',
-      type: type.id,
-      name: type.name,
-      tagline: prose.self.tagline,
-      facts: typeFacts(type),
-      notes: prose.self.notes,
-      icon: { kind: 'glyph', glyph: prose.self.glyph },
+      type: BASE_TYPE.id,
+      name: BASE_TYPE.name,
+      tagline: BASE_PROSE.tagline,
+      facts: baseFacts(),
+      notes: BASE_PROSE.notes,
+      icon: { kind: 'glyph', glyph: BASE_PROSE.glyph },
+    },
+  ];
+  for (const route of ROUTES) {
+    const prose = ROUTE_PROSE[route.id];
+    if (!prose) throw new Error(`codex: no prose for route "${route.id}" -- add it to ROUTE_PROSE`);
+    out.push({
+      id: `bubble:${route.id}`,
+      category: 'bubble',
+      type: route.id,
+      name: `路线 · ${route.name}`,
+      tagline: `${route.title}——${route.blurb}`,
+      facts: routeFacts(route),
+      notes: prose.notes,
+      icon: { kind: 'glyph', glyph: prose.glyph },
     });
-    for (const feature of prose.features) {
-      out.push({
-        id: `bubble:${type.id}:${feature.key}`,
-        category: 'bubble',
-        type: type.id,
-        name: feature.name,
-        tagline: feature.tagline,
-        facts: feature.facts(),
-        notes: feature.notes,
-        icon: { kind: 'glyph', glyph: feature.glyph },
-      });
-    }
   }
   return out;
 }
@@ -916,14 +753,13 @@ export function iconColour(entry: CodexEntry): number {
       return mech.codex.collectableColour;
     default: {
       /**
-       * A bubble card is coloured by ITS OWN TYPE's resting palette.
+       * A bubble card is coloured by ITS OWN FORM's resting palette.
        *
-       * The devour bubble starts cyan and the volatile one starts blue, which is the honest answer for both -- the
-       * design says the volatile bubble looks like an ordinary bubble until it has been hit. The SHAPES carry the
-       * difference; the colour deliberately does not, because the colour is a promise about what the thing in the
-       * water looks like.
+       * The boil route starts blue, which is the honest answer -- the design says it looks like an ordinary
+       * bubble until it has been hit. The SHAPES carry the difference; the colour deliberately does not, because
+       * the colour is a promise about what the thing in the water looks like.
        */
-      return entry.type === 'angry'
+      return entry.type === 'boil'
         ? (mech.angry.appearance[0]?.hudColor ?? mech.codex.collectableColour)
         : (mech.stages.appearance[0]?.hudColor ?? mech.codex.collectableColour);
     }

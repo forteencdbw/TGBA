@@ -16,7 +16,7 @@ import { NumberPopups } from './numberPopups';
 import { massFromEating } from './consumption';
 import { MainMenu } from './menu';
 import { CodexUi } from './codexUi';
-import { BUBBLE_TYPES, defaultBubbleType, findBubbleType, hasVerb } from './bubbleTypes';
+import { defaultBubbleType, hasVerb, ROUTES } from './bubbleTypes';
 import { sayBanner, sayResults, sayScore, saySkillSlot, saySound, saySplash } from './runEvents';
 import { LevelUpUi } from './levelup';
 import { applyMutationPassives, rollMutationChoices, type Mutation } from './mutations';
@@ -139,7 +139,8 @@ class Game {
   /** The bubble animation that rides behind every charge. See `src/chargeTrail.ts`. */
   private readonly chargeTrail = new ChargeTrail();
   /** The bubble type chosen on the menu, held while the pictures arrive. */
-  private pendingType: string | null = null;
+  /** Set when the start button was pressed and the loading page is fetching: the run begins when the art is in. */
+  private pendingStart = false;
   /**
    * The rage burst's wave, on its own layer UNDER the bubble.
    *
@@ -341,8 +342,8 @@ class Game {
      * phase is \`loading\`, which the frame loop treats like any other non-playing phase: no input, no hazards, no timers, so
      * nothing can happen to the player while the pictures arrive.
      */
-    this.menu.onStart = (typeId) => {
-      void this.beginWithLoading(typeId);
+    this.menu.onStart = () => {
+      void this.beginWithLoading();
     };
     this.menu.onCodex = () => this.enterCodex();
     /**
@@ -363,12 +364,9 @@ class Game {
     };
     this.codex.onBack = () => this.exitCodex();
     /**
-     * The menu is handed the types rather than importing them, so "which bubbles exist" has one owner.
-     *
-     * Done at boot and before the first `layout`, because the NUMBER of buttons is part of the layout: a menu that
-     * learned about a third type after laying out would draw two.
+     * The menu is handed nothing to draw but levels -- there is no character select any more. `refreshLevelMenu`
+     * is the one call that decides what the row shows.
      */
-    this.menu.setTypes(BUBBLE_TYPES);
     /**
      * The levels, from the progress store rather than from `LEVELS`.
      *
@@ -909,14 +907,44 @@ class Game {
   }
 
   /**
-   * Test hook: begin a run with a named bubble, the same way the menu does.
+   * Test hook: begin a run committed to a route, without playing out the minute that earns the first level.
    *
-   * Goes through `enterFromMenu`, so it exercises the real path including `setBubbleType` -- a probe that set the
-   * type directly would not notice a control list that never reached the touch layer, which is the one way this
-   * feature can half-work.
+   * Goes through `enterFromMenu` and then the run's OWN `pickRoute`, so it exercises both real paths -- the menu's
+   * start and the route pick -- and a probe that used it would notice a control list that never reached the touch
+   * layer, which is the one way this feature can half-work.
    */
-  debugStartRunWithType(typeId: string): void {
-    this.enterFromMenu(typeId);
+  debugStartRunWithRoute(routeId: string): string | null {
+    this.enterFromMenu();
+    this.run.pickRoute(routeId);
+    this.applyFormToTouch();
+    return this.run.route;
+  }
+
+  /**
+   * Test hook: every route the game offers, in card order.
+   *
+   * Exposed so a probe can assert the branch node offers exactly these -- the alternative is a list written into
+   * the test, which would agree with a route panel that had stopped agreeing with the game.
+   */
+  debugRouteIds(): string[] {
+    return ROUTES.map((route) => route.id);
+  }
+
+  /**
+   * Test hook: grant mutation points straight into the ladder, bypassing the events that usually pay them.
+   *
+   * The ladder's own arithmetic (thresholds, banked picks, the levelup the next `playing` frame opens) is the
+   * real path and stays real -- only the EARNING is skipped, because a spec that wanted one level would
+   * otherwise have to farm grazes for a minute. The branch node's first panel arrives through it too.
+   */
+  debugGrantMutationPoints(points: number): number {
+    this.run.xp.debugAddForTest(points);
+    return this.run.xp.pending;
+  }
+
+  /** Test hook: the levelup panel, so a probe can read what is on offer and press a real card. */
+  get levelupRef(): LevelUpUi {
+    return this.levelup;
   }
 
   /**
@@ -928,16 +956,6 @@ class Game {
    */
   useBurstForTest(): void {
     this.run.useBurst(this.worldView());
-  }
-
-  /**
-   * Test hook: every bubble type the game offers, in menu order.
-   *
-   * Exposed so a probe can assert the menu is offering exactly these, in this order -- the alternative is a list
-   * written into the test, which would agree with a menu that had stopped agreeing with the game.
-   */
-  debugBubbleTypeIds(): string[] {
-    return BUBBLE_TYPES.map((type) => type.id);
   }
 
   /**
@@ -1956,7 +1974,11 @@ class Game {
     // A number key pressed before the freeze is stale here -- flush it, or the modal would answer it on
     // its first frame before the player has seen the cards.
     this.input.consumeLevelUpChoice();
-    this.levelup.openWith(rollMutationChoices(this.run));
+    /**
+     * The branch node is a different QUESTION, and the panel's title is where that is said: the run's first
+     * level-up offers the three routes, every one after it draws from the pool the route left behind.
+     */
+    this.levelup.openWith(rollMutationChoices(this.run), this.run.route === null ? '选择你的路线' : '突变 · 三选一');
   }
 
   /**
@@ -1980,11 +2002,16 @@ class Game {
      * would not land until the next `startRun` folded it in.
      */
     applyMutationPassives(this.run);
+    /**
+     * A route card changes the FORM, not just the counts: the new verbs have to reach the touch layer on this
+     * frame, or the panel closes on a bubble whose buttons it does not have yet.
+     */
+    if (choice.id.startsWith('route:')) this.applyFormToTouch();
     this.run.xp.consume();
     this.levelup.close();
     sayBanner(this.run.events, `突变  ·  ${choice.name}`);
     if (this.run.xp.pending > 0) {
-      this.levelup.openWith(rollMutationChoices(this.run));
+      this.levelup.openWith(rollMutationChoices(this.run), this.run.route === null ? '选择你的路线' : '突变 · 三选一');
       return;
     }
     this.run.phase = 'playing';
@@ -2014,8 +2041,8 @@ class Game {
    * `handlePointerDown`): before that it was a bar drawn under the water with the touch controls still live over it, so
    * the player could steer a bubble through a level that had not started.
    */
-  private async beginWithLoading(typeId: string): Promise<void> {
-    this.pendingType = typeId;
+  private async beginWithLoading(): Promise<void> {
+    this.pendingStart = true;
     this.run.phase = 'loading';
     this.menu.root.visible = false;
     // The page takes the screen, so any finger the game thought it had is forgotten -- a drag armed on the way in
@@ -2027,12 +2054,11 @@ class Game {
     // which the bestiary never does -- see `warmAnimations`. The frames themselves are already in memory by now, so
     // this is bookkeeping rather than a download.
     await warmAnimations();
-    if (this.pendingType) {
-      const type = this.pendingType;
-      this.pendingType = null;
+    if (this.pendingStart) {
+      this.pendingStart = false;
       // The SAME entry point the menu used before this screen existed: the loader wraps it rather than replacing it, so a run
       // starts exactly as it always did once the art is in.
-      this.enterFromMenu(type);
+      this.enterFromMenu();
     }
   }
 
@@ -2154,6 +2180,15 @@ class Game {
       this.run.decoy = null;
       this.run.xp.reset();
       this.run.mutations = {};
+      /**
+       * A fresh run is the BASE bubble again: no route, no route cards owed, the growth palette. A carried run
+       * (the walk into the next level) keeps its route and its form -- the identity the player picked is the
+       * run's, not the level's.
+       */
+      this.run.route = null;
+      this.run.routeCardPending = false;
+      this.run.bubbleType = defaultBubbleType();
+      this.applyFormToTouch();
     }
     this.run.fartReadyAt = 0;
     this.run.farts = 0;
@@ -2324,21 +2359,19 @@ class Game {
     this.music.setTrack(track ?? null);
   }
 
-  private enterFromMenu(typeId: string): void {
+  private enterFromMenu(): void {
     this.menu.root.visible = false;
-    this.setBubbleType(typeId);
     this.startRun();
   }
 
   /**
-   * Choose the bubble for the run.
+   * Push the run's CURRENT form to the touch layer.
    *
-   * Two things happen, and both have to happen before the first frame: the type is recorded, and the touch layer is
-   * told which controls to lay out. Doing the second here rather than every frame is the point of the abstraction --
-   * the control set is fixed for a run, so nothing downstream ever asks which buttons exist.
+   * Called whenever the form can change: on every start (the base bubble), and on a route pick (the form the
+   * card just produced). Doing it here rather than every frame is the point of the abstraction -- the control set
+   * changes at exactly two moments, so nothing downstream ever asks which buttons exist.
    */
-  private setBubbleType(typeId: string): void {
-    this.run.bubbleType = findBubbleType(typeId) ?? defaultBubbleType();
+  private applyFormToTouch(): void {
     this.touch.setControls(this.run.bubbleType.controls);
     this.touch.layout(
       this.camera.viewport.left,
@@ -2766,6 +2799,7 @@ private updateBoss(): void {
          * that cannot happen, since that type does not grow.
          */
         grows: this.run.bubbleType.growsByAbsorbing,
+        route: this.run.route,
         neededForNext: this.run.stage.neededForNext,
           /**
          * The mutation meter, for every type -- the bar that fills toward the next freeze.
@@ -2980,7 +3014,7 @@ private updateBoss(): void {
     const bulletArt = this.syncBulletSprites(g, laneWidth);
     this.hitParticles.draw();
 
-    if (!bulletArt) paintBullets(g, this.run.bullets, laneWidth);
+    if (!bulletArt) paintBullets(g, this.run.bullets, laneWidth, this.run.bulletRadiusMultiplier, this.run.bulletLifeMultiplier);
 
     /**
      * The enemies' rounds, drawn after the scenery so cover never hides what can kill you.
@@ -3475,6 +3509,8 @@ private updateBoss(): void {
       stats: this.run.stats,
       stage: this.run.stage,
       bubbleType: this.run.bubbleType,
+      route: this.run.route,
+      gunStreams: this.run.gunStreams,
       lateral: this.run.lateral,
       rage: this.run.rage,
       talentEffects: this.run.talentEffects,

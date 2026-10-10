@@ -74,6 +74,14 @@ export interface BulletContext {
    * the RUN, not about the weapon in general.
    */
   damage: number;
+  /**
+   * The barrage route's three dials, handed in for the same reason `damage` is: they are the RUN's picks, not
+   * properties of a round. Each defaults to 1 and only 弹幕路线 cards move it -- speed and radius and range are
+   * one number each for the hitbox and the drawing, so the round a player sees is the round that collides.
+   */
+  speedMultiplier: number;
+  radiusMultiplier: number;
+  lifeMultiplier: number;
   hazards: HazardField;
   obstacles: ObstacleField;
 }
@@ -148,7 +156,8 @@ export class BulletField {
       this.cooldown = 0;
     }
 
-    const radius = ctx.laneWidth * cfg.radiusRatio;
+    const radius = ctx.laneWidth * cfg.radiusRatio * ctx.radiusMultiplier;
+    const life = cfg.lifeSeconds * ctx.lifeMultiplier;
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i]!;
       b.age += dt;
@@ -193,7 +202,7 @@ export class BulletField {
       }
 
       // Recycle: it hit something, ran out of range, or left the working band.
-      if (spent || b.age >= cfg.lifeSeconds || b.y < ctx.min - 60 || b.y > ctx.max + 120) {
+      if (spent || b.age >= life || b.y < ctx.min - 60 || b.y > ctx.max + 120) {
         this.bullets.splice(i, 1);
       }
     }
@@ -213,7 +222,7 @@ export class BulletField {
       this.bullets.push({
         x: muzzle.x,
         y: muzzle.y,
-        vy: ctx.laneWidth * cfg.speedPerSecond,
+        vy: ctx.laneWidth * cfg.speedPerSecond * ctx.speedMultiplier,
         age: 0,
       });
       this.fired++;
@@ -228,11 +237,11 @@ export class BulletField {
  * ages, which says "this one is about to expire" without a HUD and stops a long burst from reading as a solid line
  * of water.
  */
-export function paintBullets(g: Graphics, field: BulletField, laneWidth: number): void {
+export function paintBullets(g: Graphics, field: BulletField, laneWidth: number, radiusMultiplier = 1, lifeMultiplier = 1): void {
   const cfg = mech.bullets;
-  const r = laneWidth * cfg.radiusRatio;
+  const r = laneWidth * cfg.radiusRatio * radiusMultiplier;
   for (const b of field.bullets) {
-    const fade = Math.max(0.18, 1 - b.age / cfg.lifeSeconds);
+    const fade = Math.max(0.18, 1 - b.age / (cfg.lifeSeconds * lifeMultiplier));
     g.circle(b.x, b.y, r).fill({ color: cfg.colour, alpha: cfg.alpha * fade });
     g.circle(b.x, b.y, r).stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha * fade, width: Math.max(1, r * 0.45) });
   }

@@ -1,7 +1,7 @@
 import type { Text } from 'pixi.js';
 import type { Camera } from './background';
 import type { BulletField } from './bullets';
-import type { BubbleType } from './bubbleTypes';
+import type { BubbleType, RouteId } from './bubbleTypes';
 import type { CodexUi } from './codexUi';
 import type { EnemyBulletField } from './enemyBullets';
 import type { EntityField } from './entities';
@@ -62,6 +62,10 @@ export interface GameSnapshot {
   };
   stage: StageState;
   bubbleType: BubbleType;
+  /** The route this run committed to at its first level-up, or null while it is still the base bubble. */
+  route: RouteId | null;
+  /** The gun's row count: what the 枪管 cards and the barrage route's own grant move. */
+  gunStreams: number;
   lateral: LateralAuthority;
   rage: RageState;
   talentEffects: TalentEffects;

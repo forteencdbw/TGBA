@@ -395,6 +395,13 @@ export interface Mechanisms {
       ragePerPick: number;
       suctionPerPick: number;
       eatInvulnSecondsPerPick: number;
+      /** The routes' own cards, below. Zero disables a card's growth without touching its text. */
+      appetiteTiersPerPick: number;
+      burstRadiusPerPick: number;
+      rageDecayReductionPerPick: number;
+      bulletSpeedPerPick: number;
+      bulletRadiusPerPick: number;
+      bulletRangePerPick: number;
     };
     /** The gauge under the resource line. The same knobs the rage gauge has. */
     gauge: {
@@ -1221,19 +1228,9 @@ export interface Mechanisms {
     secondaryTextSize: number;
     buttonStroke: number;
     buttonStrokeAlpha: number;
-    /** The bubble-type selector: its geometry, and the two states a type button can be in. */
-    typeRowHeight: number;
-    typeRowGap: number;
-    typeRowTopGap: number;
+    /** The one line between the level grid and the start button: the base bubble's pitch. */
     taglineGap: number;
-    typeTextSize: number;
     taglineSize: number;
-    typeSelectedFill: number;
-    typeSelectedStroke: number;
-    typeSelectedTextColour: number;
-    typeIdleFill: number;
-    typeIdleStroke: number;
-    typeIdleTextColour: number;
     /** The level row: one pill per level, with a selected, an idle and a locked state. */
     levelRowHeight: number;
     levelRowGap: number;
@@ -1331,23 +1328,6 @@ export interface Mechanisms {
    * `look` holds the geometry the four rage stages share and `appearance` holds only what changes with rage, so
    * retuning the glow means editing one number rather than four.
    */
-  /**
-   * The plain bubble's palette: the hue carriers, and nothing else.
-   *
-   * Only three numbers, because only three things are the bubble's HUE -- the rim, the outer glow and the HUD's state
-   * dot. The radius, the inner ring and every alpha still come from the growth stages: the plain bubble grows and eats
-   * the same speed tiers as the devour bubble, and what it lacks is a state worth colouring for.
-   *
-   * Its hit points (one, at any size) are NOT here: that is what the character IS, so it lives on the type in
-   * `src/bubbleTypes.ts` beside `swallowsHazards`.
-   */
-  plain: {
-    look: {
-      rim: number;
-      glow: number;
-      hudColor: number;
-    };
-  };
   angry: {
     rage: {
       max: number;
@@ -1824,6 +1804,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     'ragePerPick',
     'suctionPerPick',
     'eatInvulnSecondsPerPick',
+    'appetiteTiersPerPick',
+    'burstRadiusPerPick',
+    'rageDecayReductionPerPick',
+    'bulletSpeedPerPick',
+    'bulletRadiusPerPick',
+    'bulletRangePerPick',
   ].map((key) => ({
     path: `mutation.pool.${key}`,
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 5,
@@ -1845,11 +1831,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'mutation.gauge.labelColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
   ...popupRules('score.popups'),
   ...popupRules('damagePopups'),
-  ...['rim', 'glow', 'hudColor'].map((key) => ({
-    path: `plain.look.${key}`,
-    check: isColour,
-    describe: 'a colour, either 0xrrggbb or a "#rrggbb" string',
-  })),
   { path: 'hud.resultsCard.size', check: (v) => typeof v === 'number' && v >= 10 && v <= 60, describe: 'a font size between 10 and 60' },
   { path: 'hud.resultsCard.yRatio', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 0.9, describe: 'a fraction of the canvas height between 0.05 and 0.9' },
   { path: 'hud.resultsCard.widthRatio', check: (v) => typeof v === 'number' && v >= 0.3 && v <= 1, describe: 'a fraction of the canvas width between 0.3 and 1' },
@@ -2422,13 +2403,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'menu.secondaryTextSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 48, describe: 'a font size between 8 and 48' },
   { path: 'menu.secondaryStrokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'menu.buttonStrokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  // The two selector rows on the menu: the bubble types, and the levels.
-  { path: 'menu.typeRowHeight', check: (v) => typeof v === 'number' && v > 4 && v <= 200, describe: 'a number above 4 and at most 200' },
-  { path: 'menu.typeRowGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a number between 0 and 200' },
-  { path: 'menu.typeRowTopGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 600, describe: 'a number between 0 and 600' },
-  { path: 'menu.taglineGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a number between 0 and 200' },
-  { path: 'menu.typeTextSize', check: (v) => typeof v === 'number' && v > 4 && v <= 60, describe: 'a number above 4 and at most 60' },
-  { path: 'menu.taglineSize', check: (v) => typeof v === 'number' && v > 4 && v <= 60, describe: 'a number above 4 and at most 60' },
+        { path: 'menu.taglineGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a number between 0 and 200' },
+    { path: 'menu.taglineSize', check: (v) => typeof v === 'number' && v > 4 && v <= 60, describe: 'a number above 4 and at most 60' },
   { path: 'menu.levelRowHeight', check: (v) => typeof v === 'number' && v > 4 && v <= 200, describe: 'a number above 4 and at most 200' },
   { path: 'menu.levelRowGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'a number between 0 and 200' },
   { path: 'menu.levelRowTopGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 600, describe: 'a number between 0 and 600' },
@@ -2437,12 +2413,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'menu.levelMinWidthRatio', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 1, describe: 'a fraction of the menu width between 0.05 and 1' },
   { path: 'menu.levelMaxWidthRatio', check: (v) => typeof v === 'number' && v > 0.05 && v <= 1, describe: 'a fraction above 0.05 and at most 1' },
   ...[
-    'typeSelectedFill',
-    'typeSelectedStroke',
-    'typeSelectedTextColour',
-    'typeIdleFill',
-    'typeIdleStroke',
-    'typeIdleTextColour',
     'levelSelectedFill',
     'levelSelectedStroke',
     'levelSelectedTextColour',
@@ -2665,25 +2635,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.look.innerRingWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
   { path: 'angry.look.sheenAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'angry.look.specularAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  // --- the menu's bubble-type selector ---
-  { path: 'menu.typeRowHeight', check: (v) => typeof v === 'number' && v >= 16 && v <= 100, describe: 'a pixel height between 16 and 100' },
-  { path: 'menu.typeRowGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
-  { path: 'menu.typeRowTopGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 120, describe: 'design pixels between 0 and 120' },
-  { path: 'menu.taglineGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 80, describe: 'design pixels between 0 and 80' },
-  { path: 'menu.typeTextSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 40, describe: 'a font size between 8 and 40' },
-  { path: 'menu.taglineSize', check: (v) => typeof v === 'number' && v >= 6 && v <= 32, describe: 'a font size between 6 and 32' },
-  ...([
-    'typeSelectedFill',
-    'typeSelectedStroke',
-    'typeSelectedTextColour',
-    'typeIdleFill',
-    'typeIdleStroke',
-    'typeIdleTextColour',
-  ] as const).map((key) => ({
-    path: `menu.${key}`,
-    check: isColour,
-    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
-  })),
 
   /**
    * --- the skills and the talents ---
@@ -3114,12 +3065,6 @@ for (const [where, get, set] of [
 {
   const bag = mech.menu as unknown as Record<string, string | number>;
   for (const key of [
-    'typeSelectedFill',
-    'typeSelectedStroke',
-    'typeSelectedTextColour',
-    'typeIdleFill',
-    'typeIdleStroke',
-    'typeIdleTextColour',
     'primaryFill',
     'primaryPressedFill',
     'primaryTextColour',

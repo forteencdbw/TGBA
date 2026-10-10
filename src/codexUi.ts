@@ -699,13 +699,13 @@ export class CodexUi {
         g.circle(cx, cy, r).stroke({ color: colour, alpha: 0.95, width: stroke });
         g.circle(cx - r * 0.32, cy + r * 0.34, r * 0.2).fill({ color: 0xffffff, alpha: 0.8 });
         break;
-      case 'angry': {
+      case 'boil': {
         /**
-         * The volatile bubble: the same disc, PRESSED.
+         * The boil route: the same disc, PRESSED.
          *
          * The design's "like a frown, made of deformation" rather than a drawn face -- so the top of the circle is
-         * flattened and pinched, and the rim is the type's own resting colour. It reads as a bubble that is being
-         * squeezed, which is what anger does to it.
+         * flattened and pinched, and the rim is the route's own resting colour. It reads as a bubble that is being
+         * squeezed, which is what boiling does to it.
          */
         const points: number[] = [];
         const steps = 32;

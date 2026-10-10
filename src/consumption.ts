@@ -79,9 +79,12 @@ export function edibleAtTier(kind: HazardKind): number {
  * The single place the rule lives, so the collision resolution and the outline marker cannot disagree about it.
  * A marker that said "edible" while the collision said "damage" would be the worst possible bug in this feature,
  * because the player would be punished for trusting the game.
+ *
+ * `tierBonus` is what the devour route's 大胃口 picks buy: eating one tier ABOVE what the volume says, so the
+ * ladder can be climbed by appetite as well as by size. Zero for a run that has not stacked the card.
  */
-export function canEatHazard(kind: HazardKind, volume: number): boolean {
-  return volumeTier(volume) >= edibleAtTier(kind);
+export function canEatHazard(kind: HazardKind, volume: number, tierBonus = 0): boolean {
+  return volumeTier(volume) + tierBonus >= edibleAtTier(kind);
 }
 
 /** The mass gained by eating a hazard of this kind, after the digestion loss. */

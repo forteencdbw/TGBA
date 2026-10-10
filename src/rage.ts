@@ -113,10 +113,12 @@ export function spendRage(state: RageState, amount: number): number {
  * @param inDanger whether something is currently touching or draining the player. The design calls the delay "no
  *   dangerous behaviour for three seconds", and being mid-grab is the clearest version of that: a trash bag that is
  *   draining the bubble should not also be letting its rage cool down.
+ * @param decayMultiplier what the route's 余温 picks do to the cooling rate. 1 for a run that has not stacked the
+ *   card; below 1 and the heat lingers, which is the whole idea of the card.
  * @return whether the overload EXPIRED this frame, which is the caller's cue to apply the punishment -- the volume
  *   loss belongs to the game, and this module knows nothing about volume.
  */
-export function tickRage(state: RageState, dt: number, inDanger: boolean): { overloadExpired: boolean } {
+export function tickRage(state: RageState, dt: number, inDanger: boolean, decayMultiplier = 1): { overloadExpired: boolean } {
   /**
    * The countdown, before anything else, and it REPLACES the decay while it runs.
    *
@@ -143,7 +145,7 @@ export function tickRage(state: RageState, dt: number, inDanger: boolean): { ove
   }
   state.safeSeconds += dt;
   if (state.safeSeconds < mech.angry.rage.decayDelaySeconds) return { overloadExpired: false };
-  state.rage = Math.max(0, state.rage - mech.angry.rage.decayPerSecond * dt);
+  state.rage = Math.max(0, state.rage - mech.angry.rage.decayPerSecond * decayMultiplier * dt);
   return { overloadExpired: false };
 }
 

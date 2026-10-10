@@ -2,19 +2,18 @@ import { expect, test, type Page } from '@playwright/test';
 import { boot, startFromMenu, waitForPhase } from './helpers';
 
 /**
- * Bubble types: the choice on the main menu, and the volatile bubble's core loop.
+ * Routes: the identity a run picks in the water, and the boil route's core loop.
  *
  * ---------------------------------------------------------------------------------------------
  * WHAT THIS IS GUARDING
  * ---------------------------------------------------------------------------------------------
- * 1. THE CHOICE IS REAL. The menu offers exactly the types the game has, in the same order, and pressing one
- *    actually changes the run -- the controls laid out, the palette, and what the verbs do. A menu button that set a
- *    variable nothing read would look identical in a screenshot.
- * 2. THE DEVOUR BUBBLE IS UNCHANGED. It is the game's original design and the one people are playing, so the
- *    abstraction that made room for a second type has to be invisible to the first: same controls, same numbers,
- *    and crucially NO rage.
- * 3. THE VOLATILE BUBBLE'S LOOP CLOSES. Damage earns rage, rage is spent by slamming, and a slam opens the one
- *    thing the other bubble cannot answer at all: a wall.
+ * 1. THE BRANCH NODE IS REAL. Every run starts as the SAME base bubble -- no character select -- and its FIRST
+ *    level-up offers exactly the three routes the game has, one mandatory pick. Picking one changes the run on
+ *    that frame: the controls the touch layer lays out, the palette, what contact with a creature means.
+ * 2. THE LOCK AND THE GUARANTEE. The other two routes' cards never appear again in that run, and the first draw
+ *    after the pick opens with one of the picked route's own cards -- the choice deepens rather than dilutes.
+ * 3. THE BOIL ROUTE'S LOOP CLOSES. Damage earns rage, rage is spent by slamming, and a slam opens the one
+ *    thing the base bubble cannot answer at all: a wall.
  */
 
 interface Rect {
@@ -33,7 +32,7 @@ const menuGeometry = (page: Page) =>
             geometry: {
               button: Rect;
               codex: Rect;
-              types: { id: string; label: string; rect: Rect }[];
+              levels: { id: string; label: string; locked: boolean; selected: boolean; rect: Rect }[];
               tagline: string;
               hint: string;
             };
@@ -62,17 +61,19 @@ const press = async (page: Page, rect: Rect): Promise<void> => {
 const state = (page: Page) =>
   page.evaluate(() => {
     const g = (window as unknown as {
-      __GB: { game: { diagnostics: { bubbleType: unknown; rage: unknown; stage: { name: string }; phase: string } } };
+      __GB: { game: { diagnostics: { bubbleType: unknown; route: string | null; rage: unknown; stage: { name: string }; phase: string } } };
     }).__GB.game;
     return {
       bubbleType: g.diagnostics.bubbleType as {
         id: string;
         name: string;
         controls: string[];
-        hasSpit: boolean;
-        hasCompress: boolean;
+        hasSuction: boolean;
         hasCharge: boolean;
+        hasBurst: boolean;
+        swallowsHazards: boolean;
       },
+      route: g.diagnostics.route,
       rage: g.diagnostics.rage as {
         value: number;
         fraction: number;
@@ -88,53 +89,91 @@ const state = (page: Page) =>
     };
   });
 
-test.describe('bubble types', () => {
-  test('the menu offers exactly the types the game has, and the choice changes the run', async ({ page }) => {
+test.describe('routes', () => {
+  test('the menu has no character select: every run starts as the base bubble', async ({ page }) => {
     await boot(page);
 
     const offered = await menuGeometry(page);
-    const known = await page.evaluate(() =>
-      (window as unknown as { __GB: { game: { debugBubbleTypeIds: () => string[] } } }).__GB.game.debugBubbleTypeIds(),
-    );
-
-    expect(offered.types.map((t) => t.id), 'the menu must offer exactly the game\'s types, in order').toEqual(known);
-    expect(offered.types.length, 'there must be more than one bubble to choose between').toBeGreaterThan(1);
-    for (const type of offered.types) {
-      expect(type.label.length, `the ${type.id} button needs a name on it`).toBeGreaterThan(0);
-      expect(type.rect.w, `the ${type.id} button needs to be on screen`).toBeGreaterThan(0);
-    }
-    // The tagline and the hint describe the SELECTED type, so the choice is informed rather than remembered.
-    expect(offered.tagline.length, 'the menu must describe the selected bubble').toBeGreaterThan(0);
-    expect(offered.hint.length, 'and say which controls it uses').toBeGreaterThan(0);
-    const defaultTagline = offered.tagline;
 
     /**
-     * Pick the volatile bubble by pressing its button, then start.
-     *
-     * Both presses are the real controls, so a selector that drew correctly and hit-tested wrongly fails here.
+     * The menu decides ONE thing now -- which water -- and its geometry says so: a levels row, no types row.
+     * A character select that had stopped agreeing with the game would show up here as a row nobody reads.
      */
-    const angry = offered.types.find((t) => t.id === 'angry');
-    expect(angry, 'the volatile bubble must be on the menu').toBeTruthy();
-    await press(page, angry!.rect);
+    expect(offered.levels.length, 'the menu offers the levels to choose between').toBeGreaterThan(0);
+    expect(offered.tagline.length, 'and names what every run starts as').toBeGreaterThan(0);
+    expect(offered.hint.length, 'and says which controls that uses').toBeGreaterThan(0);
 
-    const afterPick = await menuGeometry(page);
-    expect(afterPick.tagline, 'picking a bubble must change the description').not.toBe(defaultTagline);
-    expect(afterPick.hint, 'and the control hint, because the controls differ').not.toBe(offered.hint);
-
-    await press(page, afterPick.button);
+    await press(page, offered.button);
     await waitForPhase(page, 'intro');
 
     const run = await state(page);
-    expect(run.bubbleType.id, 'the run must be the bubble that was chosen').toBe('angry');
-    expect(run.bubbleType.controls, 'and must lay out that type\'s controls').toEqual(['skill', 'charge', 'burst']);
-    expect(run.bubbleType.hasSpit, 'the volatile bubble has no spit').toBe(false);
-    expect(run.bubbleType.hasCompress, 'and no digest').toBe(false);
-    expect(run.bubbleType.hasCharge, 'but it does have the charge').toBe(true);
+    expect(run.bubbleType.id, 'the run must start as the base bubble').toBe('base');
+    expect(run.route, 'with no route picked yet').toBeNull();
+    expect(run.bubbleType.controls, 'and only the button every form has').toEqual(['skill']);
   });
 
-  test('the chosen type is what the touch layer lays out', async ({ page }) => {
+  test('the first level-up offers exactly the three routes, and picking one changes the run on that frame', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
+
+    /**
+     * The branch node, forced: the ladder's real arithmetic with the earning skipped, because farming a level
+     * here would be a minute of grazing around the thing under test.
+     */
+    const offered = await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugGrantMutationPoints: (n: number) => number;
+            levelupRef: { open: boolean; choiceAt: (i: number) => { id: string; name: string } | null };
+            debugRouteIds: () => string[];
+            diagnostics: { phase: string; route: string | null };
+          };
+        };
+      }).__GB.game;
+      g.debugGrantMutationPoints(200);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      return {
+        phase: g.diagnostics.phase,
+        route: g.diagnostics.route,
+        ids: g.debugRouteIds(),
+        cards: [0, 1, 2].map((i) => g.levelupRef.choiceAt(i)),
+        open: g.levelupRef.open,
+      };
+    });
+
+    expect(offered.phase, 'the first level must freeze the water for the branch node').toBe('levelup');
+    expect(offered.route, 'and no route is picked until a card is').toBeNull();
+    expect(offered.ids, 'the game has three routes').toEqual(['devour', 'boil', 'barrage']);
+    /**
+     * The cards ARE the routes, all three and nothing else: the branch is not one offer among others, it is
+     * the panel. A route added to the game but missing from the node would fail against `debugRouteIds`.
+     */
+    expect(offered.open).toBe(true);
+    expect(offered.cards.map((c) => c!.id), 'the branch node offers exactly the routes, in order').toEqual(
+      offered.ids.map((id) => `route:${id}`),
+    );
+
+    /**
+     * Pick 吞噬 with the number key -- the real keyboard path -- and read the run on the frame after.
+     */
+    await page.keyboard.press('Digit1');
+    await page.evaluate(async () => {
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    });
+    const run = await state(page);
+    expect(run.phase, 'the pick closes the panel and resumes the water').toBe('playing');
+    expect(run.route, 'and the route is the card that was picked').toBe('devour');
+    expect(run.bubbleType.controls, 'the form now carries the suction button').toEqual(['skill', 'suction']);
+    expect(run.bubbleType.hasSuction, 'contact with food is a meal now').toBe(true);
+    expect(run.bubbleType.swallowsHazards, 'and the mouth is open').toBe(true);
+  });
+
+  test('a route pick re-lays the touch layer on the same frame', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithRoute: (id: string) => string | null } } }).__GB.game.debugStartRunWithRoute('boil'));
     await waitForPhase(page, 'intro');
 
     const layout = await page.evaluate(() => {
@@ -157,46 +196,101 @@ test.describe('bubble types', () => {
     /**
      * The control LIST is the thing under test, not the geometry.
      *
-     * `layout` computes a position for every button whether or not the type uses it, so the geometry being non-zero
-     * proves nothing. What proves the abstraction works is that the type's list does not contain spit or digest --
-     * and the drawing and the hit testing both read that list.
+     * `layout` computes a position for every button whether or not the form uses it, so the geometry being non-zero
+     * proves nothing. What proves the mid-run swap works is that the list changed WITH the pick -- this run started
+     * as the base bubble (one button) and the boil route added two more without a restart.
      *
      * Nothing in the list is MOVEMENT: a phone steers by dragging anywhere on the screen, which needs no button and
      * therefore no id. See `src/touch.ts`.
      */
     expect(layout.controlIds).toEqual(['skill', 'charge', 'burst']);
     expect(layout.charge.radius, 'the charge button must have a real size to press').toBeGreaterThan(0);
-
-    /**
-     * No ghost-control check any more: it used to press where the spit button would be and read the spit counter,
-     * but the verb is gone from the game entirely -- there is no counter to read and no verb to fire. The control
-     * LIST is the whole contract now: the drawing and the hit testing both read it, so a verb absent from it is
-     * absent from the game.
-     */
   });
 
-  test('the devour bubble keeps its two verbs, and NO rage', async ({ page }) => {
+  test('a picked route locks the other two, and the next draw opens with one of its own cards', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithRoute: (id: string) => string | null } } }).__GB.game.debugStartRunWithRoute('devour'));
+    await waitForPhase(page, 'playing');
+
+    /**
+     * One level banked, spent on the route's own card: the guarantee says the FIRST draw after the pick
+     * contains one of them, so the identity the player just bought is deepened rather than diluted into
+     * three universals.
+     */
+    const first = await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugGrantMutationPoints: (n: number) => number;
+            levelupRef: { open: boolean; choiceAt: (i: number) => { id: string; name: string } | null };
+            input: { consumeLevelUpChoice: () => void };
+            diagnostics: { phase: string; route: string | null };
+          };
+        };
+      }).__GB;
+      g.game.debugGrantMutationPoints(200);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      return { phase: g.game.diagnostics.phase, cards: [0, 1, 2].map((i) => g.game.levelupRef.choiceAt(i)) };
+    });
+    expect(first.phase).toBe('levelup');
+    const own = ['suction', 'eatInvuln', 'appetite'];
+    expect(
+      first.cards.some((c) => c && own.includes(c.id)),
+      'the draw right after the pick must contain one of the route\'s own cards',
+    ).toBe(true);
+    expect(
+      first.cards.some((c) => c && (c.id.startsWith('route:') || c.id === 'rage' || c.id === 'burstRadius' || c.id === 'simmer' || c.id === 'bulletSpeed' || c.id === 'bulletRadius' || c.id === 'bulletRange')),
+      'and never a card from the other two routes',
+    ).toBe(false);
+
+    /**
+     * And the lock holds for every draw after: a second level, same question -- the other routes' cards are
+     * structurally absent, because the pool filters by the run's route.
+     */
+    await page.keyboard.press('Digit1');
+    await page.evaluate(async () => {
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    });
+    const second = await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugGrantMutationPoints: (n: number) => number;
+            levelupRef: { choiceAt: (i: number) => { id: string; name: string } | null };
+            diagnostics: { phase: string };
+          };
+        };
+      }).__GB.game;
+      g.debugGrantMutationPoints(200);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      return { phase: g.diagnostics.phase, cards: [0, 1, 2].map((i) => g.levelupRef.choiceAt(i)) };
+    });
+    expect(second.phase).toBe('levelup');
+    expect(
+      second.cards.every((c) => !c || !c.id.startsWith('route:')),
+      'the route cards never come back -- the choice was the run\'s one identity decision',
+    ).toBe(true);
+  });
+
+  test('the base bubble earns no rage from damage, and the devour route does not add one', async ({ page }) => {
     await boot(page);
     await startFromMenu(page);
     await waitForPhase(page, 'playing');
 
     const run = await state(page);
-    expect(run.bubbleType.id, 'the default run is still the devour bubble').toBe('devour');
-    /**
-     * The inventory verbs (spit, compress) are gone -- the first cut of the swallow rework. What is left is the
-     * pair the type is FOR: pull the food in, cash it the instant it touches.
-     */
-    expect(run.bubbleType.controls, 'with exactly its remaining controls').toEqual(['skill', 'suction']);
-    expect(run.bubbleType.hasSpit).toBe(false);
-    expect(run.bubbleType.hasCompress).toBe(false);
-    expect(run.bubbleType.hasCharge, 'and no charge verb it never had').toBe(false);
+    expect(run.bubbleType.id, 'the run starts as the base bubble').toBe('base');
+    expect(run.bubbleType.controls, 'with exactly the one button every form has').toEqual(['skill']);
+    expect(run.bubbleType.hasSuction, 'no field before the route is picked').toBe(false);
+    expect(run.bubbleType.hasCharge, 'and no charge verb').toBe(false);
 
     /**
-     * And being hit earns nothing, because it has no resource to earn.
+     * And being hit earns nothing, because the base has no resource to earn.
      *
-     * This is the assertion that keeps the second bubble from costing the first one anything: `takeHit` is the single
-     * place a hit lands, and a rage gain wired in unconditionally there would silently make the devour bubble carry
-     * a meter it has no way to spend.
+     * This is the assertion that keeps the boil route from leaking into every other run: `takeHit` is the single
+     * place a hit lands, and a rage gain wired in unconditionally there would silently make every bubble carry
+     * a meter only the boil route can spend.
      */
     const afterHits = await page.evaluate(async () => {
       const g = (window as unknown as {
@@ -208,12 +302,12 @@ test.describe('bubble types', () => {
       }
       return g.diagnostics.rage.value;
     });
-    expect(afterHits, 'the devour bubble must gain no rage from damage').toBe(0);
+    expect(afterHits, 'the base bubble must gain no rage from damage').toBe(0);
   });
 
   test('rage comes from surviving damage, and decays once the bubble is left alone', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithRoute: (id: string) => void } } }).__GB.game.debugStartRunWithRoute('boil'));
     await waitForPhase(page, 'playing');
 
     const c = await page.evaluate(() => {
@@ -274,7 +368,7 @@ test.describe('bubble types', () => {
 
   test('the charge slams a wall that no volume can ram, and spends rage doing it', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithRoute: (id: string) => void } } }).__GB.game.debugStartRunWithRoute('boil'));
     await waitForPhase(page, 'playing');
 
     const result = await page.evaluate(async () => {
@@ -327,7 +421,7 @@ test.describe('bubble types', () => {
       const rageBefore = g.game.diagnostics.rage.value;
 
       /**
-       * A wall: `ramVolume` is null, so NO volume smashes it. The volatile bubble's answer is the charge.
+       * A wall: `ramVolume` is null, so NO volume smashes it. The boil route's answer is the charge.
        *
        * Spawned AHEAD rather than on the player, and that is not tidiness. A wall in contact during the wind-up
        * charges a hit point, and a hit is +25 rage -- which pushed this test's near-full gauge straight to the cap,
@@ -402,7 +496,7 @@ test.describe('bubble types', () => {
 
   test('the rage burst clears the small creatures, pushes the sharp ones, and spends the whole gauge', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithRoute: (id: string) => void } } }).__GB.game.debugStartRunWithRoute('boil'));
     await waitForPhase(page, 'playing');
 
     const result = await page.evaluate(async () => {
@@ -525,7 +619,7 @@ test.describe('bubble types', () => {
 
   test('the burst is wider the more rage it spends', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithRoute: (id: string) => void } } }).__GB.game.debugStartRunWithRoute('boil'));
     await waitForPhase(page, 'playing');
 
     /**
@@ -563,7 +657,7 @@ test.describe('bubble types', () => {
 
   test('a full gauge starts an overload, and letting the clock run out wounds without killing', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithRoute: (id: string) => void } } }).__GB.game.debugStartRunWithRoute('boil'));
     await waitForPhase(page, 'playing');
 
     const c = await page.evaluate(() => {
@@ -649,7 +743,7 @@ test.describe('bubble types', () => {
 
   test('the burst releases the overload, and so does breaking something large', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithRoute: (id: string) => void } } }).__GB.game.debugStartRunWithRoute('boil'));
     await waitForPhase(page, 'playing');
 
     const result = await page.evaluate(async () => {
@@ -745,28 +839,28 @@ test.describe('bubble types', () => {
     expect(result.afterCrate.overloaded, 'breaking a crate must NOT be a release').toBe(true);
   });
 
-  test('every type either eats a creature on the spot, or cannot eat it at all', async ({ page }) => {
+  test('every route either eats a creature on the spot, or cannot eat it at all', async ({ page }) => {
     await boot(page);
 
     /**
-     * The rule the swallow rework left behind.
+     * The rule the swallow rework left behind, now asked of ROUTES.
      *
-     * There is no inventory any more: a creature a bubble can eat is consumed the moment it touches, and a bubble
-     * that cannot eat it takes the hit instead. So the per-type switch has exactly two honest outcomes, and this is
-     * the test that keeps it honest: for EVERY type, a fish parked on the bubble at a size that could eat it must
-     * either be gone within a few frames or never count as eaten -- never stored, never delayed.
+     * There is no inventory any more: a creature a form can eat is consumed the moment it touches, and a form
+     * that cannot eat it takes the hit instead. So the per-route switch has exactly two honest outcomes, and this
+     * is the test that keeps it honest: for EVERY route, a fish parked on the bubble at a size that could eat it
+     * must either be gone within a few frames or never count as eaten -- never stored, never delayed.
      */
-    const types = await page.evaluate(() =>
-      (window as unknown as { __GB: { game: { debugBubbleTypeIds: () => string[] } } }).__GB.game.debugBubbleTypeIds(),
+    const routes = await page.evaluate(() =>
+      (window as unknown as { __GB: { game: { debugRouteIds: () => string[] } } }).__GB.game.debugRouteIds(),
     );
-    expect(types.length, 'there must be types to check').toBeGreaterThan(0);
+    expect(routes.length, 'there must be routes to check').toBeGreaterThan(0);
 
-    for (const id of types) {
+    for (const id of routes) {
       const result = await page.evaluate(async (typeId) => {
         const g = (window as unknown as {
           __GB: {
             game: {
-              debugStartRunWithType: (id: string) => void;
+              debugStartRunWithRoute: (id: string) => string | null;
               debugSpawnHazardOnPlayer: (kind: string) => void;
               debugSetSteadyCruise: () => void;
               diagnostics: {
@@ -779,7 +873,7 @@ test.describe('bubble types', () => {
           };
         }).__GB;
         const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
-        g.game.debugStartRunWithType(typeId);
+        g.game.debugStartRunWithRoute(typeId);
         await new Promise<void>((r) => requestAnimationFrame(() => r()));
         g.game.debugSetSteadyCruise();
         g.player.x = 0.5;
@@ -798,16 +892,16 @@ test.describe('bubble types', () => {
         };
       }, id);
       if (result.swallows) {
-        expect(result.eaten, `the ${id} bubble swallows, so a fish on it must be eaten on the spot`).toBeGreaterThan(0);
+        expect(result.eaten, `the ${id} route swallows, so a fish on it must be eaten on the spot`).toBeGreaterThan(0);
       } else {
-        expect(result.eaten, `the ${id} bubble cannot swallow, so nothing may count as eaten`).toBe(0);
+        expect(result.eaten, `the ${id} route cannot swallow, so nothing may count as eaten`).toBe(0);
       }
     }
   });
 
-  test('the volatile bubble cannot eat creatures: an enemy it touches hurts it instead of feeding it', async ({ page }) => {
+  test('the boil route cannot eat creatures: an enemy it touches hurts it instead of feeding it', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithRoute: (id: string) => void } } }).__GB.game.debugStartRunWithRoute('boil'));
     await waitForPhase(page, 'playing');
 
     const result = await page.evaluate(async () => {
@@ -888,7 +982,7 @@ test.describe('bubble types', () => {
     });
 
     console.log(`volatile bubble vs creatures: ${JSON.stringify(result)}`);
-    expect(result.swallowsHazards, 'the volatile bubble must declare that it cannot eat creatures').toBe(false);
+    expect(result.swallowsHazards, 'the boil route must declare that it cannot eat creatures').toBe(false);
     expect(result.eatenByField, 'and the field must never report a creature as eaten').toBe(0);
     expect(result.hits, 'contact with an enemy must HURT it -- that is where its rage comes from').toBeGreaterThan(0);
     /**
@@ -905,7 +999,7 @@ test.describe('bubble types', () => {
     await waitForPhase(page, 'playing');
 
     /**
-     * The contrast, because "the volatile bubble cannot eat creatures" is only a design decision if the other bubble
+     * The contrast, because "the boil route cannot eat creatures" is only a design decision if the other bubble
      * still can. One creature, a few frames: the eat is instant, so what rises is the eaten count and the volume.
      */
     const eaten = await page.evaluate(async () => {
@@ -945,7 +1039,7 @@ test.describe('bubble types', () => {
 
   test('the aim locks while winding up, so a released drag still slams where it was pointed', async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
+    await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithRoute: (id: string) => void } } }).__GB.game.debugStartRunWithRoute('boil'));
     await waitForPhase(page, 'playing');
 
     const aim = await page.evaluate(async () => {
@@ -1001,60 +1095,65 @@ test.describe('bubble types', () => {
   });
 
   /**
-   * The plain bubble: ONE hit point at any size.
+   * The barrage route's grant: a gun one row WIDER, on the frame of the pick.
    *
-   * The rule the type exists for, and the one a volumetric reading would silently break: hit points are normally the
-   * bubble's volume, so a plain bubble that had grown would quietly gain lives and stop being the fragile one. So the
-   * test drives a contact at three sizes -- the starting volume, a middling one and one near the cap -- and asserts
-   * the same outcome at all three.
+   * The route adds no button -- its verb is the gun the base bubble already had -- so the one thing that must
+   * land on the pick is the one thing its card promises. The plain bubble used to live here; its one-hit rule
+   * went with the character select, because a route is something ADDED to the base and "fewer hit points than
+   * the base" is not a route.
    */
-  test('the plain bubble pops to a single contact, whatever it has grown to', async ({ page }) => {
-    for (const volume of [1, 3, 6]) {
-      const outcome = await page.evaluate(
-        async ([id, size]) => {
-          const g = (window as unknown as {
-            __GB: {
-              game: {
-                debugStartRunWithType: (t: string) => void;
-                debugSetSteadyCruise: () => void;
-                debugSpawnHazardOnPlayer: (k: string) => void;
-                hazardsRef: { hazards: { id: number; x: number; y: number }[] };
-                diagnostics: { phase: string; volume: number; invulnerable: number; hitsSurvived: number; stats: { hits: number } };
-              };
-              player: { x: number; y: number; volume: number };
-              camera: { viewport: { laneWidthMeters: number } };
-            };
-          }).__GB;
-          g.game.debugStartRunWithType(id);
-          g.game.debugSetSteadyCruise();
-          g.game.hazardsRef.hazards.length = 0;
-          g.player.volume = size as number;
-          g.player.x = 0.5;
-          // Wait out the birth invulnerability, or the contact is simply ignored.
-          const untilVulnerable = performance.now();
-          while (g.game.diagnostics.invulnerable > 0 && performance.now() - untilVulnerable < 15_000) {
-            await new Promise((r) => requestAnimationFrame(r));
-          }
-          const before = { hits: g.game.diagnostics.stats.hits, survived: g.game.diagnostics.hitsSurvived };
+  test('the barrage route grants a wider gun on the spot, and no new buttons', async ({ page }) => {
+    await boot(page);
+    await startFromMenu(page);
+    await waitForPhase(page, 'playing');
 
-          g.game.debugSpawnHazardOnPlayer('fish');
-          const fish = g.game.hazardsRef.hazards[g.game.hazardsRef.hazards.length - 1]!;
-          const lane = g.camera.viewport.laneWidthMeters;
-          // HOLD it in contact: the fish chases, and pinning it removes the timing from the question.
-          const started = performance.now();
-          while (performance.now() - started < 4000 && g.game.diagnostics.phase === 'playing') {
-            fish.x = g.player.x * lane;
-            fish.y = g.player.y;
-            await new Promise((r) => requestAnimationFrame(r));
-          }
-          return { phase: g.game.diagnostics.phase, hits: g.game.diagnostics.stats.hits - before.hits, survived: before.survived };
-        },
-        ['plain', volume] as const,
-      );
-      console.log(`plain at volume ${volume}: ${JSON.stringify(outcome)}`);
-      expect(outcome.survived, 'the type must report ONE hit point, not volume/hitCost').toBe(1);
-      expect(outcome.hits, 'one contact, one hit').toBe(1);
-      expect(outcome.phase, 'and one hit has to end the run').not.toBe('playing');
-    }
+    const outcome = await page.evaluate(async () => {
+      const g = (window as unknown as {
+        __GB: {
+          game: {
+            debugGrantMutationPoints: (n: number) => number;
+            debugRouteIds: () => string[];
+            levelupRef: { choiceAt: (i: number) => { id: string } | null };
+            input: { consumeLevelUpChoice: () => void };
+            touchRef: { controlIds: string[] };
+            diagnostics: {
+              phase: string;
+              route: string | null;
+              bullets: { gunStreams: number; armed: boolean };
+              bubbleType: { controls: string[]; swallowsHazards: boolean };
+            };
+          };
+        };
+      }).__GB;
+      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+      const base = { streams: g.game.diagnostics.bullets.gunStreams, controls: [...g.game.touchRef.controlIds] };
+      // The branch node, then the third card: 弹幕.
+      g.game.debugGrantMutationPoints(200);
+      await raf();
+      await raf();
+      const cards = [0, 1, 2].map((i) => g.game.levelupRef.choiceAt(i)?.id);
+      const barrageAt = cards.findIndex((id) => id === 'route:barrage');
+      if (barrageAt < 0) throw new Error(`branch node did not offer barrage: ${cards.join(',')}`);
+      // The number keys, pressed the way a player would: 1 + the card's index.
+      const key = ['Digit1', 'Digit2', 'Digit3'][barrageAt]!;
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: key }));
+      await raf();
+      return {
+        base,
+        route: g.game.diagnostics.route,
+        streams: g.game.diagnostics.bullets.gunStreams,
+        armed: g.game.diagnostics.bullets.armed,
+        controls: [...g.game.touchRef.controlIds],
+        swallow: g.game.diagnostics.bubbleType.swallowsHazards,
+      };
+    });
+
+    expect(outcome.base.streams, 'a run starts with one row of gun').toBe(1);
+    expect(outcome.route, 'the picked route is barrage').toBe('barrage');
+    expect(outcome.streams, 'and the card\'s promise lands on the spot: one more row').toBe(2);
+    expect(outcome.armed, 'the gun stays the base weapon it always was').toBe(true);
+    expect(outcome.controls, 'and no button was added -- this route\'s verb is the gun itself').toEqual(outcome.base.controls);
+    expect(outcome.swallow, 'and it still cannot eat creatures').toBe(false);
   });
 });

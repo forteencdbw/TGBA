@@ -31,51 +31,23 @@ test.describe('screen captures @screenshots', () => {
   });
 
   /**
-   * The menu with the VOLATILE bubble selected, so the owner can see the selector and what it says.
-   *
-   * The load-bearing part of the picture is the bottom two lines: the tagline and the control hint both change with
-   * the selection, and whether they read well is a judgement only a person can make.
-   */
-  test('the menu with the volatile bubble picked @screenshots', async ({ page }, testInfo) => {
-    await boot(page);
-    await page.evaluate(async () => {
-      const g = (window as unknown as {
-        __GB: {
-          game: {
-            menuRef: { geometry: { types: { id: string; rect: { x: number; y: number; w: number; h: number } }[] } };
-            handlePointerDown: (id: number, x: number, y: number) => void;
-            handlePointerUp: (id: number) => void;
-          };
-        };
-      }).__GB.game;
-      const angry = g.menuRef.geometry.types.find((t) => t.id === 'angry')!;
-      const at = { x: angry.rect.x + angry.rect.w / 2, y: angry.rect.y + angry.rect.h / 2 };
-      g.handlePointerDown(71, at.x, at.y);
-      g.handlePointerUp(71);
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
-    });
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: testInfo.outputPath('menu-types.png') });
-  });
-
-  /**
-   * The volatile bubble in the water, at 暴怒 and at 失控.
+   * The boil route in the water, at 暴怒 and at 失控.
    *
    * Two frames rather than one because the whole point of the rage palette is that the four stages are told apart
    * at a glance, and "are these two different enough" is exactly the question a screenshot answers and no assertion
    * can.
    */
   for (const [rage, name] of [
-    [60, 'angry-furious'],
-    [100, 'angry-overload'],
+    [60, 'boil-furious'],
+    [100, 'boil-overload'],
   ] as const) {
-    test(`the volatile bubble at ${rage} rage @screenshots`, async ({ page }, testInfo) => {
+    test(`the boil route at ${rage} rage @screenshots`, async ({ page }, testInfo) => {
       await boot(page);
       await page.evaluate(async (amount) => {
         const g = (window as unknown as {
           __GB: {
             game: {
-              debugStartRunWithType: (id: string) => void;
+              debugStartRunWithRoute: (id: string) => string | null;
               debugGrantRageForTest: (amount: number) => number;
               debugSetSkillForTest?: () => void;
               obstaclesRef: { obstacles: unknown[] };
@@ -85,7 +57,7 @@ test.describe('screen captures @screenshots', () => {
           };
         }).__GB;
         const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
-        g.game.debugStartRunWithType('angry');
+        g.game.debugStartRunWithRoute('boil');
         // A few frames so the intro is over and the bubble is full size: a screenshot of the birth animation would
         // show every rage stage as a small dot.
         for (let i = 0; i < 40; i++) await raf();
@@ -463,10 +435,10 @@ test.describe('screen captures @screenshots', () => {
   /**
    * The codex's bubble tab, turned to the VOLATILE bubble's page.
    *
-   * The tab now documents two types and therefore pages, and the point of the capture is that the second type is
-   * reachable by a reader: a tab that listed only the devour bubble would look exactly the same on page one.
+   * The tab now documents the base bubble and every route, and the point of the capture is that page two is
+   * reachable by a reader: a tab that listed only the base would look exactly the same on page one.
    */
-  test('the codex, on the volatile bubble page @screenshots', async ({ page }, testInfo) => {
+  test('the codex, on the routes page @screenshots', async ({ page }, testInfo) => {
     await boot(page);
     await page.evaluate(async () => {
       const g = (window as unknown as {
@@ -495,7 +467,7 @@ test.describe('screen captures @screenshots', () => {
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
     });
     await page.waitForTimeout(200);
-    await page.screenshot({ path: testInfo.outputPath('codex-bubble-angry.png') });
+    await page.screenshot({ path: testInfo.outputPath('codex-bubble-routes.png') });
   });
 
   /**
@@ -557,7 +529,7 @@ test.describe('screen captures @screenshots', () => {
       const g = (window as unknown as {
         __GB: {
           game: {
-            debugStartRunWithType: (id: string) => void;
+            debugStartRunWithRoute: (id: string) => string | null;
             debugGrantRageForTest: (amount: number) => number;
             debugSpawnHazardOnPlayer: (kind: string) => void;
             debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
@@ -570,7 +542,7 @@ test.describe('screen captures @screenshots', () => {
         };
       }).__GB;
       const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
-      g.game.debugStartRunWithType('angry');
+      g.game.debugStartRunWithRoute('boil');
       // Past the birth animation: a capture during it would show a bubble a quarter of its size.
       for (let i = 0; i < 40; i++) await raf();
 

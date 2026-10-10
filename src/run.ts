@@ -9,14 +9,13 @@ import type { SpawnRecord } from './placement';
 import { Score } from './score';
 import { Xp } from './xp';
 import { initialStageState, type StageState } from './stages';
-import { defaultBubbleType, type BubbleType } from './bubbleTypes';
+import { defaultBubbleType, findRoute, formForRoute, hasVerb, type BubbleType, type RouteId } from './bubbleTypes';
 import { calibrateLateral, type LateralAuthority } from './lateral';
 import { initialRageState, type RageState } from './rage';
 import { pickTalent, resolveTalent, type TalentEffects } from './talents';
 import type { Skill, SkillId } from './skills';
 import type { EntrySide } from './levels';
 import type { Input } from './input';
-import { hasVerb } from './bubbleTypes';
 import { chainTargets } from './conductive';
 import { tuning } from './config';
 import { massFromEating } from './consumption';
@@ -113,7 +112,7 @@ export class Run {
   burstRadiusRatio(): number {
     const cfg = mech.angry.burst;
     const t = rageFraction(this.rage.rage);
-    return cfg.radiusBaseRatio + (cfg.radiusMaxRatio - cfg.radiusBaseRatio) * t;
+    return (cfg.radiusBaseRatio + (cfg.radiusMaxRatio - cfg.radiusBaseRatio) * t) * this.burstRadiusMultiplier;
   }
   /**
    * Whether this bubble can eat this kind of hazard, which is TWO questions and only one of them is about size.
@@ -124,7 +123,31 @@ export class Run {
    * cannot promise food that the collision then refuses to deliver.
    */
   canSwallow(kind: HazardKind): boolean {
-    return this.bubbleType.swallowsHazards && canEatHazard(kind, this.player.volume);
+    return this.bubbleType.swallowsHazards && canEatHazard(kind, this.player.volume, this.eatTierBonus);
+  }
+
+  /**
+   * Commit the run to a route. The FIRST level-up's whole question, answered with one card.
+   *
+   * The form swap is the grant: the new controls, palette and mouth are what the card promised, and they land on
+   * the frame the pick resolves. The instant extras beyond the form live in the route's own switch below, because
+   * they are the route's business -- the barrage route's promise is a gun that is bigger RIGHT NOW.
+   *
+   * Deliberately no way back and no second call: the other routes' cards never appear again this run, and
+   * `routeCardPending` is set so the NEXT draw opens with one of this route's own cards rather than three
+   * universals -- the player just chose an identity, and the first thing after the choice should deepen it.
+   */
+  pickRoute(id: string): RouteId | null {
+    const route = findRoute(id);
+    if (!route || this.route !== null) return this.route;
+    this.route = route.id;
+    this.bubbleType = formForRoute(route);
+    this.routeCardPending = true;
+    if (route.id === 'barrage') {
+      // The route's promise, on the spot: a wider gun before the panel has even closed.
+      this.gunStreams = Math.min(mech.bullets.maxStreams, this.gunStreams + 1);
+    }
+    return this.route;
   }
   /**
    * How much the suction field is widened right now.
@@ -178,6 +201,21 @@ export class Run {
   nominalSeconds = 0;
   lateral: LateralAuthority = calibrateLateral(1);
   bubbleType: BubbleType = defaultBubbleType();
+  /**
+   * The route this run has committed to, or null until its card is picked.
+   *
+   * The run's identity used to be chosen on the menu; now it is the FIRST level-up's question, and `null` means
+   * "still the base bubble". Everything that gated on the type -- the pool's route cards, the HUD's prefix, the
+   * verbs -- reads this or the form it produced.
+   */
+  route: RouteId | null = null;
+  /**
+   * Whether the NEXT draw must include one of the run's own route cards.
+   *
+   * Set the moment a route is picked, so the first cards after the choice deepen the identity the player just
+   * bought rather than dilute it into universals; consumed by the one draw that follows. See `rollMutationChoices`.
+   */
+  routeCardPending = false;
   rage: RageState = initialRageState();
   chargeAim = { x: 0, y: 0 };
   charging = false;
@@ -214,6 +252,18 @@ export class Run {
   suctionBonus = 1;
   /** Extra swallow-invulnerability seconds from stacked 突变 · 吞噬无敌 picks. */
   eatInvulnBonusSeconds = 0;
+  /** Extra eating tiers from stacked 突变 · 大胃口 picks: each one lets the form eat one tier above its volume. */
+  eatTierBonus = 0;
+  /** Bullet speed multiplier from stacked 弹幕路线 · 弹速 picks. */
+  bulletSpeedMultiplier = 1;
+  /** Bullet radius multiplier from stacked 弹幕路线 · 大弹丸 picks: hitbox AND drawing, one number. */
+  bulletRadiusMultiplier = 1;
+  /** Bullet life multiplier from stacked 弹幕路线 · 射程 picks, which is the gun's range. */
+  bulletLifeMultiplier = 1;
+  /** Burst radius multiplier from stacked 沸腾路线 · 爆破半径 picks. */
+  burstRadiusMultiplier = 1;
+  /** Rage decay multiplier from stacked 沸腾路线 · 余温 picks: below 1 means the heat lingers. */
+  rageDecayMultiplier = 1;
   bossSpawned = false;
   infiniteHealth = false;
   pendingLevel: string | null = null;
@@ -353,6 +403,10 @@ export class Run {
        * module is the behaviour of a round, not the player's upgrades.
        */
       damage: mech.bullets.damage * this.bulletDamageMultiplier,
+      /** The barrage route's dials, handed in like damage: the run's picks, not the weapon's nature. */
+      speedMultiplier: this.bulletSpeedMultiplier,
+      radiusMultiplier: this.bulletRadiusMultiplier,
+      lifeMultiplier: this.bulletLifeMultiplier,
       hazards: this.hazards,
       obstacles: this.obstacles,
     });
@@ -539,7 +593,7 @@ export class Run {
 
     const gripped = this.hazards.hazards.some((h) => h.gripping);
     const wasOverloaded = isOverloaded(this.rage);
-    const { overloadExpired } = tickRage(this.rage, dt, this.invulnerable > 0 || gripped);
+    const { overloadExpired } = tickRage(this.rage, dt, this.invulnerable > 0 || gripped, this.rageDecayMultiplier);
     if (!wasOverloaded && isOverloaded(this.rage)) {
       // Announced once, on the frame it starts: a warning that repeats every frame is noise.
       this.banner(`失控  ·  ${mech.angry.overload.seconds.toFixed(1)} 秒内把怒气放掉`);

@@ -1,7 +1,7 @@
 import type { GameSnapshot } from './snapshot';
 import { audio } from './audio';
 import { bubbleLook } from './bubbleLook';
-import { BUBBLE_TYPES, hasControl } from './bubbleTypes';
+import { BASE_TYPE, hasControl, ROUTES } from './bubbleTypes';
 import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
 import { KIND_TUNING, type HazardKind } from './hazards';
 import type { LateralAuthority } from './lateral';
@@ -66,7 +66,7 @@ export function diagnosticsOf(g: GameSnapshot): {
       gameSkills: readonly string[];
       gameTalents: readonly string[];
       /** The bubble types the game offers, so the codex's coverage of them is checkable. */
-      gameBubbleTypes: readonly string[];
+      gameRoutes: readonly string[];
     };
     frames: number;
     elapsed: number;
@@ -151,6 +151,7 @@ export function diagnosticsOf(g: GameSnapshot): {
       fired: number;
       hits: number;
       armed: boolean;
+      gunStreams: number;
     };
     /**
      * Lost control, from an electric eel.
@@ -217,19 +218,26 @@ export function diagnosticsOf(g: GameSnapshot): {
       appearance: StageAppearance;
       radiusFraction: number;
     };
-    /** Which bubble the run is, and therefore which controls and palette are live. */
+    /** Which form the run's bubble has, and therefore which controls and palette are live. */
     bubbleType: {
       id: string;
       name: string;
       controls: string[];
-      hasSpit: boolean;
-      hasCompress: boolean;
+      hasSuction: boolean;
       hasCharge: boolean;
+      hasBurst: boolean;
       /** Whether it can swallow a creature at all. False means contact is damage, never a meal. */
       swallowsHazards: boolean;
-      /** Hits this type survives at any size, or null when hit points are the bubble's volume. */
+      /** Hits this form survives at any size, or null when hit points are the bubble's volume. */
       hitsToPop: number | null;
     };
+    /**
+     * The route this run has committed to, or null while it is still the base bubble.
+     *
+     * Reported beside `bubbleType` because the two answer different questions: the form is what the buttons and
+     * palette are right now, the route is the choice that made them -- and "null" is the branch node still to come.
+     */
+    route: string | null;
     /** The volatile bubble's resource. Always present; always zero for the devour bubble. */
     rage: {
       value: number;
@@ -275,13 +283,13 @@ export function diagnosticsOf(g: GameSnapshot): {
         gameSkills: SKILLS.map((s) => s.id),
         gameTalents: TALENTS.map((t) => t.id),
         /**
-         * The bubble types, so the codex's coverage can be checked the same way the creatures' is.
+         * The forms the codex's bubble page must cover: the base bubble and every route.
          *
-         * From `BUBBLE_TYPES` -- the list the main menu itself is built from -- rather than from the codex, which is
-         * the whole point: a third type added to the game but not to the codex shows up as a difference between this
+         * From `BASE_TYPE` and `ROUTES` -- what the game actually has -- rather than from the codex, which is
+         * the whole point: a route added to the game but not to the codex shows up as a difference between this
          * and `entryIds`, and that is a failing test rather than a page nobody notices is out of date.
          */
-        gameBubbleTypes: BUBBLE_TYPES.map((t) => t.id),
+        gameRoutes: [BASE_TYPE.id, ...ROUTES.map((r) => r.id)],
       },
       frames: g.frameCount,
       elapsed: g.elapsed,
@@ -401,6 +409,8 @@ export function diagnosticsOf(g: GameSnapshot): {
         hits: g.bullets.hits,
         /** Whether this run's bubble has the gun at all, so a probe can tell "off" from "not firing yet". */
         armed: g.bubbleType.firesBullets,
+        /** How many rows the gun fires: what the 枪管 cards and the barrage route's own grant move. */
+        gunStreams: g.gunStreams,
       },
       misfire: { remaining: +g.player.misfireSeconds.toFixed(3), inverted: g.player.misfiring },
       /** The obstacles, so a probe reads the state rather than inferring it from what is on screen. */
@@ -505,23 +515,24 @@ export function diagnosticsOf(g: GameSnapshot): {
         radiusFraction: stageRadiusFraction(g.stage.stage, g.player.volume),
       },
       /**
-       * Which bubble this run is, and the volatile one's resource.
+       * Which form the run's bubble has, and therefore which controls and palette are live.
        *
-       * `controls` is reported so a probe can prove the LAYOUT changed with the type rather than assuming it: the
-       * whole point of the per-type control list is that this array is different, and a test that read the type id
-       * without reading this would pass while both types laid out the same buttons.
+       * `controls` is reported so a probe can prove the LAYOUT changed with the form rather than assuming it: the
+       * whole point of the per-form control list is that this array changes when a route is picked, and a test that
+       * read the id without reading this would pass while the buttons stayed where they were.
        */
       bubbleType: {
         id: g.bubbleType.id,
         name: g.bubbleType.name,
         controls: [...g.bubbleType.controls],
-        hasSpit: hasControl(g.bubbleType, 'spit'),
-        hasCompress: hasControl(g.bubbleType, 'compress'),
+        hasSuction: hasControl(g.bubbleType, 'suction'),
         hasCharge: hasControl(g.bubbleType, 'charge'),
+        hasBurst: hasControl(g.bubbleType, 'burst'),
         /** Whether it can swallow a creature at all. False means contact is damage, never a meal. */
         swallowsHazards: g.bubbleType.swallowsHazards,
         hitsToPop: g.bubbleType.hitsToPop,
       },
+      route: g.route,
       rage: {
         value: +g.rage.rage.toFixed(2),
         fraction: +rageFraction(g.rage.rage).toFixed(3),

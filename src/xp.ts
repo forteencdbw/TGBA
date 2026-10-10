@@ -146,4 +146,14 @@ export class Xp {
       this.banked++;
     }
   }
+
+  /**
+   * Test hook: the ladder's private `add`, opened for the game's own debug grant.
+   *
+   * The banking and threshold arithmetic stay inside `add` -- a probe that wanted to force one level should
+   * get the REAL banking, not a second implementation of it that could disagree.
+   */
+  debugAddForTest(points: number): void {
+    this.add(points);
+  }
 }

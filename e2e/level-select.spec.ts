@@ -112,7 +112,7 @@ test.describe('level select and progress', () => {
             debugProgress: () => { ladder: { id: string }[] };
             debugClearLevel: (id: string) => string | null;
             debugSelectLevel: (id: string) => boolean;
-            debugStartRunWithType: (id: string) => void;
+            debugStartRunWithRoute: (id: string) => string | null;
             diagnostics: { level: { id: string; scrollLength: number; scrollSpeed: number; entriesTotal: number; blocks: number } };
           };
         };
@@ -126,7 +126,7 @@ test.describe('level select and progress', () => {
       const first = g.debugProgress().ladder[0]!.id;
       g.debugClearLevel(first);
       const selected = g.debugSelectLevel(id);
-      g.debugStartRunWithType('devour');
+      g.debugStartRunWithRoute('devour');
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       return { selected, level: g.diagnostics.level };
     }, second.id);

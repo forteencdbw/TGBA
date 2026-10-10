@@ -45,7 +45,7 @@ const codex = (page: Page) =>
               gameHazards: string[];
               gameSkills: string[];
               gameTalents: string[];
-              gameBubbleTypes: string[];
+              gameRoutes: string[];
             };
           };
           codexRef: { texts: string[] };
@@ -138,15 +138,14 @@ test.describe('the codex', () => {
       expect(c.entryIds, `the ${id} talent has no card`).toContain(`talent:${id}`);
     }
     /**
-     * And every bubble TYPE, which is the newest way this page could have gone stale.
+     * And every form the bubble tab must cover: the base bubble and every route.
      *
-     * The bubble tab was written when there was one bubble, and its cards read as if suction, spitting and digesting
-     * were rules of the game rather than one character's verbs -- true for exactly as long as it took a second type
-     * to exist. The card ids are `bubble:<type>` now, keyed by the game's own type ids, so a third type with no prose
-     * fails here.
+     * The tab used to document character types and read as if their verbs were rules of the game. Now every run
+     * starts as the same base bubble and its identity is a route picked in the water, so the page covers the
+     * base plus `ROUTES` -- and a route added to the game with no card fails here.
      */
-    for (const id of c.gameBubbleTypes) {
-      expect(c.entryIds, `the ${id} bubble has no card`).toContain(`bubble:${id}`);
+    for (const id of c.gameRoutes) {
+      expect(c.entryIds, `the ${id} card is missing from the bubble tab`).toContain(`bubble:${id}`);
     }
 
     /**

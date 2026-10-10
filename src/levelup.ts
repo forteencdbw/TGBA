@@ -71,9 +71,14 @@ export class LevelUpUi {
    * Re-opening rather than reopening: a banked second level shows NEW cards, because the picks are
    * drawn when the level is spent and the pool may have changed shape since (the gun may now be capped,
    * the carried skill gone).
+   *
+   * `title` names the panel, and there are exactly two panels: the ordinary pick and the branch node --
+   * the run's FIRST level-up, whose three cards are the routes rather than a draw. A different title is
+   * how the game says "this question is not the usual one" without a second panel's worth of furniture.
    */
-  openWith(choices: readonly Mutation[]): void {
+  openWith(choices: readonly Mutation[], title = '突变 · 三选一'): void {
     this.choices = choices;
+    this.title.text = title;
     this.open = true;
     this.root.visible = true;
     // The previous cards leave with the panel they belonged to -- labels pooled or not, a fresh draw

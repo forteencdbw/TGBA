@@ -189,7 +189,7 @@ test.describe('the score', () => {
     expect(first.value).toBeGreaterThan(0);
 
     await page.evaluate(() => {
-      (window as unknown as { __GB: { game: { debugStartRunWithType: (t: string) => void } } }).__GB.game.debugStartRunWithType('devour');
+      (window as unknown as { __GB: { game: { debugStartRunWithRoute: (t: string) => string | null } } }).__GB.game.debugStartRunWithRoute('devour');
     });
     await waitForPhase(page, 'playing');
     const second = await score(page);
