@@ -150,6 +150,30 @@ export class NumberPopups {
   }
 
   /**
+   * Say a WORD at a world position, rather than a number.
+   *
+   * The graze's "擦边！！" is the one user: same rise, hold and fade as a score number, same pool, but
+   * there is no value in it -- the announcement IS the content. Sharing the machinery rather than
+   * forking it is what keeps one life/one cap/one rise curve, and the style block's own knobs still
+   * decide how loud it is. `max: 0` turns this off with the numbers, like everything else here.
+   */
+  say(worldX: number, worldY: number, text: string, camera: Camera): void {
+    const cfg = this.style;
+    if (cfg.max <= 0) return;
+    if (this.live.length >= cfg.max) this.retire(0);
+    const label = this.pool.pop() ?? makeLabel('', cfg.colour, cfg.size, cfg.weight);
+    label.style.fontSize = cfg.size;
+    label.style.fill = cfg.colour;
+    label.style.fontWeight = cfg.weight;
+    label.anchor.set(cfg.anchorX, cfg.anchorY);
+    label.text = text;
+    label.visible = true;
+    label.alpha = cfg.alpha;
+    this.root.addChild(label);
+    this.live.push({ label, x: camera.toScreenX(worldX), y: camera.toScreenY(worldY), age: 0 });
+  }
+
+  /**
    * Advance, place and fade everything in flight.
    *
    * The rise and the fade are both functions of the AGE rather than accumulations, so a popup's path is identical

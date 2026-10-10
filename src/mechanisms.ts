@@ -191,7 +191,6 @@ export interface Mechanisms {
   score: {
     drivenOff: number;
     absorb: number;
-    skill: number;
     eaten: number;
     boss: number;
     /**
@@ -334,18 +333,69 @@ export interface Mechanisms {
     };
   };
   /**
-   * The dropped pickups: one row per pickup kind, plus the pulse they share.
+   * The graze: a charge that passed close enough to hurt without hurting.
    *
-   * A table of looks rather than two sets of hardcoded numbers, because the two pickups must be told apart at a
-   * glance in peripheral vision and that is exactly the kind of thing the owner will want to re-tune. Shape does most
-   * of the work (a diamond versus stacked arrows); colour confirms it.
+   * One block for the whole mechanic because the mechanic is one sentence: a radius that is the contact
+   * radius times a multiplier, a reward that arrives on the frame it happens, and a slow-motion beat that
+   * is the dodge's own helping hand. See `config/mechanics.json5` for the reasoning behind each number.
    */
-  pickups: {
-    pulsePerSecond: number;
-    skill: PickupLook;
-    upgrade: PickupLook;
-    /** Fire-rate upgrade: a different shape AND hue from the rows one, so the two never blur together. */
-    rate: PickupLook;
+  graze: {
+    /** The graze circle, as a multiple of the CONTACT radius (the player's plus the creature's). */
+    radiusMultiplier: number;
+    /** The whole world's timescale while the beat holds: 0.25 is a quarter speed. */
+    slowFactor: number;
+    /** How long the hard slow lasts, in real seconds. */
+    slowSeconds: number;
+    /** How long the ease back to full speed takes after that. */
+    recoverSeconds: number;
+  };
+  /** The "擦边！！" text, in the water where the near-miss happened. See `graze` beside it. */
+  grazePopups: PopupStyle;
+  /**
+   * Mutations: the in-run growth ladder.
+   *
+   * The XP economy (what pays, how fast the ladder climbs), the resume grace after a pick, and the HUD
+   * gauge's looks. The pool itself is content and lives in `src/mutations.ts` beside the skills.
+   */
+  mutation: {
+    /** Mutation points per second of simply being alive. The slowest source, by design. */
+    autoPerSecond: number;
+    /** Points per event, keyed by `XpEvent` in `src/xp.ts`. */
+    gain: { drivenOff: number; eaten: number; graze: number; boss: number };
+    /** The ladder: level N costs first × growth^(N-1). */
+    first: number;
+    growth: number;
+    /** Invulnerability granted when the pick closes and the world resumes. */
+    resumeInvulnerableSeconds: number;
+    /** How much one pick of each numeric card is worth. The cards' text is content, in `src/mutations.ts`. */
+    pool: {
+      damagePerPick: number;
+      steerPerPick: number;
+      ascentPerPick: number;
+      armorPerPick: number;
+      healVolume: number;
+      invulnSecondsPerPick: number;
+      ragePerPick: number;
+      suctionPerPick: number;
+      eatInvulnSecondsPerPick: number;
+    };
+    /** The gauge under the resource line. The same knobs the rage gauge has. */
+    gauge: {
+      widthRatio: number;
+      height: number;
+      gap: number;
+      radius: number;
+      trackColour: number;
+      trackAlpha: number;
+      trackStroke: number;
+      trackStrokeAlpha: number;
+      fillColour: number;
+      fillAlpha: number;
+      readyStroke: number;
+      readyStrokeAlpha: number;
+      labelSize: number;
+      labelColour: number;
+    };
   };
   /** Parallax: four layers of drifting motes, far to near, each at its own multiple of the world's scroll. */
   background: {
@@ -1547,17 +1597,6 @@ export interface MusicTrackConfig {
   detuneCents: number;
 }
 
-/** How a dropped pickup is painted. Radii are fractions of the lane width. */
-export interface PickupLook {
-  radiusRatio: number;
-  haloColour: number;
-  haloAlpha: number;
-  coreColour: number;
-  coreAlpha: number;
-  rimColour: number;
-  rimAlpha: number;
-}
-
 /** Throw with the offending key named, so a typo in the file is a message rather than a mystery. */
 function fail(message: string): never {
   throw new Error(
@@ -1784,7 +1823,7 @@ const CODEX_COLOURS = [
 export const OBSTACLE_KINDS = ['crate', 'coral', 'wall', 'net', 'tube'] as const;
 
 const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string }[] = [
-  ...['drivenOff', 'absorb', 'skill', 'eaten', 'boss'].map((event) => ({
+  ...['drivenOff', 'absorb', 'eaten', 'boss'].map((event) => ({
     path: `score.${event}`,
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000,
     describe: 'points for this event, between 0 and 100000; 0 takes the event out of the score',
@@ -1807,6 +1846,49 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1,
     describe: 'an opacity between 0 and 1',
   })),
+  { path: 'graze.radiusMultiplier', check: (v) => typeof v === 'number' && v > 1 && v <= 6, describe: 'a multiple of the contact radius above 1 and at most 6' },
+  { path: 'graze.slowFactor', check: (v) => typeof v === 'number' && v > 0.05 && v <= 1, describe: 'a timescale above 0.05 and at most 1 (1 is no slow at all)' },
+  { path: 'graze.slowSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'seconds between 0 and 3' },
+  { path: 'graze.recoverSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'seconds between 0 and 3' },
+  ...popupRules('grazePopups'),
+  { path: 'mutation.autoPerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 50, describe: 'mutation points per second between 0 and 50' },
+  ...['drivenOff', 'eaten', 'graze', 'boss'].map((event) => ({
+    path: `mutation.gain.${event}`,
+    check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 10000,
+    describe: 'mutation points for this event, between 0 and 10000; 0 takes the event out of the economy',
+  })),
+  { path: 'mutation.first', check: (v) => typeof v === 'number' && v >= 1 && v <= 100000, describe: 'the cost of the first level, between 1 and 100000' },
+  { path: 'mutation.growth', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'the per-level cost multiplier, at least 1 and at most 4' },
+  { path: 'mutation.resumeInvulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'seconds between 0 and 3' },
+  ...[
+    'damagePerPick',
+    'steerPerPick',
+    'ascentPerPick',
+    'armorPerPick',
+    'healVolume',
+    'invulnSecondsPerPick',
+    'ragePerPick',
+    'suctionPerPick',
+    'eatInvulnSecondsPerPick',
+  ].map((key) => ({
+    path: `mutation.pool.${key}`,
+    check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 5,
+    describe: 'a per-pick amount between 0 and 5',
+  })),
+  { path: 'mutation.gauge.widthRatio', check: (v) => typeof v === 'number' && v > 0.05 && v <= 1, describe: 'a fraction of the lane width above 0.05 and at most 1' },
+  { path: 'mutation.gauge.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },
+  { path: 'mutation.gauge.gap', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'design pixels between 0 and 60' },
+  { path: 'mutation.gauge.radius', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'design pixels between 0 and 30' },
+  { path: 'mutation.gauge.trackColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
+  { path: 'mutation.gauge.trackAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'mutation.gauge.trackStroke', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
+  { path: 'mutation.gauge.trackStrokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'mutation.gauge.fillColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
+  { path: 'mutation.gauge.fillAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'mutation.gauge.readyStroke', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
+  { path: 'mutation.gauge.readyStrokeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'mutation.gauge.labelSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 40, describe: 'a font size between 8 and 40' },
+  { path: 'mutation.gauge.labelColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
   ...popupRules('score.popups'),
   ...popupRules('damagePopups'),
   ...['rim', 'glow', 'hudColor'].map((key) => ({
@@ -2201,20 +2283,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'bullets.speedPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 8, describe: 'lane widths per second, above 0 and at most 8' },
   { path: 'bullets.radiusRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.1, describe: 'a fraction of the lane width, above 0.001 and at most 0.1' },
   { path: 'bullets.upgradeSpreadRatio', check: (v) => typeof v === 'number' && v > 0.005 && v < 0.3, describe: 'a fraction of the lane width above 0.005 and below 0.3' },
-  { path: 'pickups.pulsePerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'cycles per second between 0 and 20' },
-  ...[`${'skill'}`, `${'upgrade'}`, `${'rate'}`].flatMap((kind) => [
-    { path: `pickups.${kind}.radiusRatio`, check: (v: unknown) => typeof v === 'number' && v > 0.005 && v < 0.3, describe: 'a fraction of the lane width above 0.005 and below 0.3' },
-    ...[`${'haloColour'}`, `${'coreColour'}`, `${'rimColour'}`].map((key) => ({
-      path: `pickups.${kind}.${key}`,
-      check: isColour,
-      describe: 'a colour, either 0xrrggbb or a "#rrggbb" string',
-    })),
-    ...[`${'haloAlpha'}`, `${'coreAlpha'}`, `${'rimAlpha'}`].map((key) => ({
-      path: `pickups.${kind}.${key}`,
-      check: (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1,
-      describe: 'an opacity between 0 and 1',
-    })),
-  ]),
   { path: 'bullets.maxStreams', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 8, describe: 'a whole number of gun rows between 1 and 8' },
   { path: 'bullets.damage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number of hit points above 0' },
   { path: 'bullets.lifeSeconds', check: (v) => typeof v === 'number' && v > 0.05 && v <= 10, describe: 'seconds above 0.05 and at most 10' },

@@ -255,10 +255,22 @@ export function diagnosticsOf(g: GameSnapshot): {
      * the config, and reporting them would be reporting the config a second time.
      */
     score: { value: number; best: number; byEvent: Record<string, number>; popups: number };
+    /**
+     * The mutation ladder: the bar, the picks, and what paid them.
+     *
+     * `pending` above zero is what opens the freeze; `grazes` is the hazard field's own monotonic count,
+     * reported beside the ledger so the two can be checked against each other.
+     */
+    mutation: {
+      value: number;
+      need: number;
+      level: number;
+      pending: number;
+      grazes: number;
+      ledger: Record<string, number>;
+    };
     /** Damage numbers in flight. Separate from `score.popups` because the two styles share one field. */
     damagePopups: number;
-    /** A skill lying in the water. `id` is null until collected, since it is rolled at pickup. */
-    pickups: { kind: string; id: string | null; y: number }[];
     activeSkill: { id: string; remaining: number } | null;
     stage: {
       stage: number;
@@ -548,9 +560,22 @@ export function diagnosticsOf(g: GameSnapshot): {
       audio: { muted: g.audioMuted, running: audio.isRunning },
       ending: { surfaced: g.surfaced, splash: +g.splash.toFixed(3), bestClimbed: Math.round(g.bestClimbed), bestVolume: +g.bestVolume.toFixed(2), bestScore: g.bestScore },
       score: { value: g.score.value, best: g.bestScore, byEvent: { ...g.score.ledger }, popups: g.popups.count },
+      /**
+       * The mutation ladder, as the probes and the console need it: where the bar stands, how many picks
+       * are banked, and which graze/kill events have paid. `grazes` comes from the hazard field's own
+       * counter, so it and the ledger cannot disagree about how many near-misses happened.
+       */
+      mutation: {
+        value: +g.xp.value.toFixed(1),
+        need: g.xp.need,
+        level: g.xp.level,
+        pending: g.xp.pending,
+        grazes: g.hazards.grazes,
+        ledger: { ...g.xp.ledger },
+      },
       damagePopups: g.damagePopups.count,
       enemyBullets: { inFlight: g.enemyBullets.count, fired: g.enemyBullets.fired, hits: g.enemyBullets.hits },
-      pickups: g.pickupDrops.map((p) => ({ kind: p.kind, id: p.id, y: +p.y.toFixed(1) })),      /** Active effect timers, so a skill that lasts can be observed while it runs. */
+      /** Active effect timers, so a skill that lasts can be observed while it runs. */
       activeSkill: g.player.skillId ? { id: g.player.skillId, remaining: +g.player.skillRemaining.toFixed(2) } : null,
       /** The bubble's growth stage: its speed tier, and how far into the next one it is. */
       stage: {

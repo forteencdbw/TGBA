@@ -35,7 +35,6 @@ try {
   const VIEW = { min: 0, max: 800 };
   const world = () => ({
     field: new EntityField(),
-    pickupDrops: [],
     obstacles: new ObstacleField(),
     hazards: new HazardField(),
     playerRadiusFraction: 0.08,
@@ -80,14 +79,6 @@ try {
   {
     const { w } = place({ kind: 'bubble', x: 0.4 }, 700);
     check('bubble · into the field', [w.field.bubbles.length, w.hazards.hazards.length], [1, 0]);
-  }
-
-  // A pickup is APPENDED, keeps its place, and carries no skill until it is taken.
-  {
-    const w = world();
-    place({ kind: 'skill', x: 0.2 }, 700, w);
-    place({ kind: 'skill', x: 0.8 }, 600, w);
-    check('pickup · appended, placed, unrolled', [w.pickupDrops.length, w.pickupDrops[0].x, w.pickupDrops[1].y, w.pickupDrops[0].id], [2, 20, 600, null]);
   }
 
   // Scenery is an obstacle, asked of the list rather than enumerated by kind.

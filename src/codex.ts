@@ -59,7 +59,6 @@ export type CodexGlyph =
   | 'compress'
   | 'stages'
   | 'collectable'
-  | 'skillPickup'
   | 'angry'
   | 'binge'
   | 'rageGauge'
@@ -459,53 +458,22 @@ const ENVIRONMENT: readonly CodexEntry[] = [
     icon: { kind: 'obstacle', obstacle: 'coral' },
   },
   {
-    id: 'env:ratePickup',
+    id: 'env:mutation',
     category: 'environment',
-    name: '射速升级',
-    tagline: '拾取后射速 +1 档，最高三档',
+    name: '突变',
+    tagline: '攒满突变值，冻结三选一',
     facts: [
-      { label: '档位', value: mech.bullets.rateTiers.map((r, i) => `第${i + 1}档 ${num(r, 0)}/秒`).join(' · ') },
-      { label: '上限', value: `第 ${mech.bullets.rateTiers.length} 档（档数就是这个表的长度）` },
-      { label: '持续', value: '整局有效，死亡后重置' },
+      { label: '来源', value: `随时间 ${num(mech.mutation.autoPerSecond, 1)}/秒  ·  打跑/吞噬 ${mech.mutation.gain.drivenOff}  ·  擦边 ${mech.mutation.gain.graze}  ·  BOSS ${mech.mutation.gain.boss}` },
+      { label: '首级', value: `${mech.mutation.first} 点，每级 ×${mech.mutation.growth}` },
+      { label: '持续', value: '跨关保留，死亡清零' },
     ],
     notes: [
-      '它改的是**扣扳机的频率**，火力升级改的是**一次几排**：两个乘数各自一条拾取线，互不干扰。',
-      '到顶之后再捡会被消耗掉，横幅会明说"已经是最高档"——一个什么都不做又不吭声的拾取物读起来就是 bug。',
-      '档数就是配置里那个数组的长度：加一档=多写一个数，没有第二个"上限"要同步。',
+      '擦边：一条正在冲锋的生物贴脸掠过而没碰到你——判定圈是接触半径的 2 倍，一次冲锋只算一次。',
+      '擦边的瞬间整个世界慢放半秒，这是它给你的躲闪余地，也是它配得上最快涨速的原因。',
+      '三种来源刻意拉开速率：挂机最慢、战斗居中、玩命最快——想快，就把脸凑过去。',
+      '枪管、射速和技能都在这里出：地图上不再有任何可拾取的道具，一切成长都走突变。',
     ],
-    icon: { kind: 'glyph', glyph: 'skillPickup' },
-  },
-  {
-    id: 'env:upgradePickup',
-    category: 'environment',
-    name: '能力升级',
-    tagline: '拾取后火力永久 +1 排',
-    facts: [
-      { label: '效果', value: `小泡泡同时发射 ${mech.bullets.maxStreams} 排（当前上限）` },
-      { label: '持续', value: '整局有效，死亡后重置' },
-      { label: '排间距', value: `${num(mech.bullets.upgradeSpreadRatio * 100, 1)}% 泳道宽` },
-    ],
-    notes: [
-      '射速不变，**每排各出一发**：所以它是"DPS 翻倍"，不是"打得更快"。',
-      '排间距留在泳道里而且不宽，因为弹道之间那道缝也是玩家瞄准用的通道——糊满整条泳道会让"躲"失去意义。',
-      '上限由 bullets.maxStreams 决定：改成 3 或 4 它就能叠加，上限内再捡会被消耗但不再变化。',
-    ],
-    icon: { kind: 'glyph', glyph: 'skillPickup' },
-  },
-  {
-    id: 'env:skillPickup',
-    category: 'environment',
-    name: '技能掉落物',
-    tagline: '捡起来随机得到一种技能',
-    facts: [
-      { label: '槽位', value: '单槽，捡新的换掉旧的' },
-      { label: '内容', value: '拾取的瞬间才决定是哪一个' },
-    ],
-    notes: [
-      '在拾取时才掷骰子，不是放在水里的时候就定好——否则关卡作者决定"放在哪"就等于决定了"是什么"。',
-      '单槽是刻意的：它让捡起来这件事变成一个决定，而不是攒一套工具箱。',
-    ],
-    icon: { kind: 'glyph', glyph: 'skillPickup' },
+    icon: { kind: 'glyph', glyph: 'stages' },
   },
 ];
 
@@ -997,11 +965,7 @@ export function iconColour(entry: CodexEntry): number {
     case 'talent':
       return mech.codex.talentColour;
     case 'environment':
-      // The pickup is a skill even though it lives in the environment tab, so it takes the skill colour rather than
-      // the collectable one: colour is how the card and the thing in the water are matched up.
-      return entry.icon.kind === 'glyph' && entry.icon.glyph === 'skillPickup'
-        ? mech.codex.skillColour
-        : mech.codex.collectableColour;
+      return mech.codex.collectableColour;
     default: {
       /**
        * A bubble card is coloured by ITS OWN TYPE's resting palette.

@@ -263,7 +263,14 @@ export interface GameHandle {
      */
     bullets: { rateTiers: number[]; damage: number; radiusRatio: number; speedPerSecond: number; lifeSeconds: number };
     /** What each scoring event is worth, so a spec asserts the CONFIG's prices rather than numbers written into it. */
-    score: { drivenOff: number; absorb: number; skill: number; eaten: number; surface: number };
+    score: { drivenOff: number; absorb: number; eaten: number; boss: number };
+    /** What each mutation event pays, and how the ladder climbs, for the mutation specs. */
+    mutation: {
+      autoPerSecond: number;
+      gain: { drivenOff: number; eaten: number; graze: number; boss: number };
+      first: number;
+      growth: number;
+    };
   };
   /** The lateral authority this display resolved to. */
   lateralSnapshot: { keyboardSpeed: number; laneWidth: number };

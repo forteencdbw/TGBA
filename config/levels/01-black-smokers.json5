@@ -254,9 +254,7 @@
     // 第一批颗粒是**从下面上来的**：这一关第一个新方向。
     { at: 120, span: 60, count: 4, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
     { at: 150, kind: 'tuna', x: 0.9 },
-    { at: 200, kind: 'skill', x: 0.3 },
     { at: 210, kind: 'tuna', x: 0.0 },
-    { at: 260, kind: 'upgrade', x: 0.7 },
     { at: 260, kind: 'tuna', x: 0.2 },
 
     // --- 250-500m：第一个喷口。它单独出现，因为它是这一关的招牌机制。 ---
@@ -306,7 +304,6 @@
     { at: 1030, kind: 'tube', count: 5, arrange: 'barrier', gapAt: 0.25, gapWidth: 0.19 },
     { at: 1055, kind: 'fish', count: 5, path: 'dive', x: 0.5, pathSpacingSeconds: 0.35 },
     { at: 1080, kind: 'vent', x: 0.66 },
-    { at: 1120, kind: 'skill', x: 0.4 },
 
     // --- 1100-1300m：进 BOSS 前的最后一段。给一点食物，然后压力上来。 ---
     { at: 1160, span: 70, count: 7, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.45, 0.6, 0.5] },

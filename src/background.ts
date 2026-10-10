@@ -582,6 +582,13 @@ export interface HudState {
     grows: boolean;
     tierBonus: number;
     /**
+     * The mutation meter, for every type: the bar that fills toward the next freeze.
+     *
+     * `pending` is the banked-pick count, so the bar can ring itself while a banked level waits for its
+     * `playing` frame -- the player earned it, and a bar that hides what it is holding is lying.
+     */
+    mutation: { fraction: number; level: number; pending: number };
+    /**
      * A second resource, for a bubble type that has one: its label, its readout, and its colour.
      *
      * Null for the devour bubble, which has no second meter -- and the null is the honest representation of that rather
@@ -600,6 +607,15 @@ export class Hud {
   private readonly resourceLabel: Text;
   /** The resource's gauge. Own layer, so hiding it cannot erase anything else. */
   private readonly resourceGauge = new Graphics();
+  /**
+   * The mutation meter's own label and gauge, one block below the resource's.
+   *
+   * Own objects for the same reason the resource's are: the bar is drawn every frame from the state,
+   * and sharing a Graphics with the rage gauge would mean clearing one to draw the other -- which is
+   * how a two-bar HUD ends up blinking.
+   */
+  private readonly mutationLabel: Text;
+  private readonly mutationGauge = new Graphics();
   private readonly debug: Text;
   /**
    * The score, in the top-left corner.
@@ -663,6 +679,16 @@ export class Hud {
     this.resourceLabel.visible = false;
 
     /**
+     * The mutation meter's line, sized like the resource's and always visible in a run.
+     *
+     * One line ("突变 2") rather than a bare bar: the number is the answer to "how many have I taken",
+     * which is the question a stacking ladder makes you ask, and a bar alone cannot answer it.
+     */
+    this.mutationLabel = makeLabel('', mech.mutation.gauge.labelColour, mech.mutation.gauge.labelSize);
+    this.mutationLabel.anchor.set(0.5, 0);
+    this.mutationLabel.visible = false;
+
+    /**
      * The debug readout, the one label that stays monospace.
      *
      * Its lines align their values into columns with spaces, which only reads as columns in a monospace face -- and
@@ -692,6 +718,8 @@ export class Hud {
       this.resourceGauge,
       this.subline,
       this.resourceLabel,
+      this.mutationLabel,
+      this.mutationGauge,
       this.scoreLabel,
       this.bossBar,
       this.bossName,
@@ -748,6 +776,11 @@ export class Hud {
     this.resourceLabel.scale.set(s);
     this.resourceLabel.x = centreX;
     this.resourceLabel.y = this.subline.y + 16 * s;
+    // The mutation meter sits below the whole resource block -- the line AND the gauge's slot -- so it is
+    // in the same place for every type and never jumps when the run switches between them. Its own y is
+    // computed at draw time from the label heights, like the rage gauge's is.
+    this.mutationLabel.scale.set(s);
+    this.mutationLabel.x = centreX;
 
     this.debug.scale.set(s * 0.9);
     /**
@@ -964,6 +997,58 @@ export class Hud {
   }
 
   /**
+   * The mutation meter: a bar for every type, under the resource block.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY IT SITS BELOW THE RAGE GAUGE'S SLOT EVEN WHEN THERE IS NO RAGE
+   * ---------------------------------------------------------------------------------------------
+   * The devour and plain bubbles have no second resource, so their resource line is empty -- but the
+   * mutation bar still goes in the same place it does for the volatile bubble. A bar that moved
+   * depending on which bubble the run is would make the one HUD element that is about the RUN (rather
+   * than about the type) look like it belongs to the type.
+   *
+   * The ticks on the rage gauge are stage thresholds; this bar has none, because its thresholds are
+   * EARNED one at a time -- the next one is wherever the bar currently ends, and a tick for it would
+   * be a tick that moves.
+   */
+  private drawMutationGauge(state: { fraction: number; level: number; pending: number }): void {
+    const cfg = mech.mutation.gauge;
+    const s = this.hudScale;
+    const g = this.mutationGauge;
+    g.clear();
+    this.mutationLabel.visible = true;
+    this.mutationLabel.text = `突变 ${state.level}`;
+
+    const y =
+      this.resourceLabel.y +
+      this.resourceLabel.height +
+      (mech.angry.gauge.gap + mech.angry.gauge.height + cfg.gap) * s;
+    this.mutationLabel.y = y;
+
+    const w = this.laneWidthPx * cfg.widthRatio;
+    const h = cfg.height * s;
+    const x = this.laneCentreX - w / 2;
+    const barY = y + this.mutationLabel.height + cfg.gap * 0.5 * s;
+    const r = cfg.radius * s;
+
+    g.roundRect(x, barY, w, h, r).fill({ color: cfg.trackColour, alpha: cfg.trackAlpha });
+    g.roundRect(x, barY, w, h, r).stroke({ color: cfg.trackStroke, alpha: cfg.trackStrokeAlpha, width: 1 });
+
+    const filled = Math.min(1, Math.max(0, state.fraction)) * w;
+    if (filled > 0.5) g.roundRect(x, barY, filled, h, r).fill({ color: cfg.fillColour, alpha: cfg.fillAlpha });
+
+    /**
+     * A banked pick rings the bar.
+     *
+     * `pending` above zero means a level is earned but not spent -- the freeze is coming on the next
+     * `playing` frame -- and a bar holding something the player cannot see is a bar that is lying.
+     */
+    if (state.pending > 0) {
+      g.roundRect(x, barY, w, h, r).stroke({ color: cfg.readyStroke, alpha: cfg.readyStrokeAlpha, width: Math.max(1.5, 1.5 * s) });
+    }
+  }
+
+  /**
    * Draw the frame's readouts from one state value.
    *
    * The HUD is a FUNCTION of `state` now: nothing is pushed into it from elsewhere in the frame, so "what is on the
@@ -1024,6 +1109,7 @@ export class Hud {
       this.resourceLabel.text = '';
       this.resourceGauge.clear();
     }
+    this.drawMutationGauge(stage.mutation);
     // The subline's own colour is put back every frame: the field is shared with the resource's line only in the
     // sense that both are HUD text, and a stale fill from a previous type would outlive the type change.
     this.subline.style.fill = 0x7fc4e8;

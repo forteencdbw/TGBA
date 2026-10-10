@@ -28,6 +28,7 @@ export type RunEvent =
   | { kind: 'sound'; event: SoundEvent; intensity: number }
   | { kind: 'scorePopup'; x: number; y: number; points: number }
   | { kind: 'damagePopup'; x: number; y: number; amount: number }
+  | { kind: 'graze'; x: number; y: number }
   | { kind: 'skillSlot'; carried: boolean }
   | { kind: 'blast'; x: number; y: number; radius: number }
   | { kind: 'splash' }
@@ -54,6 +55,16 @@ export function sayScore(events: RunEvent[], x: number, y: number, points: numbe
 
 export function sayDamage(events: RunEvent[], x: number, y: number, amount: number): void {
   events.push({ kind: 'damagePopup', x, y, amount });
+}
+
+/**
+ * A graze, in world metres -- the midpoint the near-miss happened at.
+ *
+ * Its own event rather than a scorePopup, because a graze is not a number: it is a WORD in the water
+ * and a slow-motion beat, neither of which the score's popup layer knows how to say.
+ */
+export function sayGraze(events: RunEvent[], x: number, y: number): void {
+  events.push({ kind: 'graze', x, y });
 }
 
 /** Whether the carried skill's button exists. Input surface, so it is an OUTPUT of the run rather than a rule. */

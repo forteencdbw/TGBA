@@ -51,21 +51,18 @@
     { at: 30, span: 200, count: 14, kind: 'bubble', arrange: 'spread', amplitude: 0.28, sizes: [0.45, 0.6, 0.4] },
     { at: 110, kind: 'fish', count: 5, arrange: 'line' },
     { at: 180, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5, from: 'bottom' },
-    { at: 250, kind: 'skill', x: 0.4 },
 
     // --- 泡沫带：视线开始不可信。泡沫和真泡泡一起漂，玩家要看清哪个是自己。 ---
     { at: 300, kind: 'foam', count: 5, arrange: 'spread', span: 40, x: 0.5 },
     { at: 340, kind: 'bubble', count: 6, arrange: 'spread', span: 30, x: 0.5, sizes: [0.5] },
     { at: 400, kind: 'foam', count: 8, arrange: 'line' },
     { at: 460, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'right', enterSpeed: 48 },
-    { at: 520, kind: 'upgrade', x: 0.35 },
 
     // --- 雨滴冲击：从上面砸下来，把接近海面的气泡压回去。 ---
     { at: 580, span: 70, count: 6, kind: 'rain', arrange: 'spread', amplitude: 0.3, x: 0.5 },
     { at: 640, kind: 'foam', count: 6, arrange: 'spread', span: 40, x: 0.5 },
     { at: 700, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.22, x: 0.5, from: 'bottom' },
     { at: 760, kind: 'rain', count: 8, arrange: 'line' },
-    { at: 820, kind: 'rate', x: 0.6 },
 
     // --- 浪峰：泡沫 + 雨 + 追兵混在一起，能见度最低的一段。 ---
     { at: 880, kind: 'foam', count: 10, arrange: 'spread', span: 70, x: 0.5 },

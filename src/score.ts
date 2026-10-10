@@ -20,12 +20,13 @@
  *   absorb     a collectable bubble absorbed. For the types that grow, growth is already the reward and this is
  *              the config's business whether they are paid twice; for a type that CANNOT grow it is the only
  *              reward there is, which is why the event exists at all.
- *   skill      a special item collected. The level's one pure reward, and the only pickup that is a decision to
- *              reach for rather than something in the way.
  *   eaten      a creature SWALLOWED. The reversal is the game's signature act and its most dangerous one -- it is
  *              the thing the bubble gets bigger and slower for -- so it pays.
- *   surface    reaching the surface: the run's goal, and by far the biggest single payment. Everything else is a
- *              trickle next to finishing.
+ *   boss       defeating the level's boss: the run's biggest single payment, and the only "win" event there
+ *              is. Everything else is a trickle next to finishing a level.
+ *
+ * (The pickup event went with the pickups themselves: the skill, the gun's rows and the rate tiers are all
+ * paid in MUTATIONS now -- see `src/xp.ts` and `src/mutations.ts`.)
  *
  * The ledger is kept as COUNTS per event, not as points per event, so the total can never disagree with the config:
  * changing a value re-prices history for a run in progress (which is what a reload does anyway) instead of leaving a
@@ -35,10 +36,10 @@
 import { mech } from './config';
 
 /** Every way a run can earn points. The names are the config's keys. */
-export type ScoreEvent = 'drivenOff' | 'absorb' | 'skill' | 'eaten' | 'boss';
+export type ScoreEvent = 'drivenOff' | 'absorb' | 'eaten' | 'boss';
 
 export class Score {
-  private counts: Record<ScoreEvent, number> = { drivenOff: 0, absorb: 0, skill: 0, eaten: 0, boss: 0 };
+  private counts: Record<ScoreEvent, number> = { drivenOff: 0, absorb: 0, eaten: 0, boss: 0 };
   private total = 0;
 
   /** Points on the board right now. */
@@ -82,7 +83,7 @@ export class Score {
    */
   reset(): void {
     this.total = 0;
-    this.counts = { drivenOff: 0, absorb: 0, skill: 0, eaten: 0, boss: 0 };
+    this.counts = { drivenOff: 0, absorb: 0, eaten: 0, boss: 0 };
   }
 }
 

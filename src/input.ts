@@ -63,6 +63,9 @@ const KEYS = {
   mute: ['KeyM'],
 } as const;
 
+/** The mutation pick's keys, in card order: 1, 2, 3. The badges on the cards say which is which. */
+const LEVELUP_KEYS = ['Digit1', 'Digit2', 'Digit3'] as const;
+
 export class Input {
   private readonly down = new Set<string>();
   private disposers: Array<() => void> = [];
@@ -360,14 +363,42 @@ export class Input {
     const burstDown = held(KEYS.burst);
     if (burstDown && !this.burstKeyWasDown) this.burstPressed = true;
     this.burstKeyWasDown = burstDown;
+
+    /**
+     * The mutation pick's number keys, edge-detected like every other single-shot verb.
+     *
+     * `0` means "nothing was pressed", so the three legal answers and "no answer" are four values of one
+     * number rather than three booleans the game would have to rank. Only read while the pick is open --
+     * a 1/2/3 pressed during play is left unconsumed and evaporates on the next frame.
+     */
+    for (const [index, code] of LEVELUP_KEYS.entries()) {
+      if (this.down.has(code) && !this.levelupKeyWasDown[index]) this.levelupChoice = index;
+    }
+    this.levelupKeyWasDown = LEVELUP_KEYS.map((code) => this.down.has(code));
   }
 
   private skillKeyWasDown = false;
   private muteKeyWasDown = false;
   private spitKeyWasDown = false;
   private burstKeyWasDown = false;
+  /** Which of the three pick keys was down last update, so one press is one pick. */
+  private levelupKeyWasDown: boolean[] = [false, false, false];
+  /**
+   * A mutation card picked by number key since the last consume: 0, 1 or 2, or null for none.
+   *
+   * Edge-detected in `update` and consumed once, like the skill -- the pick must cost exactly one press
+   * however many frames the modal spans.
+   */
+  private levelupChoice: number | null = null;
   /** Mute toggle pressed since the last consume. */
   private mutePressed = false;
+
+  /** Take the pending mutation pick, if any. */
+  consumeLevelUpChoice(): number | null {
+    const choice = this.levelupChoice;
+    this.levelupChoice = null;
+    return choice;
+  }
 
   /** Take the pending mute toggle, if any. Edge-triggered like the skill. */
   consumeMute(): boolean {

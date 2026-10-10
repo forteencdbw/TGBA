@@ -853,12 +853,6 @@ export class CodexUi {
         g.circle(cx, cy, r).stroke({ color: colour, alpha: 0.85, width: stroke * 0.7 });
         g.circle(cx - r * 0.3, cy + r * 0.3, r * 0.62).fill({ color: 0xeafcff, alpha: 0.18 });
         break;
-      case 'skillPickup':
-        diamond(g, cx, cy, r * 1.15);
-        g.fill({ color: colour, alpha: 0.9 });
-        diamond(g, cx, cy, r * 1.15);
-        g.stroke({ color: 0xffffff, alpha: 0.75, width: stroke * 0.7 });
-        break;
       case 'dash':
         for (let i = 0; i < 2; i++) {
           const y = cy + r * (0.45 - i * 0.7);
@@ -1004,10 +998,6 @@ function lineCount(text: Text): number {
 
 function inside(rect: Rect, x: number, y: number): boolean {
   return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
-}
-
-function diamond(g: Graphics, cx: number, cy: number, r: number): void {
-  g.moveTo(cx, cy - r).lineTo(cx + r, cy).lineTo(cx, cy + r).lineTo(cx - r, cy).closePath();
 }
 
 

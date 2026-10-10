@@ -18,6 +18,8 @@ import { MainMenu } from './menu';
 import { CodexUi } from './codexUi';
 import { BUBBLE_TYPES, defaultBubbleType, findBubbleType, hasVerb } from './bubbleTypes';
 import { sayBanner, sayResults, sayScore, saySkillSlot, saySound, saySplash } from './runEvents';
+import { LevelUpUi } from './levelup';
+import { applyMutationPassives, rollMutationChoices, type Mutation } from './mutations';
 import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
 import { gainRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName } from './rage';
 import { mech } from './mechanisms';
@@ -175,7 +177,6 @@ class Game {
     scrolled: number;
     hazards: number;
     bubbles: number;
-    pickup: number;
     emitted: number;
     total: number;
     phase: string;
@@ -296,7 +297,7 @@ class Game {
     this.flash.visible = false;
     // The score popups sit over the water and under the flash and the HUD: they belong to the event they mark, not
     // to the interface, but they are readouts and nothing the player steers by may be drawn over them.
-    this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.flash, this.hud.root, this.touch.root);
+    this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.grazePopups.root, this.flash, this.hud.root, this.touch.root);
 
     this.finishBanner.anchor.set(0.5);
     this.finishBanner.alpha = 0;
@@ -313,7 +314,8 @@ class Game {
      * and the menu has to cover the settings gear while it is showing. The loading page joins them at the front --
      * it is a full screen in its own right, so nothing of the level or its controls may be drawn over it.
      */
-    this.app.stage.addChild(this.loading.root, this.settings.root, this.menu.root, this.codex.root, this.summary.root);
+    this.app.stage.addChild(this.loading.root, this.settings.root, this.levelup.root, this.menu.root, this.codex.root, this.summary.root);
+    this.levelup.onPick = (index) => this.pickMutation(index);
     this.summary.onMenu = () => this.exitToMenu();
     this.settings.setVolume(audio.getVolume());
     this.settings.setOpen(false);
@@ -509,6 +511,9 @@ class Game {
     if (this.run.phase === 'loading') return;
     if (this.summary.handlePointerDown(x, y)) return;
     if (this.settings.handlePointerDown(pointerId, x, y)) return;
+    // The mutation pick swallows everything while it is up, like the panel before it: a tap meant for a
+    // card must not also steer the frozen water behind it.
+    if (this.levelup.handlePointerDown(pointerId, x, y)) return;
     if (this.run.phase === 'paused') return;
     this.touch.onPointerDown(pointerId, x, y);
   }
@@ -527,6 +532,7 @@ class Game {
     // The loading page has no controls at all: see `handlePointerDown`. A move must not steer through it.
     if (this.run.phase === 'loading') return;
     if (this.settings.handlePointerMove(pointerId, x, y)) return;
+    if (this.levelup.handlePointerMove(pointerId, x, y)) return;
     if (this.run.phase === 'paused') return;
     this.touch.onPointerMove(pointerId, x, y);
   }
@@ -547,6 +553,7 @@ class Game {
     // The summary panel owns the screen while it is up: its one button is the only thing a release can mean.
     if (this.summary.handlePointerUp(at.x, at.y)) return;
     if (this.settings.handlePointerUp(pointerId, at.x, at.y)) return;
+    if (this.levelup.handlePointerUp(pointerId, at.x, at.y)) return;
     if (this.run.phase === 'paused') return;
     this.touch.onPointerUp(pointerId);
   }
@@ -1054,7 +1061,6 @@ class Game {
     scrolled: number;
     hazards: number;
     bubbles: number;
-    pickup: number;
     emitted: number;
     total: number;
     phase: string;
@@ -1157,18 +1163,6 @@ class Game {
   private progressView: { total: number; cleared: number; current: number } | null = null;
   /** The bait bubble a decoy left behind, so it can be drawn and then expire. */
   /** How many skills have been used this run, for the results card. */
-  /** The skill lying in the water, if any, and the countdown to the next one. */
-  /**
-   * The pickups lying in the water, waiting to be taken.
-   *
-   * A LIST, and that is a fix rather than a tidy-up: this used to be a single slot, so a level that placed two pickups
-   * near each other silently lost the first one -- the second overwrote it, and what the player saw was a pickup
-   * vanishing with no explanation. Level 1 had exactly that (a rate upgrade at 520m and a skill at 540m, twenty metres
-   * apart), which is how it was found.
-   *
-   * `kind` says WHAT each one gives: a skill (rolled at pickup time, because deciding at spawn would commit the
-   * player's next twenty seconds before they had even seen the thing), the gun upgrade, or the rate upgrade.
-   */
   /** When the fish-fart talent can fire again, and how many times it has. */
   /** Which scripted depth events have fired, and the count, so a run does not repeat a beat. */
   /** Mirrors the audio module's mute state, so the HUD can show it. */
@@ -1197,6 +1191,30 @@ class Game {
    * own count, so "the score numbers are gone" stays answerable in the debug readout and in the probes.
    */
   private readonly damagePopups = new NumberPopups(mech.damagePopups);
+  /**
+   * The graze's word in the water: "擦边！！" where the near-miss happened.
+   *
+   * A THIRD instance of the same class for the same reason the damage numbers got their own -- an event's
+   * urgency is its own cap, its own life and its own size, and a burst of grazes must not push a score
+   * number out of the pool. Says words rather than numbers, via `say`.
+   */
+  private readonly grazePopups = new NumberPopups(mech.grazePopups);
+  /**
+   * The mutation pick: the freeze, the three cards, the one choice.
+   *
+   * Own layer like the settings panel, opened only from `playing` -- see `openLevelUp`. The pick is
+   * applied HERE (the game owns how a mutation lands on the world), reported by the panel through
+   * `onPick` so a finger and the number keys take the same path.
+   */
+  private readonly levelup = new LevelUpUi();
+  /**
+   * Seconds of graze slow-motion left, in REAL time.
+   *
+   * Real rather than simulated because the timescale itself is derived from this countdown: a clock that
+   * slowed itself would need the unscaled half of its own tick, and the slow would never end. Frozen with
+   * everything else by the pause and by the mutation pick.
+   */
+  private grazeSlow = 0;
   /** White-out flash driven by the surface breach, 1 -> 0. */
   private splash = 0;
   /** Whether the current burst is a SURFACE finish rather than a death. */
@@ -1362,8 +1380,10 @@ class Game {
     this.hud.layout(viewport);
     this.popups.layout(viewport);
     this.damagePopups.layout(viewport);
+    this.grazePopups.layout(viewport);
     this.touch.layout(viewport.left, viewport.laneWidthPx, screenW, screenH);
     this.settings.layout(viewport);
+    this.levelup.layout(viewport);
     this.menu.layout(viewport);
     this.codex.layout(viewport);
     // The loading page is sized in the canvas's own pixels rather than in the play area's: it is a page, not a HUD.
@@ -1427,7 +1447,32 @@ class Game {
     this.lastDelta = deltaSeconds;
     this.fps += ((deltaSeconds > 0 ? 1 / deltaSeconds : 60) - this.fps) * 0.1;
 
-    this.accumulator += dt;
+    /**
+     * THE GRAZE'S SLOW MOTION, as one number multiplied into the frame's dt.
+     *
+     * This is the only global timescale in the game, and this is where it has to live: dt is the one
+     * funnel every simulation and animation drinks from, so scaling it here slows the whole world
+     * consistently -- the creatures, the bullets, the water, the popups -- with no per-system work and
+     * nothing that can disagree. The accumulator below then mints fewer (or smaller) fixed steps, which
+     * is what makes the SIMULATION itself slower rather than merely the drawing.
+     *
+     * The countdown runs on REAL time (the unscaled dt), because the timescale is derived from it: a
+     * countdown that slowed itself would never finish. It freezes with the pause and the pick, like
+     * every other clock -- `step` returns before anything moves in those phases, and this joins it by
+     * not burning its remaining seconds behind a frozen screen.
+     */
+    if (
+      this.grazeSlow > 0 &&
+      this.run.phase !== 'paused' &&
+      this.run.phase !== 'levelup' &&
+      this.run.phase !== 'menu' &&
+      this.run.phase !== 'codex'
+    ) {
+      this.grazeSlow = Math.max(0, this.grazeSlow - dt);
+    }
+    const scaled = dt * this.grazeTimeScale();
+
+    this.accumulator += scaled;
     const step = 1 / 120;
     let steps = 0;
     while (this.accumulator >= step && steps < 8) {
@@ -1437,7 +1482,23 @@ class Game {
       steps++;
     }
 
-    this.render(dt);
+    this.render(scaled);
+  }
+
+  /**
+   * The world's timescale right now, 1 when nothing is happening.
+   *
+   * The beat has two halves: `slowSeconds` at the full `slowFactor`, then `recoverSeconds` easing back
+   * to 1 -- a snap back to speed reads as a stutter, and a fade back is what lets the player's hands
+   * catch up with their eyes.
+   */
+  private grazeTimeScale(): number {
+    if (this.grazeSlow <= 0) return 1;
+    const cfg = mech.graze;
+    const elapsed = cfg.slowSeconds + cfg.recoverSeconds - this.grazeSlow;
+    if (elapsed < cfg.slowSeconds) return cfg.slowFactor;
+    const t = Math.min(1, (elapsed - cfg.slowSeconds) / Math.max(0.01, cfg.recoverSeconds));
+    return cfg.slowFactor + (1 - cfg.slowFactor) * t;
   }
 
   /**
@@ -1469,6 +1530,18 @@ class Game {
     if (this.run.phase !== 'menu' && this.input.consumeMute()) this.audioMuted = audio.toggleMute();
 
     /**
+     * THE MUTATION PICK: the world is frozen behind three cards, and the number keys are the whole
+     * keyboard story. The pick is consumed HERE because the levelup phase is below the freeze -- the
+     * same placement the pause's gear handling has -- so a key that cannot reach the water cannot
+     * reach a card either.
+     */
+    if (this.run.phase === 'levelup') {
+      const choice = this.input.consumeLevelUpChoice();
+      if (choice !== null) this.pickMutation(choice);
+      return;
+    }
+
+    /**
      * PAUSED: freeze the rest of the simulation.
      *
      * Checked before anything else moves, so nothing accumulates while the panel is open -- not the scroll,
@@ -1476,7 +1549,9 @@ class Game {
      * trash bag finish draining the player while they read the menu.
      *
      * The menu is the same idea for the opposite reason: there is no level to simulate yet. The codex joins them:
-     * it is reached from the menu, so the level behind it is either not started or already over.
+     * it is reached from the menu, so the level behind it is either not started or already over. The mutation
+     * pick joins them too, with its own case above rather than in this list -- the pick must not fall through
+     * to the phase restore a pause uses, because picking returns to PLAYING and nothing else.
      */
     if (this.run.phase === 'paused' || this.run.phase === 'menu' || this.run.phase === 'codex') return;
 
@@ -1667,6 +1742,14 @@ class Game {
       case 'playing':
         this.run.elapsedTotal += dt;
         /**
+         * The mutation meter's clock: the slowest source, ticking only while the water is live.
+         *
+         * Here rather than in the run because it is a RATE about the game being played -- the intro, the
+         * ending and every hold are not "surviving", and a bar that filled itself during a boss's death
+         * animation would be paying the player for a moment they could not act in.
+         */
+        this.run.xp.tick(dt);
+        /**
          * The particles are drained and ticked HERE, where `dt` is in scope.
          *
          * A hit only happens while playing, so the phase is the honest place for it -- and the alternative was threading a
@@ -1807,8 +1890,6 @@ class Game {
     // actually at this frame rather than the one it started from.
     this.run.resolveHazards(dt, min, max, world.laneWidth, world, this.input);
 
-    this.run.updatePickup(dt, min, max, viewport.laneWidthMeters);
-
     this.run.fireDepthEvents();
 
     this.run.resolveContacts(dt, world);
@@ -1850,6 +1931,20 @@ class Game {
     this.progressView = { total: LEVELS.length, cleared: this.run.levelsClearedInRun, current: levelIndex(LEVEL.id) };
     this.run.updateConductiveCharge(dt, viewport.laneWidthMeters);
 
+    /**
+     * THE MUTATION PICK OPENS HERE, at the end of the step that filled the bar.
+     *
+     * After every source the frame can pay -- the trickle above, the gun and the chain in their updates,
+     * the graze and the swallow inside `resolveHazards`, the boss in `updateBoss` -- so the check is one
+     * place rather than a call after every gain, and a bar that fills mid-frame opens the pick on that
+     * frame rather than the next.
+     *
+     * Only from `playing`: a level earned during the ending or the burst waits where it is, and the
+     * first playing frame of the next level hands it over. (A death clears the ladder with everything
+     * else, so `burst` can never hold one.)
+     */
+    if (this.run.phase === 'playing' && this.run.xp.pending > 0) this.openLevelUp();
+
     // Trace the end condition, so a probe can see WHY a level failed to end rather than only that it
     // did. A win condition with five clauses is exactly the kind of thing that reports "still playing"
     // for several possible reasons.
@@ -1857,7 +1952,6 @@ class Game {
       scrolled: +this.run.scrolled.toFixed(1),
       hazards: this.run.hazards.hazards.length,
       bubbles: this.run.field.bubbles.length,
-      pickup: this.run.pickupDrops.length,
       emitted: this.run.timelineEmitted,
       total: TIMELINE.length,
       phase: this.run.phase,
@@ -1897,6 +1991,61 @@ class Game {
     }
     this.run.skillActivations++;
     return true;
+  }
+
+  /**
+   * Freeze the world and offer three cards.
+   *
+   * The phase is SET rather than remembered: a pick can only open from `playing` (see the check in
+   * `step`), so there is nothing to restore to but `playing` -- and a pause opened DURING a pick has to
+   * drop back into the pick, which `phaseBeforePause` already handles by remembering whatever it
+   * interrupted. The touches are released for the same reason the pause releases them: a finger held
+   * on the water through the freeze would resume a drag the player has already stopped thinking about.
+   */
+  private openLevelUp(): void {
+    this.run.phase = 'levelup';
+    this.touch.releaseAll();
+    // A number key pressed before the freeze is stale here -- flush it, or the modal would answer it on
+    // its first frame before the player has seen the cards.
+    this.input.consumeLevelUpChoice();
+    this.levelup.openWith(rollMutationChoices(this.run));
+  }
+
+  /**
+   * Land one pick, by pointer or by number key -- the same path either way.
+   *
+   * The mutation is applied FIRST and the ledger told after, so `xp.pending` still counts the level
+   * being spent while the apply runs and a card cannot draw against a level that is no longer there.
+   * A second banked level reopens with FRESH cards: the apply may have capped the gun or filled the
+   * skill slot, so the pool is asked again rather than reoffered.
+   */
+  private pickMutation(index: number): void {
+    if (this.run.phase !== 'levelup' || !this.levelup.open) return;
+    const choice: Mutation | null = this.levelup.choiceAt(index);
+    if (!choice) return;
+    choice.apply(this.run);
+    /**
+     * Re-derive every multiplier from the counts the apply just changed.
+     *
+     * The stacking cards only bump their COUNT -- the number they move is computed, never edited, so it
+     * can never disagree with the count (see `applyMutationPassives`). Without this call the picked card
+     * would not land until the next `startRun` folded it in.
+     */
+    applyMutationPassives(this.run);
+    this.run.xp.consume();
+    this.levelup.close();
+    sayBanner(this.run.events, `突变  ·  ${choice.name}`);
+    if (this.run.xp.pending > 0) {
+      this.levelup.openWith(rollMutationChoices(this.run));
+      return;
+    }
+    this.run.phase = 'playing';
+    /**
+     * The resume grace: half a second of blink, so the world that was frozen mid-lunge does not
+     * collect on the frame it restarts. The design calls this the anti-execution grace -- a death
+     * on the first frame after a mandatory menu is not a death the player caused.
+     */
+    this.run.invulnerable = Math.max(this.run.invulnerable, mech.mutation.resumeInvulnerableSeconds);
   }
 
 
@@ -2074,12 +2223,18 @@ class Game {
     this.run.stomachDrain = 0;
     this.run.comedyBeats = 0;
     this.run.lastComedyBeat = null;
-    // Skills and talents are per-run state: carrying a skill across a death would make the restart
-    // strictly easier than the run that just ended.
-    this.run.skill = null;
-    this.run.pickupDrops.length = 0;
-    this.run.skillActivations = 0;
-    this.run.decoy = null;
+    // The carried skill, the mutation ladder and its picks are RUN state, like the score and the gun
+    // above them: a walk into the next level keeps them, and only a death starts the whole ladder over.
+    // (The skill used to reset here unconditionally, when it arrived as a pickup; it is a mutation's
+    // prize now, and losing it at a level transition would make its card strictly worse than the
+    // permanent ones beside it.)
+    if (!carryScore) {
+      this.run.skill = null;
+      this.run.skillActivations = 0;
+      this.run.decoy = null;
+      this.run.xp.reset();
+      this.run.mutations = {};
+    }
     this.run.fartReadyAt = 0;
     this.run.farts = 0;
     this.run.eventsFired = new Set();
@@ -2087,7 +2242,7 @@ class Game {
     this.run.lastEvent = null;
     this.splash = 0;
     this.run.surfaced = false;
-    this.skillSlot(false);
+    this.skillSlot(this.run.skill !== null);
     this.run.elapsed = 0;
     this.run.phase = 'intro';
     this.run.phaseTimer = INTRO_SECONDS;
@@ -2095,7 +2250,16 @@ class Game {
     this.run.stats = { absorbed: 0, hits: 0, maxVolume: this.run.talentEffects.startVolume, ended: this.run.stats.ended, overloads: this.run.stats.overloads, newRecord: false };
     this.rollSeed();
     this.run.rollTalent();
-    this.talentLabel = this.run.talentEffects.talent.name;;
+    /**
+     * Fold the carried mutations back in, on top of the talent this start just rolled.
+     *
+     * `rollTalent` rewrites the player's base multipliers, which is what would silently wipe a carried
+     * 突变 · 转向 -- so the counts are the source of truth and this re-derives them after every roll,
+     * including the "no counts at all" of a fresh run (which restores the defaults). See
+     * `applyMutationPassives`.
+     */
+    applyMutationPassives(this.run);
+    this.talentLabel = this.run.talentEffects.talent.name;
   }
 
 
@@ -2361,6 +2525,15 @@ class Game {
     this.run.stats.ended++;
     // Before `recordBest`, so the best this run leaves behind includes the bonus it just earned.
     this.scorePopup(this.run.player.x * this.camera.viewport.laneWidthMeters, this.run.player.y, this.run.score.award('boss'));
+    /**
+     * The boss's mutation payment: one large sum, banked on the frame the fight ends.
+     *
+     * On a carry this rolls into the next level's bar -- the design's "打完 BOSS 开局半管" -- and the
+     * pending check in `step` will not open a pick for it, because the phase has already left `playing`.
+     * The next level's first playing frame hands it over, which is the honest reading of a reward for a
+     * whole level: it is spent in the next one.
+     */
+    this.run.xp.gain('boss');
     this.run.recordBest();
     this.sound('surface');
     saySplash(this.run.events);
@@ -2556,6 +2729,18 @@ class Game {
         case 'damagePopup':
           this.damagePopups.add(e.x, e.y, e.amount, this.camera);
           break;
+        case 'graze':
+          /**
+           * The graze's two presents, both the presentation's to give.
+           *
+           * The word goes in the water where the near-miss happened; the slow motion is a whole-world
+           * timescale (see `frame`), so it cannot be granted by the rule that noticed the graze. The
+           * refresh-not-stack is deliberate: consecutive grazes keep the world slow rather than slowing
+           * it towards a standstill, which was the design's call -- the reward is TIME, not power.
+           */
+          this.grazePopups.say(e.x, e.y, mech.grazePopups.prefix, this.camera);
+          this.grazeSlow = mech.graze.slowSeconds + mech.graze.recoverSeconds;
+          break;
         case 'skillSlot':
           this.touch.setHasSkill(e.carried);
           break;
@@ -2621,9 +2806,9 @@ class Game {
     const inMenu = this.run.phase === 'menu';
     this.hud.root.visible = !fullScreenPage;
     this.scene.root.visible = !fullScreenPage;
-    // The water controls hide on those pages and behind the settings panel. The touch layer decides for itself
-    // whether the skill button is drawn; this only decides whether the layer exists at all.
-    this.touch.root.visible = !fullScreenPage && !this.settings.isOpen;
+    // The water controls hide on those pages and behind the settings panel and the mutation pick. The touch layer
+    // decides for itself whether the skill button is drawn; this only decides whether the layer exists at all.
+    this.touch.root.visible = !fullScreenPage && !this.settings.isOpen && this.run.phase !== 'levelup';
     this.flash.visible = this.flash.visible && !fullScreenPage;
 
     if (!fullScreenPage) {
@@ -2631,6 +2816,7 @@ class Game {
       // that resumes its three seconds after the menu closes would be a number with no event left to explain it.
       this.popups.update(dt);
       this.damagePopups.update(dt);
+      this.grazePopups.update(dt);
       this.hud.update({
         score: this.run.score.value,
         boss: this.bossView,
@@ -2662,6 +2848,14 @@ class Game {
         grows: this.run.bubbleType.growsByAbsorbing,
         neededForNext: this.run.stage.neededForNext,
         tierBonus: this.tierBonus,
+        /**
+         * The mutation meter, for every type -- the bar that fills toward the next freeze.
+         *
+         * `pending` rides along so the bar can draw its "ready" stroke on banked picks the player has
+         * not spent yet (a boss's payment can cross two thresholds before the next `playing` frame
+         * opens the modal).
+         */
+        mutation: { fraction: this.run.xp.fraction, level: this.run.xp.level, pending: this.run.xp.pending },
         /**
          * The second resource's readout, for the type that has one.
          *
@@ -2705,10 +2899,15 @@ class Game {
      */
     this.popups.root.visible = !fullScreenPage;
     this.damagePopups.root.visible = !fullScreenPage;
+    this.grazePopups.root.visible = !fullScreenPage;
     if (fullScreenPage) {
       this.popups.clear();
       this.damagePopups.clear();
+      this.grazePopups.clear();
     }
+    // The mutation pick draws only while it is the phase -- it is a freeze the run is inside, not a page
+    // the run is behind, so it needs no clearing: there is nothing in flight that outlives it.
+    this.levelup.root.visible = this.run.phase === 'levelup';
     this.menu.root.visible = inMenu;
     if (inMenu) this.menu.update(dt);
     // The codex draws nothing per frame: a tab press, a page turn and a resize each schedule their own redraw.
@@ -2995,63 +3194,6 @@ class Game {
         alpha: chargeCfg.burstAlpha * left,
         width: Math.max(1, laneWidth * 0.03 * left),
       });
-    }
-
-    for (const p of this.run.pickupDrops) {
-      const look = mech.pickups[p.kind];
-      const r = laneWidth * look.radiusRatio;
-      const pulse = 1 + Math.sin(this.run.elapsed * mech.pickups.pulsePerSecond) * 0.12;
-      g.circle(p.x, p.y, r * 2.1 * pulse).fill({ color: look.haloColour, alpha: look.haloAlpha });
-      if (p.kind === 'rate') {
-        /**
-         * A single chevron with speed dashes either side: "faster", where the rows upgrade is "more".
-         *
-         * Shape before colour, the same rule as the other two -- a player reading the water in peripheral vision has to
-         * tell "my gun shoots quicker" from "my gun shoots wider" before they can read a word.
-         */
-        g.moveTo(p.x - r * pulse, p.y - r * 0.3)
-          .lineTo(p.x, p.y + r * 0.42)
-          .lineTo(p.x + r * pulse, p.y - r * 0.3)
-          .stroke({ color: look.coreColour, alpha: look.coreAlpha, width: Math.max(1, r * 0.3) });
-        for (const side of [-1, 1]) {
-          g.moveTo(p.x + side * r * 1.15, p.y - r * 0.34)
-            .lineTo(p.x + side * r * 1.75, p.y - r * 0.34)
-            .stroke({ color: look.coreColour, alpha: look.coreAlpha * 0.6, width: Math.max(1, r * 0.22) });
-          g.moveTo(p.x + side * r * 1.15, p.y + r * 0.16)
-            .lineTo(p.x + side * r * 1.6, p.y + r * 0.16)
-            .stroke({ color: look.coreColour, alpha: look.coreAlpha * 0.6, width: Math.max(1, r * 0.22) });
-        }
-        g.circle(p.x, p.y, r * 1.05 * pulse).stroke({ color: look.rimColour, alpha: look.rimAlpha * 0.5, width: Math.max(1, r * 0.12) });
-      } else if (p.kind === 'upgrade') {
-        /**
-         * Stacked chevrons, pointing up the lane.
-         *
-         * Shape is the first thing peripheral vision resolves, and the two pickups do completely different things --
-         * one swaps the skill slot, one permanently widens the gun -- so they must not be the same silhouette. Two
-         * arrows also say "more rows" without a word of text, which is what the pickup actually does.
-         */
-        for (const band of [-1, 1]) {
-          const y = p.y + band * r * 0.52 * pulse;
-          g.moveTo(p.x - r * pulse, y - r * 0.34)
-            .lineTo(p.x, y + r * 0.34)
-            .lineTo(p.x + r * pulse, y - r * 0.34)
-            .stroke({ color: look.coreColour, alpha: look.coreAlpha, width: Math.max(1, r * 0.3) });
-        }
-        g.circle(p.x, p.y, r * 1.05 * pulse).stroke({ color: look.rimColour, alpha: look.rimAlpha * 0.5, width: Math.max(1, r * 0.12) });
-      } else {
-        g.moveTo(p.x, p.y - r * pulse)
-          .lineTo(p.x + r * pulse, p.y)
-          .lineTo(p.x, p.y + r * pulse)
-          .lineTo(p.x - r * pulse, p.y)
-          .closePath()
-          .fill({ color: look.coreColour, alpha: look.coreAlpha });
-        g.moveTo(p.x, p.y - r * pulse)
-          .lineTo(p.x + r * pulse, p.y)
-          .lineTo(p.x, p.y + r * pulse)
-          .lineTo(p.x - r * pulse, p.y)
-          .closePath()
-          .stroke({ color: look.rimColour, alpha: look.rimAlpha, width: r * 0.14 });
-      }
     }
   }
 
@@ -3597,9 +3739,9 @@ class Game {
       bullets: this.run.bullets,
       enemyBullets: this.run.enemyBullets,
       projectiles: this.run.projectiles,
-      pickupDrops: this.run.pickupDrops,
       stomach: this.run.stomach,
       score: this.run.score,
+      xp: this.run.xp,
       progress: this.run.progress,
       stats: this.run.stats,
       stage: this.run.stage,
@@ -3810,6 +3952,9 @@ class Game {
      * right to call it a bug, and the ledger is meant to be checkable for each event.
      */
     this.scorePopup(this.run.player.x * this.camera.viewport.laneWidthMeters, this.run.player.y, this.run.score.award('eaten'));
+    // The mutation ledger moves too, for the same reason the score does: this hook stands in for the
+    // collision path, and the collision path pays both.
+    this.run.xp.gain('eaten');
     return gained;
   }
 

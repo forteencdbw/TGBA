@@ -66,6 +66,14 @@ export interface BulletContext {
    * picked up, and "how fast may I shoot right now" is a question about the RUN, not about the weapon in general.
    */
   perSecond: number;
+  /**
+   * Hit points one round takes off.
+   *
+   * Supplied rather than read from the config, for the same reason `perSecond` is: the mutation ladder
+   * can stack the damage a run's rounds deal, and "how hard may I shoot right now" is a question about
+   * the RUN, not about the weapon in general.
+   */
+  damage: number;
   hazards: HazardField;
   obstacles: ObstacleField;
 }
@@ -167,12 +175,12 @@ export class BulletField {
           if (dx * dx + dy * dy > reach * reach) continue;
           // The hit is applied through the hazard field, which owns what it means to be driven off -- and where the
           // round was, so the recoil is along the line of the shot rather than along a fixed axis.
-          const outcome = ctx.hazards.hit(h, cfg.damage, { x: b.x, y: b.y });
+          const outcome = ctx.hazards.hit(h, ctx.damage, { x: b.x, y: b.y });
           this.hits++;
           landed++;
           // Reported at the CREATURE, not at the round: the round is a few pixels wide and has already been removed by
           // the time the caller draws anything, while the creature is the thing the number is about.
-          struck.push({ x: h.x, y: h.y, amount: cfg.damage });
+          struck.push({ x: h.x, y: h.y, amount: ctx.damage });
           if (outcome === 'fled') {
             drivenOff++;
             driven.push({ x: h.x, y: h.y });

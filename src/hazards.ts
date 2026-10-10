@@ -175,6 +175,15 @@ export interface HazardEffect {
    * A push rather than a stun: it must be recoverable, and it must cost the player the height they just earned.
    */
   pushDown?: number;
+  /**
+   * A NEAR-MISS: a charging creature passed inside the graze circle without touching.
+   *
+   * Carried as an effect like everything else here, so the field stays a simulation: the caller decides
+   * what a graze is WORTH (mutation points, slow motion, a word in the water). The position is the
+   * midpoint between the creature and the bubble -- the graze happened between the two, which is where
+   * the player is already looking.
+   */
+  graze?: { x: number; y: number };
 }
 
 /**
@@ -268,6 +277,14 @@ export interface Hazard {
     bow: number;
     /** Seconds since the commitment. The telegraph is the first `telegraphSeconds` of it. */
     elapsed: number;
+    /**
+     * Whether this lunge has already paid a graze.
+     *
+     * On the charge itself rather than as a cooldown on the creature, because a charge is a fresh object
+     * every time it is committed: the flag's lifetime IS the "once per charge" rule, with nothing to
+     * reset. See the graze branch in the contact loop.
+     */
+    grazed: boolean;
   } | null;
   /** Seconds before this creature may lunge again. Counted down whether or not it is hunting. */
   chargeRest: number;
@@ -1125,6 +1142,7 @@ function stepAngler(_field: HazardField, h: Hazard, dt: number, ctx: HazardConte
       toY: ctx.playerY,
       bow: (h.x < ctx.playerX ? 1 : -1) * cfg.bowRatio * span,
       elapsed: 0,
+      grazed: false,
     };
   }
   h.y -= ctx.descentSpeed * cfg.driftFactor * dt;
@@ -1541,6 +1559,13 @@ export class HazardField {
   charges = 0;
   baits = 0;
   /**
+   * Grazes landed this run, monotonic like the charge counter beside it.
+   *
+   * The mutation economy's fastest source, and a thing a probe has to be able to prove happened at all
+   * -- the graze circle is invisible and the slow motion is over in a second, so this is the receipt.
+   */
+  grazes = 0;
+  /**
    * Hazards EATEN, monotonic for the same reason as the others.
    *
    * The counter is how a test proves the reversal happened at all: the hazard is removed from the list on the
@@ -1576,6 +1601,7 @@ export class HazardField {
     this.grabs = 0;
     this.charges = 0;
     this.baits = 0;
+    this.grazes = 0;
     this.eaten = 0;
     this.splits = 0;
     this.bubblesEaten = 0;
@@ -1891,6 +1917,35 @@ export class HazardField {
         if (h.kind === 'trash' && h.gripping) {
           // Sliding off the edge of a trash bag ends the grip, which is the forgiving case.
           h.gripping = false;
+        }
+        /**
+         * THE GRAZE: a charge that passed close enough to hurt, without hurting.
+         *
+         * The second, larger circle around the same contact test -- the contact radius times the config's
+         * multiplier, so a bigger creature means a bigger graze circle for the same "close" -- and only
+         * for a creature that is actually FLYING (past its telegraph: holding station on a drawn curve is
+         * not a near-miss, it is a promise the player has not yet had to keep). Checked in the
+         * NOT-touching branch, because "was not hit" is half the definition; the invulnerability blink is
+         * the other gate, because a graze you could not have been hurt by anyway is a gift, not a risk.
+         *
+         * Once per charge, via the flag ON the charge (see its field): camping inside the circle pays
+         * once, which is what keeps "graze for points" from becoming "stand inside the shark".
+         *
+         * The boss's flung grit rides the same charge machinery with a zero telegraph, so grit counts
+         * too -- dodging the claw's debris closely is the same risk with the same reward.
+         */
+        if (
+          !ctx.invulnerable &&
+          h.charge &&
+          !h.charge.grazed &&
+          h.charge.elapsed >= chargeWindow(h.kind).telegraphSeconds
+        ) {
+          const grazeReach = reach * mech.graze.radiusMultiplier;
+          if (dx * dx + dy * dy <= grazeReach * grazeReach) {
+            h.charge.grazed = true;
+            this.grazes++;
+            effects.push({ kind: h.kind, broke: false, graze: { x: (h.x + ctx.playerX) / 2, y: (h.y + ctx.playerY) / 2 } });
+          }
         }
         continue;
       }
@@ -2510,6 +2565,7 @@ export class HazardField {
           toY: ctx.playerY,
           bow: (onLeft ? 1 : -1) * charger.bowRatio * span,
           elapsed: 0,
+          grazed: false,
         };
         /**
          * A lunge is a heading too, and the creature's own step does not run while it lasts -- a charge REPLACES the

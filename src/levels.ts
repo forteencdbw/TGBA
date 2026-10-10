@@ -146,8 +146,9 @@ export interface LevelEntry {
   /**
    * Which kind of thing to place.
    *
-   * Collectables are `bubble`, hazards name their kind, `skill` is a pickup, and `crate` / `coral` / `wall` /
-   * `net` are the obstacles.
+   * Collectables are `bubble`, hazards name their kind, and `crate` / `coral` / `wall` / `net` are the
+   * obstacles. (The pickups are gone: the skill, the gun's rows and the rate tiers are all paid in
+   * mutations now, so a level no longer places any of them.)
    *
    * `urchin`, `bombfish`, `eel`, `rot` and `oil` are the negative food: ordinary hazards from the outside, and
    * something that keeps acting once it is in the player's stomach. They are placed SPARINGLY, and that is a design
@@ -525,11 +526,8 @@ const sizes = (pattern: readonly number[]) => (i: number) => pattern[i % pattern
  * level does not place its boss in a spawn block, it names it in its own `boss` field.
  */
 const SPAWN_KINDS: readonly string[] = [
-  // The pickups. Spelled out because they are not creatures: nothing about them lives in the hazard tables.
+  // The collectable. Spelled out because it is not a creature: nothing about it lives in the hazard tables.
   'bubble',
-  'skill',
-  'upgrade',
-  'rate',
   ...Object.keys(mech.hazards.health).filter((kind) => kind !== 'boss'),
   ...OBSTACLE_KINDS,
 ];
@@ -537,16 +535,6 @@ const ARRANGEMENTS: readonly string[] = ['single', 'line', 'column', 'spread', '
 /** Whether a kind is scenery. Asked of the config's own list, so a new obstacle kind is covered by construction. */
 const isScenery = (kind: string): boolean => (OBSTACLE_KINDS as readonly string[]).includes(kind);
 
-/**
- * The kinds that are PICKED UP: a skill, or the ability upgrade.
- *
- * One list rather than a comparison repeated per rule, because these kinds share rules the others do not: they arrive
- * with the current (never from a side), and they occupy a single slot in the water rather than a field. A new pickup
- * added here inherits both, which is the point.
- */
-export const PICKUP_KINDS = ['skill', 'upgrade', 'rate'] as const;
-export type PickupKind = (typeof PICKUP_KINDS)[number];
-const isPickup = (kind: string): boolean => (PICKUP_KINDS as readonly string[]).includes(kind);
 const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom'];
 
 /** The keys a block may use. Anything else is an error rather than a silent no-op -- see `readBlock`. */
@@ -657,10 +645,10 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
    * Both are checked HERE rather than being ignored at runtime, because in both cases the config would look fine and
    * the game would look broken: scenery that never arrives, or a collectable that ignores its own direction.
    */
-  if (from !== 'top' && (kind === 'bubble' || isPickup(kind))) {
+  if (from !== 'top' && kind === 'bubble') {
     fail(
       where,
-      `is a "${kind}" arriving from the ${from}, but collectables and skills come down with the current. Only creatures and obstacles can enter from a side.`,
+      `is a "${kind}" arriving from the ${from}, but collectables come down with the current. Only creatures and obstacles can enter from a side.`,
     );
   }
   if (from === 'bottom' && isScenery(kind)) {
@@ -712,7 +700,7 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
  *
  * Fish blocks are numbered among THEMSELVES rather than by their position in the file. That is the difference
  * between "the number is different from the block before it" and "the number is different from the last school":
- * a level interleaves bubbles, pickups, torpedoes and obstacles between its shoals, so a counter over every block
+ * a level interleaves bubbles, torpedoes and obstacles between its shoals, so a counter over every block
  * lands on the same value four blocks apart -- which is exactly two shoals of the same fish with a gap between
  * them, and the gap is what makes it look like a mistake.
  *

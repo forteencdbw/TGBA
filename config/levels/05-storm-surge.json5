@@ -48,10 +48,8 @@
     { at: 30, span: 200, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.45, 0.6, 0.4] },
     { at: 110, kind: 'net', count: 4, arrange: 'line' },
     { at: 180, kind: 'fish', count: 5, arrange: 'spread', span: 40, x: 0.5, from: 'bottom' },
-    { at: 240, kind: 'skill', x: 0.6 },
     { at: 300, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.19 },
     { at: 360, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'left', enterSpeed: 50 },
-    { at: 420, kind: 'upgrade', x: 0.3 },
 
     // --- 暴雨层：从上往下穿透的冲击 + 高速穿刺的东西。 ---
     { at: 480, kind: 'mineral', count: 6, arrange: 'spread', span: 50, amplitude: 0.3, x: 0.5, from: 'bottom' },
@@ -60,7 +58,6 @@
     { at: 660, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.6, from: 'right', enterSpeed: 50 },
     { at: 720, kind: 'crab', count: 3, arrange: 'line' },
     { at: 780, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.24, x: 0.5, from: 'bottom' },
-    { at: 840, kind: 'rate', x: 0.7 },
 
     // --- 废网区：网 + 木箱 + 钩（用珊瑚和木箱代替），路线被反复切断。 ---
     { at: 900, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },

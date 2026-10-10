@@ -148,7 +148,7 @@ export class EntityField {
   /**
    * Collect the entries placed since the last call, and clear the queue.
    *
-   * The game owns hazards and skill pickups, so the field cannot build them; it hands over what the
+   * The game owns hazards and obstacles, so the field cannot build them; it hands over what the
    * timeline asked for and lets the caller decide what each kind means.
    */
   takePending(): { entry: LevelEntry; worldY: number }[] {

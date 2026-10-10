@@ -10,7 +10,6 @@ import type { LateralAuthority } from './lateral';
 import type { EntrySide } from './levels';
 import type { NumberPopups } from './numberPopups';
 import type { ObstacleField } from './obstacles';
-import type { PickupDrop } from './placement';
 import type { Player } from './player';
 import type { Progression } from './progress';
 import type { RageState } from './rage';
@@ -19,6 +18,7 @@ import type { SkillId } from './skills';
 import type { SpitProjectile, Stomach } from './spit';
 import type { StageState } from './stages';
 import type { TalentEffects } from './talents';
+import type { Xp } from './xp';
 
 /**
  * What the game is doing, as one value.
@@ -50,9 +50,10 @@ export interface GameSnapshot {
   bullets: BulletField;
   enemyBullets: EnemyBulletField;
   projectiles: SpitProjectile[];
-  pickupDrops: PickupDrop[];
   stomach: Stomach;
   score: Score;
+  /** The mutation ladder, for the report: what the bar is at and what is waiting to be picked. */
+  xp: Xp;
   progress: Progression;
   stats: {
     absorbed: number;
@@ -149,4 +150,22 @@ export interface GameSnapshot {
  * Named rather than left as an anonymous union on one field, because two things now say it: the field, and the
  * snapshot's report of it.
  */
-export type Phase = 'menu' | 'intro' | 'playing' | 'burst' | 'cleared' | 'ascend' | 'summary' | 'loading' | 'paused' | 'codex';
+export type Phase =
+  | 'menu'
+  | 'intro'
+  | 'playing'
+  | 'burst'
+  | 'cleared'
+  | 'ascend'
+  | 'summary'
+  | 'loading'
+  | 'paused'
+  | 'codex'
+  /**
+   * The mutation pick: the bar filled, and the whole world is frozen behind three cards.
+   *
+   * Joins `paused` in the freeze list rather than being one, because the two must not restore each
+   * other's phases -- closing the settings during a pick must drop back into the pick, and picking
+   * must return to `playing` rather than to whatever pause remembered.
+   */
+  | 'levelup';

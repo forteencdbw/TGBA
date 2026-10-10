@@ -44,7 +44,7 @@ test.describe('the score', () => {
     await quietRun(page);
     const s = await score(page);
     expect(s.value, 'a fresh run has no points').toBe(0);
-    expect(s.byEvent, 'and an empty ledger').toEqual({ drivenOff: 0, absorb: 0, skill: 0, eaten: 0, surface: 0 });
+    expect(s.byEvent, 'and an empty ledger').toEqual({ drivenOff: 0, absorb: 0, eaten: 0, boss: 0 });
     // The string the SCREEN shows, not a re-derivation of the format: a display bug has to be visible to this test.
     expect(s.hud).toBe('分数 0');
     await expectNoErrors(errors);
@@ -80,30 +80,16 @@ test.describe('the score', () => {
     expect(afterFlee.byEvent.drivenOff).toBe(1);
     expect(afterFlee.hud, 'and the screen shows it').toBe(`分数 ${price.drivenOff}`);
 
-    // 2. Collect a special item.
-    await page.evaluate(() => {
-      const g = (window as unknown as {
-        __GB: {
-          game: { pickupDrops: { kind: string; id: string | null; x: number; y: number }[] };
-          player: { x: number; y: number };
-          camera: { viewport: { laneWidthMeters: number } };
-        };
-      }).__GB;
-      // Placed on the bubble, so the pickup's own collision takes it on the next update.
-      g.game.pickupDrops.push({ kind: 'skill', id: null, x: g.player.x * g.camera.viewport.laneWidthMeters, y: g.player.y });
-    });
-    await expect.poll(async () => (await score(page)).byEvent.skill, { message: 'the pickup has to be collected', timeout: 10_000 }).toBe(1);
-    const afterPickup = await score(page);
-    expect(afterPickup.value).toBe(price.drivenOff + price.skill);
-
-    // 3. Swallow a creature: the reversal.
+    // 2. Swallow a creature: the reversal.
+    // (The pickup event went with the pickups themselves -- the skill and the gun's rows are mutation
+    // picks now, so this run earns drivenOff, eaten and boss and nothing else.)
     await page.evaluate(() => {
       (window as unknown as { __GB: { game: { debugSwallowForTest: (k: string) => number } } }).__GB.game.debugSwallowForTest('fish');
     });
     const afterEat = await score(page);
-    expect(afterEat.value, 'the reversal pays too').toBe(price.drivenOff + price.skill + price.eaten);
+    expect(afterEat.value, 'the reversal pays too').toBe(price.drivenOff + price.eaten);
 
-    // 4. Reach the surface, which is the biggest single payment.
+    // 3. Defeat the boss, which is the biggest single payment.
     await page.evaluate(() => {
       (window as unknown as { __GB: { game: { debugSkipToLevelEnd: () => void } } }).__GB.game.debugSkipToLevelEnd();
     });
@@ -114,8 +100,12 @@ test.describe('the score', () => {
       })
       .toBe(true);
     const finished = await score(page);
-    expect(finished.value, 'and finishing pays the surface bonus').toBe(price.drivenOff + price.skill + price.eaten + price.surface);
-    // Per event rather than the whole object: collectable bubbles drift in, and with bsorb in the table an exact\n    // object would make this test fail for a bubble the level happened to put in the way.\n    expect(finished.byEvent.drivenOff).toBe(1);\n    expect(finished.byEvent.skill).toBe(1);\n    expect(finished.byEvent.eaten).toBe(1);\n    expect(finished.byEvent.surface).toBe(1);
+    expect(finished.value, 'and finishing pays the boss bonus').toBe(price.drivenOff + price.eaten + price.boss);
+    // Per event rather than the whole object: collectable bubbles drift in, and with absorb in the table an exact
+    // object would make this test fail for a bubble the level happened to put in the way.
+    expect(finished.byEvent.drivenOff).toBe(1);
+    expect(finished.byEvent.eaten).toBe(1);
+    expect(finished.byEvent.boss).toBe(1);
     // The best is taken at the END of the run, so it has to include everything that run earned.
     expect(finished.endingBest, 'the session best sees the whole run').toBe(finished.value);
     await expectNoErrors(errors);
@@ -125,8 +115,8 @@ test.describe('the score', () => {
    * The floating numbers: at the event, drifting UP, gone by the time the config says.
    *
    * "Up" is asserted in SCREEN pixels, which is the point of the whole design: a popup anchored to a world position
-   * drifts down with the current, and a number that sinks is not a number that drifts. The pickup is placed off to the
-   * side of the bubble so "at the event" is distinguishable from "at the player".
+   * drifts down with the current, and a number that sinks is not a number that drifts. The scored event is placed off
+   * to the side of the bubble so "at the event" is distinguishable from "at the player".
    */
   test('the score floats up where it was earned, and expires', async ({ page }) => {
     const errors = watchForErrors(page);
@@ -135,17 +125,18 @@ test.describe('the score', () => {
     const placed = await page.evaluate(() => {
       const g = (window as unknown as {
         __GB: {
-          game: { pickupDrops: { kind: string; id: string | null; x: number; y: number }[]; scorePopupsRef: { count: number; lastText: string | null }; score: { popups: { lifeSeconds: number } } };
+          game: { scorePopupsRef: { add: (x: number, y: number, v: number, camera: unknown) => void; count: number; lastText: string | null }; score: { popups: { lifeSeconds: number } } };
           player: { x: number; y: number };
           camera: { viewport: { laneWidthMeters: number }; toScreenX: (x: number) => number; toScreenY: (y: number) => number };
         };
       }).__GB;
       const lane = g.camera.viewport.laneWidthMeters;
-      // Inside the pickup's reach (~33 m) and off to the side, so the two positions cannot be confused.
+      // Off to the side of the bubble, so "at the event" is distinguishable from "at the player".
       const x = g.player.x * lane + 20;
       const y = g.player.y + 8;
-      // The pickups are a list now (a level may place several); a probe drops one in the same way the spawner does.
-      g.game.pickupDrops.push({ kind: 'skill', id: null, x, y });
+      // The pickups went with the pickup system, so the layer is driven directly -- the same call every
+      // scoring site makes, with the same world-to-screen conversion inside it.
+      g.game.scorePopupsRef.add(x, y, 25, g.camera);
       return {
         itemX: g.camera.toScreenX(x),
         itemY: g.camera.toScreenY(y),
@@ -154,7 +145,7 @@ test.describe('the score', () => {
       };
     });
     await expect.poll(async () => page.evaluate(() => (window as unknown as { __GB: { game: { scorePopupsRef: { count: number } } } }).__GB.game.scorePopupsRef.count), {
-      message: 'collecting a special item has to float a number',
+      message: 'a scored event has to float a number',
       timeout: 10_000,
     }).toBeGreaterThan(0);
 
@@ -163,10 +154,10 @@ test.describe('the score', () => {
       const label = g.root.children[0]!;
       return { text: g.lastText, x: label.x, y: label.y };
     });
-    const price = (await prices(page)).skill;
-    // The prefix comes from the config too, so re-labelling the popups is not a failing test.
+    // The value this test paid (25, above) is what the number must say -- the prefix comes from the
+    // config too, so re-labelling the popups is not a failing test.
     const prefix = await page.evaluate(() => (window as unknown as { __GB: { mechRef: { score: { popups: { prefix: string } } } } }).__GB.mechRef.score.popups.prefix);
-    expect(first.text, 'the number is the points, not the score').toBe(`${prefix}${price}`);
+    expect(first.text, 'the number is the points, not the score').toBe(`${prefix}25`);
     expect(Math.abs(first.x - placed.itemX), 'it appears where the ITEM was').toBeLessThan(6);
     expect(Math.abs(first.x - placed.bubbleX), 'and not where the bubble is').toBeGreaterThan(10);
 

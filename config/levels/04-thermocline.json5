@@ -48,13 +48,11 @@
     { at: 30, span: 200, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
     { at: 100, kind: 'fish', count: 4, arrange: 'line' },
     { at: 180, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5 },
-    { at: 250, kind: 'skill', x: 0.4 },
     { at: 300, kind: 'torpedo', x: 0.5, from: 'right', enterSpeed: 46 },
     { at: 360, kind: 'fish', count: 5, arrange: 'line' },
     // --- 猎食者登场。先给**海豚**：四个里它最小、最薄（3 点血）、食谱门槛最低，所以它教的是
     // "这一关的东西也可以很大、而且大的也能是食物"。先让玩家赢一次，再给他看赢不了的。 ---
     { at: 390, kind: 'dolphin', x: 0.78 },
-    { at: 420, kind: 'upgrade', x: 0.65 },
 
     // --- 温跃层：上下同时来东西，逼玩家换高度。 ---
     { at: 480, kind: 'fish', count: 5, arrange: 'spread', span: 40, from: 'left', depth: 0.62 },
@@ -73,7 +71,6 @@
     // **招牌**：大白鲨。前摇只有 0.6 秒、冲刺 0.4 秒，是四个里最"已经决定了"的那个。
     // 放在这里而不是开场，是因为到这一步玩家已经见过鱼群、见过温跃层逼他换高度，知道"大"在这个游戏里是什么意思了。
     { at: 900, kind: 'shark', x: 0.55 },
-    { at: 940, kind: 'rate', x: 0.3 },
     { at: 1000, kind: 'fish', count: 6, arrange: 'spread', span: 30, from: 'left', depth: 0.55 },
     { at: 1060, kind: 'bombfish', count: 3, arrange: 'spread', span: 40, x: 0.6 },
     { at: 1120, kind: 'angler', count: 3, arrange: 'spread', span: 40, x: 0.4 },

@@ -2,8 +2,7 @@ import { EntityField } from './entities';
 import { HazardField, type Hazard, type HazardKind, type SpawnOptions } from './hazards';
 import { isObstacleKind, ObstacleField } from './obstacles';
 import { mech } from './mechanisms';
-import { LEVEL, PICKUP_KINDS, type EntrySide, type LevelEntry, type PickupKind } from './levels';
-import type { SkillId } from './skills';
+import { LEVEL, type EntrySide, type LevelEntry } from './levels';
 
 /**
  * Where one timeline entry ended up.
@@ -24,18 +23,6 @@ export interface SpawnRecord {
 }
 
 /**
- * A skill lying in the water, waiting to be taken.
- *
- * The skill is rolled when it is COLLECTED, not when it is created -- see `placeEntry` -- so `id` starts null.
- */
-export interface PickupDrop {
-  kind: PickupKind;
-  id: SkillId | null;
-  x: number;
-  y: number;
-}
-
-/**
  * The water as this rule sees it: what to place things in, and the one fact about the player that decides how big a
  * placed collectable is.
  *
@@ -45,8 +32,6 @@ export interface PickupDrop {
 export interface PlacedWorld {
   /** Collectables. A placed bubble is built by the field, because the field owns their motion. */
   field: EntityField;
-  /** Skills in the water, appended rather than assigned. */
-  pickupDrops: PickupDrop[];
   obstacles: ObstacleField;
   hazards: HazardField;
   /** The bubble's own radius fraction, from the stage: a placed collectable is sized as the player's would be. */
@@ -105,20 +90,6 @@ export function placeEntry(
     world.field.bubbles.push(world.field.bubbleFromEntry({ ...entry, at: spawnY }, laneWidth, world.playerRadiusFraction));
     return record;
   }
-  if ((PICKUP_KINDS as readonly string[]).includes(entry.kind)) {
-    // APPENDED, not assigned: a level may place several, and one silently replacing another is how a pickup came to
-    // vanish on the player (see `pickupDrops`).
-    // A pickup sits where the level put it and drifts down with the water, waiting to be taken.
-    world.pickupDrops.push({
-      kind: entry.kind as PickupKind,
-      x: spawnX,
-      y: spawnY,
-      // The skill is rolled when it is COLLECTED, not when it is created: granting it here would
-      // decide the player's next twenty seconds before they had even seen the pickup.
-      id: null,
-    });
-    return record;
-  }
   /**
    * Anything in the obstacle list IS an obstacle, asked of the list rather than enumerated.
    *
@@ -138,7 +109,7 @@ export function placeEntry(
     );
     return record;
   }
-  // Everything left is a creature: the pickups, the collectables and the scenery have all returned above.
+  // Everything left is a creature: the collectables and the scenery have all returned above.
   /**
    * A creature on a path carries the spline, anchored at where it spawned.
    *

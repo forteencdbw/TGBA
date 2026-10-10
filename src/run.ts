@@ -6,8 +6,9 @@ import { ObstacleField } from './obstacles';
 import { BulletField } from './bullets';
 import { EnemyBulletField } from './enemyBullets';
 import { Stomach, tierBonusFor, type SpitProjectile } from './spit';
-import type { PickupDrop, SpawnRecord } from './placement';
+import type { SpawnRecord } from './placement';
 import { Score } from './score';
+import { Xp } from './xp';
 import { initialStageState, type StageState } from './stages';
 import { defaultBubbleType, type BubbleType } from './bubbleTypes';
 import { calibrateLateral, type LateralAuthority } from './lateral';
@@ -27,10 +28,9 @@ import { mech } from './mechanisms';
 import { isOverloaded, rageFraction } from './rage';
 import { updateProjectiles } from './spit';
 import { obstacleHealth, obstacleName } from './obstacles';
-import { updatePickups } from './pickups';
 import { placeEntry } from './placement';
 import { endOverload, gainRage, hitRage, slamDamage, spendRage, tickRage } from './rage';
-import { sayBlast } from './runEvents';
+import { sayBlast, sayGraze } from './runEvents';
 import { findSkill } from './skills';
 import { digestEnergy, spitDirection, spitRadiusFraction } from './spit';
 import { recordAbsorb, stageName, stageRadiusFraction } from './stages';
@@ -154,7 +154,7 @@ export class Run {
    * drift, and a visible promise would become a lie.
    */
   get suctionRadiusFactor(): number {
-    return this.stomach.overloaded ? mech.spit.overloadSuctionFactor : 1;
+    return (this.stomach.overloaded ? mech.spit.overloadSuctionFactor : 1) * this.suctionBonus;
   }
 
   /**
@@ -215,6 +215,26 @@ export class Run {
   enemyBullets = new EnemyBulletField();
   gunStreams = 1;
   rateTier = 1;
+  /** The run's mutation ladder: what pays, how full the bar is, and what is waiting to be picked. */
+  xp = new Xp();
+  /**
+   * Mutation picks taken this run, by card id.
+   *
+   * The one source of truth for every mutation-driven number: `applyMutationPassives` re-derives the
+   * multipliers from these counts after every talent re-roll, so a carried mutation can never be wiped by
+   * the level transition's fresh talent. See `src/mutations.ts`.
+   */
+  mutations: Record<string, number> = {};
+  /** Bullet damage multiplier from stacked 突变 · 子弹伤害 picks. Re-derived, never edited directly. */
+  bulletDamageMultiplier = 1;
+  /** Extra hit-invulnerability seconds from stacked 突变 · 受击无敌 picks. */
+  invulnBonusSeconds = 0;
+  /** Rage gain multiplier from stacked 突变 · 怒气积攒 picks. Angry bubble only offers the card. */
+  rageGainMultiplier = 1;
+  /** Suction field width multiplier from stacked 突变 · 吸取范围 picks. Devour bubble only offers the card. */
+  suctionBonus = 1;
+  /** Extra swallow-invulnerability seconds from stacked 突变 · 吞噬无敌 picks. */
+  eatInvulnBonusSeconds = 0;
   bossSpawned = false;
   infiniteHealth = false;
   pendingLevel: string | null = null;
@@ -243,7 +263,6 @@ export class Run {
   skill: { id: SkillId; name: string; uses: number } | null = null;
   decoy: { x: number; y: number; until: number } | null = null;
   skillActivations = 0;
-  pickupDrops: PickupDrop[] = [];
   fartReadyAt = 0;
   farts = 0;
   eventsFired = new Set<number>();
@@ -273,7 +292,8 @@ export class Run {
     if (this.infiniteHealth) return;
     this.stats.hits++;
     this.sound('hit');
-    this.invulnerable = tuning.invulnerableSeconds;
+    // The base window is the config's; the mutation ladder's picks widen it in 0.2s steps.
+    this.invulnerable = tuning.invulnerableSeconds + this.invulnBonusSeconds;
     /**
      * Digestion's cost, paid here rather than at the sources.
      *
@@ -315,7 +335,7 @@ export class Run {
      * hit ends the run, so there is no state left to carry rage in and no way to earn from dying. This one line is
      * the whole passive-rage rule; everything else about rage is either the clock or the spending.
      */
-    if (this.bubbleType.look === 'rage') gainRage(this.rage, hitRage());
+    if (this.bubbleType.look === 'rage') gainRage(this.rage, hitRage() * this.rageGainMultiplier);
   }
   /**
    * Advance the projectiles and resolve what they hit.
@@ -365,6 +385,13 @@ export class Run {
        * of tiers there are -- see `bullets.rateTiers`.
        */
       perSecond: mech.bullets.rateTiers[Math.min(this.rateTier, mech.bullets.rateTiers.length) - 1] ?? 0,
+      /**
+       * What one round takes off, config price times the mutation ladder's stacked multiplier.
+       *
+       * Handed in rather than read by the bullet module, so the multiplier stays the RUN's -- the gun's
+       * module is the behaviour of a round, not the player's upgrades.
+       */
+      damage: mech.bullets.damage * this.bulletDamageMultiplier,
       hazards: this.hazards,
       obstacles: this.obstacles,
     });
@@ -397,6 +424,8 @@ export class Run {
       const points = this.score.award('drivenOff', shots.drivenOff);
       // Divided by the count so the numbers on screen add up to what the ledger recorded, whatever the config says.
       for (const at of shots.driven) this.scorePopup(at.x, at.y, points / shots.drivenOff);
+      // The mutation ladder pays the same event the score does -- one site, one event, two ledgers.
+      this.xp.gain('drivenOff', shots.drivenOff);
     }
     /**
      * And what each round TOOK OFF, at the creature it landed on.
@@ -624,6 +653,7 @@ this.sound('slow');
       // is pushed away from the player like everything else the player hits.
       this.hazards.hit(h, cfg.chainDamage, { x: px, y: py });
       this.scorePopup(h.x, h.y, this.score.award('drivenOff'));
+      this.xp.gain('drivenOff');
     }
     if (cfg.chainSelfDamage > 0) this.takeHit();
     this.banner(`连锁放电  ·  ${reached.size} 只`);
@@ -936,6 +966,7 @@ this.sound('hit');
           // Alternating, so the fan opens like a splash rather than sliding sideways as a block.
           bow: (index % 2 === 0 ? 1 : -1) * bow * Math.hypot(target.x - fromX, target.y - fromY),
           elapsed: 0,
+          grazed: false,
         };
         // `makeHazard` builds one; the caller adds it -- the same two steps the level's own spawner takes, because a
         // creature the field does not hold is a creature that never moves, never hurts anything and is never drawn.
@@ -980,6 +1011,17 @@ this.sound('hit');
        * Applied to the player's own position rather than as a knockback impulse, so it costs exactly the height it
        * says it does (`pushMeters`) whatever the frame rate did -- the same reasoning as the charge popups' rise.
        */
+      if (e.graze) {
+        /**
+         * A NEAR-MISS paid out. The points land on the frame they were earned -- the design's "即时触发" -- and
+         * the drain does the two things a rule must not: it writes a word into the water and stretches time,
+         * both of which are the presentation's to do (see `applyRunEvents`' graze case).
+         */
+        this.xp.gain('graze');
+        sayGraze(this.events, e.graze.x, e.graze.y);
+        this.sound('skill');
+        continue;
+      }
       if (e.pushDown) {
         this.player.y = Math.max(0, this.player.y - e.pushDown);
       }
@@ -1013,7 +1055,8 @@ this.sound('hit');
         // number appears at the BUBBLE, which is where the creature was when it was swallowed -- a contact is a
         // touching distance, so the difference is a radius.
         this.scorePopup(this.player.x * laneWidth, this.player.y, this.score.award('eaten'));
-        this.invulnerable = Math.max(this.invulnerable, mech.consumption.eatInvulnerableSeconds);
+        this.xp.gain('eaten');
+        this.invulnerable = Math.max(this.invulnerable, mech.consumption.eatInvulnerableSeconds + this.eatInvulnBonusSeconds);
         /**
          * What was swallowed goes into the stomach, carrying THE VOLUME IT ACTUALLY ADDED.
          *
@@ -1539,56 +1582,6 @@ this.sound('skill');
     if (path !== undefined) opts.path = path;
     return this.hazards.spawnAt(kind, spawnX, y, opts);
   }
-  /**
-   * Skills lie in the water as pickups, on their own timer.
-   *
-   * Deliberately NOT one per screen: a skill is a decision, and a decision every few seconds is just
-   * Skills lie in the water as pickups, placed by the LEVEL'S TIMELINE.
-   *
-   * There used to be a timer here that dropped one every ~20 seconds regardless of the level. That is
-   * gone: a level now says where its skills are, which is the difference between an authored level and a
-   * difficulty curve. The level can put one where the player will need it, or deliberately withhold one.
-   *
-   * This method is left with only motion and collection, because that is all that is left to do.
-   */
-  updatePickup(dt: number, min: number, max: number, laneWidth: number): void {
-    if (!this.pickupDrops.length) return;
-    /**
-     * The rule lives in `src/pickups.ts`; what stays here is APPLYING what it says was taken.
-     *
-     * The two numbers it raises are the run's -- the gun reads them and the HUD shows them -- and the words for a
-     * pickup taken at the ceiling are Chinese UI strings, which is not a rule module's business. So the rule decides
-     * and this applies, and a probe can read the decision instead of a banner.
-     */
-    for (const taken of updatePickups(dt, min, max, {
-      drops: this.pickupDrops,
-      playerX: this.player.x * laneWidth,
-      playerY: this.player.y,
-      reachMeters: laneWidth * (stageRadiusFraction(this.stage.stage, this.player.volume) + 0.05),
-      gunStreams: this.gunStreams,
-      rateTier: this.rateTier,
-      score: this.score,
-      events: this.events,
-    })) {
-      if (taken.kind === 'upgrade') {
-        this.gunStreams = taken.streams;
-        this.banner(
-          taken.capped
-            ? `火力升级  ·  已经是 ${taken.streams} 排（上限 ${mech.bullets.maxStreams}）`
-            : `火力升级  ·  ${taken.streams} 排小泡泡同时发射`,
-        );
-      } else if (taken.kind === 'rate') {
-        this.rateTier = taken.tier;
-        this.banner(
-          taken.capped
-            ? `射速升级  ·  已经是最高档（第 ${mech.bullets.rateTiers.length} 档）`
-            : `射速升级  ·  第 ${taken.tier} 档  ·  每秒 ${mech.bullets.rateTiers[taken.tier - 1]} 发`,
-        );
-      } else {
-        this.grantSkill(taken.id);
-      }
-    }
-  }
   updateProjectiles(dt: number, laneWidth: number, min: number, max: number): void {
     // The rule lives in `src/spit.ts` with the ammunition; what stays here is the run's counter of what it hit.
     this.spitHits += updateProjectiles(
@@ -1621,7 +1614,6 @@ this.sound('skill');
   emitTimelineEntry(entry: LevelEntry, worldY: number, laneWidth: number, world: WorldView): void {
     const record = placeEntry(entry, worldY, { min: world.min, max: world.max }, laneWidth, {
       field: this.field,
-      pickupDrops: this.pickupDrops,
       obstacles: this.obstacles,
       hazards: this.hazards,
       playerRadiusFraction: stageRadiusFraction(this.stage.stage, this.player.volume),

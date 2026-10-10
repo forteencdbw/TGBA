@@ -54,7 +54,6 @@
     { at: 150, kind: 'crate', count: 4, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
     { at: 200, kind: 'net', count: 3, arrange: 'line' },
     { at: 240, kind: 'wall', count: 4, arrange: 'barrier', gapAt: 0.62, gapWidth: 0.19 },
-    { at: 280, kind: 'skill', x: 0.55 },
 
     // --- 灯笼鱼第一次出现：唯一一个"自己会发光"的敌人，而光是诱饵。 ---
     { at: 330, kind: 'angler', x: 0.4 },
@@ -64,7 +63,6 @@
     // --- 失控鱼雷：从船舱里射出来，直飞一段之后开始追。 ---
     { at: 450, kind: 'torpedo', x: 0.5, from: 'right', enterSpeed: 40 },
     { at: 490, kind: 'crate', count: 5, arrange: 'barrier', gapAt: 0.45, gapWidth: 0.19 },
-    { at: 520, kind: 'upgrade', x: 0.3 },
     { at: 560, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.6, from: 'left', enterSpeed: 40 },
 
     // --- 锚链：珊瑚（藤壶/锈蚀结构）竖直排成链，中间夹着漂浮残骸。 ---
