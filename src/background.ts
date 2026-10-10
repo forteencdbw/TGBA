@@ -565,13 +565,10 @@ export interface HudState {
   /** The lane's metrics in metres, quoted by the debug readout. */
   world: { laneWidthMeters: number; visibleDepthMeters: number };
   /**
-   * The growth stage, how far into the next one, and the eating rank digestion has bought.
+   * The growth stage, and how far into the next one.
    *
    * The progress toward the next stage is the part that matters, because it is what makes "should I eat one more" a
-   * decision. `tierBonus` is shown only when it is non-zero: a permanent "+0" would spend subline space on a fact the
-   * player has not earned -- but once it exists it has to be visible, because it changes what the bubble can eat while
-   * the volume number says otherwise, and an invisible discrepancy between what the bubble looks like and what it can
-   * do is the one thing the marker and the rule must never disagree about.
+   * decision.
    */
   stage: {
     stage: number;
@@ -580,7 +577,6 @@ export interface HudState {
     neededForNext: number | null;
     /** False for a type that does not grow from absorbing at all, which has no next stage to count toward. */
     grows: boolean;
-    tierBonus: number;
     /**
      * The mutation meter, for every type: the bar that fills toward the next freeze.
      *
@@ -809,9 +805,7 @@ export class Hud {
     this.bossName.x = viewport.width / 2;
     this.bossName.y = mech.hud.bossBar.y * s - mech.hud.bossBar.nameOffset * s;
 
-
-
-  }
+}
 
   /**
    * The run's score, the boss fight, the progress chart, and the two run labels: all of them read from `state`.
@@ -1083,8 +1077,7 @@ export class Hud {
         ? `${stage.name} 不成长`
         : stage.neededForNext === null
           ? `${stage.name} ${stage.stage}阶 满`
-          : `${stage.name} ${stage.stage}阶 ${stage.absorbedInStage}/${stage.neededForNext}`) +
-      (stage.tierBonus > 0 ? `  吞阶+${stage.tierBonus}` : '');
+          : `${stage.name} ${stage.stage}阶 ${stage.absorbedInStage}/${stage.neededForNext}`);
     this.subline.text = tags
       ? `${stageText}   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
       : this.seedLabel
@@ -1145,7 +1138,6 @@ export class Hud {
   }
 }
 
-
 export async function createApp(): Promise<Application> {
   const app = new Application();
   await app.init({
@@ -1162,43 +1154,4 @@ export async function createApp(): Promise<Application> {
   });
   return app;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

@@ -113,16 +113,6 @@ export function obstacleRadius(kind: ObstacleKind): number {
 }
 
 /**
- * Damage a projectile does to an obstacle, from the ammunition's impact factor.
- *
- * Scaled by the impact so "the item keeps its own properties" extends to breaking things: a crab is a battering
- * ram and a jellyfish barely scratches the paint.
- */
-export function projectileDamage(impact: number): number {
-  return mech.obstacles.projectileDamage * impact;
-}
-
-/**
  * Damage the PLAYER does by running into an obstacle, or 0 when they are too small to matter.
  *
  * Proportional to how far past the threshold the player is, so "just big enough" is a scratch and a giant goes
@@ -321,23 +311,6 @@ export class ObstacleField {
       if (dx * dx + dy * dy <= reach * reach) return true;
     }
     return false;
-  }
-
-  /**
-   * Resolve a projectile against the obstacles.
-   *
-   * @return the hit, or null when nothing was in the way.
-   */
-  hitByProjectile(x: number, y: number, hitRadius: number, impact: number): ObstacleHit | null {
-    for (const o of this.obstacles) {
-      const r = mech.obstacles.radius[o.kind] ?? 0.05;
-      const reach = hitRadius + r;
-      const dx = o.x - x;
-      const dy = o.y - y;
-      if (dx * dx + dy * dy > reach * reach) continue;
-      return this.damage(o.id, projectileDamage(impact));
-    }
-    return null;
   }
 
   /**

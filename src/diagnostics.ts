@@ -3,14 +3,12 @@ import { audio } from './audio';
 import { bubbleLook } from './bubbleLook';
 import { BUBBLE_TYPES, hasControl } from './bubbleTypes';
 import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
-import { volumeTier } from './consumption';
 import { KIND_TUNING, type HazardKind } from './hazards';
 import type { LateralAuthority } from './lateral';
 import { LEVEL, TIMELINE, currentSpawnBlocks, secondsPerScreenSeries } from './levels';
 import { mech } from './mechanisms';
 import { rageFraction, rageStageName } from './rage';
 import { SKILLS } from './skills';
-import { stomachBulge } from './spit';
 import { stageName, stageRadiusFraction, type StageAppearance } from './stages';
 import { suctionRadiusFraction } from './suction';
 import { TALENTS } from './talents';
@@ -138,25 +136,6 @@ export function diagnosticsOf(g: GameSnapshot): {
       minGap: number;
     };
     /**
-     * The stomach and what is in flight.
-     *
-     * `contents` is the ORDER, not just the count: spitting takes the oldest, so a test asserting "it fires what it
-     * swallowed first" needs the sequence rather than the size.
-     */
-    spit: {
-      contents: readonly HazardKind[];
-      capacity: number;
-      full: boolean;
-      inFlight: number;
-      hits: number;
-      /** Whether the over-eating fuse is lit, how much is left, and the bulge it produces. */
-      overloaded: boolean;
-      fuseRemaining: number | null;
-      fuseFraction: number;
-      /** The bulge in item EQUIVALENTS: `swell`, so a half-digested item counts for the half that is left. */
-      bulge: number;
-    };
-    /**
      * The gun: the small bubbles fired on their own.
      *
      * `armed` is here because "nothing is happening" has two very different causes -- the type has no gun, or it has
@@ -172,51 +151,6 @@ export function diagnosticsOf(g: GameSnapshot): {
       fired: number;
       hits: number;
       armed: boolean;
-    };
-    /**
-     * Digestion: the third way out of the stomach, and the only one that pays.
-     *
-     * `energy` and `tierBonus` are stated separately rather than only reporting the rank, because "how far into
-     * the next rank am I" is the thing a player watches and the thing a probe needs in order to assert that the
-     * conversion is going at the configured rate rather than at some plausible-looking one.
-     */
-    digest: {
-      energy: number;
-      tierBonus: number;
-      /** The rank the eat rule is actually using: what `volumeTier(volume)` gives, plus the bonus. */
-      tier: number;
-      /** Whether the holder is compressing: the state that costs suction and doubles damage. */
-      compressing: boolean;
-      /** How far through the oldest item, 0..1. */
-      progress: number;
-      /** Items digested this run, and the volume digestion has taken out of the bubble. Monotonic, for probes. */
-      completed: number;
-      drained: number;
-    };
-    /**
-     * What is in the stomach and what it is doing from inside.
-     *
-     * The per-item list lives HERE rather than under `digest`, because it stopped being only about digesting the
-     * moment the contents started acting on their own: the same list answers "what is in there", "how far along is
-     * the oldest one" and "which fuse is about to run out". Two copies of it would be two answers to one question.
-     *
-     * `internalHits` is the counter that makes "the urchin is hurting me" assertable: a volume that fell over a
-     * window in which nothing else touched the player is also what eating, digesting and being shot at look like,
-     * so the fact is reported rather than inferred.
-     */
-    stomach: {
-      contents: readonly { kind: HazardKind; mass: number; digest: number; fuse: number }[];
-      shortestFuse: number | null;
-      /** Internal damage accumulated but not yet charged as a whole hit point. */
-      partialDamage: number;
-      /** Hit points the contents have taken this run. Monotonic. */
-      internalHits: number;
-      /** Volume destroyed inside by a detonation this run, which buys no rank. Monotonic. */
-      destroyed: number;
-      /** What the contents multiply the digestion rate by: the worst thing in there. 1 is no effect. */
-      digestScale: number;
-      /** Spit attempts refused by a clog this run. Monotonic, because a refusal leaves no other trace. */
-      clogs: number;
     };
     /**
      * Lost control, from an electric eel.
@@ -457,18 +391,6 @@ export function diagnosticsOf(g: GameSnapshot): {
         radiusFraction: suctionRadiusFraction(g.player.volume),
         moveFactor: g.player.suctionMoveFactor,
       },
-      /** What is in the stomach and what is in flight, so a probe reads the fact rather than inferring it. */
-      spit: {
-        contents: g.stomach.contents,
-        capacity: mech.spit.capacity,
-        full: g.stomach.full,
-        inFlight: g.projectiles.length,
-        hits: g.spitHits,
-        overloaded: g.stomach.overloaded,
-        fuseRemaining: g.stomach.fuseRemaining,
-        fuseFraction: g.stomach.fuseFraction,
-        bulge: stomachBulge(g.stomach.swell),
-      },
       /**
        * The gun: how many rounds are in the air, and the two counters that make it answerable whether it fired and
        * whether it connected. Both monotonic, because a round lives for a couple of seconds at most.
@@ -479,26 +401,6 @@ export function diagnosticsOf(g: GameSnapshot): {
         hits: g.bullets.hits,
         /** Whether this run's bubble has the gun at all, so a probe can tell "off" from "not firing yet". */
         armed: g.bubbleType.firesBullets,
-      },
-      /** Digestion: the energy banked, the rank it bought, and the state that costs. */
-      digest: {
-        energy: g.growthEnergy,
-        tierBonus: g.tierBonus,
-        tier: volumeTier(g.player.volume) + g.tierBonus,
-        compressing: g.compressing,
-        progress: g.stomach.digestProgress,
-        completed: g.digested,
-        drained: g.digestedMass,
-      },
-      /** What is in the stomach, and what it is doing from inside. */
-      stomach: {
-        contents: g.stomach.detail,
-        shortestFuse: g.stomach.shortestFuse,
-        partialDamage: +g.stomachDrain.toFixed(4),
-        internalHits: g.internalHits,
-        destroyed: +g.destroyedMass.toFixed(4),
-        digestScale: g.stomach.digestScale,
-        clogs: g.spitClogs,
       },
       misfire: { remaining: +g.player.misfireSeconds.toFixed(3), inverted: g.player.misfiring },
       /** The obstacles, so a probe reads the state rather than inferring it from what is on screen. */

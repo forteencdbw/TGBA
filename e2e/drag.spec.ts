@@ -182,23 +182,24 @@ test.describe('the touch drag', () => {
      * The press must go to the button and NOT also start a drag.
      *
      * It is the order of the branches in `onPointerDown` that decides this, and getting it wrong would mean every
-     * attempt to spit also shoved the bubble sideways -- the exact failure the drag's "anywhere" rule invites.
+     * press of a button also shoved the bubble sideways -- the exact failure the drag's "anywhere" rule invites.
+     * The skill/suction button, because it is a button the default bubble actually has.
      */
     await page.evaluate(() => {
       const g = (window as unknown as {
         __GB: {
           game: {
             handlePointerDown: (id: number, x: number, y: number) => void;
-            touchRef: { spitGeometry: { x: number; y: number } };
+            touchRef: { skillGeometry: { x: number; y: number } };
           };
         };
       }).__GB.game;
-      const b = g.touchRef.spitGeometry;
+      const b = g.touchRef.skillGeometry;
       g.handlePointerDown(71, b.x, b.y);
     });
 
     const state = await drag(page);
-    expect(state.steering, 'the spit button must not also start a drag').toBe(false);
+    expect(state.steering, 'a button press must not also start a drag').toBe(false);
     expect(state.dragPointers, 'and no pointer is steering').toBe(0);
 
     await up(page, 71);

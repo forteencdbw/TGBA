@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { boot, diagnostics, startFromMenu, waitForPhase } from './helpers';
+import { boot, startFromMenu, waitForPhase } from './helpers';
 
 /**
  * Destructible obstacles: crates you smash and coral you squeeze past.
@@ -27,7 +27,6 @@ const cfg = (page: Page) =>
       radius: Record<string, number>;
       ramVolume: Record<string, number | null>;
       minGapFraction: number;
-      projectileDamage: number;
       ramVolumeThreshold: number;
       ramDamagePerVolume: number;
       collideDamage: number;
@@ -94,47 +93,13 @@ test.describe('obstacles', () => {
     expect(check.failures, `these rows would seal the lane (need a gap of ${check.required})`).toEqual([]);
   });
 
-  test('a crate is destroyed by a projectile', async ({ page }) => {
-    await boot(page);
-    await startFromMenu(page);
-    await waitForPhase(page, 'playing');
-
-    const before = await diagnostics(page);
-    const broken = await page.evaluate(async () => {
-      const g = (window as unknown as {
-        __GB: {
-          game: {
-            debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
-            touchRef: { spitGeometry: { x: number; y: number } };
-            handlePointerDown: (id: number, x: number, y: number) => void;
-            handlePointerUp: (id: number) => void;
-            debugSpawnHazardOnPlayer: (k: string) => void;
-            diagnostics: { obstacles: { broken: number }; spit: { contents: string[] } };
-            camera: { viewport: { laneWidthMeters: number } };
-          };
-          player: { volume: number };
-        };
-      }).__GB;
-      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
-
-      // Ammunition, and a crate directly above.
-      g.player.volume = 20;
-      g.game.debugSpawnHazardOnPlayer('crab');
-      await raf();
-      await raf();
-      g.game.debugSpawnObstacleOnPlayer('crate', g.game.camera.viewport.laneWidthMeters * 0.4);
-
-      const beforeBroken = g.game.diagnostics.obstacles.broken;
-      const b = g.game.touchRef.spitGeometry;
-      g.game.handlePointerDown(93, b.x, b.y);
-      g.game.handlePointerUp(93);
-      for (let i = 0; i < 60; i++) await raf();
-      return g.game.diagnostics.obstacles.broken - beforeBroken;
-    });
-
-    expect(before.obstacles.broken, 'the run starts with nothing broken').toBe(0);
-    expect(broken, 'one spit must be enough to break one crate').toBeGreaterThan(0);
-  });
+  /**
+   * A crate destroyed by a projectile used to live here: swallow a crab, spit it at the crate, count the break.
+   * The projectile path is gone with the stomach, and the gun deliberately does not damage obstacles
+   * (`src/bullets.ts` -- ordnance is the charge and the burst, not free fire), so "destroyed by ordnance" has no
+   * non-angry caller left. What remains true of every type is the pair below: blocked when small, through when
+   * big, and the gap in every row.
+   */
 
   test('a small player is BLOCKED and hurt; a big one smashes through', async ({ page }) => {
     await boot(page);
@@ -215,17 +180,12 @@ test.describe('obstacles', () => {
      * The four answers, asserted as RELATIONSHIPS rather than as numbers, because the numbers are the owner's to
      * tune and the relationships are the design:
      *
-     *   crate  rammable, and one shot
-     *   coral  rammable, and several shots
-     *   wall   NOT rammable at any size, and several shots -- so ammunition or the minimum gap
-     *   net    not rammed at all; it is torn, and a shot tears it faster
+     *   crate  rammable, and cheap to ram through
+     *   coral  rammable, and a real cost
+     *   wall   NOT rammable at any size -- so the minimum gap is the only answer a non-angry type has
+     *   net    not rammed at all; it is torn, by pushing
      */
     expect(c.health.wall, 'a wall needs health').toBeGreaterThan(0);
-    expect(
-      c.health.wall!,
-      'a wall must survive a single fish shot, or "you need ammunition" is not true of it',
-    ).toBeGreaterThan(c.projectileDamage * 0.8);
-    expect(c.health.wall!, 'and it should be a real cost, not one crab either').toBeGreaterThan(c.projectileDamage * 1.6);
 
     // The rule that makes a wall a wall: no volume smashes it. `null` rather than a large number, so raising
     // `volume.max` later cannot quietly turn it into a crate.

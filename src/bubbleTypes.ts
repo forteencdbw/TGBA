@@ -170,8 +170,8 @@ export const BUBBLE_TYPES: readonly BubbleType[] = [
     id: 'devour',
     name: '吞噬气泡',
     tagline: '吃掉一切，越大越强 —— 代价是越来越难躲',
-    hint: 'WASD / 方向键移动   ·   右侧按钮（下→上）：技能/吸附 · 喷吐 · 消化',
-    controls: ['skill', 'suction', 'spit', 'compress'],
+    hint: 'WASD / 方向键移动   ·   右侧按钮（下→上）：技能/吸附',
+    controls: ['skill', 'suction'],
     look: 'growthStage',
     // The original design: the reversal IS the mechanic, and both exits are one button away.
     swallowsHazards: true,
@@ -296,6 +296,4 @@ export function hasControl(type: BubbleType, control: ControlId): boolean {
 export function hasVerb(type: BubbleType, verb: 'suction' | 'spit' | 'compress' | 'charge' | 'burst'): boolean {
   return type.controls.includes(verb);
 }
-
-
 

@@ -168,42 +168,27 @@ test.describe('bubble types', () => {
     expect(layout.charge.radius, 'the charge button must have a real size to press').toBeGreaterThan(0);
 
     /**
-     * And pressing where the spit button WOULD be must do nothing.
-     *
-     * The stale rectangles are still in the layer, so this is the case a probe has to check explicitly: a type with
-     * no spit button that still answered a press there would be a ghost control.
+     * No ghost-control check any more: it used to press where the spit button would be and read the spit counter,
+     * but the verb is gone from the game entirely -- there is no counter to read and no verb to fire. The control
+     * LIST is the whole contract now: the drawing and the hit testing both read it, so a verb absent from it is
+     * absent from the game.
      */
-    const pressed = await page.evaluate(async () => {
-      const g = (window as unknown as {
-        __GB: {
-          game: {
-            touchRef: { spitGeometry: { x: number; y: number } };
-            handlePointerDown: (id: number, x: number, y: number) => void;
-            handlePointerUp: (id: number) => void;
-            diagnostics: { spit: { hits: number } };
-          };
-        };
-      }).__GB.game;
-      const before = g.diagnostics.spit.hits;
-      const s = g.touchRef.spitGeometry;
-      g.handlePointerDown(72, s.x, s.y);
-      g.handlePointerUp(72);
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
-      return g.diagnostics.spit.hits - before;
-    });
-    expect(pressed, 'a type without a spit button must not answer a press where one used to be').toBe(0);
   });
 
-  test('the devour bubble is untouched: same controls, and NO rage', async ({ page }) => {
+  test('the devour bubble keeps its two verbs, and NO rage', async ({ page }) => {
     await boot(page);
     await startFromMenu(page);
     await waitForPhase(page, 'playing');
 
     const run = await state(page);
     expect(run.bubbleType.id, 'the default run is still the devour bubble').toBe('devour');
-    expect(run.bubbleType.controls, 'with exactly its old controls').toEqual(['skill', 'suction', 'spit', 'compress']);
-    expect(run.bubbleType.hasSpit).toBe(true);
-    expect(run.bubbleType.hasCompress).toBe(true);
+    /**
+     * The inventory verbs (spit, compress) are gone -- the first cut of the swallow rework. What is left is the
+     * pair the type is FOR: pull the food in, cash it the instant it touches.
+     */
+    expect(run.bubbleType.controls, 'with exactly its remaining controls').toEqual(['skill', 'suction']);
+    expect(run.bubbleType.hasSpit).toBe(false);
+    expect(run.bubbleType.hasCompress).toBe(false);
     expect(run.bubbleType.hasCharge, 'and no charge verb it never had').toBe(false);
 
     /**
@@ -760,16 +745,16 @@ test.describe('bubble types', () => {
     expect(result.afterCrate.overloaded, 'breaking a crate must NOT be a release').toBe(true);
   });
 
-  test('no bubble may swallow without a way to get it back out', async ({ page }) => {
+  test('every type either eats a creature on the spot, or cannot eat it at all', async ({ page }) => {
     await boot(page);
 
     /**
-     * The invariant that would have caught the bug this fix replaces.
+     * The rule the swallow rework left behind.
      *
-     * The volatile bubble was swallowing enemies. It has neither spit nor digest, so a full stomach had exactly one
-     * outcome: the over-eating fuse burned down and the run ended from the inside, with nothing the player could do
-     * about it. Swallowing is per type now (`swallowsHazards`), and this is the rule that keeps it honest -- a type
-     * that swallows must have an exit, whatever a future config or a future type says.
+     * There is no inventory any more: a creature a bubble can eat is consumed the moment it touches, and a bubble
+     * that cannot eat it takes the hit instead. So the per-type switch has exactly two honest outcomes, and this is
+     * the test that keeps it honest: for EVERY type, a fish parked on the bubble at a size that could eat it must
+     * either be gone within a few frames or never count as eaten -- never stored, never delayed.
      */
     const types = await page.evaluate(() =>
       (window as unknown as { __GB: { game: { debugBubbleTypeIds: () => string[] } } }).__GB.game.debugBubbleTypeIds(),
@@ -777,27 +762,50 @@ test.describe('bubble types', () => {
     expect(types.length, 'there must be types to check').toBeGreaterThan(0);
 
     for (const id of types) {
-      const shape = await page.evaluate(async (typeId) => {
+      const result = await page.evaluate(async (typeId) => {
         const g = (window as unknown as {
           __GB: {
             game: {
               debugStartRunWithType: (id: string) => void;
-              diagnostics: { bubbleType: { id: string; controls: string[]; swallowsHazards: boolean } };
+              debugSpawnHazardOnPlayer: (kind: string) => void;
+              debugSetSteadyCruise: () => void;
+              diagnostics: {
+                bubbleType: { id: string; swallowsHazards: boolean };
+                hazards: { eaten: number };
+              };
+              hazardsRef: { hazards: unknown[] };
             };
+            player: { x: number; screenY: number; volume: number };
           };
-        }).__GB.game;
-        g.debugStartRunWithType(typeId);
+        }).__GB;
+        const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
+        g.game.debugStartRunWithType(typeId);
         await new Promise<void>((r) => requestAnimationFrame(() => r()));
-        return g.diagnostics.bubbleType;
+        g.game.debugSetSteadyCruise();
+        g.player.x = 0.5;
+        g.player.screenY = 0.5;
+        // Big enough that the tier rule would let a swallow-type eat a fish (fish needs tier 2, volume 2.2).
+        g.player.volume = 6;
+        g.game.hazardsRef.hazards.length = 0;
+        await raf();
+        const before = g.game.diagnostics.hazards.eaten;
+        g.game.debugSpawnHazardOnPlayer('fish');
+        // A few frames is the whole point: instant means no waiting for a charge, a fuse, or an inventory.
+        for (let i = 0; i < 5; i++) await raf();
+        return {
+          swallows: g.game.diagnostics.bubbleType.swallowsHazards,
+          eaten: g.game.diagnostics.hazards.eaten - before,
+        };
       }, id);
-      const exits = ['spit', 'compress'].filter((verb) => shape.controls.includes(verb));
-      if (shape.swallowsHazards) {
-        expect(exits.length, `the ${id} bubble swallows creatures but has no way to get them out`).toBeGreaterThan(0);
+      if (result.swallows) {
+        expect(result.eaten, `the ${id} bubble swallows, so a fish on it must be eaten on the spot`).toBeGreaterThan(0);
+      } else {
+        expect(result.eaten, `the ${id} bubble cannot swallow, so nothing may count as eaten`).toBe(0);
       }
     }
   });
 
-  test('the volatile bubble has no stomach: an enemy it touches hurts it instead of feeding it', async ({ page }) => {
+  test('the volatile bubble cannot eat creatures: an enemy it touches hurts it instead of feeding it', async ({ page }) => {
     await boot(page);
     await page.evaluate(() => (window as unknown as { __GB: { game: { debugStartRunWithType: (id: string) => void } } }).__GB.game.debugStartRunWithType('angry'));
     await waitForPhase(page, 'playing');
@@ -815,7 +823,6 @@ test.describe('bubble types', () => {
             diagnostics: {
               phase: string;
               stats: { hits: number; ended: number };
-              stomach: { contents: unknown[] };
               hazards: { eaten: number };
               bubbleType: { swallowsHazards: boolean };
               gameSeconds: number;
@@ -856,10 +863,7 @@ test.describe('bubble types', () => {
       const before = { hits: g.game.diagnostics.stats.hits, eaten: g.game.diagnostics.hazards.eaten, ended: g.game.diagnostics.stats.ended };
 
       /**
-       * Five creatures, which is more than the stomach's capacity of three.
-       *
-       * Five rather than one because the bug was never "it ate a fish" -- it was that a stomach this bubble cannot
-       * empty always ends in the fuse. Filling past capacity is what used to guarantee the explosion.
+       * Five creatures, so one lucky dodge or one harmless contact cannot decide the result.
        */
       for (const kind of ['fish', 'jelly', 'trash', 'crab', 'urchin']) g.game.debugSpawnHazardOnPlayer(kind);
       g.game.hazardsRef.hazards.forEach((h, i) => {
@@ -869,12 +873,11 @@ test.describe('bubble types', () => {
       });
 
       const t0 = g.game.diagnostics.gameSeconds;
-      // Long enough for the five-second fuse to burn out twice over, had anything been swallowed.
+      // Long enough that any delayed consequence of contact would have landed.
       while (g.game.diagnostics.gameSeconds - t0 < 11) await raf();
 
       const out = {
         swallowsHazards: g.game.diagnostics.bubbleType.swallowsHazards,
-        stomachSize: g.game.diagnostics.stomach.contents.length,
         eatenByField: g.game.diagnostics.hazards.eaten - before.eaten,
         hits: g.game.diagnostics.stats.hits - before.hits,
         ended: g.game.diagnostics.stats.ended - before.ended,
@@ -885,36 +888,33 @@ test.describe('bubble types', () => {
     });
 
     console.log(`volatile bubble vs creatures: ${JSON.stringify(result)}`);
-    expect(result.swallowsHazards, 'the volatile bubble must declare that it has no stomach').toBe(false);
-    expect(result.stomachSize, 'so nothing may end up in there').toBe(0);
+    expect(result.swallowsHazards, 'the volatile bubble must declare that it cannot eat creatures').toBe(false);
     expect(result.eatenByField, 'and the field must never report a creature as eaten').toBe(0);
     expect(result.hits, 'contact with an enemy must HURT it -- that is where its rage comes from').toBeGreaterThan(0);
     /**
-     * And the run must survive creatures it cannot eat.
-     *
-     * This is the bug in one assertion: five creatures and eleven seconds of contact used to end the run from the
-     * inside, because the stomach filled and had no exit.
+     * And the run must survive creatures it cannot eat. A type that takes its hits as hits -- rather than storing
+     * them somewhere they cannot be answered -- has no second way to die from a crowd.
      */
-    expect(result.ended, 'and it must not have died of over-eating').toBe(0);
+    expect(result.ended, 'and it must not have died to the crowd').toBe(0);
     expect(result.phase, 'the run must still be running').toBe('playing');
   });
 
-  test('the devour bubble in the same situation DOES swallow, which is the difference', async ({ page }) => {
+  test('the devour bubble in the same situation DOES eat, which is the difference', async ({ page }) => {
     await boot(page);
     await startFromMenu(page);
     await waitForPhase(page, 'playing');
 
     /**
      * The contrast, because "the volatile bubble cannot eat creatures" is only a design decision if the other bubble
-     * still can. One creature, a few frames, and the devour bubble's stomach has something in it.
+     * still can. One creature, a few frames: the eat is instant, so what rises is the eaten count and the volume.
      */
-    const swallowed = await page.evaluate(async () => {
+    const eaten = await page.evaluate(async () => {
       const g = (window as unknown as {
         __GB: {
           game: {
             debugSpawnHazardOnPlayer: (kind: string) => void;
             debugSetSteadyCruise: () => void;
-            diagnostics: { stomach: { contents: unknown[] }; bubbleType: { swallowsHazards: boolean } };
+            diagnostics: { hazards: { eaten: number }; bubbleType: { swallowsHazards: boolean } };
             hazardsRef: { hazards: unknown[] };
           };
           player: { x: number; screenY: number; volume: number };
@@ -925,15 +925,22 @@ test.describe('bubble types', () => {
       g.player.x = 0.5;
       g.player.screenY = 0.5;
       g.player.volume = 6;
+      const volumeBefore = g.player.volume;
       g.game.hazardsRef.hazards.length = 0;
       await raf();
+      const before = g.game.diagnostics.hazards.eaten;
       g.game.debugSpawnHazardOnPlayer('fish');
       for (let i = 0; i < 4; i++) await raf();
-      return { size: g.game.diagnostics.stomach.contents.length, swallowsHazards: g.game.diagnostics.bubbleType.swallowsHazards };
+      return {
+        eaten: g.game.diagnostics.hazards.eaten - before,
+        volume: g.player.volume - volumeBefore,
+        swallowsHazards: g.game.diagnostics.bubbleType.swallowsHazards,
+      };
     });
 
-    expect(swallowed.swallowsHazards, 'the devour bubble has a stomach').toBe(true);
-    expect(swallowed.size, 'and a fish on top of it goes in').toBeGreaterThan(0);
+    expect(eaten.swallowsHazards, 'the devour bubble can eat creatures').toBe(true);
+    expect(eaten.eaten, 'and a fish on top of it is eaten, immediately').toBeGreaterThan(0);
+    expect(eaten.volume, 'and the meal shows up as volume in the same breath').toBeGreaterThan(0);
   });
 
   test('the aim locks while winding up, so a released drag still slams where it was pointed', async ({ page }) => {

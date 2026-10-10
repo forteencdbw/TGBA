@@ -724,29 +724,6 @@ export class CodexUi {
         g.stroke({ color: colour, alpha: 0.95, width: stroke });
         break;
       }
-      case 'binge': {
-        /**
-         * Over-full: a swollen bubble with an item too many.
-         *
-         * Drawn as a circle with a bulge and three filled dots inside, because the state is literally "the things in
-         * here do not fit" -- and the pulse mark above it is the fuse, which is the half of the mechanic a player
-         * forgets.
-         */
-        g.circle(cx, cy, r * 0.95).fill({ color: colour, alpha: 0.2 });
-        g.circle(cx, cy, r * 0.95).stroke({ color: colour, alpha: 0.9, width: stroke });
-        for (const [dx, dy] of [
-          [-0.38, 0.1],
-          [0.36, -0.2],
-          [0.05, 0.42],
-        ] as const) {
-          g.circle(cx + r * dx, cy + r * dy, r * 0.24).fill({ color: colour, alpha: 0.85 });
-        }
-        // The fuse: a short stalk and a spark, which is what turns a full stomach into a countdown.
-        g.moveTo(cx, cy - r * 0.95).lineTo(cx + r * 0.22, cy - r * 1.45);
-        g.stroke({ color: 0xffffff, alpha: 0.8, width: stroke * 0.6 });
-        g.circle(cx + r * 0.26, cy - r * 1.5, r * 0.16).fill({ color: mech.spit.rimColor, alpha: 0.95 });
-        break;
-      }
       case 'rageGauge': {
         // A bar with a tick, in the four stage colours: the resource, and what it is measured against.
         const w = r * 2.1;
@@ -829,24 +806,6 @@ export class CodexUi {
             .lineTo(cx + Math.cos(a) * r * 0.4, cy + Math.sin(a) * r * 0.4);
         }
         g.stroke({ color: colour, alpha: 0.95, width: stroke });
-        break;
-      case 'spit':
-        g.moveTo(cx - r * 0.3, cy - r * 1.3).lineTo(cx - r * 0.3, cy + r * 1.3);
-        g.stroke({ color: colour, alpha: 0.9, width: stroke });
-        g.moveTo(cx + r * 0.9, cy)
-          .lineTo(cx - r * 0.35, cy + r * 0.7)
-          .lineTo(cx - r * 0.35, cy - r * 0.7)
-          .closePath()
-          .fill({ color: colour, alpha: 0.95 });
-        break;
-      case 'compress':
-        for (let i = 0; i < 4; i++) {
-          const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-          g.moveTo(cx + Math.cos(a) * r * 1.25, cy + Math.sin(a) * r * 1.25)
-            .lineTo(cx + Math.cos(a) * r * 0.55, cy + Math.sin(a) * r * 0.55);
-        }
-        g.stroke({ color: colour, alpha: 0.95, width: stroke });
-        g.circle(cx, cy, r * 0.25).fill({ color: 0xffffff, alpha: 0.85 });
         break;
       case 'collectable':
         g.circle(cx, cy, r).fill({ color: colour, alpha: 0.3 });
@@ -999,18 +958,4 @@ function lineCount(text: Text): number {
 function inside(rect: Rect, x: number, y: number): boolean {
   return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

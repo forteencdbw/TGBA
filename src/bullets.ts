@@ -155,10 +155,10 @@ export class BulletField {
       b.y += b.vy * dt;
 
       /**
-       * Scenery first, then creatures -- the same order the spit uses.
+       * Scenery first, then creatures.
        *
        * A bullet is stopped by a crate because a crate you can see in front of a fish should stop what you shoot at
-       * it; it does NOT damage the obstacle, because the bullets are not ordnance. The charge and the spit are what
+       * it; it does NOT damage the obstacle, because the bullets are not ordnance. The charge and the burst are what
        * open scenery up, and a gun that quietly chipped it away would make both of them pointless.
        */
       const blocked = ctx.obstacles.blocks(b.x, b.y, radius);
@@ -237,7 +237,4 @@ export function paintBullets(g: Graphics, field: BulletField, laneWidth: number)
     g.circle(b.x, b.y, r).stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha * fade, width: Math.max(1, r * 0.45) });
   }
 }
-
-
-
 

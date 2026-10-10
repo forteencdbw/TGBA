@@ -1,7 +1,6 @@
 import { mech } from './mechanisms';
-import { KIND_TUNING, stomachEffect, blastRadiusFraction, type HazardKind } from './hazards';
+import { KIND_TUNING, type HazardKind } from './hazards';
 import { OBSTACLE_NAMES } from './obstacles';
-import { spitImpact } from './spit';
 import { SKILLS, activationFor, type SkillId } from './skills';
 import { TALENTS, type TalentId } from './talents';
 import { BUBBLE_TYPES, type BubbleType, type BubbleTypeId, type ControlId } from './bubbleTypes';
@@ -55,12 +54,9 @@ export type CodexIcon =
 export type CodexGlyph =
   | 'player'
   | 'suction'
-  | 'spit'
-  | 'compress'
   | 'stages'
   | 'collectable'
   | 'angry'
-  | 'binge'
   | 'rageGauge'
   | 'charge'
   | 'rageBurst'
@@ -95,24 +91,6 @@ export interface CodexEntry {
 /** Percent, without pretending to more precision than the config has. */
 const pct = (x: number): string => `${Math.round(x * 100)}%`;
 const num = (x: number, places = 2): string => x.toFixed(places);
-
-/**
- * What a creature does once it is inside, as one line.
- *
- * Derived from `stomachEffect`, so a creature whose side effect is retuned in the config re-describes itself. The
- * order of the checks is the order of how specific the effects are; only one is ever set today, but nothing here
- * assumes that.
- */
-function insideText(kind: HazardKind): string {
-  const e = stomachEffect(kind);
-  const parts: string[] = [];
-  if (e.damagePerSecond > 0) parts.push(`每秒 -${num(e.damagePerSecond)} 命中点`);
-  if (e.fuseSeconds > 0) parts.push(`引信 ${num(e.fuseSeconds, 1)}s 后爆开，扣 ${e.detonationHitPoints} 点`);
-  if (e.shockSeconds > 0) parts.push(`每 ${num(e.shockPeriodSeconds, 1)}s 失控 ${num(e.shockSeconds, 1)}s`);
-  if (e.digestScale < 1) parts.push(`消化速度 ×${num(e.digestScale)}`);
-  if (e.spitChance < 1) parts.push(`喷吐成功率 ${pct(e.spitChance)}`);
-  return parts.length ? parts.join('，') : '没有';
-}
 
 /**
  * The nine creatures.
@@ -160,8 +138,7 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
     notes: [
       '在外面它会朝你的气泡靠近，进入距离就点燃引信、开始倒计时（头上会套一圈越来越紧的环，那就是倒计时）。',
       '**打爆它不等于拆弹**：血打空它就在**原地**炸开，所以远距离打爆是唯一安全的拆法，贴脸打爆等于自爆。',
-      '在胃袋里从吞下那一刻开始另一条倒计时，到点在里面炸开：扣血，而且它那份质量一起炸掉、不产出任何等级。',
-      '吐出去是范围击退——这是"值得吃"的那一半理由。',
+      '吞得动它的时候贴脸吃下，体积、分数与突变经验立即到账——吞是即时的，没有库存，也没有为你暂停的引信。',
     ],
   },
   {
@@ -191,24 +168,6 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
       '只反横向。纵向也反过来会让人以为是关卡坏了，而不是气泡被电了。',
       '**两条路都会电到你**：吞下去（每 2.4 秒一下，节奏固定），或者被它射出来的电箭打中（一下 0.5 秒，取决于你躲不躲得开）。所以它开火时身上那片电弧不只是动画，那是你要付的代价。',
       '它游一条明显的 S 形——这是"可以提前读出来"的全部依据。',
-    ],
-  },
-  {
-    kind: 'rot',
-    tagline: '它在胃袋里时，消化变得很慢',
-    notes: [
-      '它惩罚的不是"你吃了它"，而是"你打算靠消化解决问题"。',
-      '和压缩相乘：带着它去压缩，时间被拉长，而过饱引信不会等你。',
-      '取最坏的那一件，不叠乘——两件腐败物不会让消化慢到看不出来。',
-    ],
-  },
-  {
-    kind: 'oil',
-    tagline: '占着容量，而且吐不出来',
-    notes: [
-      '每次喷吐只有一定概率把它弄出来，所以它不是墙而是账单：你会花掉几次机会，而引信不会等你。',
-      '拒绝时会有明确的提示——否则玩家唯一的读法会是"按钮坏了"。',
-      '最重的一种，击退也强：它值得吃，只是很难甩掉。',
     ],
   },
   /**
@@ -289,8 +248,7 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
     ],
   },
 
-
-  /**
+/**
    * The blind shrimp: in the game since the first level, and never written into the book.
    *
    * It is the least dangerous thing in level 1 and that is exactly why it belongs here: a reader who has been killed by a
@@ -352,8 +310,6 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
 function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[]): CodexEntry {
   const tier = mech.consumption.edibleAtTier[kind] ?? 0;
   const mass = mech.consumption.mass[kind] ?? 0;
-  const impact = spitImpact(kind);
-  const blast = blastRadiusFraction(kind);
   /**
    * What this creature does to you beyond touching you, DERIVED from the config.
    *
@@ -393,8 +349,6 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
       // seen the ladder, and the ladder is not on this card.
       { label: '可吞', value: `第 ${tier} 档 · 体积 ≥ ${num(mech.consumption.tierVolume[tier - 1] ?? 0, 1)}` },
       { label: '质量', value: num(mass) },
-      { label: '弹药', value: `${num(impact)}× 击退${blast > 0 ? ' · 命中爆炸' : ''}` },
-      { label: '体内', value: insideText(kind) },
       /**
        * How many rounds drive it off, DERIVED from the config.
        *
@@ -435,8 +389,6 @@ const HAZARD_NAMES: Record<HazardKind, string> = {
   bombfish: '炸弹鱼',
   urchin: '海胆',
   eel: '电鳗',
-  rot: '腐败物',
-  oil: '油污',
   boss: 'BOSS',
   vent: '热液喷口',
   mineral: '矿物颗粒',
@@ -478,10 +430,9 @@ const ENVIRONMENT: readonly CodexEntry[] = [
     facts: [
       { label: '耐久', value: `${num(mech.obstacles.health.crate ?? 0, 1)} 点` },
       { label: '撞碎', value: `体积 ≥ ${num(mech.obstacles.ramVolumeThreshold, 1)} 才撞得动` },
-      { label: '弹丸', value: `每发 ${num(mech.obstacles.projectileDamage)} × 弹药系数` },
     ],
     notes: [
-      '一炮就碎，所以它是大体积的奖励：够大就直接穿过去。',
+      '够大就一头穿过去：这是大体积的奖励。',
       '撞不碎的时候，被挡住并挨一下。',
     ],
     icon: { kind: 'obstacle', obstacle: 'crate' },
@@ -494,7 +445,6 @@ const ENVIRONMENT: readonly CodexEntry[] = [
     facts: [
       { label: '耐久', value: `${num(mech.obstacles.health.coral ?? 0, 1)} 点` },
       { label: '最小缺口', value: `${pct(mech.obstacles.minGapFraction)} 泳道宽` },
-      { label: '弹丸', value: `每发 ${num(mech.obstacles.projectileDamage)} × 弹药系数` },
     ],
     notes: [
       '珊瑚硬得多，所以它逼你变小或走缝，而木箱奖励你变大。两种答案放在一起，选择才是真的。',
@@ -576,16 +526,16 @@ function typeFacts(type: BubbleType): readonly CodexFact[] {
   const facts: CodexFact[] = [
     { label: '按钮', value: type.controls.map((c) => CONTROL_LABELS[c]).join(' · ') },
     /**
-     * The stomach, which is the first difference a player notices between the two types.
+     * Whether touching a creature is a meal or a wound.
      *
      * Derived rather than authored, so a third type cannot ship with a card describing the wrong one -- and the
-     * wording says what the answer MEANS rather than only yes or no, because "no stomach" is interesting once you
+     * wording says what the answer MEANS rather than only yes or no, because "cannot swallow" is interesting once you
      * know that touching a creature is therefore a wound instead of a meal.
      */
     {
-      label: '胃袋',
+      label: '吞噬',
       value: type.swallowsHazards
-        ? `有：能吞下危险物，再用${[type.controls.includes('spit') ? '喷吐' : '', type.controls.includes('compress') ? '消化' : ''].filter(Boolean).join(' / ')}处理它`
+        ? '有：贴脸碰到吞得动的危险物直接吃下——体积、分数、经验立即到账'
         : '没有：碰到敌人不会被吞掉，而是挨打',
     },
     {
@@ -655,7 +605,7 @@ const BUBBLE_PROSE: Record<BubbleTypeId, BubbleProse> = {
       notes: [
         '受击固定扣一个命中点，所以能挨几下随体积增长——这是变大的收益；而变大的代价是更大的判定框。',
         '用"按当前体积比例扣血"试过：大泡泡能挨 13 下、小的 8 下，变大反而更容易，和设计相反。',
-        '它靠吸附把食物拉过来，靠喷吐把吞下去的东西当弹药，靠消化把库存换成可吞等级——四条动词见下。',
+        '它靠吸附把食物拉过来，贴脸碰到吞得动的危险物就直接吃下——体积、分数与经验立即到账，没有库存要管。',
       ],
     },
     features: [
@@ -691,57 +641,6 @@ const BUBBLE_PROSE: Record<BubbleTypeId, BubbleProse> = {
           '拖动难度按目标/玩家质量比算，于是吸力自动随成长变强，不需要第二套成长系统。',
         ],
       },
-      {
-        key: 'spit',
-        name: '喷吐',
-        glyph: 'spit',
-        tagline: '吞下的东西就是弹药',
-        facts: () => [
-          { label: '容量', value: `${mech.spit.capacity} 件` },
-          { label: '顺序', value: '最早吞下的先出' },
-          { label: '射程', value: `约 ${num(mech.spit.speedPerSecond * mech.spit.decaySeconds)} 泳道宽` },
-          { label: '命中', value: `击退 ${num(mech.spit.knockbackMeters)} m × 弹药系数 ÷ 目标质量` },
-        ],
-        notes: [
-          '吐出去的东西保留自己的属性：蟹是重冲击、水母带减速、垃圾袋黏人。你吞了什么，决定你手上有什么。',
-          '喷吐会把那份质量还回去，所以"清空胃袋 → 体积下降 → 擦过原本过不去的窄缝"是真的。',
-          '命中效果是击退不是伤害：这些危险物本来就没有血量，为了一个机制给它们发明生命值，等于在机制里藏一个新系统。',
-        ],
-      },
-      {
-        key: 'binge',
-        name: '过饱',
-        glyph: 'binge',
-        tagline: '唯一给贪婪设上限的机制',
-        facts: () => [
-          { label: '容量', value: `${mech.spit.capacity} 件——满了就不再吞入` },
-          { label: '引信', value: `${num(mech.spit.overloadFuseSeconds, 1)}s：从满到爆开之间` },
-          { label: '期间', value: `移动 ×${num(mech.spit.overloadMoveSpeedFactor, 2)}（与吸附相乘）· 吸力 ×${num(mech.spit.overloadSuctionFactor, 2)}` },
-          { label: '出路', value: '吐出来、压下去，或者被炸' },
-        ],
-        notes: [
-          '满仓之后引信就开始烧，所以"还能再塞一件"永远是错的——这两件事是同一个机制的两半。',
-          '过饱时吸力不降反升：惩罚里混着诱惑。你会不由自主把更多东西拉过来，而你已经吃不下了。',
-          '这是唯一一个能把自己玩死的机制，所以它有两个出口（喷吐、消化）都永远只差一个按钮，而且引信快到时会闪。',
-        ],
-      },
-      {
-        key: 'compress',
-        name: '消化压缩',
-        glyph: 'compress',
-        tagline: '把库存转成可吞等级，代价是变脆',
-        facts: () => [
-          { label: '被动', value: `每秒 ${pct(mech.digest.passivePerSecond)} 件` },
-          { label: '按住', value: `每秒 ${pct(mech.digest.compressPerSecond)} 件` },
-          { label: '换汇率', value: `${num(mech.digest.energyPerTier, 1)} 能量 / 级，最多 +${mech.digest.maxTierBonus} 级` },
-          { label: '代价', value: `禁吸附 · 受击 +${mech.digest.extraHitPoints} 点` },
-        ],
-        notes: [
-          '胃袋有三条出路：喷吐（立刻、变弹药）、消化（慢、变等级）、以及不管它（引信烧完就爆）。',
-          '账是平的：吞下多少质量就还回去多少，所以中途吐出去不会静默丢掉已经流走的那一份。',
-          '消化不会杀死你：最多把你压到还剩 1 点血——这是唯一能用来杀死自己的机制，不该无声发生。',
-        ],
-      },
     ],
   },
   angry: {
@@ -749,7 +648,7 @@ const BUBBLE_PROSE: Record<BubbleTypeId, BubbleProse> = {
       tagline: '挨打积怒，把怒气撞出去',
       glyph: 'angry',
       notes: [
-        '它没有吸附、没有喷吐、没有消化，也没有胃袋：碰到敌人不会被吞掉，而是挨打——那正是它的怒气来源。',
+        '它没有吸附、也不能吞危险物：碰到敌人只有挨打——那正是它的怒气来源。',
         '它只吃气泡（食物），而且靠接触、不靠吸力，所以收集得笨——这是设计给它的弱点，不是没做完。',
         '它只有两个动作：蓄力冲撞和怒气爆破，两个都花怒气。怒气从哪来只有一条路——挨打，而且得活下来。',
         '平静时它看起来就是个普通气泡（颜色也接近），差别要等它开始挨打才出现。设计有意让"受伤"成为角色本身。',
@@ -828,7 +727,7 @@ const BUBBLE_PROSE: Record<BubbleTypeId, BubbleProse> = {
         notes: [
           '"怒气既是资源，也是倒计时"：满怒不是可以放着不管的状态，是一个必须马上做点什么的时刻。',
           '失控期间撞击不花怒气：如果花，玩家可以一路撞到空槽，然后没有怒气可以释放——那个"必须释放"的状态会变成"让释放不可能"的状态。',
-          '没释放的惩罚永远不会让气泡破裂（只掉到还剩 1 个命中点为止，和"消化不会杀死你"同一条护栏）：体积和怒气同时没了，代价已经够真。',
+          '没释放的惩罚永远不会让气泡破裂（只掉到还剩 1 个命中点为止）：体积和怒气同时没了，代价已经够真。',
           '撞碎木箱不算释放——设计列的是"大型目标"，否则一碰布景失控就结束了，那不叫决定。',
         ],
       },
@@ -848,7 +747,7 @@ const BUBBLE_PROSE: Record<BubbleTypeId, BubbleProse> = {
       notes: [
         '血量是**恒定的 1 点**，不随体积增长：碰到任何敌人就破裂，不管已经长到多大。',
         '它也**不会长大**：吸收一个泡泡只是加分，体积和速度从头到尾不变——所以它不存在"变大变慢"这件事。',
-        '它没有吸附、没有胃袋、没有喷吐与消化；捡到的技能仍然可以用（技能是关卡给的东西，不是这个气泡的能力）。',
+        '它没有吸附、也不能吞危险物；捡到的技能仍然可以用（技能是关卡给的东西，不是这个气泡的能力）。',
       ],
     },
     features: [],
@@ -890,7 +789,6 @@ function bubbleCards(): readonly CodexEntry[] {
   }
   return out;
 }
-
 
 function skillEntry(id: SkillId): CodexEntry {
   const skill = SKILLS.find((s) => s.id === id);
@@ -1031,12 +929,4 @@ export function iconColour(entry: CodexEntry): number {
     }
   }
 }
-
-
-
-
-
-
-
-
 

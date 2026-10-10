@@ -15,7 +15,6 @@ import type { Progression } from './progress';
 import type { RageState } from './rage';
 import type { Score } from './score';
 import type { SkillId } from './skills';
-import type { SpitProjectile, Stomach } from './spit';
 import type { StageState } from './stages';
 import type { TalentEffects } from './talents';
 import type { Xp } from './xp';
@@ -34,7 +33,7 @@ import type { Xp } from './xp';
  * just watched, so frame time, the popup pools, the banner and the codex page are part of the answer. The run's own
  * state is the bulk of it.
  *
- * Five of these members are DERIVED -- `overloaded`, `onSlam`, `suctionUp`, `tierBonus` and `burstRadiusRatio` are
+ * Four of these members are DERIVED -- `overloaded`, `onSlam`, `suctionUp` and `burstRadiusRatio` are
  * getters on the game. They arrive as VALUES, because a report that had to ask the game to compute things would be a
  * report that needs the game.
  */
@@ -49,8 +48,6 @@ export interface GameSnapshot {
   obstacles: ObstacleField;
   bullets: BulletField;
   enemyBullets: EnemyBulletField;
-  projectiles: SpitProjectile[];
-  stomach: Stomach;
   score: Score;
   /** The mutation ladder, for the report: what the bar is at and what is waiting to be picked. */
   xp: Xp;
@@ -92,22 +89,13 @@ export interface GameSnapshot {
   bursts: number;
   chargeAim: { x: number; y: number };
   charging: boolean;
-  compressing: boolean;
   comedyBeats: number;
   lastComedyBeat: { what: HazardKind; at: number } | null;
   lastEaten: number;
   lastEvent: { label: string; at: number } | null;
-  destroyedMass: number;
-  digested: number;
-  digestedMass: number;
-  growthEnergy: number;
-  internalHits: number;
   farts: number;
   slams: number;
   slamSeconds: number;
-  spitClogs: number;
-  spitHits: number;
-  stomachDrain: number;
   trashDrain: number;
   eventsSeen: number;
   eventsFired: Set<number>;
@@ -125,7 +113,6 @@ export interface GameSnapshot {
   overloaded: boolean;
   onSlam: boolean;
   suctionUp: boolean;
-  tierBonus: number;
   /** The burst's reach as a fraction of a lane, from the rage stage the run is in. */
   burstRadiusRatio: number;
 

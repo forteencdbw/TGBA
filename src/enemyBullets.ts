@@ -297,4 +297,3 @@ export function paintEnemyBullets(g: Graphics, field: EnemyBulletField, laneWidt
   }
 }
 
-

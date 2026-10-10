@@ -118,24 +118,6 @@ export interface Diagnostics {
    */
   score: { value: number; best: number; byEvent: Record<string, number>; popups: number };
   /**
-   * The stomach and what is in flight.
-   *
-   * `contents` is the ORDER, not just the count: spitting takes the oldest.
-   */
-  spit: {
-    contents: string[];
-    capacity: number;
-    full: boolean;
-    inFlight: number;
-    hits: number;
-    /** Whether the over-eating fuse is lit, how much is left, and the bulge it produces. */
-    overloaded: boolean;
-    fuseRemaining: number | null;
-    fuseFraction: number;
-    /** The bulge in item EQUIVALENTS, so a half-digested item counts for the half that is left. */
-    bulge: number;
-  };
-  /**
    * The gun: the small bubbles fired on their own.
    *
    * `armed` is reported because "nothing is happening" has two causes -- a type with no gun, and one that has not
@@ -146,42 +128,6 @@ export interface Diagnostics {
     fired: number;
     hits: number;
     armed: boolean;
-  };
-  /**
-   * Digestion, and the eating rank it buys.
-   *
-   * `energy` is reported alongside `tierBonus` rather than only the rank, because "how far into the next rank"
-   * is what a test needs in order to check the conversion is going at the configured rate.
-   */
-  digest: {
-    energy: number;
-    tierBonus: number;
-    tier: number;
-    compressing: boolean;
-    progress: number;
-    completed: number;
-    drained: number;
-  };
-  /**
-   * What is in the stomach and what it is doing from inside.
-   *
-   * The per-item list lives here rather than under `digest`: the contents stopped being only about digesting the
-   * moment they started acting on their own.
-   *
-   * `internalHits` is what makes "the urchin is hurting me" assertable rather than inferred: a volume that fell
-   * over a window in which nothing else touched the player is also what eating, digesting and being shot at look
-   * like, so the fact is reported.
-   */
-  stomach: {
-    contents: { kind: string; mass: number; digest: number; fuse: number }[];
-    shortestFuse: number | null;
-    partialDamage: number;
-    internalHits: number;
-    destroyed: number;
-    /** What the contents multiply the digestion rate by: the worst thing in there. 1 is no effect. */
-    digestScale: number;
-    /** Spit attempts refused by a clog this run. Monotonic, because a refusal leaves no other trace. */
-    clogs: number;
   };
   /** Lost control, from an electric eel: a property of the PLAYER, whatever caused it. */
   misfire: { remaining: number; inverted: boolean };

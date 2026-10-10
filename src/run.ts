@@ -5,7 +5,6 @@ import { HazardField, type HazardKind } from './hazards';
 import { ObstacleField } from './obstacles';
 import { BulletField } from './bullets';
 import { EnemyBulletField } from './enemyBullets';
-import { Stomach, tierBonusFor, type SpitProjectile } from './spit';
 import type { SpawnRecord } from './placement';
 import { Score } from './score';
 import { Xp } from './xp';
@@ -21,21 +20,19 @@ import { hasVerb } from './bubbleTypes';
 import { chainTargets } from './conductive';
 import { tuning } from './config';
 import { massFromEating } from './consumption';
-import { hazardTuning, shoveCreature, stomachEffect, type Hazard, type SpawnOptions } from './hazards';
+import { hazardTuning, shoveCreature, type Hazard, type SpawnOptions } from './hazards';
 import { canEatHazard } from './consumption';
 import { LEVEL, type LevelEntry } from './levels';
 import { mech } from './mechanisms';
 import { isOverloaded, rageFraction } from './rage';
-import { updateProjectiles } from './spit';
 import { obstacleHealth, obstacleName } from './obstacles';
 import { placeEntry } from './placement';
 import { endOverload, gainRage, hitRage, slamDamage, spendRage, tickRage } from './rage';
 import { sayBlast, sayCallout, sayGraze } from './runEvents';
 import { findSkill } from './skills';
-import { digestEnergy, spitDirection, spitRadiusFraction } from './spit';
 import { recordAbsorb, stageName, stageRadiusFraction } from './stages';
 import { fartBaitCount, fartPushFor } from './talents';
-import { bubbleVolumeFromRadius, drainByDigesting, growByAbsorbing, hitsSurvived, isPopped, shrinkFromHit } from './volume';
+import { bubbleVolumeFromRadius, growByAbsorbing, hitsSurvived, isPopped, shrinkFromHit } from './volume';
 import type { Phase } from './snapshot';
 import { sayBanner, sayDamage, sayScore, saySkillSlot, saySound, type RunEvent } from './runEvents';
 import type { SoundEvent } from './audio';
@@ -97,23 +94,11 @@ export class Run {
     return this.bubbleType.look === 'rage' && isOverloaded(this.rage);
   }
   /**
-   * The eating rank digestion has bought, in tiers.
-   *
-   * Added to `volumeTier(volume)` wherever the eat rule is asked, which is exactly two places plus the outline
-   * marker -- all three through `canEatHazard`, so a marker that promised food while the collision delivered a
-   * hit remains impossible.
-   */
-  get tierBonus(): number {
-    return tierBonusFor(this.growthEnergy);
-  }
-  /**
    * Whether the suction field is actually up.
    *
-   * ONE place, because "digesting disables suction" is a rule about the player rather than about the input: the
-   * field's radius, its pull, its drawing and the diagnostic readout all ask this, and any of them reading
-   * `input.sucking` directly would leave a field that is visibly up but not pulling, or pulling without being
-   * drawn. Note the compression costs nothing while the stomach is empty -- there is nothing to squeeze, so
-   * there is nothing to pay for.
+   * ONE place, because the field's radius, its pull, its drawing and the diagnostic readout all ask this,
+   * and any of them reading `input.sucking` directly would leave a field that is visibly up but not
+   * pulling, or pulling without being drawn.
    */
   suctionUp(input: Input): boolean {
     /**
@@ -122,7 +107,7 @@ export class Run {
      * the type does not have. See `hasVerb`.
      */
     if (!hasVerb(this.bubbleType, 'suction')) return false;
-    return input.sucking && !this.compressing;
+    return input.sucking;
   }
   /** The burst radius for the current rage: linear from the base at zero to the maximum at full. */
   burstRadiusRatio(): number {
@@ -133,17 +118,13 @@ export class Run {
   /**
    * Whether this bubble can eat this kind of hazard, which is TWO questions and only one of them is about size.
    *
-   * The type's own answer comes first: a bubble with no stomach cannot eat a creature however big it is, so the
+   * The type's own answer comes first: a bubble with no mouth cannot eat a creature however big it is, so the
    * answer for the volatile bubble is `false` for every kind. This is the single place that decides it, and the
-   * three callers -- the collision, the outline marker and the test hook -- all come through here, so the marker
+   * callers -- the collision, the outline marker and the test hook -- all come through here, so the marker
    * cannot promise food that the collision then refuses to deliver.
-   *
-   * The failure this replaces: the volatile bubble swallowed enemies, and since it has neither spit nor digest, a
-   * full stomach could only end one way. The fuse burned and the run ended from the inside, with nothing the player
-   * could do about it.
    */
   canSwallow(kind: HazardKind): boolean {
-    return this.bubbleType.swallowsHazards && canEatHazard(kind, this.player.volume, this.tierBonus);
+    return this.bubbleType.swallowsHazards && canEatHazard(kind, this.player.volume);
   }
   /**
    * How much the suction field is widened right now.
@@ -154,7 +135,7 @@ export class Run {
    * drift, and a visible promise would become a lie.
    */
   get suctionRadiusFactor(): number {
-    return (this.stomach.overloaded ? mech.spit.overloadSuctionFactor : 1) * this.suctionBonus;
+    return this.suctionBonus;
   }
 
   /**
@@ -208,9 +189,7 @@ export class Run {
   invulnerable = 0;
   stats = { absorbed: 0, hits: 0, maxVolume: 1, ended: 0, overloads: 0, newRecord: false };
   lastEaten = 0;
-  stomach = new Stomach();
   obstacles = new ObstacleField();
-  projectiles: SpitProjectile[] = [];
   bullets = new BulletField();
   enemyBullets = new EnemyBulletField();
   gunStreams = 1;
@@ -244,18 +223,7 @@ export class Run {
   charge = 0;
   chargeBurst = 0;
   chargeBurstRadius = 0;
-  spitCooldown = 0;
-  spitFlash = 0;
-  spitHits = 0;
-  growthEnergy = 0;
-  compressing = false;
-  digested = 0;
-  digestedMass = 0;
   trashDrain = 0;
-  stomachDrain = 0;
-  internalHits = 0;
-  destroyedMass = 0;
-  spitClogs = 0;
   comedyBeats = 0;
   lastComedyBeat: { what: HazardKind; at: number } | null = null;
   hazards = new HazardField();
@@ -302,7 +270,7 @@ export class Run {
      * the same `shrinkFromHit` rather than by scaling the loss, so the volume economy keeps its one implementation
      * and the silt talent's resistance still applies to every point of it.
      */
-    const hitPoints = 1 + (this.compressing ? mech.digest.extraHitPoints : 0);
+    const hitPoints = 1;
     /**
      * A type whose hit points are a COUNT rather than a volume.
      *
@@ -337,13 +305,6 @@ export class Run {
      */
     if (this.bubbleType.look === 'rage') gainRage(this.rage, hitRage() * this.rageGainMultiplier);
   }
-  /**
-   * Advance the projectiles and resolve what they hit.
-   *
-   * Runs after the hazards have moved, so a projectile hits where things actually are this frame rather than where
-   * they were. The hit test reads the hazard list directly, which is the only part of the game with the authority
-   * on where a hazard is.
-   */
   /**
    * The gun: fire, fly, hit.
    *
@@ -714,212 +675,6 @@ this.sound('slow');
     this.banner(`连锁放电  ·  ${reached.size} 只`);
   }
   /**
-   * The stomach's frame: the fuse, the digestion, and the spit button.
-   *
-   * All three belong together because they are the same question -- what happens to what I swallowed -- and
-   * because the ORDER between them is the mechanic. The fuse is ticked first so that an item finishing its
-   * digestion this frame really does save the player, and the button is read last so a shot fired this frame
-   * travels this frame instead of hanging at the bubble's position for one frame first.
-   */
-  updateStomach(dt: number, laneWidth: number, input: Input): void {
-    this.spitCooldown = Math.max(0, this.spitCooldown - dt);
-    this.spitFlash = Math.max(0, this.spitFlash - dt * 3);
-
-    /**
-     * Compression is the held control AND a non-empty stomach.
-     *
-     * The second half is not pedantry: holding the button with nothing inside would otherwise cost the player
-     * their suction field and DOUBLE every hit they take, in exchange for nothing at all. A state that punishes
-     * without a subject is just a bug the player cannot see.
-     */
-    this.compressing = hasVerb(this.bubbleType, 'compress') && input.compressing && this.stomach.size > 0;
-
-    const rate = this.compressing ? mech.digest.compressPerSecond : mech.digest.passivePerSecond;
-    const tick = this.stomach.tick(dt, rate);
-
-    /**
-     * A burst is the ONLY thing that can end a run through the stomach, and it is reachable only by ignoring the
-     * warning for the whole fuse -- there are two escapes and both are a control away at all times.
-     */
-    if (tick.burst) {
-      // The stomach is emptied by the burst: the contents are what is scattered.
-      this.stomach.reset();
-      this.projectiles.length = 0;
-      this.startBurst();
-      return;
-    }
-
-    /**
-     * The mass comes back out, in proportion to how far along the item is, and the growth energy comes back with
-     * it.
-     *
-     * This is the whole of "体积逐渐缩小": there is no digest shrink rate anywhere in the config, because the
-     * amount that leaves is the amount that arrived.
-     *
-     * ---------------------------------------------------------------------------------------------
-     * WHY THE PAYOFF FOLLOWS THE DRAIN, RATHER THAN THE COMPLETION
-     * ---------------------------------------------------------------------------------------------
-     * Energy is credited against what ACTUALLY left the bubble this frame, for two reasons that are really one.
-     *
-     * It closes the ledger: every unit of volume that leaves through digestion is paid for at the moment it
-     * leaves, so interrupting a half-digested item by spitting it never means silently losing mass that bought
-     * nothing. Spitting a partly digested item hands back only the part that is still there, and the part that
-     * already left has already been paid for.
-     *
-     * And it cannot be farmed: `drainByDigesting` will not let digesting kill the player, so a bubble parked one
-     * hit from death can be holding volume the drain refuses to take. Crediting energy for the REQUESTED drain
-     * instead of the delivered one would let that bubble sit there and convert nothing into rank forever.
-     */
-    if (tick.drained > 0) {
-      const tierBefore = this.tierBonus;
-      const volumeBefore = this.player.volume;
-      this.player.volume = drainByDigesting(this.player.volume, tick.drained);
-      const removed = volumeBefore - this.player.volume;
-      this.growthEnergy += digestEnergy(removed);
-      this.digestedMass += removed;
-
-      /**
-       * The payoff is announced only when it changes the RANK.
-       *
-       * Announcing every item would be three banners for one full stomach and would teach the player to ignore
-       * all of them. The rank going up is the beat worth looking up for -- the same choice the growth stages
-       * make, and the same banner, so "something I did just made me stronger" reads identically in both systems.
-       */
-      if (this.tierBonus > tierBefore) {
-        this.banner(`消化 · 可吞等级 +${this.tierBonus}  ·  体积仍 ${this.player.volume.toFixed(1)}`);
-        this.sound('skill');
-      }
-    }
-
-    // An item finishing is worth marking even when it did not buy a rank: the player just made room, which is
-    // what puts an over-eating fuse out.
-    if (tick.completed) {
-      this.digested += tick.completed.length;
-      this.sound('absorb', 0.5);
-    }
-
-    /**
-     * What the contents did to the player from INSIDE.
-     *
-     * ---------------------------------------------------------------------------------------------
-     * WHY THE MASS A BOMB DESTROYS BUYS NO RANK
-     * ---------------------------------------------------------------------------------------------
-     * `destroyed` is applied through the same non-lethal drain as digestion but WITHOUT any growth energy, and
-     * that separation is the whole reason the stomach reports two figures instead of one. Digested mass pays; mass
-     * blown up in your own stomach is simply gone. Folding them together would turn a bomb fish into a way to
-     * convert food into rank without paying for it, which is exactly backwards from what the creature is for.
-     */
-    if (tick.destroyed > 0) {
-      const before = this.player.volume;
-      this.player.volume = drainByDigesting(this.player.volume, tick.destroyed);
-      this.destroyedMass += before - this.player.volume;
-    }
-
-    /**
-     * Internal harm, accumulated into whole hit points.
-     *
-     * Fractional per second, turned into hits by an accumulator, because that is the only way a continuous drain
-     * can be frame-rate independent: applying it as whole hits per frame would make an urchin lethal at 120fps and
-     * harmless at 30. The same shape as the trash bag's grip, which is the other continuous damage in the game.
-     */
-    if (tick.damage > 0) {
-      this.stomachDrain += tick.damage;
-      while (this.stomachDrain >= 1) {
-        this.stomachDrain -= 1;
-        this.internalHits++;
-        this.takeHit();
-        // A hit can end the run; nothing after this point may assume there is still a bubble.
-        if (this.phase !== 'playing') return;
-      }
-    }
-
-    if (tick.detonations) {
-      this.lastComedyBeat = { what: tick.detonations[0]!.kind, at: this.elapsed };
-      this.sound('hit');
-      this.sound('pop');
-      this.banner(`胃里炸了  ·  ${tick.detonations.length} 颗  ·  炸弹鱼不能留`);
-    }
-
-    /**
-     * The eel: the controls stop obeying for a moment.
-     *
-     * `applyMisfire` EXTENDS rather than replaces, so two eels cannot cut each other short. Nothing else here needs
-     * to know the eel exists -- the bubble carries the state, and `Player.update` reads it.
-     */
-    if (tick.shocks > 0) {
-      this.player.applyMisfire(tick.shocks);
-      this.sound('slow');
-      this.lastComedyBeat = { what: 'eel', at: this.elapsed };
-    }
-
-    /**
-     * The type gate comes BEFORE the consume, and that order is the point: the volatile bubble has no spit verb, so
-     * a pending press must be dropped rather than banked. Consuming it and returning would leave nothing behind
-     * either way -- but checking first means the flag cannot queue up a shot that fires the moment the player
-     * switches bubble, which is the kind of ghost input that is invisible until it happens in a real run.
-     */
-    if (!hasVerb(this.bubbleType, 'spit')) return;
-    if (!input.consumeSpit()) return;
-    if (this.spitCooldown > 0) return;
-
-    const attempt = this.stomach.attemptSpit();
-    if (attempt.outcome !== 'fired') {
-      /**
-       * Nothing to fire, or nothing that WILL fire: a short cooldown either way, but a different message.
-       *
-       * A button that does nothing at all reads as broken, so the empty case gets a pulse. The CLOTTED case has to
-       * be told apart from it, though, or the oil slick's entire verb is invisible: the player presses, nothing
-       * flies, and the only honest reading of that is "the button is broken". Hence the banner and the different
-       * sound -- the refusal is the mechanic.
-       */
-      this.spitCooldown = mech.spit.emptyCooldownSeconds;
-      this.spitFlash = 1;
-      if (attempt.outcome === 'clogged') {
-        this.spitClogs++;
-        this.banner('油污卡住了  ·  吐不出来，只能压下去');
-this.sound('hit');
-      }
-      return;
-    }
-    const item = attempt.item;
-
-    /**
-     * Spitting hands the mass straight back, exactly as digesting hands it back by the slice.
-     *
-     * This is the fix for a promise the design made and the code did not keep: `spit.ts` claimed "empty the
-     * stomach, drop a chunk of volume, squeeze through a gap", and nothing anywhere reduced the volume, so
-     * 极限瘦身 did not exist. It works now, and it works through the same ledger digestion uses rather than
-     * through a second opinion about what an item is worth.
-     *
-     * Only the UNDIGESTED part, because the rest already left and was already paid for in growth energy. Handing
-     * back the full mass would make every slow tap a small mass-creation exploit.
-     */
-    this.player.volume = drainByDigesting(this.player.volume, item.mass * (1 - item.digest));
-
-    /**
-     * The aim: where the finger is relative to where it landed, or straight up when there is none.
-     *
-     * The keyboard has no aim of its own -- it is four directions and nothing else -- so `spitDirection` falls back
-     * to up, which is "forward" in a vertical ascent. See the drag in `src/touch.ts`: keeping the aim on the
-     * ANCHOR rather than on the last few pixels is what lets a player hold a direction while barely moving.
-     */
-    const dir = spitDirection(input.dragAimX, input.dragAimY);
-    const speed = laneWidth * mech.spit.speedPerSecond;
-    this.projectiles.push({
-      kind: item.kind,
-      x: this.player.x * laneWidth,
-      y: this.player.y,
-      vx: dir.x * speed,
-      // World y grows upward and the direction's y is already in world terms (the drag's aim writes +1 for up).
-      vy: dir.y * speed,
-      screenY: this.player.screenY,
-      radiusFraction: spitRadiusFraction(item.kind),
-      age: 0,
-    });
-    this.spitFlash = 1;
-    this.sound('pop');
-  }
-  /**
    * Spawn, move and resolve the hazards, applying whatever they did to the player.
    *
    * The effects are applied here rather than inside `HazardField` so that the field stays a pure
@@ -972,11 +727,6 @@ this.sound('hit');
        * pulled identically. Two independently-derived centres would drift and the field would look off-centre.
        */
       suction: suctionAt,
-      /**
-       * Whether the stomach has room. Separate from `canEat`, because a big enough bubble can eat a crab it has
-       * no room for -- and when that happens the hazard must fall through to its damage path rather than vanish.
-       */
-      canSwallow: () => !this.stomach.full,
       bubbles: this.field.bubbles,
       eatenBubbleIds: [] as number[],
       splitCount: 0,
@@ -1124,7 +874,6 @@ this.sound('hit');
         }
       }
       if (e.eaten) {
-        const beforeEating = this.player.volume;
         this.player.volume = growByAbsorbing(this.player.volume, massFromEating(e.kind));
         this.stats.absorbed++;
         // The reversal pays: it is the game's signature act and the one that costs the most (the bubble gets bigger
@@ -1134,18 +883,6 @@ this.sound('hit');
         this.scorePopup(this.player.x * laneWidth, this.player.y, this.score.award('eaten'));
         this.xp.gain('eaten');
         this.invulnerable = Math.max(this.invulnerable, mech.consumption.eatInvulnerableSeconds + this.eatInvulnBonusSeconds);
-        /**
-         * What was swallowed goes into the stomach, carrying THE VOLUME IT ACTUALLY ADDED.
-         *
-         * The measured delta rather than `massFromEating(kind)`, and the difference is not academic: at the
-         * `volume.max` ceiling `growByAbsorbing` adds nothing, so an item that recorded its nominal mass would
-         * hand the bubble volume it never received when it was later spat or digested. Measuring here makes the
-         * ledger close by construction, whatever the config says.
-         *
-         * The hazard module already checked `canSwallow`, so this cannot fail -- but a `false` is handled rather
-         * than ignored, because the two checks living in different files is exactly the kind of thing that drifts.
-         */
-        this.stomach.swallow(e.kind, this.player.volume - beforeEating, stomachEffect(e.kind));
         this.sound('pop');
         continue;
       }
@@ -1447,8 +1184,8 @@ this.sound('pop');
         kills++;
         continue;
       }
-      // Not clearable: shoved away from the centre, with the same arithmetic a grenade uses.
-      shoveCreature(h, dx, dy, cfg.pushImpact);
+      // Not clearable: shoved away from the centre, metres scaled by the burst's own impact.
+      shoveCreature(h, dx, dy, cfg.knockbackMeters * cfg.pushImpact);
       pushes++;
       survivors.push(h);
     }
@@ -1658,17 +1395,6 @@ this.sound('skill');
     if (entry !== null) opts.entry = entry;
     if (path !== undefined) opts.path = path;
     return this.hazards.spawnAt(kind, spawnX, y, opts);
-  }
-  updateProjectiles(dt: number, laneWidth: number, min: number, max: number): void {
-    // The rule lives in `src/spit.ts` with the ammunition; what stays here is the run's counter of what it hit.
-    this.spitHits += updateProjectiles(
-      dt,
-      laneWidth,
-      min,
-      max,
-      { projectiles: this.projectiles, obstacles: this.obstacles, hazards: this.hazards },
-      this.events,
-    );
   }
   /**
    * Place one timeline entry.

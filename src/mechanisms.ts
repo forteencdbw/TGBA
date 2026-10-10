@@ -519,12 +519,6 @@ export interface Mechanisms {
     /** Per-kind radius as a fraction of the lane width: collision, drawing and the codex card all read this. */
     radius: Record<string, number>;
     /**
-     * The bomb fish, in all three of its roles: hunting outside, a lit fuse inside, a grenade when spat.
-     *
-     * One group because they are one creature's behaviour, and because a reader looking for "how long until the bomb
-     * fish goes off" should not have to know whether that is a stomach number or an ocean one.
-     */
-    /**
      * The boss: the one creature that does not belong to the current.
      *
      * It holds station above the player instead of drifting, so it cannot be outrun -- the fight ends when one of the
@@ -698,11 +692,6 @@ export interface Mechanisms {
       /** Design pixels of screen shake at the moment of the blast, and how long it lasts. 0 turns it off. */
       blastShakePixels: number;
       blastShakeSeconds: number;
-      /** The fuse while it is IN the stomach, and what that costs. */
-      stomachFuseSeconds: number;
-      detonationHitPoints: number;
-      /** Blast radius when a SPAT one hits something: the grenade's payoff. */
-      grenadeBlastRadiusRatio: number;
     };
     slowFactor: number;
     slowSeconds: number;
@@ -750,34 +739,18 @@ export interface Mechanisms {
      */
     trash: { drainPerSecond: number; minGripSeconds: number };
     /**
-     * Negative food: edible, but it keeps acting once it is inside.
+     * The eel: how long its BOLTS cost the player their steering.
      *
-     * These are the risk decisions the design wants -- without them swallowing is a pure gain and the player never
-     * has to think about whether a thing is worth eating. Both creatures are also ordinary hazards below their
-     * tier, which follows from the reversal rule rather than being a second rule.
-     */
-    urchin: { drainPerSecond: number };
-
-
-    /**
-     * The eel: how often it shocks, and for how long -- from BOTH of its sources.
-     *
-     * `shockSeconds` is the stomach (a pulse every `shockPeriodSeconds` while it is inside). `boltShockSeconds` is
-     * its rounds landing on the player. Two numbers rather than one because the cadences are nothing alike, and a
-     * shared one would mean softening the bolts also softened the thing in your stomach. Either at 0 disables that
-     * source alone.
+     * `boltShockSeconds` is its rounds landing on the player -- a loss of control the player dodges rather than
+     * eats, now that swallowing is instant. At 0 that source alone is disabled.
      */
     eel: {
-      shockPeriodSeconds: number;
-      shockSeconds: number;
       boltShockSeconds: number;
       shockColor: number;
       shockWidthRatio: number;
     };
     /** The rot: what it multiplies the digestion rate by while it is inside. 1 means no effect. */
-    rot: { digestScale: number };
     /** The oil: the chance a spit attempt gets it out. 0 is a permanent clog, 1 is an ordinary item. */
-    oil: { spitChance: number };
     /**
      * THE GUNNERS' own knobs. Their bullets live in `enemyBullets.shooters`; these are the creature
      * halves -- how they ride the current, and each one's signature rule.
@@ -842,36 +815,11 @@ export interface Mechanisms {
     tetherAlpha: number;
     tetherWidthRatio: number;
   };
-  /** Spitting a swallowed hazard back out as a projectile. */
-  spit: {
-    capacity: number;
-    /** The over-eating fuse: seconds from a full stomach to a burst. 0 disables the whole mechanic. */
-    overloadFuseSeconds: number;
-    overloadMoveSpeedFactor: number;
-    overloadSuctionFactor: number;
-    bulgePerItem: number;
-    bulgeMax: number;
-    pulseHz: number;
-    rimColor: number;
-    panicBelowFraction: number;
-    panicPulseFactor: number;
-    speedPerSecond: number;
-    decaySeconds: number;
-    hitRadiusRatio: number;
-    knockbackMeters: number;
-    spitInvulnerableSeconds: number;
-    emptyCooldownSeconds: number;
-    trailAlpha: number;
-    trailWidthRatio: number;
-    glowAlpha: number;
-    glowRadiusRatio: number;
-  };
   /**
    * The small bubbles the player's bubble fires on its own, continuously.
    *
-   * A second KIND of projectile, not a second tuning of `spit`: a spat hazard is thrown back at what it came from
-   * and knocks it around, while these are ordinary fire that takes hit points off a creature until it leaves. The
-   * two coexist because they cost different things -- a stomach slot versus nothing but time.
+   * The gun is the only projectile now that spitting is gone: ordinary fire that takes hit points off a creature
+   * until it leaves, paid for with nothing but time.
    */
   bullets: {
     /** A file name in `src/assets/`, without its extension. Empty means the drawn dot. */
@@ -909,51 +857,6 @@ export interface Mechanisms {
     rimColour: number;
     rimAlpha: number;
   };
-  /**
-   * Digesting the stomach's contents: the third way out of a full stomach.
-   *
-   * Spitting is instant and yields ammunition; digesting is slow and yields RANK; ignoring it bursts the bubble.
-   * There is deliberately no "how much does digesting shrink me" value here -- an item records the volume it
-   * added when it was swallowed, and digesting pays that back in proportion to progress. See `src/spit.ts`.
-   */
-  digest: {
-    /** Fraction of the oldest item digested per second while the compress control is NOT held. */
-    passivePerSecond: number;
-    /** Fraction per second while it IS held. Must be fast enough to defuse a full stomach before the fuse runs out. */
-    compressPerSecond: number;
-    /** Growth energy per unit of digested mass. Below 1 means digesting loses something. */
-    energyPerMass: number;
-    /** Growth energy that buys one tier of eating rank. */
-    energyPerTier: number;
-    /** Ceiling on the rank digestion can buy, so volume stays the gate it was designed to be. */
-    maxTierBonus: number;
-    /** EXTRA hit points a hit costs while digesting. 1 doubles the damage taken. */
-    extraHitPoints: number;
-    /** The rim pulse while compressing: its frequency, how deep it oscillates, and the colour it swaps the rim to. */
-    pulseHz: number;
-    pulseDepth: number;
-    rimColor: number;
-  };
-  /**
-   * Marking what is in the stomach, on the bubble's rim.
-   *
-   * Once the contents keep acting from inside, "what is in there" stops being trivia and becomes information the
-   * player has to have: a fuse burning where they cannot see it is an ambush rather than a decision.
-   */
-  stomach: {
-    markerRadiusRatio: number;
-    markerOrbitRatio: number;
-    markerAlpha: number;
-    markerMinSpreadRadians: number;
-    fuseBlinkHz: number;
-    fusePanicSeconds: number;
-  };
-  /**
-   * The codex page: a paged card list reached from the main menu.
-   *
-   * Only LAYOUT and colour here. Every number ON a card is read from the section it belongs to, so the page cannot
-   * describe a game that no longer exists -- see `src/codex.ts`.
-   */
   /**
    * The player's own bubble art.
    *
@@ -1229,9 +1132,9 @@ export interface Mechanisms {
    * hit does to the creature -- and the config file keeps them side by side for that reason. Everything inside
    * `hazards` is a property of a KIND of creature; this is a property of being hit.
    *
-   * Expressed as a TOTAL DISTANCE in metres, like `spit.knockbackMeters` and unlike the crab's launch: the thing the
-   * player is judging is "how far did that push it", and a distance says that directly. The recoil is spent over
-   * `seconds`, so the two numbers together decide whether it reads as a nudge or as a shove.
+   * Expressed as a TOTAL DISTANCE in metres, like the rage burst's `knockbackMeters` and unlike the crab's launch:
+   * the thing the player is judging is "how far did that push it", and a distance says that directly. The recoil
+   * is spent over `seconds`, so the two numbers together decide whether it reads as a nudge or as a shove.
    */
   hitKnockback: {
     /** Metres of recoil per landed hit. 0 turns it off: a hit is then only the flash. */
@@ -1370,7 +1273,6 @@ export interface Mechanisms {
      */
     ramVolume: Record<string, number | null>;
     minGapFraction: number;
-    projectileDamage: number;
     ramVolumeThreshold: number;
     ramDamagePerVolume: number;
     collideDamage: number;
@@ -1478,7 +1380,9 @@ export interface Mechanisms {
       radiusBaseRatio: number;
       radiusMaxRatio: number;
       obstacleDamage: number;
-      /** Push strength for the creatures the wave cannot destroy, in the spit knockback's own units. */
+      /** The wave's push, as total metres before mass and impact are applied. */
+      knockbackMeters: number;
+      /** How strong the push is relative to `knockbackMeters`, for the creatures the wave cannot destroy. */
       pushImpact: number;
       /** Per hazard kind: what a wave does to it. */
       hazardMode: Record<string, 'destroy' | 'push'>;
@@ -2235,9 +2139,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.bombfish.blastDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
   { path: 'hazards.bombfish.blastShakePixels', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'design pixels between 0 and 40; 0 disables the shake' },
   { path: 'hazards.bombfish.blastShakeSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'seconds between 0 and 2' },
-  { path: 'hazards.bombfish.stomachFuseSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
-  { path: 'hazards.bombfish.detonationHitPoints', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
-  { path: 'hazards.bombfish.grenadeBlastRadiusRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
   { path: 'hazards.jelly.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10; 0 makes a jellyfish a pure slow again' },
   { path: 'hazards.slowFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a number above 0 and at most 1' },
   { path: 'hazards.slowSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
@@ -2253,15 +2154,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.launchDecaySeconds', check: (v) => typeof v === 'number' && v > 0.01, describe: 'seconds above 0.01' },
   { path: 'hazards.trash.drainPerSecond', check: (v) => typeof v === 'number' && v > 0, describe: 'hit points per second above 0' },
   { path: 'hazards.trash.minGripSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
-  { path: 'hazards.urchin.drainPerSecond', check: (v) => typeof v === 'number' && v >= 0, describe: 'hit points per second, 0 or more; 0 makes the urchin harmless once swallowed' },
 
-
-
-  { path: 'hazards.eel.shockPeriodSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
-  { path: 'hazards.eel.boltShockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: "seconds between 0 and 10; 0 disables the control loss an eel's bolt causes" },
-  { path: 'hazards.eel.shockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10; 0 disables the eel\'s loss of control' },
-  { path: 'hazards.rot.digestScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier between 0 and 2; 1 means the rot does not slow digestion' },
-  { path: 'hazards.oil.spitChance', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a probability between 0 and 1; 0 is a permanent clog' },
+{ path: 'hazards.eel.boltShockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: "seconds between 0 and 10; 0 disables the control loss an eel's bolt causes" },
   ...['archer', 'pistol', 'puffer', 'starfish'].map((kind) => ({
     path: `hazards.${kind}.driftFactor`,
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 2,
@@ -2315,26 +2209,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'suction.fieldWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
   { path: 'suction.tetherAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'suction.tetherWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
-  { path: 'spit.capacity', check: (v) => typeof v === 'number' && v >= 1 && v <= 12, describe: 'a whole number of items, at least 1' },
-  { path: 'spit.overloadFuseSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'seconds between 0 and 60; 0 disables the over-eating mechanic' },
-  { path: 'spit.overloadMoveSpeedFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction above 0 and at most 1' },
-  { path: 'spit.overloadSuctionFactor', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a multiple of at least 1' },
-  { path: 'spit.bulgePerItem', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.5, describe: 'a fraction between 0 and 0.5' },
-  { path: 'spit.bulgeMax', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
-  { path: 'spit.pulseHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
-  { path: 'spit.rimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  { path: 'spit.panicBelowFraction', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction above 0 and at most 1' },
-  { path: 'spit.panicPulseFactor', check: (v) => typeof v === 'number' && v >= 1 && v <= 6, describe: 'a multiple of at least 1' },
-  { path: 'spit.speedPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 6, describe: 'a number above 0, at most 6' },
-  { path: 'spit.decaySeconds', check: (v) => typeof v === 'number' && v > 0.02, describe: 'seconds above 0.02' },
-  { path: 'spit.hitRadiusRatio', check: (v) => typeof v === 'number' && v > 0.005 && v <= 0.5, describe: 'a fraction of the lane width between 0.005 and 0.5' },
-  { path: 'spit.knockbackMeters', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
-  { path: 'spit.spitInvulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
-  { path: 'spit.emptyCooldownSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
-  { path: 'spit.trailAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  { path: 'spit.trailWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a ratio between 0 and 1' },
-  { path: 'spit.glowAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  { path: 'spit.glowRadiusRatio', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a radius multiple of at least 1' },
   { path: 'bullets.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string for the drawn dot' },
   { path: 'bullets.imageAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'bullets.imageTint', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
@@ -2353,21 +2227,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: isColour,
     describe: 'a colour, either 0xrrggbb or "#rrggbb"',
   })),
-  { path: 'digest.passivePerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 5, describe: 'a fraction per second between 0 and 5; 0 means "only while compressing"' },
-  { path: 'digest.compressPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 10, describe: 'a fraction per second above 0 and at most 10' },
-  { path: 'digest.energyPerMass', check: (v) => typeof v === 'number' && v >= 0 && v <= 5, describe: 'a number between 0 and 5' },
-  { path: 'digest.energyPerTier', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
-  { path: 'digest.maxTierBonus', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10, describe: 'a whole number of tiers between 0 and 10' },
-  { path: 'digest.extraHitPoints', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10, describe: 'a whole number of extra hit points between 0 and 10' },
-  { path: 'digest.pulseHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
-  { path: 'digest.pulseDepth', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction between 0 and 1' },
-  { path: 'digest.rimColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  { path: 'stomach.markerRadiusRatio', check: (v) => typeof v === 'number' && v > 0.02 && v < 0.6, describe: 'a fraction of the bubble radius, above 0.02 and below 0.6' },
-  { path: 'stomach.markerOrbitRatio', check: (v) => typeof v === 'number' && v >= 0.3 && v <= 1.5, describe: 'a multiple of the bubble radius between 0.3 and 1.5' },
-  { path: 'stomach.markerAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  { path: 'stomach.markerMinSpreadRadians', check: (v) => typeof v === 'number' && v > 0 && v < 6.28, describe: 'an angle in radians, above 0 and below a full turn' },
-  { path: 'stomach.fuseBlinkHz', check: (v) => typeof v === 'number' && v > 0 && v <= 20, describe: 'a frequency above 0 and at most 20' },
-  { path: 'stomach.fusePanicSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
   {
     path: 'hazardArt',
     check: (v) => {
@@ -2694,7 +2553,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     describe: 'an object of obstacle kind to a volume, or to null for "cannot be rammed at all"',
   },
   { path: 'obstacles.minGapFraction', check: (v) => typeof v === 'number' && v > 0.02 && v < 0.9, describe: 'a fraction above 0.02 and below 0.9' },
-  { path: 'obstacles.projectileDamage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'obstacles.ramVolumeThreshold', check: (v) => typeof v === 'number' && v >= 0, describe: 'a volume of 0 or more' },
   { path: 'obstacles.ramDamagePerVolume', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'obstacles.collideDamage', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
@@ -2760,6 +2618,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.burst.radiusBaseRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction of the lane above 0 and at most 1' },
   { path: 'angry.burst.radiusMaxRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 2, describe: 'a fraction of the lane above 0 and at most 2' },
   { path: 'angry.burst.obstacleDamage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
+  { path: 'angry.burst.knockbackMeters', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'angry.burst.pushImpact', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   {
     path: 'angry.burst.hazardMode',
@@ -3221,8 +3080,6 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
 for (const [where, get, set] of [
   ['consumption.marker.edibleColor', () => mech.consumption.marker.edibleColor, (v: number) => (mech.consumption.marker.edibleColor = v)],
   ['suction.fieldColor', () => mech.suction.fieldColor, (v: number) => (mech.suction.fieldColor = v)],
-  ['spit.rimColor', () => mech.spit.rimColor, (v: number) => (mech.spit.rimColor = v)],
-  ['digest.rimColor', () => mech.digest.rimColor, (v: number) => (mech.digest.rimColor = v)],
   ['hazards.eel.shockColor', () => mech.hazards.eel.shockColor, (v: number) => (mech.hazards.eel.shockColor = v)],
   ['obstacles.crateColor', () => mech.obstacles.crateColor, (v: number) => (mech.obstacles.crateColor = v)],
   ['obstacles.crateRimColor', () => mech.obstacles.crateRimColor, (v: number) => (mech.obstacles.crateRimColor = v)],
@@ -3278,54 +3135,4 @@ for (const [where, get, set] of [
 
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

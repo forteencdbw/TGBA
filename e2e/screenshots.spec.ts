@@ -266,94 +266,13 @@ test.describe('screen captures @screenshots', () => {
   });
 
   /**
-   * A projectile in flight, with a full stomach behind it.
+   * A crate and a coral, side by side.
    *
-   * Two things worth looking at rather than measuring: whether the spit button on the left reads as the opposite
-   * of the suction button on the right, and whether a thrown crab is legible as *something the player threw*
-   * rather than as a crab that happens to be moving fast.
+   * The two kinds have to be told apart at a glance -- one is worth ramming and one is worth avoiding -- and that
+   * is a judgement about a picture. The gun's own rounds are in frame anyway (it fires by itself), so the water
+   * between the player and the obstacles is not empty.
    */
-  test('a projectile in flight @screenshots', async ({ page }, testInfo) => {
-    await boot(page);
-    await startFromMenu(page);
-    await waitForPhase(page, 'playing');
-    await page.evaluate(async () => {
-      const g = (window as unknown as {
-        __GB: {
-          game: {
-            debugSpawnHazardOnPlayer: (kind: string) => void;
-            touchRef: { spitGeometry: { x: number; y: number } };
-            handlePointerDown: (id: number, x: number, y: number) => void;
-            handlePointerUp: (id: number) => void;
-            debugSetSteadyCruise: () => void;
-          };
-          player: { x: number; screenY: number; volume: number };
-        };
-      }).__GB;
-      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
-
-      g.player.volume = 20;
-      g.game.debugSetSteadyCruise();
-      g.player.x = 0.5;
-      g.player.screenY = 0.4;
-      // Two kinds, so the picture shows that the ammunition keeps its identity.
-      for (const kind of ['crab', 'jelly'] as const) {
-        g.game.debugSpawnHazardOnPlayer(kind);
-        await raf();
-        await raf();
-      }
-
-      const b = g.game.touchRef.spitGeometry;
-      g.game.handlePointerDown(93, b.x, b.y);
-      g.game.handlePointerUp(93);
-      // Part-way up the screen, so the shot and its trail are both visible.
-      for (let i = 0; i < 4; i++) await raf();
-    });
-    await page.screenshot({ path: testInfo.outputPath('spit.png') });
-  });
-
-  /**
-   * The bubble over capacity: strained silhouette and the warning rim.
-   *
-   * The state's whole job is to be legible without reading anything, at a glance, while the player is watching a
-   * fish -- so a picture is the only way to judge whether it worked.
-   */
-  test('the bubble over capacity @screenshots', async ({ page }, testInfo) => {
-    await boot(page);
-    await startFromMenu(page);
-    await waitForPhase(page, 'playing');
-    await page.evaluate(async () => {
-      const g = (window as unknown as {
-        __GB: {
-          game: { debugSpawnHazardOnPlayer: (kind: string) => void; debugSetSteadyCruise: () => void };
-          player: { x: number; screenY: number; volume: number };
-          mechRef: { spit: { capacity: number } };
-        };
-      }).__GB;
-      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
-
-      g.player.volume = 20;
-      g.game.debugSetSteadyCruise();
-      g.player.x = 0.5;
-      g.player.screenY = 0.5;
-      // Fill the stomach exactly to capacity.
-      for (let i = 0; i < g.mechRef.spit.capacity; i++) {
-        g.game.debugSpawnHazardOnPlayer('fish');
-        await raf();
-        await raf();
-      }
-      // Part-way into the fuse, so the pulse is running but the bubble is not yet bursting.
-      for (let i = 0; i < 12; i++) await raf();
-    });
-    await page.screenshot({ path: testInfo.outputPath('overloaded.png') });
-  });
-
-  /**
-   * A crate and a coral, side by side, with a projectile in flight at them.
-   *
-   * The two kinds have to be told apart at a glance -- one is worth shooting and one is worth avoiding -- and that
-   * is a judgement about a picture. The shot is in frame so the interaction the obstacles exist for is visible.
-   */
-  test('a crate, a coral, and a shot at them @screenshots', async ({ page }, testInfo) => {
+  test('a crate and a coral, side by side @screenshots', async ({ page }, testInfo) => {
     await boot(page);
     await startFromMenu(page);
     await waitForPhase(page, 'playing');
@@ -363,10 +282,6 @@ test.describe('screen captures @screenshots', () => {
           game: {
             debugSetSteadyCruise: () => void;
             debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
-            debugSpawnHazardOnPlayer: (kind: string) => void;
-            touchRef: { spitGeometry: { x: number; y: number } };
-            handlePointerDown: (id: number, x: number, y: number) => void;
-            handlePointerUp: (id: number) => void;
             camera: { viewport: { laneWidthMeters: number } };
           };
           player: { x: number; screenY: number; volume: number };
@@ -380,7 +295,7 @@ test.describe('screen captures @screenshots', () => {
       g.player.screenY = 0.42;
       const lane = g.game.camera.viewport.laneWidthMeters;
 
-      // A crate above, a coral to the side, and ammunition to fire at the crate.
+      // A crate above, a coral to the side.
       g.game.debugSpawnObstacleOnPlayer('crate', lane * 0.55);
       g.game.debugSpawnObstacleOnPlayer('coral', lane * 0.55);
       // Offset the coral laterally, since both spawned on the player's column.
@@ -389,14 +304,8 @@ test.describe('screen captures @screenshots', () => {
         if (o.kind === 'coral') o.x = g.player.x * lane + lane * 0.26;
       }
 
-      g.game.debugSpawnHazardOnPlayer('crab');
-      await raf();
-      await raf();
-      const b = g.game.touchRef.spitGeometry;
-      g.game.handlePointerDown(93, b.x, b.y);
-      g.game.handlePointerUp(93);
-      // Part-way to the crate, so both the shot and its trail are in frame.
-      for (let i = 0; i < 4; i++) await raf();
+      // A few frames, so the gun has rounds in the air between the player and the obstacles.
+      for (let i = 0; i < 6; i++) await raf();
     });
     await page.screenshot({ path: testInfo.outputPath('obstacles.png') });
   });
@@ -450,19 +359,18 @@ test.describe('screen captures @screenshots', () => {
   });
 
   /**
-   * The five negative food creatures, loose.
+   * The three risky-food creatures, loose.
    *
    * All of them have to be recognisable from their SILHOUETTE alone, because that is what the player reads at
    * speed and because they are the creatures the player is meant to make a decision about: an urchin is a ball of
-   * needles, a bomb fish is a round body with a fuse, an eel is a long thin S, rot is a lumpy mass, and oil is a
-   * flat slick. If any of those needs colour to be told apart from a fish, it will not be read at all on a phone in
-   * daylight.
+   * needles, a bomb fish is a round body with a fuse, an eel is a long thin S. If any of those needs colour to be
+   * told apart from a fish, it will not be read at all on a phone in daylight.
    *
-   * Captured at volume 1, so NONE of them is edible and all five show the "threat" reading. That is the reading
+   * Captured at volume 1, so NONE of them is edible and all three show the "threat" reading. That is the reading
    * worth having: below its tier each is an ordinary hazard, and the golden "this is food" halo is already shown on
    * the other creatures by the captures above.
    */
-  test('the negative food creatures, loose @screenshots', async ({ page }, testInfo) => {
+  test('the risky food creatures, loose @screenshots', async ({ page }, testInfo) => {
     await boot(page);
     await startFromMenu(page);
     await waitForPhase(page, 'playing');
@@ -493,13 +401,11 @@ test.describe('screen captures @screenshots', () => {
       g.player.screenY = 0.28;
       const lane = g.game.camera.viewport.laneWidthMeters;
 
-      // Two rows of five, spread across the lane, each pair offset so none of them overlaps.
+      // Two rows, spread across the lane, each pair offset so none of them overlaps.
       const layout: readonly (readonly [string, number, number])[] = [
-        ['urchin', -0.28, 0.12],
-        ['bombfish', 0.0, 0.12],
-        ['eel', 0.28, 0.12],
-        ['rot', -0.14, -0.12],
-        ['oil', 0.16, -0.12],
+        ['urchin', -0.22, 0.12],
+        ['bombfish', 0.06, 0.12],
+        ['eel', 0.3, 0.12],
       ];
       for (const [kind, dx, dy] of layout) {
         g.game.debugSpawnHazardOnPlayer(kind);
@@ -510,65 +416,7 @@ test.describe('screen captures @screenshots', () => {
       // Let the eel's weave and the urchin's needles rotate off their spawn pose.
       for (let i = 0; i < 20; i++) await raf();
     });
-    await page.screenshot({ path: testInfo.outputPath('negative-food.png') });
-  });
-
-  /**
-   * A stomach with contents, being compressed, one of them about to go off.
-   *
-   * The picture that answers "can the player tell what is inside them, and which one is about to explode" -- the
-   * only warning a bomb fish gets, and the reason the contents are drawn on the bubble at all.
-   *
-   * TWO items, not three, and that is deliberate: three is CAPACITY, which lights the over-eating fuse, and the
-   * rim then shows that warning instead of the compression colour. The over-full silhouette has its own capture
-   * above; this one is for the state the compress control puts the bubble in.
-   */
-  test('a stomach being compressed, with a bomb about to go off @screenshots', async ({ page }, testInfo) => {
-    await boot(page);
-    await startFromMenu(page);
-    await waitForPhase(page, 'playing');
-    await page.evaluate(async () => {
-      const g = (window as unknown as {
-        __GB: {
-      mechRef: { hazards: { bombfish: { fuseSeconds: number; blastRadiusRatio: number }; urchin: { drainPerSecond: number } }; spit: Record<string, number>; stomach: Record<string, number> };
-          game: {
-            debugSetSteadyCruise: () => void;
-            debugSwallowForTest: (kind: string) => number;
-            handlePointerDown: (id: number, x: number, y: number) => void;
-            touchRef: { compressGeometry: { x: number; y: number } };
-          };
-          player: { x: number; screenY: number; volume: number };
-        };
-      }).__GB;
-      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
-
-      g.player.volume = 5;
-      g.game.debugSetSteadyCruise();
-      g.player.x = 0.5;
-      g.player.screenY = 0.5;
-
-      /**
-       * The over-eating fuse is pushed out of the way for a different reason than in the capture above: with only
-       * two items the stomach is not full, so it would not light anyway -- but a future capacity change should not
-       * silently turn this picture into a picture of a different warning. The panic window is widened so the bomb
-       * marker is caught BLINKING without waiting out a real fuse at screenshot frame rates.
-       *
-       * Nothing about the drawing depends on these numbers; they only decide which frame is being photographed.
-       */
-      g.mechRef.spit.overloadFuseSeconds = 600;
-      g.mechRef.hazards.bombfish.fuseSeconds = 600;
-      g.mechRef.hazards.urchin.drainPerSecond = 0;
-      g.mechRef.stomach.fusePanicSeconds = 600;
-
-      g.game.debugSwallowForTest('urchin');
-      g.game.debugSwallowForTest('bombfish');
-
-      const button = g.game.touchRef.compressGeometry;
-      g.game.handlePointerDown(94, button.x, button.y);
-      // Long enough for the rim to be in its compressed colour and the markers to be laid out and blinking.
-      for (let i = 0; i < 14; i++) await raf();
-    });
-    await page.screenshot({ path: testInfo.outputPath('stomach.png') });
+    await page.screenshot({ path: testInfo.outputPath('risky-food.png') });
   });
 
   /**

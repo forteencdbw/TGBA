@@ -1,7 +1,7 @@
 import { Container, Graphics } from 'pixi.js';
 import { mech } from './config';
 import type { Input } from './input';
-import type { ControlId } from './bubbleTypes';
+import { defaultBubbleType, type ControlId } from './bubbleTypes';
 import { designScale } from './viewport';
 
 /** The field's accent colour, read from the config each frame so a live edit is visible immediately. */
@@ -126,9 +126,13 @@ export class TouchControls {
    * ring around a button, it must keep moving even while the game is paused behind the settings panel, and
    * threading the game's own elapsed time through every call site of `update()` -- which the pointer handlers
    * also make -- would be plumbing for a sine wave. Nothing is asserted about it and nothing depends on it.
+   *
+   * The frequency is a literal rather than a config read: the digest block it came from is gone, and this whole
+   * button is a dormant path no type declares -- if a future type brings the verb back, the number belongs in the
+   * config again.
    */
   private get compressPulse(): number {
-    return (performance.now() / 1000) * mech.digest.pulseHz * Math.PI * 2;
+    return (performance.now() / 1000) * 2.4 * Math.PI * 2;
   }
   /**
    * The spit button's geometry, in the bottom-LEFT corner.
@@ -178,7 +182,12 @@ export class TouchControls {
    * anywhere saying "the volatile bubble has no spit" -- the button it would have been simply is not in the list.
    * See `src/bubbleTypes.ts`.
    */
-  private controls: readonly ControlId[] = ['skill', 'suction', 'spit', 'compress'];
+  /**
+   * The DEFAULT type's controls, so the layer agrees with the game before the first `setControls` lands -- a probe
+   * that starts a run through the raw `startRun` hook (which skips `enterFromMenu`) reads this list, and it must not
+   * name verbs no type has any more.
+   */
+  private controls: readonly ControlId[] = defaultBubbleType().controls;
 
   private has(control: ControlId): boolean {
     return this.controls.includes(control);
@@ -568,8 +577,7 @@ export class TouchControls {
     if (this.has('compress')) this.drawCompressButton();
   }
 
-
-  /**
+/**
    * The compress button: hold to digest.
    *
    * A separate control from the spit button rather than its hold half, and the reason is the design rather than
@@ -588,7 +596,8 @@ export class TouchControls {
     if (cb.radius <= 0) return;
 
     const compressing = this.compressPointer !== null;
-    const accent = mech.digest.rimColor;
+    // A literal for the same reason as `compressPulse`: the digest config is gone and this button is dormant.
+    const accent = 0x9dffd8;
 
     if (compressing) {
       const pulse = 0.5 + 0.5 * Math.sin(this.compressPulse);
@@ -654,8 +663,7 @@ export class TouchControls {
     g.circle(sb.x, sb.y, sb.radius * 0.2).fill({ color: 0xfff0d0, alpha: 0.9 });
   }
 
-
-  /**
+/**
    * The right-hand button: the skill, plus whichever HOLD this type's bubble has.
    *
    * ALWAYS drawn, because the skill is always available -- and a control that appears and disappears is one the

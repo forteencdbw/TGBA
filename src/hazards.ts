@@ -40,8 +40,6 @@ export type HazardKind =
   | 'urchin'
   | 'bombfish'
   | 'eel'
-  | 'rot'
-  | 'oil'
   /**
    * The level's boss.
    *
@@ -632,110 +630,6 @@ export const hazardTuning = {
 };
 
 /**
- * What a swallowed hazard does from INSIDE, as data.
- *
- * ---------------------------------------------------------------------------------------------
- * WHY THIS IS DATA RATHER THAN CODE IN THE STOMACH
- * ---------------------------------------------------------------------------------------------
- * `src/spit.ts` owns the stomach, and it must not know that urchins exist -- the same split as everywhere else in
- * this project (the hazard field decides what happened, the game decides what it means). So the stomach applies
- * generic rules -- "this many hit points per second", "this many seconds until it goes off" -- and WHICH creature
- * does which is a property of the creature, declared here beside everything else about it.
- *
- * ---------------------------------------------------------------------------------------------
- * WHY THIS CLASS OF HAZARD EXISTS AT ALL
- * ---------------------------------------------------------------------------------------------
- * Without it, swallowing is a pure gain: mass, plus ammunition. It is never a question. These two make it one, and
- * the question has a real answer either way -- spit it out fast (and get a weapon for it), or digest it before it
- * finishes what it is doing (which costs double damage taken while compressing, so against an urchin that is a
- * genuinely bad idea and against a bomb it is a race).
- *
- * Both are also ordinary hazards BELOW their tier, which is not a second rule: the reversal is a two-sided
- * judgement, so "it hurts you until you are big enough" is what every other creature already does.
- */
-export interface StomachEffect {
-  /** Hit points per second it costs while it is inside. Fractional, accumulated by the caller. */
-  damagePerSecond: number;
-  /** Seconds until it goes off inside, or 0 for something that does not. */
-  fuseSeconds: number;
-  /** Hit points its detonation costs. */
-  detonationHitPoints: number;
-  /** Seconds between shocks, and how long each lasts. A duration of 0 means it never does. */
-  shockPeriodSeconds: number;
-  shockSeconds: number;
-  /**
-   * What it multiplies the DIGESTION RATE by while it is inside. 1 is no effect; below 1 is slower.
-   *
-   * A multiplier rather than "seconds added", because what it does is make the answer that works for everything
-   * else take longer -- and it therefore multiplies with the compress control, which is where it bites: the
-   * over-eating fuse does not wait for a slower stomach.
-   */
-  digestScale: number;
-  /**
-   * The chance a spit attempt gets it back out, 0..1.
-   *
-   * The only exit in the game that can refuse, which is what "占据容量且难以排出" means in a game whose other four
-   * hundred rules are deterministic. At 0 it is a permanent clog and digestion is the only way out; at 1 it is an
-   * ordinary item. Note this is a PER-ATTEMPT roll, so a low value is not "it never comes out" -- it is "you will
-   * spend presses, and the fuse is still burning".
-   */
-  spitChance: number;
-}
-
-/** Swallowing most things costs nothing after the fact. */
-export const NO_STOMACH_EFFECT: StomachEffect = {
-  damagePerSecond: 0,
-  fuseSeconds: 0,
-  detonationHitPoints: 0,
-  shockPeriodSeconds: 0,
-  shockSeconds: 0,
-  digestScale: 1,
-  spitChance: 1,
-};
-
-/**
- * What this kind does once it is inside.
- *
- * A `switch` rather than a table keyed by kind, deliberately: the values are read LIVE from the config, and a
- * table built at module load would freeze whatever the file said at boot -- which is exactly the bug the over-eating
- * fuse documents at length, and it would break the runtime editing that every tuning workflow here depends on.
- */
-export function stomachEffect(kind: HazardKind): StomachEffect {
-  switch (kind) {
-    case 'urchin':
-      return { ...NO_STOMACH_EFFECT, damagePerSecond: mech.hazards.urchin.drainPerSecond };
-    case 'bombfish':
-      return {
-        ...NO_STOMACH_EFFECT,
-        fuseSeconds: mech.hazards.bombfish.stomachFuseSeconds,
-        detonationHitPoints: mech.hazards.bombfish.detonationHitPoints,
-      };
-    case 'eel':
-      return {
-        ...NO_STOMACH_EFFECT,
-        shockPeriodSeconds: mech.hazards.eel.shockPeriodSeconds,
-        shockSeconds: mech.hazards.eel.shockSeconds,
-      };
-    case 'rot':
-      return { ...NO_STOMACH_EFFECT, digestScale: mech.hazards.rot.digestScale };
-    case 'oil':
-      return { ...NO_STOMACH_EFFECT, spitChance: mech.hazards.oil.spitChance };
-    default:
-      return NO_STOMACH_EFFECT;
-  }
-}
-
-/**
- * How wide this kind's ammunition blasts when it lands, as a fraction of the lane width.
- *
- * Zero means "an ordinary pellet that shoves one thing". The bomb fish is the only explosive round, and that is the
- * whole reason to swallow one on purpose: you are trading a lit fuse for a grenade.
- */
-export function blastRadiusFraction(kind: HazardKind): number {
-  return kind === 'bombfish' ? mech.hazards.bombfish.grenadeBlastRadiusRatio : 0;
-}
-
-/**
  * Per-kind presentation and collision size, as a fraction of the lane width.
  *
  * EXPORTED because a spat projectile is drawn in the shape and colour of the hazard it was, and copying the four
@@ -802,9 +696,7 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
    */
   eel: { radius: 0.058, colour: 0xc8f24a, spin: 0.3 },
   /** Olive: unmistakably brown-ish rather than the trash bag's tan, and duller than anything else alive. */
-  rot: { radius: 0.056, colour: 0x7d8a3c, spin: 0.5 },
   /** Dark slate teal, drawn as a flat slick rather than a body: it is a substance, not a creature. */
-  oil: { radius: 0.066, colour: 0x2f4f4a, spin: 0.1 },
   /**
    * THE GUNNERS. Sizes follow the roles: the archer is fish-sized, the puffer sits between the crab and
    * the urchin, the starfish reads as a wide flat thing, and the pistol shrimp is the biggest gunner on
@@ -831,7 +723,6 @@ for (const kind of Object.keys(KIND_TUNING) as HazardKind[]) {
   const configured = mech.hazards.radius[kind];
   if (typeof configured === 'number' && configured > 0) KIND_TUNING[kind].radius = configured;
 }
-
 
 /**
  * How many bullet hits this kind takes before it leaves. From the config, one row per kind.
@@ -923,14 +814,6 @@ export interface HazardContext {
    * punishes the player for trusting what they were shown.
    */
   canEat: (kind: HazardKind) => boolean;
-  /**
-   * Whether there is ROOM to swallow this hazard.
-   *
-   * Asked separately from `canEat` because the two can disagree: a big enough bubble can eat a crab it has no
-   * room left for. When that happens the hazard must fall through to its normal damage path rather than vanish --
-   * a creature that disappears with no effect reads as the game having lost it.
-   */
-  canSwallow: () => boolean;
   /**
    * The suction field, or null when it is not up.
    *
@@ -1356,23 +1239,7 @@ function stepEel(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext)
   }
   return;
 }
-function stepRot(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
-  // Barely moves and tumbles slowly: it is debris that has stopped being anything in particular.
-  h.y -= ctx.descentSpeed * 0.2 * dt;
-  h.x += Math.sin(h.phase * 0.6 + h.seed) * 3 * dt;
-  return;
-}
-function stepOil(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
-  /**
-   * Floats almost still, which is what makes it a decision rather than an obstacle.
-   *
-   * A slick that drifted would be something to avoid; a slick that hangs there is something the player has to
-   * choose to touch. It also means a column of it can be left behind rather than chased.
-   */
-  h.y -= ctx.descentSpeed * 0.1 * dt;
-  h.x += Math.sin(h.phase * 0.4 + h.seed) * 2 * dt;
-  return;
-}
+
 /**
  * Which function moves which creature.
  *
@@ -1405,8 +1272,6 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
   foam: stepFoam,
   rain: stepRain,
   eel: stepEel,
-  rot: stepRot,
-  oil: stepOil,
   // THE GUNNERS: one shared movement (see `stepGunner`), four rhythms and four reasons to be there.
   archer: stepArcher,
   pistol: stepPistol,
@@ -1615,10 +1480,8 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   urchin: contactPlain,
   bombfish: contactPlain,
   eel: contactPlain,
-  rot: contactPlain,
   angler: contactPlain,
   torpedo: contactPlain,
-  oil: contactPlain,
   boss: contactBoss,
   shrimp: contactShrimp,
   zapper: contactZapper,
@@ -1638,15 +1501,15 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
  * Push a creature away from a point, scaled by its MASS.
  *
  * Heavy things shrug it off and light things are thrown, which keeps "the item keeps its own properties" true on the
- * receiving end as well as the sending end. It takes a position rather than a `Hazard` because one of its two callers
- * shoves creatures that are not in a field's list yet.
+ * receiving end as well as the sending end. It takes a position rather than a `Hazard` because a caller may shove
+ * creatures that are not in a field's list yet.
  *
- * A rule, not a mechanic of any one verb: the fart uses it (`pushImpact`) and so does a spent round
- * (`spitImpact`), and it was a private method on the game class until both callers moved out.
+ * The only caller is the rage burst, which passes its own `knockbackMeters` scaled by `pushImpact`; the metres are
+ * a parameter rather than a shared config read so the function stays a rule rather than a mechanic of any one verb.
  */
-export function shoveCreature(target: { kind: HazardKind; x: number; y: number }, dx: number, dy: number, impact: number): void {
+export function shoveCreature(target: { kind: HazardKind; x: number; y: number }, dx: number, dy: number, shoveMeters: number): void {
   const mass = Math.max(0.05, hazardMass(target.kind));
-  const shove = (mech.spit.knockbackMeters * impact) / mass;
+  const shove = shoveMeters / mass;
   const length = Math.hypot(dx, dy);
   // Dead centre: pick a direction rather than dividing by zero, and up is the one that means something in a
   // vertical ascent.
@@ -2162,12 +2025,9 @@ export class HazardField {
        * there is no way to add a new hazard whose damage path accidentally bypasses its edibility, and it means
        * the marker and the collision ask the identical question.
        *
-       * `canSwallow` is the capacity half. A full stomach falls through to the damage path, because a creature
-       * that silently disappears is worse than one that still bites.
-       *
        * The hazard is removed rather than merely flagged: it is inside the bubble now.
        */
-      if (ctx.canEat(h.kind) && ctx.canSwallow()) {
+      if (ctx.canEat(h.kind)) {
         this.eaten++;
         effects.push({ kind: h.kind, broke: true, eaten: { id: h.id } });
         continue;
@@ -2500,7 +2360,7 @@ export class HazardField {
     // Hand-maintained, and the one place a new kind can be forgotten without the compiler saying so -- every
     // `Record<HazardKind, ...>` table is total, this is an array. Level 4's four are here for the same reason the
     // tuna is: a random pass should be able to produce anything the game can produce.
-    const kinds: HazardKind[] = ['fish', 'tuna', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain', 'dolphin', 'octopus', 'shark', 'whale', 'archer', 'pistol', 'puffer', 'starfish'];
+    const kinds: HazardKind[] = ['fish', 'tuna', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain', 'dolphin', 'octopus', 'shark', 'whale', 'archer', 'pistol', 'puffer', 'starfish'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
@@ -4091,62 +3951,6 @@ function drawEel(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed
   return;
 }
 
-function drawRot(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
-  /**
-   * A lumpy mass with bubbles coming off it.
-   *
-   * Drawn as a polygon whose radius wobbles rather than as a circle: it is decaying, so a clean edge would be
-   * the wrong shape. The bubbles are the readable part -- they say "this is rotting" without a word, and they
-   * are the only animated exhaust in the game.
-   */
-  const points: number[] = [];
-  const lobes = 11;
-  for (let i = 0; i < lobes; i++) {
-    const a = (i / lobes) * Math.PI * 2;
-    const wob = 1 + Math.sin(a * 3 + h.phase * 0.7 + h.seed) * 0.16;
-    points.push(h.x + Math.cos(a) * r * wob, h.y + Math.sin(a) * r * wob);
-  }
-  points.push(points[0]!, points[1]!);
-  g.poly(points);
-  g.fill({ color: KIND_TUNING.rot.colour, alpha: 0.72 });
-  for (let i = 0; i < 3; i++) {
-    const p = (h.phase * 0.5 + i * 0.33) % 1;
-    g.circle(h.x + Math.sin(i * 2.3 + h.seed) * r * 0.7, h.y + r * 0.6 + p * r * 2.4, r * (0.1 + p * 0.16)).stroke({
-      color: KIND_TUNING.rot.colour,
-      alpha: 0.5 * (1 - p),
-      width: Math.max(1, r * 0.1),
-    });
-  }
-  return;
-}
-
-function drawOil(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
-  /**
-   * A flat slick, wider than it is tall, with a sheen across it.
-   *
-   * Wider than tall because that is what makes it read as a SUBSTANCE lying on the water rather than as a
-   * creature swimming in it -- and the sheen line is what says "oil" rather than "rock". It is also the only
-   * hazard that is easier to go around than through, so its silhouette wants to be wide.
-   */
-  const points: number[] = [];
-  const lobes = 13;
-  for (let i = 0; i < lobes; i++) {
-    const a = (i / lobes) * Math.PI * 2;
-    const wob = 1 + Math.sin(a * 4 + h.phase * 0.35 + h.seed) * 0.14;
-    points.push(h.x + Math.cos(a) * r * 1.15 * wob, h.y + Math.sin(a) * r * 0.72 * wob);
-  }
-  points.push(points[0]!, points[1]!);
-  g.poly(points);
-  g.fill({ color: KIND_TUNING.oil.colour, alpha: 0.85 });
-  g.poly(points);
-  g.stroke({ color: KIND_TUNING.oil.colour, alpha: 1, width: Math.max(1, r * 0.16) });
-  // The sheen: one arc across the top, in the only place light would catch a film of oil.
-  g.moveTo(h.x - r * 0.8, h.y + r * 0.25)
-    .quadraticCurveTo(h.x, h.y + r * 0.62, h.x + r * 0.8, h.y + r * 0.25)
-    .stroke({ color: 0xbfe8dd, alpha: 0.5, width: Math.max(1, r * 0.12) });
-  return;
-}
-
 /**
  * Which function draws which creature.
  *
@@ -4168,8 +3972,6 @@ const CREATURE_DRAWING: Record<HazardKind, CreatureDraw> = {
   urchin: drawUrchin,
   bombfish: drawBombfish,
   eel: drawEel,
-  rot: drawRot,
-  oil: drawOil,
   boss: drawBoss,
   vent: drawVent,
   mineral: drawMineral,
@@ -4589,80 +4391,4 @@ export function paintHazards(
 // NOTE: a slow effect has to be legible ON THE PLAYER, not in a status bar. Ringing the bubble while
 // it lasts is the cheapest honest way to show "you are still slowed", so the caller draws that
 // around the bubble rather than this function painting something at the origin.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

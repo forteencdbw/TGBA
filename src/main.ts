@@ -2,7 +2,7 @@ import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
 import { LEVEL, LEVELS, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
-import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, KIND_TUNING, LURE_PROBE, paintHazards, setReducedFlash, stomachEffect, warmAnimations, type HazardKind } from './hazards';
+import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, LURE_PROBE, paintHazards, setReducedFlash, warmAnimations, type HazardKind } from './hazards';
 import { paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { diagnosticsOf } from './diagnostics';
@@ -24,7 +24,6 @@ import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
 import { gainRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName } from './rage';
 import { mech } from './mechanisms';
 import { suctionRadiusFraction } from './suction';
-import { Stomach, stomachBulge, tierBonusFor, type SpitProjectile } from './spit';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
 import { Sprite } from 'pixi.js';
@@ -64,7 +63,6 @@ import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius, growB
 /** The three ways a bubble can be born (design round 5). Effects land in D4; here it is flavour. */
 const SEEDS = ['鱼屁泡', '汽水泡', '深海淤泥泡'] as const;
 
-
 const INTRO_SECONDS = 1.6;
 /**
  * Where the bubble comes from, and where it settles, as fractions of the visible window.
@@ -82,8 +80,6 @@ const INTRO_END_SCREEN_Y = 0.25;
  * surface is the thing the whole run was for, so it gets a moment to land.
  */
 // (The win no longer uses a held burst: `defeatBoss` holds the bubble while the flourish plays, then flies it out.)
-
-
 
 class Game {
   /** The simulation this game is driving. See `src/run.ts` for where the line is drawn. */
@@ -263,8 +259,7 @@ class Game {
     return this.run.bubbleType.look === 'rage' && isOverloaded(this.run.rage);
   }
 
-
-  /** The phase to restore when the settings panel closes. */
+/** The phase to restore when the settings panel closes. */
   private phaseBeforePause: Phase = 'playing';
   /**
    * The bubble's growth stage: which speed tier it is in, and how far into the next one.
@@ -761,8 +756,7 @@ class Game {
     return this.settings;
   }
 
-
-  /**
+/**
    * Test hook: whether the player could currently EAT this kind of hazard.
    *
    * Exposes the same function the collision and the outline marker use, so a test asserts the real rule rather
@@ -833,38 +827,12 @@ class Game {
   /** Seconds left of the chain-discharge visual, and the last burst's radius in metres. */
   /** Seconds until the next spit is allowed. */
   /** 1 -> 0 pulse on the spit button, for the refusal when the stomach is empty. */
-  /** Projectiles that have hit something this run, so a hit is observable rather than inferred from motion. */
-
-  /**
-   * Growth energy banked by digestion, and the rank it has bought.
-   *
-   * This is the ONE thing digestion produces that is not a subtraction, and it is the reason digesting is worth
-   * its cost: mass leaves the bubble while the rank it bought stays. `tierBonus` is derived rather than stored,
-   * so the config's `energyPerTier` can be edited at runtime -- which is how the tests make a digest payoff
-   * happen in a second rather than in twenty -- without the two getting out of step.
-   */
-  /** Whether the player is compressing right now: held control AND something to compress. */
-  /** Items digested this run, and the total volume digestion has taken out of the bubble. */
-
-  /**
-   * The eating rank digestion has bought, in tiers.
-   *
-   * Added to `volumeTier(volume)` wherever the eat rule is asked, which is exactly two places plus the outline
-   * marker -- all three through `canEatHazard`, so a marker that promised food while the collision delivered a
-   * hit remains impossible.
-   */
-  private get tierBonus(): number {
-    return tierBonusFor(this.run.growthEnergy);
-  }
-
   /**
    * Whether the suction field is actually up.
    *
-   * ONE place, because "digesting disables suction" is a rule about the player rather than about the input: the
-   * field's radius, its pull, its drawing and the diagnostic readout all ask this, and any of them reading
-   * `input.sucking` directly would leave a field that is visibly up but not pulling, or pulling without being
-   * drawn. Note the compression costs nothing while the stomach is empty -- there is nothing to squeeze, so
-   * there is nothing to pay for.
+   * ONE place, because the field's radius, its pull, its drawing and the diagnostic readout all ask this,
+   * and any of them reading `input.sucking` directly would leave a field that is visibly up but not pulling,
+   * or pulling without being drawn.
    */
   private get suctionUp(): boolean {
     /**
@@ -873,28 +841,18 @@ class Game {
      * the type does not have. See `hasVerb`.
      */
     if (!hasVerb(this.run.bubbleType, 'suction')) return false;
-    return this.input.sucking && !this.run.compressing;
+    return this.input.sucking;
   }
 
-
-
-
-
-  /**
-   * Shove one hazard away from a point.
+/**
+   * Test hook: the suction field's reach in metres, as the physics actually uses it.
    *
-   * Extracted so the direct hit, the grenade's blast and the rage burst push things by the SAME arithmetic -- an
-   * explosion is not a different kind of impact, it is the same one applied to everything in range. Two copies of
-   * this would let the grenade's centre shove differently from its fringe, which is not a thing a player could
-   * describe but is exactly the sort of inconsistency that reads as "that felt wrong".
-   *
-   * @param dx,dy direction from the impact to the target; only the direction is used.
-   * @param impact the impact factor, in the same units as `spitImpact` (a crab is 1.6, a jellyfish 0.6).
+   * Exposed because the field's radius has two multipliers (the player's size and any suction bonus a mutation
+   * has granted) and a test asserting only the config value would pass while a bonus that never reached the
+   * physics did nothing.
    */
 
-
-
-  /**
+/**
    * Test hook: the suction field's reach in metres, as the physics actually uses it.
    *
    * Exposed because the field's radius has two multipliers (the player's size and, when over-full, the runaway
@@ -1290,10 +1248,6 @@ class Game {
     this.run.player.impulseVy = 0;
     this.run.invulnerable = 0;
     this.run.trashDrain = 0;
-    this.run.stomachDrain = 0;
-    this.run.internalHits = 0;
-    this.run.destroyedMass = 0;
-    this.run.spitClogs = 0;
     this.run.comedyBeats = 0;
     this.run.lastComedyBeat = null;
     this.run.hazards.reset();
@@ -1643,8 +1597,7 @@ class Game {
      * over-full is genuinely nearly immobile -- which is the intended worst case and not a number to protect them
      * from.
      */
-    this.run.player.suctionMoveFactor =
-      (suctionAt ? mech.suction.moveSpeedFactor : 1) * (this.run.stomach.overloaded ? mech.spit.overloadMoveSpeedFactor : 1);
+    this.run.player.suctionMoveFactor = suctionAt ? mech.suction.moveSpeedFactor : 1;
 
     this.run.field.update(
       dt,
@@ -1827,17 +1780,7 @@ class Game {
     }
 
     /**
-     * Spit, then projectiles, then the hazards' effects.
-     *
-     * The order matters: the spit button is consumed before the projectiles move, so a shot fired this frame
-     * travels this frame and does not appear to hang at the bubble's position for one frame first. And the
-     * projectiles resolve BEFORE `resolveHazards` below, so a knockback this frame is visible in the same frame's
-     * collision test rather than a frame late.
-     */
-    this.run.updateStomach(dt, world.laneWidth, this.input);
-    this.run.updateProjectiles(dt, viewport.laneWidthMeters, min, max);
-    /**
-     * The gun, beside the spit and for the same two reasons.
+     * The gun.
      *
      * It resolves before `resolveHazards` below, so a creature driven off by a round this frame is already leaving
      * by the time the hazards move -- otherwise the player would watch a fish they had just finished off take one
@@ -1968,11 +1911,7 @@ class Game {
     if (this.endTrace.length > 8) this.endTrace.shift();
   }
 
-
-
-
-
-  /**
+/**
    * Use the carried skill, if there is one with uses left.
    *
    * The effects are applied HERE rather than inside the skill definition, for the same reason hazard
@@ -2057,17 +1996,7 @@ class Game {
     this.run.invulnerable = Math.max(this.run.invulnerable, mech.mutation.resumeInvulnerableSeconds);
   }
 
-
-
-
-
-
-
-
-
-
-
-  /**
+/**
    * Start (or restart) the current level.
    *
    * `carryScore` is the level TRANSITION: clearing a level walks the player straight into the next one, and the run's
@@ -2120,9 +2049,6 @@ class Game {
      */
     this.run.stage = initialStageState();
     this.run.player.stageSpeedMultiplier = this.run.stage.speedMultiplier;
-    // A new run must not begin holding the previous run's ammunition, nor its projectiles in flight.
-    this.run.stomach.reset();
-    this.run.projectiles.length = 0;
     // Nor with the previous run's rounds in the air, which would be free shots nobody asked for.
     this.run.bullets.reset();
     // The enemies' rounds go with them: a new bubble that starts inside a wall of the last run's fire would be a
@@ -2184,21 +2110,7 @@ class Game {
     }
     this.popups.clear();
     this.damagePopups.clear();
-    this.run.spitCooldown = 0;
-    this.run.spitHits = 0;
-    /**
-     * Digestion state is per-run, and `growthEnergy` especially so.
-     *
-     * The eating rank it buys is the run's own progress; carrying it across a death would make the restart
-     * strictly easier than the run that ended, which is the same reason skills and talents reset here.
-     */
-    this.run.growthEnergy = 0;
-    this.run.compressing = false;
-    this.run.digested = 0;
-    this.run.digestedMass = 0;
-    this.run.internalHits = 0;
-    this.run.destroyedMass = 0;
-    this.run.spitClogs = 0;
+
     /**
      * The volatile bubble's run state, reset with everything else.
      *
@@ -2229,7 +2141,6 @@ class Game {
     this.run.spawnLog.length = 0;
     this.run.spawnedBySide = { top: 0, left: 0, right: 0, bottom: 0 };
     this.run.trashDrain = 0;
-    this.run.stomachDrain = 0;
     this.run.comedyBeats = 0;
     this.run.lastComedyBeat = null;
     // The carried skill, the mutation ladder and its picks are RUN state, like the score and the gun
@@ -2271,8 +2182,7 @@ class Game {
     this.talentLabel = this.run.talentEffects.talent.name;
   }
 
-
-  /**
+/**
    * Open the settings panel and freeze the level.
    *
    * The phase is REMEMBERED rather than assumed to be `playing`: opening the panel during the birth intro or
@@ -2474,8 +2384,7 @@ class Game {
     this.menu.root.visible = true;
   }
 
-
-  private updateBoss(): void {
+private updateBoss(): void {
     const spec = LEVEL.boss;
     if (!this.run.bossSpawned && this.run.scrolled >= spec.at) {
       this.run.bossSpawned = true;
@@ -2612,8 +2521,7 @@ class Game {
     });
   }
 
-
-  /**
+/**
    * The overlays that are not the level: the screen shake, the surface flash, the two banners, the detonation rings.
    *
    * ---------------------------------------------------------------------------------------------
@@ -2671,8 +2579,7 @@ class Game {
     this.runBanner.alpha = Math.max(0, this.runBanner.alpha - dt * 0.28);
   }
 
-
-  /**
+/**
    * Show a transient message across the middle of the screen.
    *
    * ---------------------------------------------------------------------------------------------
@@ -2704,8 +2611,7 @@ class Game {
     sayScore(this.run.events, x, y, points);
   }
 
-
-  /** Whether the carried skill's button exists. Input surface, so it is an OUTPUT of the run rather than a rule. */
+/** Whether the carried skill's button exists. Input surface, so it is an OUTPUT of the run rather than a rule. */
   private skillSlot(carried: boolean): void {
     saySkillSlot(this.run.events, carried);
   }
@@ -2861,8 +2767,7 @@ class Game {
          */
         grows: this.run.bubbleType.growsByAbsorbing,
         neededForNext: this.run.stage.neededForNext,
-        tierBonus: this.tierBonus,
-        /**
+          /**
          * The mutation meter, for every type -- the bar that fills toward the next freeze.
          *
          * `pending` rides along so the bar can draw its "ready" stroke on banked picks the player has
@@ -3038,13 +2943,7 @@ class Game {
     if (this.suctionUp) {
       const cx = this.run.player.x * laneWidth;
       const cy = this.run.player.y;
-      /**
-       * Over capacity, the field runs away with itself: a bigger radius that drags in MORE than the player can
-       * eat. That is the punishment mixed with temptation -- you cannot help pulling things toward a mouth that is
-       * already full, which is exactly the pressure the design's over-eating state is supposed to create.
-       */
-      const overloadBonus = this.run.stomach.overloaded ? mech.spit.overloadSuctionFactor : 1;
-      const reach = laneWidth * suctionRadiusFraction(this.run.player.volume) * overloadBonus;
+      const reach = laneWidth * suctionRadiusFraction(this.run.player.volume);
       g.circle(cx, cy, reach).fill({ color: mech.suction.fieldColor, alpha: mech.suction.fieldAlpha * 0.35 });
       g.circle(cx, cy, reach).stroke({
         color: mech.suction.fieldColor,
@@ -3091,59 +2990,6 @@ class Game {
      * lethal is visible before it lands.
      */
     paintEnemyBullets(g, this.run.enemyBullets, laneWidth);
-    /**
-     * Projectiles, drawn IN FLIGHT from the stomach.
-     *
-     * Each keeps the silhouette of the hazard it was, tinted with a hot rim so a flying crab is legible as
-     * *something the player threw* rather than as a crab that happens to be moving fast. That distinction matters:
-     * one is a threat and the other is the player's own ammunition, and they can be on screen together.
-     */
-    for (const p of this.run.projectiles) {      const r = laneWidth * p.radiusFraction;
-      const fade = Math.max(0, 1 - p.age / (mech.spit.decaySeconds * 4));
-      g.circle(p.x, p.y, r * mech.spit.glowRadiusRatio).fill({ color: 0xffd479, alpha: mech.spit.glowAlpha * 0.25 * fade });
-      // A short trail behind it, back along its own velocity, so the direction of travel is unmistakable.
-      const trail = r * mech.spit.trailWidthRatio * 3;
-      const speed = Math.hypot(p.vx, p.vy) || 1;
-      g.moveTo(p.x, p.y)
-        .lineTo(p.x - (p.vx / speed) * trail, p.y - (p.vy / speed) * trail)
-        .stroke({ color: 0xffd479, alpha: mech.spit.trailAlpha * fade, width: r * mech.spit.trailWidthRatio });
-      // The body, in the kind's own shape so it still reads as what it was.
-      if (p.kind === 'jelly') {
-        g.ellipse(p.x, p.y, r, r * 0.8).fill({ color: KIND_TUNING.jelly.colour, alpha: 0.75 });
-      } else if (p.kind === 'trash') {
-        g.rect(p.x - r, p.y - r, r * 2, r * 2).fill({ color: 0x6d5232, alpha: 0.8 });
-      } else if (p.kind === 'crab') {
-        g.ellipse(p.x, p.y, r * 1.2, r * 0.8).fill({ color: KIND_TUNING.crab.colour, alpha: 0.85 });
-      } else if (p.kind === 'urchin') {
-        // A spinning spiked ball: the same silhouette it had in the water, so a thrown urchin is legible as the
-        // thing that was bleeding you a moment ago.
-        const spin = p.age * 9;
-        g.circle(p.x, p.y, r * 0.9).fill({ color: KIND_TUNING.urchin.colour, alpha: 0.6 });
-        for (let i = 0; i < 8; i++) {
-          const a = (i / 8) * Math.PI * 2 + spin;
-          g.moveTo(p.x + Math.cos(a) * r * 0.7, p.y + Math.sin(a) * r * 0.7)
-            .lineTo(p.x + Math.cos(a) * r * 1.5, p.y + Math.sin(a) * r * 1.5);
-        }
-        g.stroke({ color: KIND_TUNING.urchin.colour, alpha: 0.95, width: r * 0.18 });
-      } else if (p.kind === 'bombfish') {
-        /**
-         * A round body with a burning fuse, and here the fuse IS drawn lit.
-         *
-         * Deliberately the opposite of the loose creature, which shows no spark: while it is inside you the
-         * countdown is the danger, and once it is in the air the countdown no longer matters -- what matters is
-         * that the thing in flight is a bomb about to go off, so it reads as one.
-         */
-        g.ellipse(p.x, p.y, r * 1.25, r * 1.1).fill({ color: KIND_TUNING.bombfish.colour, alpha: 0.9 });
-        const spark = 0.5 + 0.5 * Math.sin(p.age * 26);
-        g.moveTo(p.x, p.y + r * 1.0)
-          .lineTo(p.x + r * 0.25, p.y + r * 1.7)
-          .stroke({ color: 0x8a7a5c, alpha: 0.9, width: r * 0.16 });
-        g.circle(p.x + r * 0.25, p.y + r * 1.8, r * (0.18 + 0.12 * spark)).fill({ color: 0xffe066, alpha: 0.9 });
-      } else {
-        g.ellipse(p.x, p.y, r * 1.5, r * 0.75).fill({ color: KIND_TUNING.fish.colour, alpha: 0.85 });
-      }
-      g.circle(p.x, p.y, r * 1.15).stroke({ color: 0xffd479, alpha: 0.9 * fade, width: r * 0.22 });
-    }
 
     // The decoy bait bubble, while it lasts. Drawn like a bright collectable, because that is what it
     // is imitating -- the fish are supposed to fall for it.
@@ -3268,98 +3114,10 @@ class Game {
     // Blink while invulnerable: the single cross-type rule that stops a swarm chain-killing.
     const blink = this.run.invulnerable > 0 ? 0.45 + 0.55 * Math.abs(Math.sin(this.run.invulnerable * 22)) : 1;
 
-    this.paintBubble(
-      drawnX,
-      this.run.player.y,
-      drawnRadius,
-      burstAlpha * blink,
-      /**
-       * The bulge, and how hard it is pulsing.
-       *
-       * The bubble STRAINS as it fills, which is how the player knows they are near capacity without reading
-       * anything. The pulse speed rises as the fuse burns down, so "I am about to burst" is legible in the
-       * silhouette itself rather than only on a HUD line -- and it speeds up hardest in the last stretch, which is
-       * when the player needs to look up from the water.
-       *
-       * `swell` rather than `size`, so an item being digested counts only for what is left of it: the bubble
-       * visibly DEFLATES as the mass comes back out, which is the entire visual feedback for digestion and costs
-       * nothing to draw.
-       */
-      stomachBulge(this.run.stomach.swell),
-      this.run.stomach.overloaded ? this.overloadPulse() : { phase: 0, strength: 0 },
-    );
+    this.paintBubble(drawnX, this.run.player.y, drawnRadius, burstAlpha * blink);
   }
 
-  /**
-   * What is in the stomach, as a ring of dots on the bubble's rim.
-   *
-   * ---------------------------------------------------------------------------------------------
-   * WHY THIS EXISTS NOW, WHEN IT WAS DELIBERATELY DEFERRED BEFORE
-   * ---------------------------------------------------------------------------------------------
-   * `plan.md` lists "气泡内部显示具体物品" as a thing chosen NOT to do, on the grounds that per-item state did not
-   * exist yet so there was nothing meaningful to draw. It exists now, and the reason has changed from decoration
-   * to necessity: from this milestone the contents keep ACTING from inside. An urchin bleeds the player and a bomb
-   * fish is counting down, and a countdown the player cannot see is not a decision, it is an ambush.
-   *
-   * On the RIM rather than inside the bubble: the interior already stacks four translucent layers (two glow
-   * passes, the sheen, the speculars) and anything drawn in there is averaged into mush -- the lesson the stage
-   * colours were fixed by. The rim is clean, and it is where the player is already looking.
-   *
-   * And on the BUBBLE rather than in a HUD list, for the reason the over-eating chapter settled: a penalty about
-   * the bubble has to be visible without moving your eyes off the thing you are steering.
-   */
-  private drawStomach(g: Graphics, worldX: number, worldY: number, radius: number, alpha: number): void {
-    const items = this.run.stomach.detail;
-    if (!items.length) return;
-
-    const look = mech.stomach;
-    const markerR = radius * look.markerRadiusRatio;
-    /**
-     * Spread so a full stomach does not read as a smudge.
-     *
-     * The floor matters for a config with a larger capacity than this one: without it, twenty items would be
-     * placed 0.31 radians apart and merge into a continuous bright ring, which says "something is in there" and
-     * not "there are twenty things in there".
-     */
-    const spread = Math.max(look.markerMinSpreadRadians, (Math.PI * 2) / items.length);
-
-    for (const [i, item] of items.entries()) {
-      // Starting at the top and going clockwise, so the OLDEST item is always in the same place -- it is the one
-      // that gets spat or digested first, so it is the one worth being able to find without counting.
-      const angle = -Math.PI / 2 + i * spread;
-      const x = worldX + Math.cos(angle) * radius * look.markerOrbitRatio;
-      const y = worldY + Math.sin(angle) * radius * look.markerOrbitRatio;
-
-      /**
-       * A fuse about to run out blinks, and only that one does.
-       *
-       * This is the bomb fish's entire warning. Blinking the marker rather than adding a bar or a number is what
-       * makes it answerable at a glance WHICH one is about to go off, which is the only question the player has
-       * time to ask.
-       */
-      const panic = item.fuse > 0 && item.fuse <= look.fusePanicSeconds;
-      const blink = panic ? 0.35 + 0.65 * Math.abs(Math.sin(this.run.elapsed * look.fuseBlinkHz * Math.PI)) : 1;
-
-      g.circle(x, y, markerR).fill({
-        color: KIND_TUNING[item.kind].colour,
-        alpha: look.markerAlpha * alpha * blink,
-      });
-      // A dark hairline so a pale marker is still legible against a pale bubble interior.
-      g.circle(x, y, markerR).stroke({ color: 0x08131f, alpha: 0.45 * alpha * blink, width: Math.max(1, markerR * 0.3) });
-    }
-  }
-
-  /**
-   * The bulge's pulse rate, in radians per second, rising as the over-eating fuse burns down.
-   */
-  private overloadPulse(): { phase: number; strength: number } {
-    const fraction = this.run.stomach.fuseFraction;
-    const panic = fraction <= mech.spit.panicBelowFraction;
-    const hz = mech.spit.pulseHz * (panic ? mech.spit.panicPulseFactor : 1);
-    return { phase: this.run.elapsed * hz * Math.PI * 2, strength: panic ? 1 : 0.5 };
-  }
-
-  /**
+/**
    * Build an irregular closed outline: an ellipse whose radius is modulated around its circumference.
    *
    * A polygon rather than a Pixi ellipse because the whole point is that it is NOT an ellipse -- an over-full
@@ -3550,14 +3308,6 @@ class Game {
     worldY: number,
     radius: number,
     alpha: number,
-    /**
-     * How far the stomach is stretching the silhouette, as a fraction of the radius, and the pulse driving it.
-     *
-     * Passed in rather than read from the stomach here, so the drawing stays a function of its arguments and the
-     * bulge cannot silently disagree with the capacity that produced it.
-     */
-    bulge = 0,
-    pulse: { phase: number; strength: number } = { phase: 0, strength: 0 },
   ): void {
     const g = this.bubble;
     const p = this.particles;
@@ -3653,44 +3403,11 @@ class Game {
       }
     }
 
-    /**
-     * The over-full silhouette.
-     *
-     * The bubble becomes a wobbling blob rather than a circle: a low-frequency deformation with a few lobes, its
-     * amplitude set by how much is inside and its speed by the fuse. It is the piece that says "there is something
-     * straining to get out of here" without a word of UI -- and because the lobes travel around the rim rather than
-     * pulsing uniformly, it reads as contents shifting rather than as the whole bubble breathing.
-     *
-     * The rim also swaps colour, so the state survives being glanced at out of the corner of an eye while the
-     * player is watching a fish: the over-eating warning takes priority, and compression is the other state that
-     * changes what the bubble can do -- no suction, double damage -- and therefore has to be visible rather than
-     * remembered. Over-eating wins when both are true, because that is the one with a fuse on it.
-     */
-    const digesting = this.run.compressing && !this.run.stomach.overloaded;
-    const bodyRim = this.run.stomach.overloaded ? mech.spit.rimColor : digesting ? mech.digest.rimColor : look.rim;
-    /**
-     * The compression pulse, on the rim's OPACITY rather than on its shape.
-     *
-     * Opacity because the state has to be tellable apart from the over-eating wobble at a glance: over-eating
-     * deforms the silhouette (something is straining to get out), while compressing breathes in place (something
-     * is being pushed down on purpose). Two states, two visual languages, so neither can be mistaken for the
-     * other in peripheral vision.
-     *
-     * The depth comes from the config, so the two can be told apart at any tuning; see `digest.pulseDepth`.
-     */
-    const digestPulse = digesting ? 0.5 + 0.5 * Math.sin(this.run.elapsed * mech.digest.pulseHz * Math.PI * 2) : 0;
-    const rimAlpha = look.rimAlpha * alpha * (digesting ? 1 - mech.digest.pulseDepth * (1 - digestPulse) : 1);
-    const bulgeAt = (angle: number): number => {
-      if (bulge <= 0) return 1;
-      const wobble = pulse.strength > 0 ? pulse.phase : this.run.elapsed * 2;
-      // Three lobes, so the outline never looks like a clean ellipse of a different size.
-      const lobes = Math.sin(angle * 3 + wobble) * 0.6 + Math.sin(angle * 5 - wobble * 0.7) * 0.4;
-      return 1 + bulge * lobes * (0.5 + 0.5 * pulse.strength);
-    };
-
+    const bodyRim = look.rim;
+    const rimAlpha = look.rimAlpha * alpha;
     // The body: a very translucent wash of the stage colour, then the rim. The wash hints at the hue inside; the
     // RIM is what states it.
-    const outline = this.bulgedEllipse(worldX, worldY, radius / squash, radius * squash, bulgeAt);
+    const outline = this.bulgedEllipse(worldX, worldY, radius / squash, radius * squash, () => 1);
     outline.fill({ color: look.inner, alpha: look.innerAlpha * alpha });
     outline.stroke({ color: bodyRim, alpha: rimAlpha, width: radius * look.rimWidthRatio });
 
@@ -3727,9 +3444,7 @@ class Game {
       alpha: look.specularAlpha * 0.5 * alpha,
     });
 
-    this.drawStomach(g, worldX, worldY, radius, alpha);
-
-    // Trailing micro-bubbles below the bubble, so it reads as always moving.
+// Trailing micro-bubbles below the bubble, so it reads as always moving.
     for (let i = 0; i < 3; i++) {
       const phase = this.run.elapsed * (0.9 + i * 0.23) + i * 2.1;
       const wobble = Math.sin(phase) * radius * 0.9;
@@ -3754,8 +3469,6 @@ class Game {
       obstacles: this.run.obstacles,
       bullets: this.run.bullets,
       enemyBullets: this.run.enemyBullets,
-      projectiles: this.run.projectiles,
-      stomach: this.run.stomach,
       score: this.run.score,
       xp: this.run.xp,
       progress: this.run.progress,
@@ -3778,22 +3491,13 @@ class Game {
       bursts: this.run.bursts,
       chargeAim: this.run.chargeAim,
       charging: this.run.charging,
-      compressing: this.run.compressing,
       comedyBeats: this.run.comedyBeats,
       lastComedyBeat: this.run.lastComedyBeat,
       lastEaten: this.run.lastEaten,
       lastEvent: this.run.lastEvent,
-      destroyedMass: this.run.destroyedMass,
-      digested: this.run.digested,
-      digestedMass: this.run.digestedMass,
-      growthEnergy: this.run.growthEnergy,
-      internalHits: this.run.internalHits,
       farts: this.run.farts,
       slams: this.run.slams,
       slamSeconds: this.run.slamSeconds,
-      spitClogs: this.run.spitClogs,
-      spitHits: this.run.spitHits,
-      stomachDrain: this.run.stomachDrain,
       trashDrain: this.run.trashDrain,
       eventsSeen: this.run.eventsSeen,
       eventsFired: this.run.eventsFired,
@@ -3806,7 +3510,6 @@ class Game {
       overloaded: this.overloaded,
       onSlam: this.onSlam,
       suctionUp: this.suctionUp,
-      tierBonus: this.tierBonus,
       burstRadiusRatio: this.run.burstRadiusRatio(),
       camera: this.camera,
       popups: this.popups,
@@ -3927,32 +3630,11 @@ class Game {
     return this.run.field;
   }
 
-  /**
-   * Test hook: the projectiles in flight.
-   *
-   * Read-only so a probe can watch one travel without being able to move it -- a test that repositioned a
-   * projectile would be testing its own arithmetic rather than the game's.
-   */
-  get projectilesRef(): readonly SpitProjectile[] {
-    return this.run.projectiles;
-  }
-
-  /** Test hook: the stomach, so a probe can read the queue and its capacity. */
-  get stomachRef(): Stomach {
-    return this.run.stomach;
-  }
-
-  /**
+/**
    * Test hook: swallow a hazard the way being touched by one would, WITHOUT having to make contact.
    *
-   * Goes through the same steps the collision path does -- grow by the mass, hand the item the volume it actually
-   * added, and capture what it does from inside -- so a probe measuring the ledger or an internal effect is
-   * measuring the real arithmetic rather than a hook that happens to agree with it today.
-   *
-   * Needed because the alternative is to park the player at volume 20 so that everything is edible, and eating at
-   * the volume CEILING adds nothing: the item would then carry zero mass, and a test of "digesting gives the mass
-   * back" would pass or fail depending on a clamp it was not asking about. The same clamp is why the volume is
-   * raised only by what was actually gained.
+   * Goes through the same step the collision path takes -- grow by the mass -- so a probe measuring the
+   * ledger is measuring the real arithmetic rather than a hook that happens to agree with it today.
    *
    * @return the volume actually gained, so a test can assert the round trip against the same number.
    */
@@ -3960,7 +3642,6 @@ class Game {
     const before = this.run.player.volume;
     this.run.player.volume = growByAbsorbing(this.run.player.volume, massFromEating(kind));
     const gained = this.run.player.volume - before;
-    this.run.stomach.swallow(kind, gained, stomachEffect(kind));
     this.run.stats.absorbed++;
     /**
      * The score is awarded here too, because this hook stands in for the collision path above and has to leave the run
@@ -4193,130 +3874,4 @@ async function boot(): Promise<void> {
 }
 
 void boot();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

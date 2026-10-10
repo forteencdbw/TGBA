@@ -115,6 +115,11 @@ test.describe('layout holds at any canvas size', () => {
        * button is stacked ABOVE the spit button, which is the first control whose position depends on another
        * control's size -- so on a narrow lane a fixed pixel gap could have pushed it off the top of the reachable
        * area, or dropped it on top of the skill button on the other side.
+       *
+       * The spit and compress rectangles are the DORMANT path's positions: `layout()` still computes a rectangle for
+       * every button whether or not any type declares the verb, and no type declares these two today. Asserting
+       * them anyway is the point -- if a future type brings the verbs back, the buttons it revives cannot ship
+       * off-screen, because this test never stopped checking.
        */
       for (const [name, c] of Object.entries(geo.controls)) {
         expect(c.x - c.radius, `${label}: the ${name} button must be inside the left edge`).toBeGreaterThanOrEqual(0);
