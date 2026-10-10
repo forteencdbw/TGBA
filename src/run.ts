@@ -967,6 +967,7 @@ this.sound('hit');
           bow: (index % 2 === 0 ? 1 : -1) * bow * Math.hypot(target.x - fromX, target.y - fromY),
           elapsed: 0,
           grazed: false,
+          hitPlayer: false,
         };
         // `makeHazard` builds one; the caller adds it -- the same two steps the level's own spawner takes, because a
         // creature the field does not hold is a creature that never moves, never hurts anything and is never drawn.

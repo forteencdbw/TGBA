@@ -285,6 +285,15 @@ export interface Hazard {
      * reset. See the graze branch in the contact loop.
      */
     grazed: boolean;
+    /**
+     * Whether this lunge TOUCHED the player, however it ended.
+     *
+     * A charge that connected owes nothing: the pass-by test below would otherwise pay a graze on its
+     * way back OUT of the circle after the hit ("正在远离 + 在圈内" is literally true then), and the
+     * only thing standing in the way was the invulnerability window's DURATION -- a coincidence of
+     * timing rather than a rule, and one that would break the moment that window was retuned.
+     */
+    hitPlayer: boolean;
   } | null;
   /** Seconds before this creature may lunge again. Counted down whether or not it is hunting. */
   chargeRest: number;
@@ -1143,6 +1152,7 @@ function stepAngler(_field: HazardField, h: Hazard, dt: number, ctx: HazardConte
       bow: (h.x < ctx.playerX ? 1 : -1) * cfg.bowRatio * span,
       elapsed: 0,
       grazed: false,
+      hitPlayer: false,
     };
   }
   h.y -= ctx.descentSpeed * cfg.driftFactor * dt;
@@ -1919,17 +1929,30 @@ export class HazardField {
           h.gripping = false;
         }
         /**
-         * THE GRAZE: a charge that passed close enough to hurt, without hurting.
+         * THE GRAZE: a charge that PASSED close enough to hurt, without hurting.
          *
          * The second, larger circle around the same contact test -- the contact radius times the config's
          * multiplier, so a bigger creature means a bigger graze circle for the same "close" -- and only
          * for a creature that is actually FLYING (past its telegraph: holding station on a drawn curve is
          * not a near-miss, it is a promise the player has not yet had to keep). Checked in the
-         * NOT-touching branch, because "was not hit" is half the definition; the invulnerability blink is
-         * the other gate, because a graze you could not have been hurt by anyway is a gift, not a risk.
+         * NOT-touching branch, because "was not hit" is half the definition.
          *
-         * Once per charge, via the flag ON the charge (see its field): camping inside the circle pays
-         * once, which is what keeps "graze for points" from becoming "stand inside the shark".
+         * THE PASS-BY TEST is the other half, and it is what makes the word honest: the charge's direction
+         * of travel must no longer point AT the player -- the dot with the line to the player at zero or
+         * below, which is receding, or dead perpendicular at the closest point. A charge flying straight
+         * at you spends its whole approach inside this circle PAYING NOTHING, because standing in the
+         * path is not a graze; the payment is for the dodge, and it lands on the frame the creature
+         * actually goes by. (Chasing a departing charge into the circle still pays -- it is already
+         * leaving, and catching up to it costs you.)
+         *
+         * `hitPlayer` closes the other door: a charge that TOUCHED you never pays, not even on its way
+         * back out of the circle, where "receding and inside" would otherwise be literally true. The
+         * invulnerability blink gate below is a separate rule about OTHER sources of invulnerability (an
+         * eaten creature's grace, a spent shell) -- a graze you could not have been hurt by anyway is a
+         * gift, not a risk.
+         *
+         * Once per charge, via the flags ON the charge: camping inside the circle pays once, which is
+         * what keeps "graze for points" from becoming "stand inside the shark".
          *
          * The boss's flung grit rides the same charge machinery with a zero telegraph, so grit counts
          * too -- dodging the claw's debris closely is the same risk with the same reward.
@@ -1938,17 +1961,31 @@ export class HazardField {
           !ctx.invulnerable &&
           h.charge &&
           !h.charge.grazed &&
+          !h.charge.hitPlayer &&
           h.charge.elapsed >= chargeWindow(h.kind).telegraphSeconds
         ) {
           const grazeReach = reach * mech.graze.radiusMultiplier;
           if (dx * dx + dy * dy <= grazeReach * grazeReach) {
-            h.charge.grazed = true;
-            this.grazes++;
-            effects.push({ kind: h.kind, broke: false, graze: { x: (h.x + ctx.playerX) / 2, y: (h.y + ctx.playerY) / 2 } });
+            const dir = chargeDirection(h.charge, chargeWindow(h.kind));
+            if (dir.x * (ctx.playerX - h.x) + dir.y * (ctx.playerY - h.y) <= 0) {
+              h.charge.grazed = true;
+              this.grazes++;
+              effects.push({ kind: h.kind, broke: false, graze: { x: (h.x + ctx.playerX) / 2, y: (h.y + ctx.playerY) / 2 } });
+            }
           }
         }
         continue;
       }
+
+      /**
+       * A charge that is touching has CONNECTED, and its graze is forfeit from this frame on.
+       *
+       * Set before any gate because every touching outcome -- damage, a crab's launch, even the reversal
+       * -- means the lunge reached the player, and a lunge that reached you is not a near-miss. Without
+       * this, the pass-by test would pay the charge on its way back OUT of the circle after a hit,
+       * unless the invulnerability window happened to still be open.
+       */
+      if (h.charge) h.charge.hitPlayer = true;
 
       /**
        * THE REVERSAL, checked BEFORE any per-kind behaviour.
@@ -2566,6 +2603,7 @@ export class HazardField {
           bow: (onLeft ? 1 : -1) * charger.bowRatio * span,
           elapsed: 0,
           grazed: false,
+          hitPlayer: false,
         };
         /**
          * A lunge is a heading too, and the creature's own step does not run while it lasts -- a charge REPLACES the
@@ -3014,6 +3052,41 @@ export function chargeWindow(kind: HazardKind): {
     telegraphSeconds: own?.telegraphSeconds ?? row?.telegraphSeconds ?? 0.75,
     travelSeconds: own?.travelSeconds ?? row?.travelSeconds ?? 0.55,
     cooldownSeconds: own?.cooldownSeconds ?? row?.cooldownSeconds ?? 2.2,
+  };
+}
+
+/**
+ * The direction a charge is travelling right now, as a vector off the curve's tangent.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY A TANGENT RATHER THAN "DISTANCE VERSUS LAST FRAME"
+ * ---------------------------------------------------------------------------------------------
+ * The graze's pass-by test needs one bit: is the creature still closing on the player, or has it gone
+ * by. The charge's position is an exact function of its own clock (the same quadratic Bezier `advance`
+ * flies), so the tangent is the question's EXACT answer, stateless, and shared with the curve the
+ * player is watching -- while a "was closer last frame" answer needs a field carried across frames and
+ * is wrong on the frame the charge is committed inside the circle.
+ *
+ * The vector is deliberately UNNORMALISED: the only consumer is a dot product whose SIGN is read, and a
+ * positive scaling cannot flip a sign.
+ */
+function chargeDirection(
+  charge: NonNullable<Hazard['charge']>,
+  window: { telegraphSeconds: number; travelSeconds: number },
+): { x: number; y: number } {
+  const t = Math.min(1, (charge.elapsed - window.telegraphSeconds) / Math.max(0.05, window.travelSeconds));
+  const { fromX, fromY, toX, toY, bow } = charge;
+  // The same control point `advance` uses: the midpoint pushed perpendicular by `bow`.
+  const midX = (fromX + toX) / 2;
+  const midY = (fromY + toY) / 2;
+  const span = Math.hypot(toX - fromX, toY - fromY) || 1;
+  const ctrlX = midX + (-(toY - fromY) / span) * bow;
+  const ctrlY = midY + ((toX - fromX) / span) * bow;
+  const u = 1 - t;
+  // The derivative of the Bezier: 2u(ctrl - from) + 2t(to - ctrl).
+  return {
+    x: 2 * u * (ctrlX - fromX) + 2 * t * (toX - ctrlX),
+    y: 2 * u * (ctrlY - fromY) + 2 * t * (toY - ctrlY),
   };
 }
 
