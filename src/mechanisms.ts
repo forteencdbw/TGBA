@@ -452,6 +452,10 @@ export interface Mechanisms {
     shooters: Record<
       string,
       {
+        /**
+         * Cadence. **0 is legal and means "this creature never fires on a timer"** -- the puffer's spikes
+         * exist as a row (speed, shape, size) while their WHEN is the hit that answers, not the clock.
+         */
         perSecond: number;
         /** Lane widths per second. Kept below the player's own lateral speed, or the dodge is not available. */
         speedPerSecond: number;
@@ -462,6 +466,11 @@ export interface Mechanisms {
         damage: number;
         /** How the round is drawn. Defaults to `bolt` when a row leaves it out. */
         shape?: 'bolt' | 'spike';
+        /**
+         * This kind's round radius, as a fraction of the lane width. Falls back to the shared `radiusRatio`
+         * when a row leaves it out; the pistol shrimp's cavitation bubble is the one that does not.
+         */
+        radiusRatio?: number;
       }
     >;
     /** A creature only opens fire from inside this distance, so nothing arrives from off screen. */
@@ -769,6 +778,27 @@ export interface Mechanisms {
     rot: { digestScale: number };
     /** The oil: the chance a spit attempt gets it out. 0 is a permanent clog, 1 is an ordinary item. */
     oil: { spitChance: number };
+    /**
+     * THE GUNNERS' own knobs. Their bullets live in `enemyBullets.shooters`; these are the creature
+     * halves -- how they ride the current, and each one's signature rule.
+     */
+    /** 射水鱼: only its drift. Its whole personality is in the shooter row. */
+    archer: { driftFactor: number };
+    /** 手枪虾: the elite loiters. */
+    pistol: { driftFactor: number };
+    /** 刺魨: the answer -- every hit taken is paid back in a ring of spikes, on a cooldown. */
+    puffer: {
+      driftFactor: number;
+      countersWhenHit: boolean;
+      counterCooldownSeconds: number;
+      spikeCount: number;
+    };
+    /** 海星: the rosette -- how many directions, and how far it turns with every volley. */
+    starfish: {
+      driftFactor: number;
+      volleyCount: number;
+      volleySpinRadians: number;
+    };
 
     invulnerableSeconds: number;
   };
@@ -1691,6 +1721,7 @@ function isShooterTable(v: unknown): boolean {
     if (row === null || typeof row !== 'object') return false;
     const r = row as Record<string, unknown>;
     if (r.shape !== undefined && r.shape !== 'bolt' && r.shape !== 'spike') return false;
+    if (r.radiusRatio !== undefined && (typeof r.radiusRatio !== 'number' || !Number.isFinite(r.radiusRatio) || r.radiusRatio <= 0 || r.radiusRatio > 0.2)) return false;
     return fields.every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number) && (r[k] as number) >= 0);
   });
 }
@@ -2231,6 +2262,16 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.eel.shockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10; 0 disables the eel\'s loss of control' },
   { path: 'hazards.rot.digestScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier between 0 and 2; 1 means the rot does not slow digestion' },
   { path: 'hazards.oil.spitChance', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a probability between 0 and 1; 0 is a permanent clog' },
+  ...['archer', 'pistol', 'puffer', 'starfish'].map((kind) => ({
+    path: `hazards.${kind}.driftFactor`,
+    check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 2,
+    describe: 'a multiple of the current between 0 and 2; smaller loiters longer',
+  })),
+  { path: 'hazards.puffer.countersWhenHit', check: (v) => typeof v === 'boolean', describe: 'whether a hit is answered with a ring of spikes' },
+  { path: 'hazards.puffer.counterCooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10' },
+  { path: 'hazards.puffer.spikeCount', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 2 && v <= 24, describe: 'a whole number of spikes between 2 and 24' },
+  { path: 'hazards.starfish.volleyCount', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 3 && v <= 12, describe: 'a whole number of directions between 3 and 12' },
+  { path: 'hazards.starfish.volleySpinRadians', check: (v) => typeof v === 'number' && v >= 0 && v <= Math.PI, describe: 'radians between 0 and pi; 0 means the rosette never turns' },
   { path: 'hazards.eel.shockColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.eel.shockWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
   { path: 'hazards.invulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
@@ -3129,12 +3170,19 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
  * The failure this prevents is quiet in both directions: a typo in `charges.kinds` means nothing ever charges and the
  * feature looks broken, and a kind that was renamed leaves a name behind that nobody notices. Neither has a symptom
  * on screen, so it has to be a boot error.
+ *
+ * The shooters half was claimed by the comment but never actually checked (found while adding the gunners):
+ * a typo'd shooter row is a creature that silently never fires, which is the same quiet failure one table over.
  */
 {
   const kinds = Object.keys(mech.consumption.mass);
-  const unknown = Object.keys(mech.charges.chargers).filter((k) => !kinds.includes(k));
-  if (unknown.length) {
-    fail(`charges.chargers names something that is not a hazard kind: ${unknown.join(', ')}`);
+  const unknownChargers = Object.keys(mech.charges.chargers).filter((k) => !kinds.includes(k));
+  if (unknownChargers.length) {
+    fail(`charges.chargers names something that is not a hazard kind: ${unknownChargers.join(', ')}`);
+  }
+  const unknownShooters = Object.keys(mech.enemyBullets.shooters).filter((k) => !kinds.includes(k));
+  if (unknownShooters.length) {
+    fail(`enemyBullets.shooters names something that is not a hazard kind: ${unknownShooters.join(', ')}`);
   }
 }
 

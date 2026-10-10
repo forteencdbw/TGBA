@@ -504,9 +504,25 @@ export class Run {
     });
     if (live && landed.length > 0) {
       for (const kind of landed) {
-        this.takeHit();
-        // A hit can end the run; nothing after this may assume there is still a bubble.
-        if (this.phase !== 'playing') return;
+        /**
+         * HOW HARD THIS ROUND HITS, from the shooter's own row.
+         *
+         * `damage` sat validated-but-unread in the config since the shooters table was born (both existing
+         * rows say 1, so wiring it changed nothing until something said otherwise); the pistol shrimp is the
+         * first shooter that does -- its cavitation round costs TWO hit points, which is the whole "elite"
+         * in one number. Looked up per round rather than carried on it, so a live console edit of the row
+         * changes the next round that lands.
+         *
+         * Consecutive `takeHit` calls in one frame are deliberate: the invulnerability window protects
+         * against a FAN of separate rounds, not against one round being heavy -- the same way a digesting
+         * bubble pays `extraHitPoints` on a single hit.
+         */
+        const hitPoints = Math.max(1, mech.enemyBullets.shooters[kind]?.damage ?? 1);
+        for (let i = 0; i < hitPoints; i++) {
+          this.takeHit();
+          // A hit can end the run; nothing after this may assume there is still a bubble.
+          if (this.phase !== 'playing') return;
+        }
         /**
          * AN ELECTRIC ROUND TAKES THE CONTROLS WITH IT.
          *
@@ -982,6 +998,27 @@ this.sound('hit');
       max,
       effects.filter((e) => e.shot).map((e) => ({ kind: e.kind, x: e.shot!.x, y: e.shot!.y })),
     );
+
+    /**
+     * The FIXED-AIM volleys, fired beside the aimed shots they live next to.
+     *
+     * Directions, not target points, came across from the field -- the starfish's rosette and the puffer's
+     * answer-ring do not care where the player is, and handing a target would be handing an aim. Each
+     * direction becomes one round through the SAME `fire()` the aimed shooters use: a point 100m along the
+     * direction is a pure direction carrier (`fire` only reads its angle), the speed, shape and size come
+     * from the kind's own shooter row, and `fired` is counted per round exactly as before.
+     *
+     * Gated on the phase for the same reason the aimed shots are gated on `live`: a volley during the
+     * ending is nobody's risk.
+     */
+    if (this.phase === 'playing') {
+      for (const e of effects) {
+        if (!e.volley) continue;
+        for (const dir of e.volley.dirs) {
+          this.enemyBullets.fire(e.kind, e.volley.x, e.volley.y, e.volley.x + dir.x * 100, e.volley.y + dir.y * 100, laneWidth);
+        }
+      }
+    }
 
     /**
      * The boss's claw swing, turned into grit.

@@ -58,6 +58,8 @@
     { at: 660, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.6, from: 'right', enterSpeed: 50 },
     { at: 720, kind: 'crab', count: 3, arrange: 'line' },
     { at: 780, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.24, x: 0.5, from: 'bottom' },
+    // **手枪虾**：精英位——风暴关的混乱里一发电化弹，稀疏、快、重。只放一只。
+    { at: 860, kind: 'pistol', x: 0.5 },
 
     // --- 废网区：网 + 木箱 + 钩（用珊瑚和木箱代替），路线被反复切断。 ---
     { at: 900, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },

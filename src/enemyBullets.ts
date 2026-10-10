@@ -55,6 +55,15 @@ export interface EnemyBullet {
    */
   shape: BulletShape;
   /**
+   * This round's radius, as a fraction of the lane width, copied from its shooter's row at spawn.
+   *
+   * Per ROUND rather than per field, because one shooter's round can be bigger than another's: the pistol
+   * shrimp's cavitation bubble is the reason this field exists, and a big round must also HIT like a big
+   * round and GRAZE like a big round -- one number, three uses, copied once so a live edit of the row
+   * changes the next round rather than retroactively resizing the ones in the water.
+   */
+  radiusRatio: number;
+  /**
    * Whether this round has already paid a bullet graze.
    *
    * On the round rather than as a cooldown, because a round is short-lived and one-shot: the flag's
@@ -153,6 +162,7 @@ export class EnemyBulletField {
         age: 0,
         kind,
         shape: row.shape ?? 'bolt',
+        radiusRatio: row.radiusRatio ?? mech.enemyBullets.radiusRatio,
         grazed: false,
       });
       this.fired++;
@@ -178,7 +188,6 @@ export class EnemyBulletField {
    */
   update(dt: number, ctx: EnemyBulletContext): { landed: string[]; grazedAt: { x: number; y: number }[] } {
     const cfg = mech.enemyBullets;
-    const radius = ctx.laneWidth * cfg.radiusRatio;
     const landed: string[] = [];
     const grazedAt: { x: number; y: number }[] = [];
     for (let i = this.bullets.length - 1; i >= 0; i--) {
@@ -186,6 +195,8 @@ export class EnemyBulletField {
       b.age += dt;
       b.x += b.vx * dt;
       b.y += b.vy * dt;
+      // THIS round's radius, copied at spawn -- a big round blocks, hits and grazes big.
+      const radius = ctx.laneWidth * b.radiusRatio;
 
       let spent = false;
       // Scenery first, so a round that would have hit the player through a crate stops at the crate.
@@ -243,8 +254,9 @@ export class EnemyBulletField {
  */
 export function paintEnemyBullets(g: Graphics, field: EnemyBulletField, laneWidth: number): void {
   const cfg = mech.enemyBullets;
-  const r = laneWidth * cfg.radiusRatio;
   for (const b of field.bullets) {
+    // Per round, not per field: a cavitation bubble is drawn as big as it hits.
+    const r = laneWidth * b.radiusRatio;
     const speed = Math.hypot(b.vx, b.vy) || 1;
     const ux = b.vx / speed;
     const uy = b.vy / speed;

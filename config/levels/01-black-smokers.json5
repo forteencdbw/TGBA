@@ -253,6 +253,9 @@
     { at: 30, span: 200, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.4, 0.5, 0.35] },
     // 第一批颗粒是**从下面上来的**：这一关第一个新方向。
     { at: 120, span: 60, count: 4, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
+    // **射水鱼**第一位枪手的教学位：3 点血打得跑，是"会开枪的东西也可以被赶走"的第一课。
+    // 放在 120m 矿物颗粒之后、金枪鱼之前，单独一条，让"水里有会开枪的东西"读得出来。
+    { at: 170, kind: 'archer', x: 0.5 },
     { at: 150, kind: 'tuna', x: 0.9 },
     { at: 210, kind: 'tuna', x: 0.0 },
     { at: 260, kind: 'tuna', x: 0.2 },
@@ -300,6 +303,8 @@
     { at: 1180, kind: 'angler', x: 0.35, from: 'left' },
     { at: 900, kind: 'crab', x: 0.75 },
     { at: 940, span: 80, count: 6, kind: 'mineral', arrange: 'spread', amplitude: 0.18, x: 0.5, from: 'bottom' },
+    // 第二条射水鱼：中段复习位，和灯笼鱼同一段——一个用触角骗你，一个用子弹追你。
+    { at: 960, kind: 'archer', x: 0.35 },
     { at: 990, kind: 'shrimp', count: 2, arrange: 'spread', span: 20, x: 0.7, from: 'right', depth: 0.45 },
     { at: 1030, kind: 'tube', count: 5, arrange: 'barrier', gapAt: 0.25, gapWidth: 0.19 },
     { at: 1055, kind: 'fish', count: 5, path: 'dive', x: 0.5, pathSpacingSeconds: 0.35 },

@@ -248,6 +248,47 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
     notes: ['它不造成接触伤害，但会**持续把你往下压**——上升的节奏被打断就是它的作用。'],
   },
 
+  /**
+   * THE GUNNERS. Four cards, one idea each: the archer is the one you can shoot back at, the pistol shrimp
+   * is the one you respect, the puffer is the one you time, and the starfish is the one you read.
+   */
+  {
+    kind: 'archer',
+    tagline: '射水鱼：会开枪的日常款——打得跑',
+    notes: [
+      '它是**电鳗的对照**：电鳗打不死（0 血），它是几发就跑（3 血）——"会开枪的东西也可以被赶走"是它的第一课。',
+      '慢节奏、中速直线弹，第一发永远瞄的是**开火那一刻的你**，之后不再修正，所以看得懂也躲得开。',
+      '随水流漂着下坠，一路扫过你的泳道：它不追你，它的弹幕替它追。',
+    ],
+  },
+  {
+    kind: 'pistol',
+    tagline: '手枪虾：一发电化弹，半管血',
+    notes: [
+      '**全表最快、最大、最重的一发**：约 2.6 倍弹径，命中一次扣 **2 个命中点**——这一发不是被打一下，是被打两下。',
+      '射速极慢（约 3 秒一发）：稀疏、快、狠，看到它抬螯就该挪了。',
+      '10 点血的精英，值得你花火力——但它的弹比你的快，隔着泳道对射是它赢。',
+    ],
+  },
+  {
+    kind: 'puffer',
+    tagline: '刺魨：打它一下，吃它一圈刺',
+    notes: [
+      '它**从不主动开火**——它的刺什么时候出，取决于你什么时候打它：每受一次击，向四周炸一圈 9 根刺。',
+      '反击有 **1.2 秒冷却**（冷却期间它瘪下去、刺也暗了）：打一发、吃一圈、在窗口里再打——射击它是**节奏**，不是反射。',
+      '6 点血：硬，但不是硬到不值得。贴太近打它，刺圈几乎必中；隔着一个刺圈的宽度打，它就只是个会还嘴的肉靶。',
+    ],
+  },
+  {
+    kind: 'starfish',
+    tagline: '海星：不瞄人的旋转星形弹幕',
+    notes: [
+      '每轮 5 向齐射、每轮整体转 36°（两轮补满整星）——**它的五条臂就是下一轮的方向**，站在臂与臂的缝里就永远有活路。',
+      '它不瞄人：弹幕是固定角度的星形，所以"读它"替代了"躲它"——站着不动是死，一直动就永远有缝。',
+      '每 2.5 秒一轮，4 点血：读懂它的人几发就能让它闭嘴。',
+    ],
+  },
+
 
   /**
    * The blind shrimp: in the game since the first level, and never written into the book.
@@ -405,6 +446,10 @@ const HAZARD_NAMES: Record<HazardKind, string> = {
   zapper: '电击水母',
   foam: '碎浪泡沫',
   rain: '雨滴冲击',
+  archer: '射水鱼',
+  pistol: '手枪虾',
+  puffer: '刺魨',
+  starfish: '海星',
 };
 
 /** The four things in the water that are not creatures. */

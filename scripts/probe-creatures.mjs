@@ -35,7 +35,7 @@ try {
   const hz = await server.ssrLoadModule('/src/hazards.ts');
   const mech = (await server.ssrLoadModule('/src/mechanisms.ts')).mech;
 
-  const KINDS = ['fish', 'tuna', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain', 'dolphin', 'octopus', 'shark', 'whale'];
+  const KINDS = ['fish', 'tuna', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain', 'dolphin', 'octopus', 'shark', 'whale', 'archer', 'pistol', 'puffer', 'starfish'];
 
   const ctxFor = (eat) => ({
     laneWidth: 100,

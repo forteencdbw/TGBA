@@ -54,6 +54,8 @@
     { at: 150, kind: 'crate', count: 4, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
     { at: 200, kind: 'net', count: 3, arrange: 'line' },
     { at: 240, kind: 'wall', count: 4, arrange: 'barrier', gapAt: 0.62, gapWidth: 0.19 },
+    // **射水鱼**：沉船幽谷的第一位枪手——窄缝 + 子弹，躲弹的空间本身就是这一关的主题。
+    { at: 280, kind: 'archer', x: 0.4 },
 
     // --- 灯笼鱼第一次出现：唯一一个"自己会发光"的敌人，而光是诱饵。 ---
     { at: 330, kind: 'angler', x: 0.4 },

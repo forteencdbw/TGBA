@@ -64,6 +64,8 @@
     { at: 640, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'left', enterSpeed: 46 },
     { at: 700, kind: 'angler', count: 2, arrange: 'line' },
     { at: 760, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.2, x: 0.5, from: 'bottom' },
+    // **刺魨**：防御反击型——猎食者关里唯一'打它有代价'的东西，和冲锋的猎食者互为对照。
+    { at: 790, kind: 'puffer', x: 0.6 },
 
     // --- 冷水层：猎食者密集，速度更快。 ---
     { at: 830, kind: 'crab', count: 3, arrange: 'line' },

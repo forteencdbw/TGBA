@@ -552,6 +552,12 @@ export function spitImpact(kind: HazardKind): number {
     zapper: 0.55,
     foam: 0.2,
     rain: 0.6,
+    // 四位枪手：射水鱼是软的鱼身（0.8，和小鱼一样）；手枪虾有一只实心巨螯（1.5，接近螃蟹）；
+    // 刺魨带刺但圆滚（1.0）；海星又扁又轻（0.5）。
+    archer: 0.8,
+    pistol: 1.5,
+    puffer: 1.0,
+    starfish: 0.5,
   };
   return perKind[kind];
 }

@@ -110,7 +110,27 @@ export type HazardKind =
   | 'whale'
   | 'dolphin'
   | 'shark'
-  | 'octopus';
+  | 'octopus'
+  /**
+   * THE GUNNERS -- the four that shoot, added when the game had chargers and brawlers but nobody who fought at range.
+   *
+   * All four are DRIFTING TURRETS: they ride the current down like the eel and the urchin do, because a gunner's
+   * threat is its fire, not its feet -- and a drifting gunner still sweeps the player's lane, which is the same
+   * pressure a repositioning one would apply without a second movement rule to learn.
+   *
+   * `archer`   射水鱼, the basic gunner: one straight bolt, on a cadence. The eel is the UNKILLABLE version of
+   *            this shape; the archer is the everyday one -- 3 health, so the gun is an answer to it.
+   * `pistol`   手枪虾, the elite: one BIG fast cavitation round that costs TWO hit points. Rare, on purpose.
+   * `puffer`   刺魨, the defensive one: it does not shoot on a timer at all (its shooter row's cadence is 0) --
+   *            every hit it takes is answered with a ring of spikes, so shooting it is a rhythm rather than a
+   *            reflex. The zapper's touch-or-shot discharge is the precedent, pointed outward as rounds.
+   * `starfish` 海星, the pattern one: five directions at once, and the rosette turns 36° with every volley so
+   *            standing still is death and moving is a gap that always reopens.
+   */
+  | 'archer'
+  | 'pistol'
+  | 'puffer'
+  | 'starfish';
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
@@ -184,6 +204,22 @@ export interface HazardEffect {
    * the player is already looking.
    */
   graze?: { x: number; y: number };
+  /**
+   * A FIXED-AIM VOLLEY: rounds on directions that do not care where the player is.
+   *
+   * The starfish's rosette and the puffer's answer-ring are not "aimed" -- a fan centred on the player
+   * is the shooters' shape, and reusing it would make these patterns curve to follow the player, which
+   * is the one thing a FIXED pattern must never do. The emitter position and one unit vector per round
+   * come across, resolved HERE where the creature's own state (its spin, its cooldown) lives, and the
+   * caller turns each into a round -- the same split `spray` uses for the claw's grit.
+   */
+  volley?: {
+    /** Where the rounds leave from. */
+    x: number;
+    y: number;
+    /** One unit direction per round; speed and looks come from the kind's own shooter row. */
+    dirs: { x: number; y: number }[];
+  };
 }
 
 /**
@@ -355,6 +391,24 @@ export interface Hazard {
    * water: two jellyfish should not fire in lockstep, and a colony that shared one timer would.
    */
   shootTimer: number;
+  /**
+   * 刺魨: spike bursts waiting to fire, and the cooldown before the next one.
+   *
+   * The zapper's `discharge`/`dischargeRest` shape, pointed outward as rounds: `hit()` (which cannot touch the
+   * effects list) raises `counter`, and the update loop beside `updateShooting` consumes it and pushes the volley
+   * effect. The cooldown is what makes shooting a puffer a RHYTHM rather than a reflex -- hit it, eat the ring,
+   * hit it again inside the window.
+   */
+  counter: number;
+  counterRest: number;
+  /**
+   * 海星: where its five-way rosette is pointing right now, in radians.
+   *
+   * Per-instance rather than shared, with a random head start at spawn, so a colony of starfish does not volley
+   * in lockstep -- the same reason `shootTimer` gets one. Turned by `volleySpinRadians` every volley, which is
+   * what makes the pattern a star that fills in rather than a cross that repeats.
+   */
+  volleySpin: number;
   /**
    * Set while it is still ARRIVING from a screen edge, and null once it is in the water.
    *
@@ -751,6 +805,20 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   rot: { radius: 0.056, colour: 0x7d8a3c, spin: 0.5 },
   /** Dark slate teal, drawn as a flat slick rather than a body: it is a substance, not a creature. */
   oil: { radius: 0.066, colour: 0x2f4f4a, spin: 0.1 },
+  /**
+   * THE GUNNERS. Sizes follow the roles: the archer is fish-sized, the puffer sits between the crab and
+   * the urchin, the starfish reads as a wide flat thing, and the pistol shrimp is the biggest gunner on
+   * purpose -- an elite that is visible before it is audible.
+   *
+   * Colours are the placeholder palette the code drawings wear until art rows replace them: the archer
+   * shares the fish's pale water-blue, the pistol shrimp is a hot shrimp-pink nothing else owns, the
+   * puffer is the urchin's hard mineral family (spines read as "hard"), and the starfish is a warm
+   * sand-pink that says "decorative" until it fires.
+   */
+  archer: { radius: 0.038, colour: 0x8fd0e8, spin: 0 },
+  pistol: { radius: 0.058, colour: 0xff7d6b, spin: 0 },
+  puffer: { radius: 0.05, colour: 0x5a6a94, spin: 0 },
+  starfish: { radius: 0.052, colour: 0xffc9a3, spin: 0.35 },
 };
 /**
  * The table above is the DEFAULT; the config's `hazards.radius` overrides it, kind by kind.
@@ -1020,6 +1088,44 @@ function stepUrchin(_field: HazardField, h: Hazard, dt: number, ctx: HazardConte
   h.y -= ctx.descentSpeed * 0.26 * dt;
   h.x += Math.sin(h.phase * 0.8 + h.seed) * 2.5 * dt;
   return;
+}
+
+/**
+ * THE GUNNERS' ONE MOVEMENT: ride the current down, wobble a little, never chase.
+ *
+ * A gunner's threat is its fire, not its feet -- and a drifting gunner still sweeps the player's lane as the
+ * water carries it past, which is the same pressure a repositioning one would apply without a second movement
+ * rule for the player to learn. The drift factor is the config's (per kind, because an elite should loiter
+ * longer than a skirmisher); the wobble is cosmetic and lives here.
+ */
+function stepGunner(h: Hazard, dt: number, ctx: HazardContext, driftFactor: number, wobble: number): void {
+  h.y -= ctx.descentSpeed * driftFactor * dt;
+  h.x += Math.sin(h.phase * 0.8 + h.seed) * wobble * dt;
+}
+
+/** 射水鱼: the everyday gunner -- fish-sized, fish-paced, and it CAN be shot off the screen. */
+function stepArcher(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  stepGunner(h, dt, ctx, mech.hazards.archer.driftFactor, 2.5);
+}
+
+/** 手枪虾: the elite loiters -- the slowest drift of the four, because a big slow shot from a big slow thing is scarier. */
+function stepPistol(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  stepGunner(h, dt, ctx, mech.hazards.pistol.driftFactor, 1.2);
+}
+
+/**
+ * 刺魨: drifts like the other gunners, and ticks its answer's cooldown HERE -- the one clock of the four
+ * that belongs to the creature rather than to its trigger finger, ticked in the same breath as its motion
+ * the way the zapper's ring cooldown is.
+ */
+function stepPuffer(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  stepGunner(h, dt, ctx, mech.hazards.puffer.driftFactor, 1.8);
+  if (h.counterRest > 0) h.counterRest = Math.max(0, h.counterRest - dt);
+}
+
+/** 海星: drifts; the rosette's spin advances on each VOLLEY rather than with time, so the pattern is countable. */
+function stepStarfish(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  stepGunner(h, dt, ctx, mech.hazards.starfish.driftFactor, 1.5);
 }
 function stepBombfish(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
   /**
@@ -1301,6 +1407,11 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
   eel: stepEel,
   rot: stepRot,
   oil: stepOil,
+  // THE GUNNERS: one shared movement (see `stepGunner`), four rhythms and four reasons to be there.
+  archer: stepArcher,
+  pistol: stepPistol,
+  puffer: stepPuffer,
+  starfish: stepStarfish,
 };
 
 /**
@@ -1514,6 +1625,12 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   mineral: contactMineral,
   foam: contactFoam,
   rain: contactRain,
+  // THE GUNNERS: touching one is the same event as touching an eel -- a bite from a thing whose real threat
+  // is already in the water. The plain rule (1 damage + the bounce that stops a re-hit) is the whole of it.
+  archer: contactPlain,
+  pistol: contactPlain,
+  puffer: contactPlain,
+  starfish: contactPlain,
   vent: contactVent,
 };
 
@@ -1759,6 +1876,19 @@ export class HazardField {
       hazard.discharge = mech.hazards.zapper.ringSeconds;
       hazard.dischargeRest = mech.hazards.zapper.ringCooldownSeconds;
     }
+    /**
+     * THE PUFFER ANSWERS, the zapper's trick pointed outward as rounds.
+     *
+     * `hit()` cannot reach the effects list (it returns an outcome, not a report), so this only RAISES the
+     * flag -- the update loop beside `updateShooting` spends it and pushes the volley. The cooldown is the
+     * whole design: hit it, eat the ring, hit it again inside the window -- shooting a defensive creature
+     * is a rhythm, not a reflex. And the shot still does its damage, so the answer never protects the puffer
+     * from the thing it is answering.
+     */
+    if (hazard.kind === 'puffer' && mech.hazards.puffer.countersWhenHit && hazard.counterRest <= 0 && hazard.health > 0) {
+      hazard.counter++;
+      hazard.counterRest = mech.hazards.puffer.counterCooldownSeconds;
+    }
     if (hazard.health > 0) {
       this.damaged++;
       this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'hit', colour: KIND_TUNING[hazard.kind].colour });
@@ -1888,7 +2018,27 @@ export class HazardField {
        * caller gets an effect rather than a direct mutation of a field this module knows nothing about.
        */
       if (this.updateShooting(h, dt, ctx)) {
-        effects.push({ kind: h.kind, broke: false, shot: { x: h.x, y: h.y } });
+        /**
+         * THE STARFISH DOES NOT AIM: every volley is a rosette of fixed directions, turned a notch each time.
+         *
+         * A fan centred on the player is what every other shooter does, and reusing it here would make the
+         * rosette swing to track the player -- the one thing a fixed pattern must never do, because the
+         * player's answer to a star is to be where the star is not. The directions are resolved HERE, from
+         * the creature's own spin state, and cross as one `volley` effect; the spin advances by the config's
+         * notch so two volleys fill the ten-point star.
+         */
+        if (h.kind === 'starfish') {
+          const count = Math.max(1, Math.round(mech.hazards.starfish.volleyCount));
+          const dirs: { x: number; y: number }[] = [];
+          for (let i = 0; i < count; i++) {
+            const angle = h.volleySpin + (i / count) * Math.PI * 2;
+            dirs.push({ x: Math.cos(angle), y: Math.sin(angle) });
+          }
+          h.volleySpin += mech.hazards.starfish.volleySpinRadians;
+          effects.push({ kind: h.kind, broke: false, volley: { x: h.x, y: h.y, dirs } });
+        } else {
+          effects.push({ kind: h.kind, broke: false, shot: { x: h.x, y: h.y } });
+        }
         /**
          * The eel's discharge, which is its own firing pose rather than a second attack.
          *
@@ -1898,6 +2048,23 @@ export class HazardField {
          * would then be two answers to one question, and the day they disagree the picture lies about the threat.
          */
         if (h.kind === 'eel') h.attackSince = 0;
+      }
+      /**
+       * THE PUFFER'S ANSWER, spent the frame after the hit that earned it.
+       *
+       * `hit()` raised the flag (it cannot reach this list); this is where a flag becomes rounds. Suppressed by
+       * every state that means "busy", exactly like the trigger finger above, so a fleeing or arriving puffer
+       * does not answer -- it is out of the fight, and the fight is done billing the player for it.
+       */
+      if (h.kind === 'puffer' && h.counter > 0 && !h.flee && !h.entry) {
+        h.counter = 0;
+        const count = Math.max(1, Math.round(mech.hazards.puffer.spikeCount));
+        const dirs: { x: number; y: number }[] = [];
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * Math.PI * 2 + (h.seed / 100) * Math.PI * 2;
+          dirs.push({ x: Math.cos(angle), y: Math.sin(angle) });
+        }
+        effects.push({ kind: h.kind, broke: false, volley: { x: h.x, y: h.y, dirs } });
       }
       /**
        * And the boss's claw swing, in the same place and for the same reason as the trigger finger above: it is a
@@ -2320,6 +2487,11 @@ export class HazardField {
       attacked: false,
       // And a random offset on the trigger finger, so a colony does not volley.
       shootTimer: headStart * (Math.random() / Math.max(0.01, mech.enemyBullets.shooters[kind]?.perSecond ?? 1)),
+      // The gunners' own state: the puffer starts with no answer owed, and the starfish's rosette starts at a
+      // random angle so two starfish never fill the same star in step.
+      counter: 0,
+      counterRest: 0,
+      volleySpin: headStart * Math.random() * Math.PI * 2,
       path: opts.path ?? null,
     };
   }
@@ -2328,7 +2500,7 @@ export class HazardField {
     // Hand-maintained, and the one place a new kind can be forgotten without the compiler saying so -- every
     // `Record<HazardKind, ...>` table is total, this is an array. Level 4's four are here for the same reason the
     // tuna is: a random pass should be able to produce anything the game can produce.
-    const kinds: HazardKind[] = ['fish', 'tuna', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain', 'dolphin', 'octopus', 'shark', 'whale'];
+    const kinds: HazardKind[] = ['fish', 'tuna', 'jelly', 'trash', 'crab', 'urchin', 'bombfish', 'eel', 'rot', 'oil', 'boss', 'vent', 'mineral', 'shrimp', 'angler', 'torpedo', 'zapper', 'foam', 'rain', 'dolphin', 'octopus', 'shark', 'whale', 'archer', 'pistol', 'puffer', 'starfish'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)] ?? 'fish';
     const radiusFraction = KIND_TUNING[kind].radius;
     const margin = ctx.laneWidth * radiusFraction * 1.4;
@@ -2702,6 +2874,14 @@ export class HazardField {
   private updateShooting(h: Hazard, dt: number, ctx: HazardContext): boolean {
     const row = mech.enemyBullets.shooters[h.kind];
     if (!row) return false;
+    /**
+     * A cadence of ZERO means "this creature's rounds exist, but it never fires them on a timer".
+     *
+     * The puffer is the reason the row exists at all: its spikes need a speed, a shape and a size from the
+     * table, while WHEN they fire is the hit, not the clock. Without this guard the timer would still tick
+     * towards a first shot, and a defensive creature that opened fire unprovoked would not be defensive.
+     */
+    if (row.perSecond <= 0) return false;
     if (h.flee || h.entry || h.charge) return false;
     const gap = 1 / Math.max(0.01, row.perSecond);
     const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
@@ -3482,6 +3662,117 @@ function drawUrchin(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elap
   return;
 }
 
+/** 射水鱼的占位身体：一条带炮口的鱼。 */
+function drawArcher(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * The placeholder body, drawn until an art row replaces it.
+   *
+   * A stubby fish with a MUZZLE: the one thing that must read before the art arrives is "this is the one
+   * that shoots", and a barrel is that sentence. The muzzle points down the lane toward wherever the player
+   * is, which is the direction its bolts actually go.
+   */
+  const bob = Math.sin(h.phase * 1.6 + h.seed) * r * 0.08;
+  g.ellipse(h.x, h.y + bob, r * 1.05, r * 0.72).fill({ color: KIND_TUNING.archer.colour, alpha: 0.6 });
+  g.ellipse(h.x, h.y + bob, r * 1.05, r * 0.72).stroke({ color: KIND_TUNING.archer.colour, alpha: 0.95, width: Math.max(1, r * 0.14) });
+  // The tail, so it reads as a fish and not a blob.
+  g.moveTo(h.x - r * 1.0, h.y + bob)
+    .lineTo(h.x - r * 1.6, h.y + bob - r * 0.45)
+    .lineTo(h.x - r * 1.6, h.y + bob + r * 0.45)
+    .closePath()
+    .fill({ color: KIND_TUNING.archer.colour, alpha: 0.45 });
+  // The muzzle: a short wide barrel under the chin.
+  g.moveTo(h.x - r * 0.3, h.y + bob + r * 0.5)
+    .lineTo(h.x + r * 0.3, h.y + bob + r * 0.5)
+    .lineTo(h.x + r * 0.16, h.y + bob + r * 1.15)
+    .lineTo(h.x - r * 0.16, h.y + bob + r * 1.15)
+    .closePath()
+    .fill({ color: KIND_TUNING.archer.colour, alpha: 0.9 });
+  return;
+}
+
+/** 手枪虾的占位身体：一侧一只巨螯。 */
+function drawPistol(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * The elite's placeholder silhouette is the CLAW -- the biggest single shape on the body, because the
+   * cavitation round is the whole reason this creature exists.
+   *
+   * The claw idles open and snaps shut on its own clock; the pose is not wired to the shot (a real snap
+   * pose belongs to the art), but an elite that VISIBLY fidgets with its weapon reads as dangerous in a
+   * way a static one does not.
+   */
+  const snap = 0.55 + 0.45 * Math.abs(Math.sin(h.phase * 2.2 + h.seed));
+  const bob = Math.sin(h.phase * 1.3 + h.seed) * r * 0.06;
+  // The body: smaller than its radius suggests, because the claw is half the creature.
+  g.ellipse(h.x + r * 0.15, h.y + bob, r * 0.68, r * 0.5).fill({ color: KIND_TUNING.pistol.colour, alpha: 0.55 });
+  g.ellipse(h.x + r * 0.15, h.y + bob, r * 0.68, r * 0.5).stroke({ color: KIND_TUNING.pistol.colour, alpha: 0.9, width: Math.max(1, r * 0.13) });
+  // The claw: a wedge that closes toward its tip.
+  const cx = h.x - r * 0.75;
+  const cy = h.y + bob;
+  const open = r * 0.55 * snap;
+  g.moveTo(cx - r * 0.9, cy)
+    .lineTo(cx, cy - open)
+    .lineTo(cx + r * 0.55, cy - r * 0.12)
+    .lineTo(cx + r * 0.55, cy + r * 0.12)
+    .lineTo(cx, cy + open)
+    .closePath()
+    .fill({ color: KIND_TUNING.pistol.colour, alpha: 0.85 });
+  g.moveTo(cx - r * 0.9, cy).lineTo(cx + r * 0.55, cy).stroke({ color: KIND_TUNING.pistol.colour, alpha: 0.6, width: Math.max(1, r * 0.12) });
+  return;
+}
+
+/** 刺魨的占位身体：刺球；反击冷却时瘪下去（安全窗口可视化）。 */
+function drawPuffer(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * A ball of spikes, and the spikes are the COUNTER's state, not decoration.
+   *
+   * `counterRest > 0` is the window in which shooting the puffer is FREE -- it has just answered and cannot
+   * answer again -- and the body says so by deflating: the spikes drop to stubs and the body dims. That is
+   * the one fact a player fighting this creature needs to read at a glance, and the placeholder is where it
+   * is easiest to make loud. (Inflated with long spikes = it will answer. Do not shoot.)
+   */
+  const cooling = h.counterRest > 0;
+  const bodyR = cooling ? r * 0.72 : r * 0.95;
+  const spikeLength = cooling ? r * 0.35 : r * 0.75;
+  g.circle(h.x, h.y, bodyR).fill({ color: KIND_TUNING.puffer.colour, alpha: cooling ? 0.35 : 0.55 });
+  const spikes = 9;
+  for (let i = 0; i < spikes; i++) {
+    const a = (i / spikes) * Math.PI * 2 + h.seed;
+    g.moveTo(h.x + Math.cos(a) * bodyR * 0.8, h.y + Math.sin(a) * bodyR * 0.8)
+      .lineTo(h.x + Math.cos(a) * (bodyR + spikeLength), h.y + Math.sin(a) * (bodyR + spikeLength))
+      .stroke({ color: KIND_TUNING.puffer.colour, alpha: cooling ? 0.4 : 0.95, width: Math.max(1, r * 0.14) });
+  }
+  g.circle(h.x, h.y, bodyR).stroke({ color: KIND_TUNING.puffer.colour, alpha: cooling ? 0.5 : 1, width: Math.max(1, r * 0.18) });
+  return;
+}
+
+/** 海星的占位身体：五臂星形，臂的朝向就是下一轮齐射的方向。 */
+function drawStarfish(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * The arms ARE the volley.
+   *
+   * `h.volleySpin` is the exact angle the next five rounds leave on (the spin advances after each volley,
+   * so what is drawn is what is coming), which turns the placeholder into the mechanic's own telegraph:
+   * read the arms, stand between them. A starfish whose body lied about its rosette would be the one
+   * placeholder worse than none.
+   */
+  const arms = Math.max(3, Math.round(mech.hazards.starfish.volleyCount));
+  const spin = h.volleySpin;
+  for (let i = 0; i < arms; i++) {
+    const a = spin + (i / arms) * Math.PI * 2;
+    const ax = Math.cos(a);
+    const ay = Math.sin(a);
+    // Each arm: a tapered triangle from the body out past the collision radius.
+    g.moveTo(h.x + ax * r * 0.3, h.y + ay * r * 0.3)
+      .lineTo(h.x + ax * r * 1.45 - ay * r * 0.28, h.y + ay * r * 1.45 + ax * r * 0.28)
+      .lineTo(h.x + ax * r * 1.45 + ay * r * 0.28, h.y + ay * r * 1.45 - ax * r * 0.28)
+      .closePath()
+      .fill({ color: KIND_TUNING.starfish.colour, alpha: 0.75 });
+  }
+  g.circle(h.x, h.y, r * 0.5).fill({ color: KIND_TUNING.starfish.colour, alpha: 0.9 });
+  g.circle(h.x, h.y, r * 0.5).stroke({ color: 0xffffff, alpha: 0.4, width: Math.max(1, r * 0.1) });
+  return;
+}
+
 function drawVent(g: Graphics, h: Hazard, r: number, laneWidth: number, _elapsed: number): void {
   /**
    * A black smoker: a rock chimney with a plume, and the plume is the hazard.
@@ -3888,6 +4179,13 @@ const CREATURE_DRAWING: Record<HazardKind, CreatureDraw> = {
   zapper: drawZapper,
   foam: drawFoam,
   rain: drawRain,
+  // THE GUNNERS' placeholder bodies: code-drawn until an art row replaces them, and each says its ONE thing
+  // -- the archer is a fish with a muzzle, the pistol shrimp is a claw, the puffer's spikes dim while its
+  // answer is cooling, and the starfish's arms ARE its next volley's directions.
+  archer: drawArcher,
+  pistol: drawPistol,
+  puffer: drawPuffer,
+  starfish: drawStarfish,
 };
 
 /**

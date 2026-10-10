@@ -63,6 +63,8 @@
     { at: 640, kind: 'foam', count: 6, arrange: 'spread', span: 40, x: 0.5 },
     { at: 700, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.22, x: 0.5, from: 'bottom' },
     { at: 760, kind: 'rain', count: 8, arrange: 'line' },
+    // **手枪虾**：破晓海面的精英——雨幕挡视线时一发大弹，是这一关最贵的失误。只放一只。
+    { at: 820, kind: 'pistol', x: 0.35 },
 
     // --- 浪峰：泡沫 + 雨 + 追兵混在一起，能见度最低的一段。 ---
     { at: 880, kind: 'foam', count: 10, arrange: 'spread', span: 70, x: 0.5 },

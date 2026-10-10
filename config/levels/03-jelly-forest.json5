@@ -53,6 +53,8 @@
     // --- 触须森林：竖直的水母列 + 之间夹着电击水母，路线要么穿过去、要么带电炸开。 ---
     { at: 300, kind: 'zapper', count: 4, arrange: 'column', span: 90, x: 0.3 },
     { at: 340, kind: 'zapper', count: 4, arrange: 'column', span: 90, x: 0.7 },
+    // **海星**：水母林是弹幕的主场——导电水母教'别碰'，海星教'读方向'（五臂就是下一轮的走向）。
+    { at: 410, kind: 'starfish', x: 0.3 },
     { at: 450, kind: 'zapper', count: 3, arrange: 'line' },
     { at: 500, kind: 'jelly', count: 4, arrange: 'line' },
     { at: 560, kind: 'zapper', count: 5, arrange: 'line' },
@@ -69,5 +71,7 @@
     { at: 1000, kind: 'zapper', count: 4, arrange: 'line' },
     { at: 1060, kind: 'zapper', count: 3, arrange: 'spread', span: 30, x: 0.35 },
     { at: 1120, kind: 'mineral', count: 4, arrange: 'spread', span: 40, x: 0.6, from: 'bottom' },
+    // 第二只海星放在 BOSS 前：两只星形弹幕的旋转相位不同（每实例随机初相），合起来是一张会转的网。
+    { at: 1150, kind: 'starfish', x: 0.7 },
   ],
 }

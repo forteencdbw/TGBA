@@ -199,9 +199,6 @@ export type SpawnKind =
   | 'eel'
   | 'rot'
   | 'oil'
-  | 'skill'
-  | 'upgrade'
-  | 'rate'
   /** LEVEL 1's black smokers, the mineral grit they throw up, and the blind shrimp. */
   | 'vent'
   | 'mineral'
@@ -221,6 +218,15 @@ export type SpawnKind =
   | 'octopus'
   | 'shark'
   | 'whale'
+  /**
+   * THE GUNNERS: the four that fight at range. All four ride the current like the eel does; what
+   * separates them is written where it belongs -- `enemyBullets.shooters` for their fire and
+   * `hazards.<kind>` for each one's signature rule.
+   */
+  | 'archer'
+  | 'pistol'
+  | 'puffer'
+  | 'starfish'
   | ObstacleKind;
 
 /** The arrangement vocabulary: how a block's `count` things are laid out. */
