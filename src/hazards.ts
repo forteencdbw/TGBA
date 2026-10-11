@@ -4270,7 +4270,17 @@ export function paintHazards(
           h.facingRest = mech.hazardFacing.cooldownSeconds;
         }
         const facing = h.facing;
-        sprite.scale.set(unit * facing, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
+        /**
+         * A `volleyAligned` picture is NEVER mirrored, and the mirror is not a matter of taste here.
+         *
+         * A starfish has no front, so there is nothing for `front` to be right about -- but the mirror is not
+         * harmless the way it is for a fish: a five-armed star reflected still looks like a five-armed star, and its
+         * arms have all moved to different angles. The arms are supposed to BE the next volley's directions, so a
+         * mirror silently rotates the telegraph instead of breaking it, which is exactly the failure that has no
+         * symptom. Opting out of both the turn and the mirror is one decision, and `volleyAligned` carries it.
+         */
+        const mirror = art.volleyAligned ? 1 : facing;
+        sprite.scale.set(unit * mirror, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
         /**
          * SPIN, for a kind whose picture is a radial thing, and NOTHING AT ALL for every other kind.
          *
@@ -4289,7 +4299,18 @@ export function paintHazards(
          * harmless for the one kind that uses this (an urchin has no handedness) and would matter for one that did.
          */
         const spin = art.spin ?? 0;
-        sprite.rotation = spin * (h.phase + (h.seed ?? 0));
+        /**
+         * `volleyAligned` reads the ANGLE rather than running a clock, and the sign follows the layer.
+         *
+         * The point of it is that the picture and the bullets agree, so it would be a poor joke to then get the
+         * direction wrong. A sprite drawn in a Y-flipped parent (the water) ends up rotated the OPPOSITE way to the
+         * sign in `rotation` -- the same fact the spin comment above records -- so a kind that means its angle
+         * literally has to ask the layer which way round it is. The codex's icon layer is not flipped, and asking
+         * keeps the card's star the same star as the one in the water.
+         */
+        sprite.rotation = art.volleyAligned
+          ? (h.volleySpin - (art.volleyBaseRadians ?? 0)) * (isYFlipped(sprite) ? 1 : -1)
+          : spin * (h.phase + (h.seed ?? 0));
         /**
          * The white flash, as a filter ON THE SPRITE.
          *

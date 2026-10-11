@@ -59,3 +59,7 @@ msg.txt
 .scratch/**/*.png
 .scratch/**/*.py
 .scratch/**/*.json
+# The asset pipeline's `sheet` writes an `idle-loop.gif` beside every sprite it makes, so a run of the
+# game-asset skill drops one per creature into the scratch directory. It was the one extension the four
+# rules above missed, and `git status` showed them sitting there ready to be swept in by the next `git add -A`.
+.scratch/**/*.gif

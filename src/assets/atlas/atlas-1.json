@@ -14,12 +14,26 @@
       },
       "trimmed": false
     },
+    "刺魨.png": {
+      "frame": {
+        "h": 41,
+        "w": 46,
+        "x": 290,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 41,
+        "w": 46
+      },
+      "trimmed": false
+    },
     "大白鲨-游动-1.png": {
       "frame": {
         "h": 61,
         "w": 98,
         "x": 290,
-        "y": 2
+        "y": 47
       },
       "rotated": false,
       "sourceSize": {
@@ -33,7 +47,7 @@
         "h": 61,
         "w": 98,
         "x": 392,
-        "y": 2
+        "y": 47
       },
       "rotated": false,
       "sourceSize": {
@@ -47,7 +61,7 @@
         "h": 61,
         "w": 98,
         "x": 494,
-        "y": 2
+        "y": 47
       },
       "rotated": false,
       "sourceSize": {
@@ -61,7 +75,7 @@
         "h": 61,
         "w": 98,
         "x": 596,
-        "y": 2
+        "y": 47
       },
       "rotated": false,
       "sourceSize": {
@@ -70,11 +84,25 @@
       },
       "trimmed": false
     },
+    "射水鱼.png": {
+      "frame": {
+        "h": 21,
+        "w": 40,
+        "x": 340,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 21,
+        "w": 40
+      },
+      "trimmed": false
+    },
     "小鱼-游动-1.png": {
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 698,
+        "x": 384,
         "y": 2
       },
       "rotated": false,
@@ -88,7 +116,7 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 743,
+        "x": 429,
         "y": 2
       },
       "rotated": false,
@@ -102,7 +130,7 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 788,
+        "x": 474,
         "y": 2
       },
       "rotated": false,
@@ -116,8 +144,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 698,
-        "y": 27
+        "x": 519,
+        "y": 2
       },
       "rotated": false,
       "sourceSize": {
@@ -130,7 +158,7 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 743,
+        "x": 340,
         "y": 27
       },
       "rotated": false,
@@ -144,7 +172,7 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 788,
+        "x": 385,
         "y": 27
       },
       "rotated": false,
@@ -158,8 +186,8 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 290,
-        "y": 67
+        "x": 430,
+        "y": 27
       },
       "rotated": false,
       "sourceSize": {
@@ -172,8 +200,8 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 335,
-        "y": 67
+        "x": 475,
+        "y": 27
       },
       "rotated": false,
       "sourceSize": {
@@ -186,8 +214,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 290,
-        "y": 85
+        "x": 564,
+        "y": 2
       },
       "rotated": false,
       "sourceSize": {
@@ -200,8 +228,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 335,
-        "y": 85
+        "x": 609,
+        "y": 2
       },
       "rotated": false,
       "sourceSize": {
@@ -214,8 +242,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 380,
-        "y": 85
+        "x": 654,
+        "y": 2
       },
       "rotated": false,
       "sourceSize": {
@@ -228,8 +256,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 425,
-        "y": 85
+        "x": 699,
+        "y": 2
       },
       "rotated": false,
       "sourceSize": {
@@ -242,8 +270,8 @@
       "frame": {
         "h": 22,
         "w": 41,
-        "x": 290,
-        "y": 110
+        "x": 698,
+        "y": 47
       },
       "rotated": false,
       "sourceSize": {
@@ -256,8 +284,8 @@
       "frame": {
         "h": 22,
         "w": 41,
-        "x": 335,
-        "y": 110
+        "x": 743,
+        "y": 47
       },
       "rotated": false,
       "sourceSize": {
@@ -270,8 +298,8 @@
       "frame": {
         "h": 22,
         "w": 41,
-        "x": 380,
-        "y": 110
+        "x": 788,
+        "y": 47
       },
       "rotated": false,
       "sourceSize": {
@@ -284,8 +312,8 @@
       "frame": {
         "h": 22,
         "w": 41,
-        "x": 425,
-        "y": 110
+        "x": 698,
+        "y": 73
       },
       "rotated": false,
       "sourceSize": {
@@ -299,7 +327,7 @@
         "h": 70,
         "w": 111,
         "x": 290,
-        "y": 136
+        "y": 112
       },
       "rotated": false,
       "sourceSize": {
@@ -313,7 +341,7 @@
         "h": 70,
         "w": 111,
         "x": 405,
-        "y": 136
+        "y": 112
       },
       "rotated": false,
       "sourceSize": {
@@ -327,7 +355,7 @@
         "h": 70,
         "w": 111,
         "x": 520,
-        "y": 136
+        "y": 112
       },
       "rotated": false,
       "sourceSize": {
@@ -341,7 +369,7 @@
         "h": 70,
         "w": 111,
         "x": 635,
-        "y": 136
+        "y": 112
       },
       "rotated": false,
       "sourceSize": {
@@ -350,12 +378,26 @@
       },
       "trimmed": false
     },
+    "手枪虾.png": {
+      "frame": {
+        "h": 40,
+        "w": 51,
+        "x": 750,
+        "y": 112
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 40,
+        "w": 51
+      },
+      "trimmed": false
+    },
     "水母-待机-1.png": {
       "frame": {
         "h": 77,
         "w": 52,
-        "x": 2,
-        "y": 290
+        "x": 290,
+        "y": 186
       },
       "rotated": false,
       "sourceSize": {
@@ -368,8 +410,8 @@
       "frame": {
         "h": 77,
         "w": 52,
-        "x": 58,
-        "y": 290
+        "x": 346,
+        "y": 186
       },
       "rotated": false,
       "sourceSize": {
@@ -382,8 +424,8 @@
       "frame": {
         "h": 77,
         "w": 52,
-        "x": 114,
-        "y": 290
+        "x": 402,
+        "y": 186
       },
       "rotated": false,
       "sourceSize": {
@@ -396,8 +438,8 @@
       "frame": {
         "h": 77,
         "w": 52,
-        "x": 170,
-        "y": 290
+        "x": 458,
+        "y": 186
       },
       "rotated": false,
       "sourceSize": {
@@ -406,12 +448,26 @@
       },
       "trimmed": false
     },
+    "海星.png": {
+      "frame": {
+        "h": 51,
+        "w": 52,
+        "x": 514,
+        "y": 186
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 51,
+        "w": 52
+      },
+      "trimmed": false
+    },
     "海胆.png": {
       "frame": {
         "h": 48,
         "w": 51,
-        "x": 750,
-        "y": 136
+        "x": 570,
+        "y": 186
       },
       "rotated": false,
       "sourceSize": {
@@ -424,8 +480,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 290,
-        "y": 210
+        "x": 2,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -438,8 +494,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 360,
-        "y": 210
+        "x": 72,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -452,8 +508,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 430,
-        "y": 210
+        "x": 142,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -466,8 +522,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 500,
-        "y": 210
+        "x": 212,
+        "y": 290
       },
       "rotated": false,
       "sourceSize": {
@@ -481,7 +537,7 @@
         "h": 80,
         "w": 80,
         "x": 2,
-        "y": 371
+        "y": 344
       },
       "rotated": false,
       "sourceSize": {
@@ -495,7 +551,7 @@
         "h": 80,
         "w": 80,
         "x": 86,
-        "y": 371
+        "y": 344
       },
       "rotated": false,
       "sourceSize": {
@@ -508,7 +564,7 @@
       "frame": {
         "h": 12,
         "w": 12,
-        "x": 833,
+        "x": 520,
         "y": 27
       },
       "rotated": false,
@@ -523,7 +579,7 @@
         "h": 36,
         "w": 36,
         "x": 805,
-        "y": 136
+        "y": 112
       },
       "rotated": false,
       "sourceSize": {
@@ -537,7 +593,7 @@
         "h": 87,
         "w": 87,
         "x": 2,
-        "y": 455
+        "y": 428
       },
       "rotated": false,
       "sourceSize": {
@@ -550,8 +606,8 @@
       "frame": {
         "h": 75,
         "w": 78,
-        "x": 226,
-        "y": 290
+        "x": 170,
+        "y": 344
       },
       "rotated": false,
       "sourceSize": {
@@ -564,8 +620,8 @@
       "frame": {
         "h": 71,
         "w": 67,
-        "x": 308,
-        "y": 290
+        "x": 252,
+        "y": 344
       },
       "rotated": false,
       "sourceSize": {
@@ -578,8 +634,8 @@
       "frame": {
         "h": 66,
         "w": 90,
-        "x": 379,
-        "y": 290
+        "x": 323,
+        "y": 344
       },
       "rotated": false,
       "sourceSize": {
@@ -592,8 +648,8 @@
       "frame": {
         "h": 58,
         "w": 84,
-        "x": 473,
-        "y": 290
+        "x": 417,
+        "y": 344
       },
       "rotated": false,
       "sourceSize": {
@@ -606,8 +662,8 @@
       "frame": {
         "h": 71,
         "w": 83,
-        "x": 170,
-        "y": 371
+        "x": 93,
+        "y": 428
       },
       "rotated": false,
       "sourceSize": {
@@ -620,8 +676,8 @@
       "frame": {
         "h": 53,
         "w": 78,
-        "x": 561,
-        "y": 290
+        "x": 505,
+        "y": 344
       },
       "rotated": false,
       "sourceSize": {
@@ -634,8 +690,8 @@
       "frame": {
         "h": 66,
         "w": 78,
-        "x": 257,
-        "y": 371
+        "x": 180,
+        "y": 428
       },
       "rotated": false,
       "sourceSize": {
@@ -648,8 +704,8 @@
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 339,
-        "y": 371
+        "x": 262,
+        "y": 428
       },
       "rotated": false,
       "sourceSize": {
@@ -662,8 +718,8 @@
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 399,
-        "y": 371
+        "x": 322,
+        "y": 428
       },
       "rotated": false,
       "sourceSize": {
@@ -676,8 +732,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 93,
-        "y": 455
+        "x": 2,
+        "y": 519
       },
       "rotated": false,
       "sourceSize": {
@@ -690,8 +746,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 176,
-        "y": 455
+        "x": 85,
+        "y": 519
       },
       "rotated": false,
       "sourceSize": {
@@ -704,8 +760,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 259,
-        "y": 455
+        "x": 168,
+        "y": 519
       },
       "rotated": false,
       "sourceSize": {
@@ -718,8 +774,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 342,
-        "y": 455
+        "x": 251,
+        "y": 519
       },
       "rotated": false,
       "sourceSize": {
@@ -732,8 +788,8 @@
       "frame": {
         "h": 78,
         "w": 48,
-        "x": 425,
-        "y": 455
+        "x": 334,
+        "y": 519
       },
       "rotated": false,
       "sourceSize": {
@@ -747,7 +803,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 546
+        "y": 602
       },
       "rotated": false,
       "sourceSize": {
@@ -761,7 +817,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 546
+        "y": 602
       },
       "rotated": false,
       "sourceSize": {
@@ -775,7 +831,7 @@
         "h": 192,
         "w": 192,
         "x": 394,
-        "y": 546
+        "y": 602
       },
       "rotated": false,
       "sourceSize": {
@@ -789,7 +845,7 @@
         "h": 192,
         "w": 192,
         "x": 590,
-        "y": 546
+        "y": 602
       },
       "rotated": false,
       "sourceSize": {
@@ -803,7 +859,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 742
+        "y": 798
       },
       "rotated": false,
       "sourceSize": {
@@ -817,7 +873,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 742
+        "y": 798
       },
       "rotated": false,
       "sourceSize": {
@@ -831,7 +887,7 @@
         "h": 221,
         "w": 192,
         "x": 394,
-        "y": 742
+        "y": 798
       },
       "rotated": false,
       "sourceSize": {
@@ -845,7 +901,7 @@
         "h": 221,
         "w": 192,
         "x": 590,
-        "y": 742
+        "y": 798
       },
       "rotated": false,
       "sourceSize": {
@@ -859,7 +915,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 967
+        "y": 1023
       },
       "rotated": false,
       "sourceSize": {
@@ -873,7 +929,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 967
+        "y": 1023
       },
       "rotated": false,
       "sourceSize": {
@@ -887,7 +943,7 @@
         "h": 221,
         "w": 192,
         "x": 394,
-        "y": 967
+        "y": 1023
       },
       "rotated": false,
       "sourceSize": {
@@ -901,7 +957,7 @@
         "h": 221,
         "w": 192,
         "x": 590,
-        "y": 967
+        "y": 1023
       },
       "rotated": false,
       "sourceSize": {
@@ -915,7 +971,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 1192
+        "y": 1248
       },
       "rotated": false,
       "sourceSize": {
@@ -929,7 +985,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 1192
+        "y": 1248
       },
       "rotated": false,
       "sourceSize": {
@@ -943,7 +999,7 @@
         "h": 192,
         "w": 192,
         "x": 394,
-        "y": 1192
+        "y": 1248
       },
       "rotated": false,
       "sourceSize": {
@@ -957,7 +1013,7 @@
         "h": 192,
         "w": 192,
         "x": 590,
-        "y": 1192
+        "y": 1248
       },
       "rotated": false,
       "sourceSize": {
@@ -971,7 +1027,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 546
+        "y": 602
       },
       "rotated": false,
       "sourceSize": {
@@ -985,7 +1041,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 588
+        "y": 644
       },
       "rotated": false,
       "sourceSize": {
@@ -999,7 +1055,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 630
+        "y": 686
       },
       "rotated": false,
       "sourceSize": {
@@ -1013,7 +1069,7 @@
         "h": 38,
         "w": 70,
         "x": 786,
-        "y": 672
+        "y": 728
       },
       "rotated": false,
       "sourceSize": {
@@ -1025,7 +1081,7 @@
   },
   "meta": {
     "app": "pack-atlas.py",
-    "decodedBytes": 4774720,
+    "decodedBytes": 4967360,
     "encoding": "lossless WebP",
     "encodingNote": "pixel exact",
     "format": "RGBA8888",
@@ -1033,13 +1089,17 @@
     "page": 1,
     "scale": "1",
     "size": {
-      "h": 1388,
+      "h": 1444,
       "w": 860
     },
     "sources": {
       "冲锋拖尾.png": {
         "bytes": 11149,
         "sha256": "66e08d504bb19a6ca537ac344a8849cafb253747c116350d42ca0af56ffdf632"
+      },
+      "刺魨.png": {
+        "bytes": 3299,
+        "sha256": "1269a32d44046571a1e012bb79f6476f5bd26948277314e7d63ae2648db0b626"
       },
       "大白鲨-游动-1.png": {
         "bytes": 7058,
@@ -1056,6 +1116,10 @@
       "大白鲨-游动-4.png": {
         "bytes": 7150,
         "sha256": "fd5b8fdf2814f9f6140cdfe58a0b7e5a53397ed4e13be92abce7c364812a81e1"
+      },
+      "射水鱼.png": {
+        "bytes": 1259,
+        "sha256": "54be0faa21127588a8ef7b1278fd615fda3d027a2d2887fe3e839e549c1d0567"
       },
       "小鱼-游动-1.png": {
         "bytes": 1532,
@@ -1137,6 +1201,10 @@
         "bytes": 8410,
         "sha256": "ce63c164dafa8c1337fb623a8033a78de2cb8476bb66dd98f94afdfe73c22e90"
       },
+      "手枪虾.png": {
+        "bytes": 2729,
+        "sha256": "a4c12db2a92f4d190622866c083c829ddf92361d81c700d1598feaeef072e04b"
+      },
       "水母-待机-1.png": {
         "bytes": 5416,
         "sha256": "35b430545cd8bd91bc18d8f1e83707ff6ff7e44eef3b070fdccef21250c2bd77"
@@ -1152,6 +1220,10 @@
       "水母-待机-4.png": {
         "bytes": 4927,
         "sha256": "b1b6111d49c292adc74f809348c953240beb56d1e4c10f3fbc7de6e0325c0473"
+      },
+      "海星.png": {
+        "bytes": 2538,
+        "sha256": "0597be35ef49ae3b2d3504aaeac528bb55bd8f8b3b29129a8270ac308514587e"
       },
       "海胆.png": {
         "bytes": 5230,
@@ -1330,7 +1402,7 @@
         "sha256": "c5f17cde9ff9364db5b4a0643a51c80e01c7fde4ab2d6c84a7b8f0cf1c118627"
       }
     },
-    "textureBytes": 290652,
+    "textureBytes": 295656,
     "version": "1.0"
   }
 }

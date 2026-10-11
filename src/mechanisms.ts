@@ -962,6 +962,29 @@ export interface Mechanisms {
        */
       spin?: number;
       /**
+       * THE PICTURE'S ANGLE IS THE VOLLEY'S, and the picture is never mirrored.
+       *
+       * `spin` above is a RATE -- it turns the picture for ever, which is right for an urchin whose rotation IS its
+       * animation. The starfish cannot use it. Its five arms ARE its next volley: `stepStarfish` fires along
+       * `h.volleySpin + i * 72deg`, which is a STATE that jumps by a notch on each volley and starts at a random
+       * angle. A rate cannot track a state -- the arms would sit at a fixed offset from the bullets and the picture
+       * would lie about where the next five rounds are going, which is the one thing worse than no picture at all.
+       *
+       * So this says two things, and they are one statement because a picture like this has no front: the angle
+       * comes from the volley, and the sprite is NOT mirrored. Mirroring is the other half of the same bug -- a
+       * mirrored star still looks like a star, but its arms are on the wrong side, and 5-fold symmetry means the
+       * error does not announce itself as "upside down".
+       */
+      volleyAligned?: boolean;
+      /**
+       * Where the picture's OWN first arm points, in the game's y-up convention. Only read when `volleyAligned`.
+       *
+       * The art is drawn however it was drawn, so this is the number that reconciles it with the volley's zero.
+       * Which arm counts as "first" is arbitrary -- the arms are 72deg apart, so naming a different one shifts this
+       * by a whole notch and moves every arm onto the next one of the same star, which is no change at all.
+       */
+      volleyBaseRadians?: number;
+      /**
        * How long the `attack` picture stands, when that picture is a single file rather than an animation.
        *
        * An `attack` that names an `animations.<id>` already has its length -- that is what `maxSeconds` and
@@ -2223,6 +2246,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
         if (r.dead !== undefined && !isArtState(r.dead)) return false;
         if (r.spriteFlashScale !== undefined && (typeof r.spriteFlashScale !== 'number' || r.spriteFlashScale < 0 || r.spriteFlashScale > 2)) return false;
         if (r.spin !== undefined && (typeof r.spin !== 'number' || r.spin < -6 || r.spin > 6)) return false;
+        if (r.volleyAligned !== undefined && typeof r.volleyAligned !== 'boolean') return false;
+        // A finite radians value. Any angle is legal -- a base of 400deg is a base of 40deg -- so this only has to
+        // catch a string or a NaN, both of which would reach the sprite's `rotation` and turn the arms into nothing.
+        if (r.volleyBaseRadians !== undefined && (typeof r.volleyBaseRadians !== 'number' || !Number.isFinite(r.volleyBaseRadians))) return false;
         if (r.facesPlayer !== undefined && typeof r.facesPlayer !== 'boolean') return false;
         if (r.attackSeconds !== undefined && (typeof r.attackSeconds !== 'number' || r.attackSeconds <= 0.02 || r.attackSeconds > 30)) return false;
         /**
@@ -2243,7 +2270,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
         return typeof r.alpha === 'number' && r.alpha >= 0 && r.alpha <= 1;
       });
     },
-    describe: 'an object of kind -> { move, scale } or { variants: [{ move, scale }], and either way charge?, attack?, dead?, front?, spriteFlashScale?, spin?, attackSeconds?, alpha, lure? }, where each state is a picture name or an animation',
+    describe: 'an object of kind -> { move, scale } or { variants: [{ move, scale }], and either way charge?, attack?, dead?, front?, spriteFlashScale?, spin?, volleyAligned?, volleyBaseRadians?, attackSeconds?, alpha, lure? }, where each state is a picture name or an animation',
   },
   {
     path: 'animations',
