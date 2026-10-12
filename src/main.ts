@@ -2,7 +2,7 @@ import { Application, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
 import { LEVEL, LEVELS, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
-import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, LURE_PROBE, paintHazards, setReducedFlash, warmAnimations, type HazardKind } from './hazards';
+import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, isBossKind, LURE_PROBE, paintHazards, setReducedFlash, warmAnimations, type HazardKind } from './hazards';
 import { paintBullets } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { diagnosticsOf } from './diagnostics';
@@ -2432,13 +2432,20 @@ private updateBoss(): void {
        * relative to that player would appear far below the screen and be culled before anyone saw it.
        */
       const band = this.camera.viewport.visibleDepthMeters;
-      const boss = this.run.makeHazard(this.worldView(), 'boss', this.run.player.x * lane, this.camera.y + band * 0.42, null, spec.health);
-      boss.tint = spec.colour ?? null;
+      /**
+       * WHICH boss arrives is the level's (`spec.kind`), and that is now the only place it is decided.
+       *
+       * The kind used to be the constant `'boss'` and the level only got to choose the colour, which is what made six
+       * bosses one boss repainted. It is passed here as the kind everything else is keyed by: the dossier
+       * (`hazards.bosses.<kind>`) supplies its size and colour, its art row supplies its pictures, and the HUD reads
+       * the level's `spec.name` for its bar because that is level voice rather than creature mechanics.
+       */
+      const boss = this.run.makeHazard(this.worldView(), spec.kind, this.run.player.x * lane, this.camera.y + band * 0.42, null, spec.health);
       this.run.hazards.hazards.push(boss);
       this.sound('surface');
       this.banner(`${spec.name}  ·  击败它才能离开这一关`);
     }
-    const boss = this.run.hazards.hazards.find((h) => h.kind === 'boss');
+    const boss = this.run.hazards.hazards.find((h) => isBossKind(h.kind));
     this.bossView = boss && !boss.flee ? { name: spec.name, fraction: boss.health / Math.max(1, boss.maxHealth) } : null;
     if (this.run.phase === 'playing' && this.run.hazards.killed > 0) this.defeatBoss();
   }

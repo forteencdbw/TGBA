@@ -1,11 +1,235 @@
 {
   "frames": {
+    "冠冕水母-attack-1.png": {
+      "frame": {
+        "h": 323,
+        "w": 163,
+        "x": 2,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 323,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-attack-2.png": {
+      "frame": {
+        "h": 323,
+        "w": 163,
+        "x": 169,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 323,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-attack-3.png": {
+      "frame": {
+        "h": 323,
+        "w": 163,
+        "x": 336,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 323,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-attack-4.png": {
+      "frame": {
+        "h": 323,
+        "w": 163,
+        "x": 503,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 323,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-attack-5.png": {
+      "frame": {
+        "h": 323,
+        "w": 163,
+        "x": 670,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 323,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-attack-6.png": {
+      "frame": {
+        "h": 323,
+        "w": 163,
+        "x": 837,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 323,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-attack-7.png": {
+      "frame": {
+        "h": 323,
+        "w": 163,
+        "x": 1004,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 323,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-attack-8.png": {
+      "frame": {
+        "h": 323,
+        "w": 163,
+        "x": 2,
+        "y": 329
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 323,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-dead-1.png": {
+      "frame": {
+        "h": 304,
+        "w": 163,
+        "x": 169,
+        "y": 329
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 304,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-dead-2.png": {
+      "frame": {
+        "h": 304,
+        "w": 163,
+        "x": 336,
+        "y": 329
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 304,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-dead-3.png": {
+      "frame": {
+        "h": 304,
+        "w": 163,
+        "x": 503,
+        "y": 329
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 304,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-dead-4.png": {
+      "frame": {
+        "h": 304,
+        "w": 163,
+        "x": 670,
+        "y": 329
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 304,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-move-1.png": {
+      "frame": {
+        "h": 304,
+        "w": 163,
+        "x": 837,
+        "y": 329
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 304,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-move-2.png": {
+      "frame": {
+        "h": 304,
+        "w": 163,
+        "x": 1004,
+        "y": 329
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 304,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-move-3.png": {
+      "frame": {
+        "h": 304,
+        "w": 163,
+        "x": 2,
+        "y": 656
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 304,
+        "w": 163
+      },
+      "trimmed": false
+    },
+    "冠冕水母-move-4.png": {
+      "frame": {
+        "h": 304,
+        "w": 163,
+        "x": 169,
+        "y": 656
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 304,
+        "w": 163
+      },
+      "trimmed": false
+    },
     "冲锋拖尾.png": {
       "frame": {
         "h": 284,
         "w": 284,
-        "x": 2,
-        "y": 2
+        "x": 336,
+        "y": 656
       },
       "rotated": false,
       "sourceSize": {
@@ -18,8 +242,8 @@
       "frame": {
         "h": 40,
         "w": 46,
-        "x": 290,
-        "y": 2
+        "x": 1171,
+        "y": 329
       },
       "rotated": false,
       "sourceSize": {
@@ -32,8 +256,8 @@
       "frame": {
         "h": 41,
         "w": 46,
-        "x": 290,
-        "y": 46
+        "x": 1171,
+        "y": 373
       },
       "rotated": false,
       "sourceSize": {
@@ -46,8 +270,8 @@
       "frame": {
         "h": 61,
         "w": 98,
-        "x": 290,
-        "y": 91
+        "x": 1171,
+        "y": 418
       },
       "rotated": false,
       "sourceSize": {
@@ -60,8 +284,8 @@
       "frame": {
         "h": 61,
         "w": 98,
-        "x": 392,
-        "y": 91
+        "x": 1171,
+        "y": 483
       },
       "rotated": false,
       "sourceSize": {
@@ -74,8 +298,8 @@
       "frame": {
         "h": 61,
         "w": 98,
-        "x": 290,
-        "y": 156
+        "x": 1171,
+        "y": 548
       },
       "rotated": false,
       "sourceSize": {
@@ -88,8 +312,8 @@
       "frame": {
         "h": 61,
         "w": 98,
-        "x": 392,
-        "y": 156
+        "x": 1171,
+        "y": 2
       },
       "rotated": false,
       "sourceSize": {
@@ -102,8 +326,8 @@
       "frame": {
         "h": 11,
         "w": 42,
-        "x": 340,
-        "y": 2
+        "x": 169,
+        "y": 637
       },
       "rotated": false,
       "sourceSize": {
@@ -112,12 +336,236 @@
       },
       "trimmed": false
     },
+    "寄居沉船章鱼-attack-1.png": {
+      "frame": {
+        "h": 163,
+        "w": 168,
+        "x": 624,
+        "y": 656
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 163,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-attack-2.png": {
+      "frame": {
+        "h": 163,
+        "w": 168,
+        "x": 796,
+        "y": 656
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 163,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-attack-3.png": {
+      "frame": {
+        "h": 163,
+        "w": 168,
+        "x": 968,
+        "y": 656
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 163,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-attack-4.png": {
+      "frame": {
+        "h": 163,
+        "w": 168,
+        "x": 2,
+        "y": 964
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 163,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-attack-5.png": {
+      "frame": {
+        "h": 163,
+        "w": 168,
+        "x": 174,
+        "y": 964
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 163,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-attack-6.png": {
+      "frame": {
+        "h": 163,
+        "w": 168,
+        "x": 346,
+        "y": 964
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 163,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-attack-7.png": {
+      "frame": {
+        "h": 163,
+        "w": 168,
+        "x": 518,
+        "y": 964
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 163,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-attack-8.png": {
+      "frame": {
+        "h": 163,
+        "w": 168,
+        "x": 690,
+        "y": 964
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 163,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-dead-1.png": {
+      "frame": {
+        "h": 160,
+        "w": 168,
+        "x": 862,
+        "y": 964
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 160,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-dead-2.png": {
+      "frame": {
+        "h": 160,
+        "w": 168,
+        "x": 1034,
+        "y": 964
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 160,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-dead-3.png": {
+      "frame": {
+        "h": 160,
+        "w": 168,
+        "x": 2,
+        "y": 1131
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 160,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-dead-4.png": {
+      "frame": {
+        "h": 160,
+        "w": 168,
+        "x": 174,
+        "y": 1131
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 160,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-move-1.png": {
+      "frame": {
+        "h": 156,
+        "w": 168,
+        "x": 346,
+        "y": 1131
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 156,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-move-2.png": {
+      "frame": {
+        "h": 156,
+        "w": 168,
+        "x": 518,
+        "y": 1131
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 156,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-move-3.png": {
+      "frame": {
+        "h": 156,
+        "w": 168,
+        "x": 690,
+        "y": 1131
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 156,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "寄居沉船章鱼-move-4.png": {
+      "frame": {
+        "h": 156,
+        "w": 168,
+        "x": 862,
+        "y": 1131
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 156,
+        "w": 168
+      },
+      "trimmed": false
+    },
     "封路木箱.png": {
       "frame": {
         "h": 38,
         "w": 68,
-        "x": 340,
-        "y": 46
+        "x": 1221,
+        "y": 329
       },
       "rotated": false,
       "sourceSize": {
@@ -130,8 +578,8 @@
       "frame": {
         "h": 21,
         "w": 40,
-        "x": 340,
-        "y": 17
+        "x": 1221,
+        "y": 373
       },
       "rotated": false,
       "sourceSize": {
@@ -144,8 +592,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 384,
-        "y": 17
+        "x": 1265,
+        "y": 373
       },
       "rotated": false,
       "sourceSize": {
@@ -158,8 +606,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 429,
-        "y": 17
+        "x": 1206,
+        "y": 964
       },
       "rotated": false,
       "sourceSize": {
@@ -172,8 +620,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 412,
-        "y": 46
+        "x": 1251,
+        "y": 964
       },
       "rotated": false,
       "sourceSize": {
@@ -186,8 +634,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 457,
-        "y": 46
+        "x": 1206,
+        "y": 989
       },
       "rotated": false,
       "sourceSize": {
@@ -200,8 +648,8 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 290,
-        "y": 221
+        "x": 1221,
+        "y": 398
       },
       "rotated": false,
       "sourceSize": {
@@ -214,8 +662,8 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 335,
-        "y": 221
+        "x": 336,
+        "y": 944
       },
       "rotated": false,
       "sourceSize": {
@@ -228,8 +676,8 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 380,
-        "y": 221
+        "x": 381,
+        "y": 944
       },
       "rotated": false,
       "sourceSize": {
@@ -242,8 +690,8 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 425,
-        "y": 221
+        "x": 426,
+        "y": 944
       },
       "rotated": false,
       "sourceSize": {
@@ -256,8 +704,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 290,
-        "y": 239
+        "x": 1251,
+        "y": 989
       },
       "rotated": false,
       "sourceSize": {
@@ -270,8 +718,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 335,
-        "y": 239
+        "x": 1206,
+        "y": 1014
       },
       "rotated": false,
       "sourceSize": {
@@ -284,8 +732,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 380,
-        "y": 239
+        "x": 1251,
+        "y": 1014
       },
       "rotated": false,
       "sourceSize": {
@@ -298,8 +746,8 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 425,
-        "y": 239
+        "x": 1206,
+        "y": 1039
       },
       "rotated": false,
       "sourceSize": {
@@ -312,8 +760,8 @@
       "frame": {
         "h": 22,
         "w": 41,
-        "x": 290,
-        "y": 264
+        "x": 1206,
+        "y": 1064
       },
       "rotated": false,
       "sourceSize": {
@@ -326,8 +774,8 @@
       "frame": {
         "h": 22,
         "w": 41,
-        "x": 335,
-        "y": 264
+        "x": 1251,
+        "y": 1064
       },
       "rotated": false,
       "sourceSize": {
@@ -340,8 +788,8 @@
       "frame": {
         "h": 22,
         "w": 41,
-        "x": 380,
-        "y": 264
+        "x": 1206,
+        "y": 1090
       },
       "rotated": false,
       "sourceSize": {
@@ -354,8 +802,8 @@
       "frame": {
         "h": 22,
         "w": 41,
-        "x": 425,
-        "y": 264
+        "x": 1251,
+        "y": 1090
       },
       "rotated": false,
       "sourceSize": {
@@ -364,12 +812,236 @@
       },
       "trimmed": false
     },
+    "废网巨鲨-attack-1.png": {
+      "frame": {
+        "h": 94,
+        "w": 172,
+        "x": 624,
+        "y": 823
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 94,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-attack-2.png": {
+      "frame": {
+        "h": 94,
+        "w": 172,
+        "x": 800,
+        "y": 823
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 94,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-attack-3.png": {
+      "frame": {
+        "h": 94,
+        "w": 172,
+        "x": 976,
+        "y": 823
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 94,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-attack-4.png": {
+      "frame": {
+        "h": 94,
+        "w": 172,
+        "x": 1034,
+        "y": 1131
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 94,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-attack-5.png": {
+      "frame": {
+        "h": 94,
+        "w": 172,
+        "x": 2,
+        "y": 1295
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 94,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-attack-6.png": {
+      "frame": {
+        "h": 94,
+        "w": 172,
+        "x": 178,
+        "y": 1295
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 94,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-attack-7.png": {
+      "frame": {
+        "h": 94,
+        "w": 172,
+        "x": 354,
+        "y": 1295
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 94,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-attack-8.png": {
+      "frame": {
+        "h": 94,
+        "w": 172,
+        "x": 530,
+        "y": 1295
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 94,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-dead-1.png": {
+      "frame": {
+        "h": 96,
+        "w": 172,
+        "x": 2,
+        "y": 1393
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 96,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-dead-2.png": {
+      "frame": {
+        "h": 96,
+        "w": 172,
+        "x": 178,
+        "y": 1393
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 96,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-dead-3.png": {
+      "frame": {
+        "h": 96,
+        "w": 172,
+        "x": 354,
+        "y": 1393
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 96,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-dead-4.png": {
+      "frame": {
+        "h": 96,
+        "w": 172,
+        "x": 530,
+        "y": 1393
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 96,
+        "w": 172
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-move-1.png": {
+      "frame": {
+        "h": 90,
+        "w": 171,
+        "x": 706,
+        "y": 1295
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 90,
+        "w": 171
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-move-2.png": {
+      "frame": {
+        "h": 90,
+        "w": 171,
+        "x": 881,
+        "y": 1295
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 90,
+        "w": 171
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-move-3.png": {
+      "frame": {
+        "h": 90,
+        "w": 171,
+        "x": 1056,
+        "y": 1295
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 90,
+        "w": 171
+      },
+      "trimmed": false
+    },
+    "废网巨鲨-move-4.png": {
+      "frame": {
+        "h": 90,
+        "w": 171,
+        "x": 706,
+        "y": 1393
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 90,
+        "w": 171
+      },
+      "trimmed": false
+    },
     "座头鲸-游动-1.png": {
       "frame": {
         "h": 70,
         "w": 111,
-        "x": 2,
-        "y": 290
+        "x": 881,
+        "y": 1393
       },
       "rotated": false,
       "sourceSize": {
@@ -382,8 +1054,8 @@
       "frame": {
         "h": 70,
         "w": 111,
-        "x": 117,
-        "y": 290
+        "x": 996,
+        "y": 1393
       },
       "rotated": false,
       "sourceSize": {
@@ -396,8 +1068,8 @@
       "frame": {
         "h": 70,
         "w": 111,
-        "x": 232,
-        "y": 290
+        "x": 1111,
+        "y": 1393
       },
       "rotated": false,
       "sourceSize": {
@@ -410,8 +1082,8 @@
       "frame": {
         "h": 70,
         "w": 111,
-        "x": 347,
-        "y": 290
+        "x": 1152,
+        "y": 823
       },
       "rotated": false,
       "sourceSize": {
@@ -424,8 +1096,8 @@
       "frame": {
         "h": 40,
         "w": 51,
-        "x": 2,
-        "y": 364
+        "x": 1034,
+        "y": 1229
       },
       "rotated": false,
       "sourceSize": {
@@ -438,8 +1110,8 @@
       "frame": {
         "h": 68,
         "w": 62,
-        "x": 2,
-        "y": 408
+        "x": 1226,
+        "y": 1393
       },
       "rotated": false,
       "sourceSize": {
@@ -452,8 +1124,8 @@
       "frame": {
         "h": 77,
         "w": 52,
-        "x": 2,
-        "y": 480
+        "x": 1231,
+        "y": 1295
       },
       "rotated": false,
       "sourceSize": {
@@ -466,8 +1138,8 @@
       "frame": {
         "h": 77,
         "w": 52,
-        "x": 58,
-        "y": 480
+        "x": 1210,
+        "y": 1131
       },
       "rotated": false,
       "sourceSize": {
@@ -480,8 +1152,8 @@
       "frame": {
         "h": 77,
         "w": 52,
-        "x": 114,
-        "y": 480
+        "x": 1171,
+        "y": 67
       },
       "rotated": false,
       "sourceSize": {
@@ -494,8 +1166,8 @@
       "frame": {
         "h": 77,
         "w": 52,
-        "x": 170,
-        "y": 480
+        "x": 1227,
+        "y": 67
       },
       "rotated": false,
       "sourceSize": {
@@ -508,8 +1180,8 @@
       "frame": {
         "h": 51,
         "w": 52,
-        "x": 68,
-        "y": 408
+        "x": 1171,
+        "y": 148
       },
       "rotated": false,
       "sourceSize": {
@@ -522,8 +1194,8 @@
       "frame": {
         "h": 48,
         "w": 51,
-        "x": 124,
-        "y": 408
+        "x": 1227,
+        "y": 148
       },
       "rotated": false,
       "sourceSize": {
@@ -536,8 +1208,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 226,
-        "y": 480
+        "x": 1171,
+        "y": 203
       },
       "rotated": false,
       "sourceSize": {
@@ -550,8 +1222,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 296,
-        "y": 480
+        "x": 1171,
+        "y": 257
       },
       "rotated": false,
       "sourceSize": {
@@ -564,8 +1236,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 366,
-        "y": 480
+        "x": 1140,
+        "y": 656
       },
       "rotated": false,
       "sourceSize": {
@@ -578,8 +1250,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 436,
-        "y": 480
+        "x": 1210,
+        "y": 656
       },
       "rotated": false,
       "sourceSize": {
@@ -592,8 +1264,8 @@
       "frame": {
         "h": 58,
         "w": 71,
-        "x": 2,
-        "y": 561
+        "x": 1140,
+        "y": 710
       },
       "rotated": false,
       "sourceSize": {
@@ -607,7 +1279,7 @@
         "h": 80,
         "w": 80,
         "x": 2,
-        "y": 623
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -621,7 +1293,7 @@
         "h": 80,
         "w": 80,
         "x": 86,
-        "y": 623
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -634,8 +1306,8 @@
       "frame": {
         "h": 36,
         "w": 39,
-        "x": 57,
-        "y": 364
+        "x": 1267,
+        "y": 823
       },
       "rotated": false,
       "sourceSize": {
@@ -648,8 +1320,8 @@
       "frame": {
         "h": 36,
         "w": 39,
-        "x": 100,
-        "y": 364
+        "x": 1266,
+        "y": 1131
       },
       "rotated": false,
       "sourceSize": {
@@ -662,8 +1334,8 @@
       "frame": {
         "h": 36,
         "w": 39,
-        "x": 143,
-        "y": 364
+        "x": 1266,
+        "y": 1171
       },
       "rotated": false,
       "sourceSize": {
@@ -676,8 +1348,8 @@
       "frame": {
         "h": 36,
         "w": 39,
-        "x": 186,
-        "y": 364
+        "x": 1089,
+        "y": 1229
       },
       "rotated": false,
       "sourceSize": {
@@ -686,12 +1358,236 @@
       },
       "trimmed": false
     },
+    "烟囱蟹王-attack-1.png": {
+      "frame": {
+        "h": 130,
+        "w": 177,
+        "x": 2,
+        "y": 1577
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 130,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-attack-2.png": {
+      "frame": {
+        "h": 130,
+        "w": 177,
+        "x": 183,
+        "y": 1577
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 130,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-attack-3.png": {
+      "frame": {
+        "h": 130,
+        "w": 177,
+        "x": 364,
+        "y": 1577
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 130,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-attack-4.png": {
+      "frame": {
+        "h": 130,
+        "w": 177,
+        "x": 545,
+        "y": 1577
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 130,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-attack-5.png": {
+      "frame": {
+        "h": 130,
+        "w": 177,
+        "x": 726,
+        "y": 1577
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 130,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-attack-6.png": {
+      "frame": {
+        "h": 130,
+        "w": 177,
+        "x": 907,
+        "y": 1577
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 130,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-attack-7.png": {
+      "frame": {
+        "h": 130,
+        "w": 177,
+        "x": 1088,
+        "y": 1577
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 130,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-attack-8.png": {
+      "frame": {
+        "h": 130,
+        "w": 177,
+        "x": 2,
+        "y": 1711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 130,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-dead-1.png": {
+      "frame": {
+        "h": 102,
+        "w": 177,
+        "x": 183,
+        "y": 1711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 102,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-dead-2.png": {
+      "frame": {
+        "h": 102,
+        "w": 177,
+        "x": 364,
+        "y": 1711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 102,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-dead-3.png": {
+      "frame": {
+        "h": 102,
+        "w": 177,
+        "x": 545,
+        "y": 1711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 102,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-dead-4.png": {
+      "frame": {
+        "h": 102,
+        "w": 177,
+        "x": 726,
+        "y": 1711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 102,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-move-1.png": {
+      "frame": {
+        "h": 106,
+        "w": 177,
+        "x": 2,
+        "y": 1845
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-move-2.png": {
+      "frame": {
+        "h": 106,
+        "w": 177,
+        "x": 183,
+        "y": 1845
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-move-3.png": {
+      "frame": {
+        "h": 106,
+        "w": 177,
+        "x": 364,
+        "y": 1845
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 177
+      },
+      "trimmed": false
+    },
+    "烟囱蟹王-move-4.png": {
+      "frame": {
+        "h": 106,
+        "w": 177,
+        "x": 545,
+        "y": 1845
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 177
+      },
+      "trimmed": false
+    },
     "玩家子弹.png": {
       "frame": {
         "h": 12,
         "w": 12,
-        "x": 412,
-        "y": 71
+        "x": 1293,
+        "y": 329
       },
       "rotated": false,
       "sourceSize": {
@@ -704,8 +1600,8 @@
       "frame": {
         "h": 36,
         "w": 36,
-        "x": 229,
-        "y": 364
+        "x": 1132,
+        "y": 1229
       },
       "rotated": false,
       "sourceSize": {
@@ -718,8 +1614,8 @@
       "frame": {
         "h": 87,
         "w": 87,
-        "x": 2,
-        "y": 707
+        "x": 907,
+        "y": 1711
       },
       "rotated": false,
       "sourceSize": {
@@ -733,7 +1629,7 @@
         "h": 75,
         "w": 78,
         "x": 170,
-        "y": 623
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -747,7 +1643,7 @@
         "h": 71,
         "w": 67,
         "x": 252,
-        "y": 623
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -761,7 +1657,7 @@
         "h": 66,
         "w": 90,
         "x": 323,
-        "y": 623
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -774,8 +1670,8 @@
       "frame": {
         "h": 58,
         "w": 84,
-        "x": 77,
-        "y": 561
+        "x": 1215,
+        "y": 710
       },
       "rotated": false,
       "sourceSize": {
@@ -789,7 +1685,7 @@
         "h": 65,
         "w": 77,
         "x": 417,
-        "y": 623
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -802,8 +1698,8 @@
       "frame": {
         "h": 71,
         "w": 83,
-        "x": 93,
-        "y": 707
+        "x": 998,
+        "y": 1711
       },
       "rotated": false,
       "sourceSize": {
@@ -816,8 +1712,8 @@
       "frame": {
         "h": 56,
         "w": 48,
-        "x": 462,
-        "y": 290
+        "x": 498,
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -830,8 +1726,8 @@
       "frame": {
         "h": 56,
         "w": 48,
-        "x": 165,
-        "y": 561
+        "x": 550,
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -844,8 +1740,8 @@
       "frame": {
         "h": 56,
         "w": 48,
-        "x": 217,
-        "y": 561
+        "x": 602,
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -858,8 +1754,8 @@
       "frame": {
         "h": 56,
         "w": 48,
-        "x": 269,
-        "y": 561
+        "x": 654,
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -872,8 +1768,8 @@
       "frame": {
         "h": 53,
         "w": 78,
-        "x": 321,
-        "y": 561
+        "x": 706,
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -886,8 +1782,8 @@
       "frame": {
         "h": 66,
         "w": 78,
-        "x": 180,
-        "y": 707
+        "x": 1085,
+        "y": 1711
       },
       "rotated": false,
       "sourceSize": {
@@ -900,8 +1796,8 @@
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 262,
-        "y": 707
+        "x": 1167,
+        "y": 1711
       },
       "rotated": false,
       "sourceSize": {
@@ -914,8 +1810,8 @@
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 322,
-        "y": 707
+        "x": 1227,
+        "y": 1711
       },
       "rotated": false,
       "sourceSize": {
@@ -928,8 +1824,8 @@
       "frame": {
         "h": 18,
         "w": 18,
-        "x": 474,
-        "y": 17
+        "x": 1287,
+        "y": 1711
       },
       "rotated": false,
       "sourceSize": {
@@ -942,8 +1838,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 2,
-        "y": 798
+        "x": 726,
+        "y": 1845
       },
       "rotated": false,
       "sourceSize": {
@@ -956,8 +1852,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 85,
-        "y": 798
+        "x": 809,
+        "y": 1845
       },
       "rotated": false,
       "sourceSize": {
@@ -970,8 +1866,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 168,
-        "y": 798
+        "x": 892,
+        "y": 1845
       },
       "rotated": false,
       "sourceSize": {
@@ -984,8 +1880,8 @@
       "frame": {
         "h": 79,
         "w": 79,
-        "x": 251,
-        "y": 798
+        "x": 975,
+        "y": 1845
       },
       "rotated": false,
       "sourceSize": {
@@ -998,8 +1894,8 @@
       "frame": {
         "h": 78,
         "w": 48,
-        "x": 334,
-        "y": 798
+        "x": 1058,
+        "y": 1845
       },
       "rotated": false,
       "sourceSize": {
@@ -1013,7 +1909,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 881
+        "y": 1955
       },
       "rotated": false,
       "sourceSize": {
@@ -1027,7 +1923,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 881
+        "y": 1955
       },
       "rotated": false,
       "sourceSize": {
@@ -1040,8 +1936,8 @@
       "frame": {
         "h": 192,
         "w": 192,
-        "x": 2,
-        "y": 1077
+        "x": 394,
+        "y": 1955
       },
       "rotated": false,
       "sourceSize": {
@@ -1054,8 +1950,8 @@
       "frame": {
         "h": 192,
         "w": 192,
-        "x": 198,
-        "y": 1077
+        "x": 590,
+        "y": 1955
       },
       "rotated": false,
       "sourceSize": {
@@ -1069,7 +1965,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 1273
+        "y": 2151
       },
       "rotated": false,
       "sourceSize": {
@@ -1083,7 +1979,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 1273
+        "y": 2151
       },
       "rotated": false,
       "sourceSize": {
@@ -1096,8 +1992,8 @@
       "frame": {
         "h": 221,
         "w": 192,
-        "x": 2,
-        "y": 1498
+        "x": 394,
+        "y": 2151
       },
       "rotated": false,
       "sourceSize": {
@@ -1110,8 +2006,8 @@
       "frame": {
         "h": 221,
         "w": 192,
-        "x": 198,
-        "y": 1498
+        "x": 590,
+        "y": 2151
       },
       "rotated": false,
       "sourceSize": {
@@ -1124,8 +2020,8 @@
       "frame": {
         "h": 221,
         "w": 192,
-        "x": 2,
-        "y": 1723
+        "x": 786,
+        "y": 2151
       },
       "rotated": false,
       "sourceSize": {
@@ -1138,8 +2034,8 @@
       "frame": {
         "h": 221,
         "w": 192,
-        "x": 198,
-        "y": 1723
+        "x": 982,
+        "y": 2151
       },
       "rotated": false,
       "sourceSize": {
@@ -1153,7 +2049,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 1948
+        "y": 2376
       },
       "rotated": false,
       "sourceSize": {
@@ -1167,7 +2063,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 1948
+        "y": 2376
       },
       "rotated": false,
       "sourceSize": {
@@ -1180,8 +2076,8 @@
       "frame": {
         "h": 192,
         "w": 192,
-        "x": 2,
-        "y": 2173
+        "x": 786,
+        "y": 1955
       },
       "rotated": false,
       "sourceSize": {
@@ -1194,8 +2090,8 @@
       "frame": {
         "h": 192,
         "w": 192,
-        "x": 198,
-        "y": 2173
+        "x": 982,
+        "y": 1955
       },
       "rotated": false,
       "sourceSize": {
@@ -1208,8 +2104,8 @@
       "frame": {
         "h": 192,
         "w": 192,
-        "x": 2,
-        "y": 2369
+        "x": 394,
+        "y": 2376
       },
       "rotated": false,
       "sourceSize": {
@@ -1222,8 +2118,8 @@
       "frame": {
         "h": 192,
         "w": 192,
-        "x": 198,
-        "y": 2369
+        "x": 590,
+        "y": 2376
       },
       "rotated": false,
       "sourceSize": {
@@ -1236,8 +2132,8 @@
       "frame": {
         "h": 20,
         "w": 34,
-        "x": 470,
-        "y": 239
+        "x": 1171,
+        "y": 613
       },
       "rotated": false,
       "sourceSize": {
@@ -1250,8 +2146,8 @@
       "frame": {
         "h": 20,
         "w": 34,
-        "x": 470,
-        "y": 264
+        "x": 1209,
+        "y": 613
       },
       "rotated": false,
       "sourceSize": {
@@ -1264,8 +2160,8 @@
       "frame": {
         "h": 20,
         "w": 34,
-        "x": 226,
-        "y": 534
+        "x": 1247,
+        "y": 613
       },
       "rotated": false,
       "sourceSize": {
@@ -1278,8 +2174,8 @@
       "frame": {
         "h": 20,
         "w": 34,
-        "x": 264,
-        "y": 534
+        "x": 1152,
+        "y": 897
       },
       "rotated": false,
       "sourceSize": {
@@ -1292,8 +2188,8 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 179,
-        "y": 408
+        "x": 1140,
+        "y": 772
       },
       "rotated": false,
       "sourceSize": {
@@ -1306,8 +2202,8 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 253,
-        "y": 408
+        "x": 1214,
+        "y": 772
       },
       "rotated": false,
       "sourceSize": {
@@ -1320,8 +2216,8 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 327,
-        "y": 408
+        "x": 788,
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -1334,8 +2230,8 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 401,
-        "y": 408
+        "x": 862,
+        "y": 1493
       },
       "rotated": false,
       "sourceSize": {
@@ -1343,11 +2239,459 @@
         "w": 70
       },
       "trimmed": false
+    },
+    "长尾鲨-attack-1.png": {
+      "frame": {
+        "h": 106,
+        "w": 168,
+        "x": 786,
+        "y": 2376
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "长尾鲨-attack-2.png": {
+      "frame": {
+        "h": 106,
+        "w": 168,
+        "x": 958,
+        "y": 2376
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "长尾鲨-attack-3.png": {
+      "frame": {
+        "h": 106,
+        "w": 168,
+        "x": 1130,
+        "y": 2376
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "长尾鲨-attack-4.png": {
+      "frame": {
+        "h": 106,
+        "w": 168,
+        "x": 2,
+        "y": 2601
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "长尾鲨-attack-5.png": {
+      "frame": {
+        "h": 106,
+        "w": 168,
+        "x": 174,
+        "y": 2601
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "长尾鲨-attack-6.png": {
+      "frame": {
+        "h": 106,
+        "w": 168,
+        "x": 346,
+        "y": 2601
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "长尾鲨-attack-7.png": {
+      "frame": {
+        "h": 106,
+        "w": 168,
+        "x": 518,
+        "y": 2601
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "长尾鲨-attack-8.png": {
+      "frame": {
+        "h": 106,
+        "w": 168,
+        "x": 690,
+        "y": 2601
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 106,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "长尾鲨-dead-1.png": {
+      "frame": {
+        "h": 121,
+        "w": 169,
+        "x": 2,
+        "y": 2711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 121,
+        "w": 169
+      },
+      "trimmed": false
+    },
+    "长尾鲨-dead-2.png": {
+      "frame": {
+        "h": 121,
+        "w": 169,
+        "x": 175,
+        "y": 2711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 121,
+        "w": 169
+      },
+      "trimmed": false
+    },
+    "长尾鲨-dead-3.png": {
+      "frame": {
+        "h": 121,
+        "w": 169,
+        "x": 348,
+        "y": 2711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 121,
+        "w": 169
+      },
+      "trimmed": false
+    },
+    "长尾鲨-dead-4.png": {
+      "frame": {
+        "h": 121,
+        "w": 169,
+        "x": 521,
+        "y": 2711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 121,
+        "w": 169
+      },
+      "trimmed": false
+    },
+    "长尾鲨-move-1.png": {
+      "frame": {
+        "h": 92,
+        "w": 169,
+        "x": 862,
+        "y": 2601
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 92,
+        "w": 169
+      },
+      "trimmed": false
+    },
+    "长尾鲨-move-2.png": {
+      "frame": {
+        "h": 92,
+        "w": 169,
+        "x": 1035,
+        "y": 2601
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 92,
+        "w": 169
+      },
+      "trimmed": false
+    },
+    "长尾鲨-move-3.png": {
+      "frame": {
+        "h": 92,
+        "w": 169,
+        "x": 694,
+        "y": 2711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 92,
+        "w": 169
+      },
+      "trimmed": false
+    },
+    "长尾鲨-move-4.png": {
+      "frame": {
+        "h": 92,
+        "w": 169,
+        "x": 867,
+        "y": 2711
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 92,
+        "w": 169
+      },
+      "trimmed": false
+    },
+    "风暴之眼-attack-1.png": {
+      "frame": {
+        "h": 114,
+        "w": 168,
+        "x": 2,
+        "y": 2836
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 114,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-attack-2.png": {
+      "frame": {
+        "h": 114,
+        "w": 168,
+        "x": 174,
+        "y": 2836
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 114,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-attack-3.png": {
+      "frame": {
+        "h": 114,
+        "w": 168,
+        "x": 346,
+        "y": 2836
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 114,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-attack-4.png": {
+      "frame": {
+        "h": 114,
+        "w": 168,
+        "x": 518,
+        "y": 2836
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 114,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-attack-5.png": {
+      "frame": {
+        "h": 114,
+        "w": 168,
+        "x": 690,
+        "y": 2836
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 114,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-attack-6.png": {
+      "frame": {
+        "h": 114,
+        "w": 168,
+        "x": 862,
+        "y": 2836
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 114,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-attack-7.png": {
+      "frame": {
+        "h": 114,
+        "w": 168,
+        "x": 1034,
+        "y": 2836
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 114,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-attack-8.png": {
+      "frame": {
+        "h": 114,
+        "w": 168,
+        "x": 2,
+        "y": 2954
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 114,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-dead-1.png": {
+      "frame": {
+        "h": 103,
+        "w": 168,
+        "x": 174,
+        "y": 2954
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 103,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-dead-2.png": {
+      "frame": {
+        "h": 103,
+        "w": 168,
+        "x": 346,
+        "y": 2954
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 103,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-dead-3.png": {
+      "frame": {
+        "h": 103,
+        "w": 168,
+        "x": 518,
+        "y": 2954
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 103,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-dead-4.png": {
+      "frame": {
+        "h": 103,
+        "w": 168,
+        "x": 690,
+        "y": 2954
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 103,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-move-1.png": {
+      "frame": {
+        "h": 112,
+        "w": 168,
+        "x": 2,
+        "y": 3072
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 112,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-move-2.png": {
+      "frame": {
+        "h": 112,
+        "w": 168,
+        "x": 174,
+        "y": 3072
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 112,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-move-3.png": {
+      "frame": {
+        "h": 112,
+        "w": 168,
+        "x": 346,
+        "y": 3072
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 112,
+        "w": 168
+      },
+      "trimmed": false
+    },
+    "风暴之眼-move-4.png": {
+      "frame": {
+        "h": 112,
+        "w": 168,
+        "x": 518,
+        "y": 3072
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 112,
+        "w": 168
+      },
+      "trimmed": false
     }
   },
   "meta": {
     "app": "pack-atlas.py",
-    "decodedBytes": 5251072,
+    "decodedBytes": 16679616,
     "encoding": "lossless WebP",
     "encodingNote": "pixel exact",
     "format": "RGBA8888",
@@ -1355,10 +2699,74 @@
     "page": 1,
     "scale": "1",
     "size": {
-      "h": 2564,
-      "w": 512
+      "h": 3188,
+      "w": 1308
     },
     "sources": {
+      "冠冕水母-attack-1.png": {
+        "bytes": 62679,
+        "sha256": "0d544b8b9f3782a2e4ddd2e9e14c01ba09a581422520542919cda7b3cfec191d"
+      },
+      "冠冕水母-attack-2.png": {
+        "bytes": 63301,
+        "sha256": "290ae634ca48fec2a081fa913394538896a56f3d14647361713d294e9e79e1d2"
+      },
+      "冠冕水母-attack-3.png": {
+        "bytes": 64318,
+        "sha256": "9fd0c7ff1b687fe8c726e49b748d3b0bf28e5df47b900027da046ecb45132b86"
+      },
+      "冠冕水母-attack-4.png": {
+        "bytes": 61438,
+        "sha256": "9d44355dfce798bb7f1afcafae075c069af9b2019dffeb1c6233bd170b712c91"
+      },
+      "冠冕水母-attack-5.png": {
+        "bytes": 65351,
+        "sha256": "bb3d40779240f7d3d44f430445cadd404a37e8f6539faffa8802f893943986fa"
+      },
+      "冠冕水母-attack-6.png": {
+        "bytes": 56015,
+        "sha256": "56604b22335df24e17eb8f2b858af06a8eb0203c8b22c0be9d8fe58d9116a66b"
+      },
+      "冠冕水母-attack-7.png": {
+        "bytes": 60832,
+        "sha256": "d139c7467290ca2fcd26a00ca8de29e4a6230cdddcc8870a6ed3356f39ef9097"
+      },
+      "冠冕水母-attack-8.png": {
+        "bytes": 64357,
+        "sha256": "20335a8ebda6ed03abb1df0d717c93eb173c030bff3c8f6050a4eb31d3b5641d"
+      },
+      "冠冕水母-dead-1.png": {
+        "bytes": 62584,
+        "sha256": "d6b14992bfcee222a9330f8606a519228b2396959405fe1d06350ae24700a167"
+      },
+      "冠冕水母-dead-2.png": {
+        "bytes": 65275,
+        "sha256": "094d8139f4a0fef180ef05d068b6839661c4841ed008796051f67acf52cd0caa"
+      },
+      "冠冕水母-dead-3.png": {
+        "bytes": 65474,
+        "sha256": "7fb3e521779280a7f6d19700084ae3fc9254ce26760e5255269d5af97645a426"
+      },
+      "冠冕水母-dead-4.png": {
+        "bytes": 53244,
+        "sha256": "3685fd251cf6325035d1d94b305b57ba716fa12f74e0da27f508d5412821a6ff"
+      },
+      "冠冕水母-move-1.png": {
+        "bytes": 62584,
+        "sha256": "d6b14992bfcee222a9330f8606a519228b2396959405fe1d06350ae24700a167"
+      },
+      "冠冕水母-move-2.png": {
+        "bytes": 65628,
+        "sha256": "4199c5d364113fb49d4afa888acacb1e595b8d269e5342fbb9025e3b6bd8d53d"
+      },
+      "冠冕水母-move-3.png": {
+        "bytes": 63662,
+        "sha256": "81e786c769abc18f92c1fe538fe0cf10bdf7201897f2e9ae68d89b3b46d94730"
+      },
+      "冠冕水母-move-4.png": {
+        "bytes": 57971,
+        "sha256": "1981024cfc306a22d39324020d646858f434d460a6a1aa5e404f389576eb7408"
+      },
       "冲锋拖尾.png": {
         "bytes": 11149,
         "sha256": "66e08d504bb19a6ca537ac344a8849cafb253747c116350d42ca0af56ffdf632"
@@ -1390,6 +2798,70 @@
       "失控鱼雷.png": {
         "bytes": 672,
         "sha256": "b9edecc81bb274d0e1a8e132294d2fccc0bfde958024eec9cb57c052708a7450"
+      },
+      "寄居沉船章鱼-attack-1.png": {
+        "bytes": 36702,
+        "sha256": "5a33cfa4c50470a29634695f8e82d975d216044ee2d18372a363766680d9a93f"
+      },
+      "寄居沉船章鱼-attack-2.png": {
+        "bytes": 37802,
+        "sha256": "db616542b354507cf67d22e70ac6c6044c6f1e7c1a2c553bd1651a18aa76fd6b"
+      },
+      "寄居沉船章鱼-attack-3.png": {
+        "bytes": 37585,
+        "sha256": "5926e53a2a5bf847b1e2bfdc4615433d71cfd69ac7a605b2385c38804951930e"
+      },
+      "寄居沉船章鱼-attack-4.png": {
+        "bytes": 37127,
+        "sha256": "3dbced9d6a07a5a4a3f0ce938fa0670abf5ceed51c2c1214b474f785a325ef0a"
+      },
+      "寄居沉船章鱼-attack-5.png": {
+        "bytes": 40177,
+        "sha256": "9b260a9bf700ba96941239bf57ed40bbde8be2291bf28606c4ec2656b60704c2"
+      },
+      "寄居沉船章鱼-attack-6.png": {
+        "bytes": 38477,
+        "sha256": "94938b18a0cd8b51460d214da5cf869032f71efa495692719a8736748b6f4655"
+      },
+      "寄居沉船章鱼-attack-7.png": {
+        "bytes": 34383,
+        "sha256": "5057cc3da554a3abede49acf8f0a55879cd3ef3c04195780fa6eb71cc57ff008"
+      },
+      "寄居沉船章鱼-attack-8.png": {
+        "bytes": 36484,
+        "sha256": "5eb0479d1b4f2c3e8a1f932ff460cd840fbfbd36ae53011280a26fa9e45177a9"
+      },
+      "寄居沉船章鱼-dead-1.png": {
+        "bytes": 36652,
+        "sha256": "cacc80585e78181db3f2d6e84feae82140700bbc41940cb7b0330fac77d75a21"
+      },
+      "寄居沉船章鱼-dead-2.png": {
+        "bytes": 29517,
+        "sha256": "a367c2f8351fb65d8744928a6af94e2bd45b74c1aa98a2f61e4ff71102dc25da"
+      },
+      "寄居沉船章鱼-dead-3.png": {
+        "bytes": 15601,
+        "sha256": "29fc4e55d2385bf5664e128415113e3a4443b178f262f79d7224d9c122e3786c"
+      },
+      "寄居沉船章鱼-dead-4.png": {
+        "bytes": 24493,
+        "sha256": "c67b6c9ed4f7ae9f9514216a0ed690b764903eefe71b11851f35df8a78b5d3cd"
+      },
+      "寄居沉船章鱼-move-1.png": {
+        "bytes": 36635,
+        "sha256": "c1922889b321bd041750b2795e5338d7627ada942e698e204738d109869ab69d"
+      },
+      "寄居沉船章鱼-move-2.png": {
+        "bytes": 36854,
+        "sha256": "056ba5fb82b1997031937b336489a615aeffeb1e31a059e0a6b81e3450f2f70a"
+      },
+      "寄居沉船章鱼-move-3.png": {
+        "bytes": 36210,
+        "sha256": "d41d6c34e73c9b0d119c2ce456a08266d7fb36d0a4567cf461a8be7a9028881c"
+      },
+      "寄居沉船章鱼-move-4.png": {
+        "bytes": 36354,
+        "sha256": "f13fcdeeb121d29e09cf4b0db427a94d3665b1c0d65c91d21498f03eec5fd146"
       },
       "封路木箱.png": {
         "bytes": 2242,
@@ -1462,6 +2934,70 @@
       "小鱼4-游动-4.png": {
         "bytes": 1739,
         "sha256": "90dc15f58004406bc98035112961ead74312fed805f051fe2c8f25702786ed6c"
+      },
+      "废网巨鲨-attack-1.png": {
+        "bytes": 17924,
+        "sha256": "bc0d8bfd94ef85f5bdcb5afe48525bb4b215ae6d3da0cc90128e5fa3dc7c1031"
+      },
+      "废网巨鲨-attack-2.png": {
+        "bytes": 17181,
+        "sha256": "8bfa41f3041f951cd5638caf53029c3984d85c5e73e457eff528036d6a7b305f"
+      },
+      "废网巨鲨-attack-3.png": {
+        "bytes": 18869,
+        "sha256": "5e0725a8a1bc0d05548d4eb51c5d8ee12f3a0221890e4b0140a9547db2bb25ce"
+      },
+      "废网巨鲨-attack-4.png": {
+        "bytes": 18336,
+        "sha256": "e22c4a8a58b0aaaa3c2c5aa160698df882a513a4fd3e9367ad6f80a70104dbd7"
+      },
+      "废网巨鲨-attack-5.png": {
+        "bytes": 16829,
+        "sha256": "594163e5635e86206c31a8fce4ae69029f8cb4e0f9e6098bbfc07fc08a47d9ea"
+      },
+      "废网巨鲨-attack-6.png": {
+        "bytes": 17401,
+        "sha256": "b2cec15ea0727f0ab2685f34aac817f3a5d709540692a2c6d9e87346acb872ab"
+      },
+      "废网巨鲨-attack-7.png": {
+        "bytes": 17714,
+        "sha256": "4ab8c28978c6c32cc0c42eafb00508cc2abad76aa5a3d2505cc62ff5efb75de3"
+      },
+      "废网巨鲨-attack-8.png": {
+        "bytes": 17629,
+        "sha256": "67e606458a2eb168c425571c378a51cdf71920961dcbb4869861b64dc70b6c7b"
+      },
+      "废网巨鲨-dead-1.png": {
+        "bytes": 17951,
+        "sha256": "916939d729dee0928c5bd945e24f7ac228b3cebe3ceba273b2251708f198c57a"
+      },
+      "废网巨鲨-dead-2.png": {
+        "bytes": 17687,
+        "sha256": "9d3fde0c19369feee2bbe49bbf3afcf311816707bf02b6a25d6429a3cd98a6c0"
+      },
+      "废网巨鲨-dead-3.png": {
+        "bytes": 17940,
+        "sha256": "e9b0306eb9362c7b46f4a6b829d201c4dde6ff1bcf56dc4cbc252c163b5bacc5"
+      },
+      "废网巨鲨-dead-4.png": {
+        "bytes": 20242,
+        "sha256": "685e3439e605c3b4445a766dc69531049331a6a322ea0d15cbe2305f37c16558"
+      },
+      "废网巨鲨-move-1.png": {
+        "bytes": 17887,
+        "sha256": "eb3c7121e80ecc4b8b1e21cf06b29426e1bbf697e7da45b7c0aaa72e31537993"
+      },
+      "废网巨鲨-move-2.png": {
+        "bytes": 16472,
+        "sha256": "8c5c6add03b49dfe04de131375001b3cdc8f37dcefc1559f27c624485bf00a89"
+      },
+      "废网巨鲨-move-3.png": {
+        "bytes": 17145,
+        "sha256": "c5c8311a844ec6bc8d6d029a27be1d661b0daf968555fb8fa007b97e5ec69842"
+      },
+      "废网巨鲨-move-4.png": {
+        "bytes": 17711,
+        "sha256": "1680133994a2c6a4e6f749b7df9f69e0245c9f405173c0a00c12b6883b1bf14c"
       },
       "座头鲸-游动-1.png": {
         "bytes": 8341,
@@ -1554,6 +3090,70 @@
       "炸弹鱼-move-4.png": {
         "bytes": 1395,
         "sha256": "4ea6956d45586668279fe3783eca7444f6191bd7361579e0aae2486f5ff5b6f1"
+      },
+      "烟囱蟹王-attack-1.png": {
+        "bytes": 37581,
+        "sha256": "cab52f8577a913283d11086ea466829bafb44a52b8f9aa7e84efb8e8ed6a0df6"
+      },
+      "烟囱蟹王-attack-2.png": {
+        "bytes": 37634,
+        "sha256": "9e9d001bcaa0ee3a53a0489d8815f292de9e32bdc3e122359a58abbb39ab6bbd"
+      },
+      "烟囱蟹王-attack-3.png": {
+        "bytes": 40844,
+        "sha256": "6be848b803be8d5250fbda705d88112d7a648bf8dcb1e3f4f5f40a3bedb9cb80"
+      },
+      "烟囱蟹王-attack-4.png": {
+        "bytes": 40284,
+        "sha256": "8e7183ec86835f8212cb8f33a65f0751a1be2286950d488696e2bdeb9a457b09"
+      },
+      "烟囱蟹王-attack-5.png": {
+        "bytes": 37716,
+        "sha256": "3a26281f82ad15c277b16e80a19c7fa991405dc3ddc774abe5d1a353a14732a1"
+      },
+      "烟囱蟹王-attack-6.png": {
+        "bytes": 38243,
+        "sha256": "5e8e15c96b6814e3b74e3fa3f72fa856226e2adc571cfb2cf035d02d8ea63bb5"
+      },
+      "烟囱蟹王-attack-7.png": {
+        "bytes": 38085,
+        "sha256": "2771cf5e8d6761a336946527ac46e8f7e9e9b1d4a73834ed9d47d45b4a67e5eb"
+      },
+      "烟囱蟹王-attack-8.png": {
+        "bytes": 38322,
+        "sha256": "07723a5925b945a623a5fc87d43b9895399e8f4b0c96ca1edd17cb9fc1259331"
+      },
+      "烟囱蟹王-dead-1.png": {
+        "bytes": 37376,
+        "sha256": "c18e6b23ccc5e1f2cbcbd6f20dc87633327a3d4f3456df999e8d1a1d4f5a587d"
+      },
+      "烟囱蟹王-dead-2.png": {
+        "bytes": 38476,
+        "sha256": "58f3473a3cef6d0e3aa8163f7046624d5003394cbeaf8ecb4aa0daaf9c939ab7"
+      },
+      "烟囱蟹王-dead-3.png": {
+        "bytes": 37545,
+        "sha256": "5dfb934a15fad249c567b2dad86a8c6ce5fb9c3f1bf3ace0c737f0a172063b61"
+      },
+      "烟囱蟹王-dead-4.png": {
+        "bytes": 34913,
+        "sha256": "9e6276ca507402e73c39a8db004516fcc50a0d9dcfd3931b00339347c23e1450"
+      },
+      "烟囱蟹王-move-1.png": {
+        "bytes": 37470,
+        "sha256": "fea6a52d0c8051861632d4648c3d54f6a83287a8e9ebc83ed2f6909b908ac6e5"
+      },
+      "烟囱蟹王-move-2.png": {
+        "bytes": 38633,
+        "sha256": "584a68d540c3ece865fea2774ca918ba00117e2ec39cc2fd8d3902dc18221086"
+      },
+      "烟囱蟹王-move-3.png": {
+        "bytes": 38003,
+        "sha256": "71d76cab5481b66d4df907b183ed83e1fec856c06491a56e0cd7c6c1ac206a94"
+      },
+      "烟囱蟹王-move-4.png": {
+        "bytes": 38152,
+        "sha256": "068ca75b0b2d132ab149115acdd516b1f63daaa0cd0096b699722f106c5eaab4"
       },
       "玩家子弹.png": {
         "bytes": 317,
@@ -1742,9 +3342,137 @@
       "金枪鱼-游动-4.png": {
         "bytes": 3062,
         "sha256": "c5f17cde9ff9364db5b4a0643a51c80e01c7fde4ab2d6c84a7b8f0cf1c118627"
+      },
+      "长尾鲨-attack-1.png": {
+        "bytes": 7929,
+        "sha256": "50491c3fa1b49542eebcf63b3d9e36de1f58caeed5ec15749da7f78ae05d7576"
+      },
+      "长尾鲨-attack-2.png": {
+        "bytes": 8931,
+        "sha256": "068163ae06f7d0cf08fd0dffa2f44c3b35abaa3f4d8901ff3e8e72df25dfb7c8"
+      },
+      "长尾鲨-attack-3.png": {
+        "bytes": 7370,
+        "sha256": "23cd1016327a216a7e57aefdaa7545b7c4bca7c7683d339619824a0aa4cb9bdc"
+      },
+      "长尾鲨-attack-4.png": {
+        "bytes": 7865,
+        "sha256": "6e0fe06d266a7c6cdf201d1f2b931a53ee910612d587137a2967852845d020b6"
+      },
+      "长尾鲨-attack-5.png": {
+        "bytes": 7738,
+        "sha256": "978e7d651a46f42c17390473303eb3ade4fbcc0d164d429a891ea164d9ff786b"
+      },
+      "长尾鲨-attack-6.png": {
+        "bytes": 7825,
+        "sha256": "3c35944f6e5c8782817939423e837dd15f803904d36da9bca024b143d0c5d5c4"
+      },
+      "长尾鲨-attack-7.png": {
+        "bytes": 7789,
+        "sha256": "21b12ce9a779574e4d092035dc58afa0fabd5e6345a6d579146decc0fdb26e61"
+      },
+      "长尾鲨-attack-8.png": {
+        "bytes": 7482,
+        "sha256": "315c9fcbea0c404f14bf06537fe9be8b062d7ff8f4f4ba964b2f230e7016d582"
+      },
+      "长尾鲨-dead-1.png": {
+        "bytes": 7956,
+        "sha256": "a4f29d3d5bfdcebfcb8c2f0d325aa6f680860c62bec8ccd2a3905f3c654aefdb"
+      },
+      "长尾鲨-dead-2.png": {
+        "bytes": 7582,
+        "sha256": "452b54d13bb59294404e990483646ec1e895cbc4c5c671b2a0d6a5d0b605d737"
+      },
+      "长尾鲨-dead-3.png": {
+        "bytes": 7132,
+        "sha256": "a79947eedf4909754eea8f41efab9027e5af19954fde5e41b07d487a21576424"
+      },
+      "长尾鲨-dead-4.png": {
+        "bytes": 7711,
+        "sha256": "cb6f15f741f6b06928949c0d4423eccbd62e6b3a4389e39332c0a4f077c0d3c7"
+      },
+      "长尾鲨-move-1.png": {
+        "bytes": 7872,
+        "sha256": "e3501ea22cdbfb5a5f9e16d851d52a208647af4f1397ac8d8bc7b936753e9954"
+      },
+      "长尾鲨-move-2.png": {
+        "bytes": 7512,
+        "sha256": "471c751ce64a846b19b2e36577ee3885903a1dd34c067c414ad94e72797af08d"
+      },
+      "长尾鲨-move-3.png": {
+        "bytes": 7831,
+        "sha256": "220f7eb743fc1d8b9afd0c1d85bb8b0ac25bd60ddcb2cec71f737bc250b31c86"
+      },
+      "长尾鲨-move-4.png": {
+        "bytes": 7634,
+        "sha256": "8331d426987482d3fd8bb87366a638fb2f1cadd9ecd0e37530a2db3bdd59a326"
+      },
+      "风暴之眼-attack-1.png": {
+        "bytes": 22073,
+        "sha256": "38d99aecc8afe016d4925bf82cc09145932a519ec7074feee981253cf872f898"
+      },
+      "风暴之眼-attack-2.png": {
+        "bytes": 23100,
+        "sha256": "0d3e074c46d1074c2519b0d29bd2750c773f8f6441cd5f5048fb51c8b18267dd"
+      },
+      "风暴之眼-attack-3.png": {
+        "bytes": 22009,
+        "sha256": "b254ad5a51d746c4a5f18680ac0e0d2665ba8fbba45467499a4d65375a514e66"
+      },
+      "风暴之眼-attack-4.png": {
+        "bytes": 24324,
+        "sha256": "6805855f5c53f4958a072de17fbd175811222901145b79dad4d9ab4a2fd5ec35"
+      },
+      "风暴之眼-attack-5.png": {
+        "bytes": 23785,
+        "sha256": "7d23dbb02dc1636498c7ffd6705f680e9e7f44d2723d37397fd4423b24c4fec3"
+      },
+      "风暴之眼-attack-6.png": {
+        "bytes": 22729,
+        "sha256": "0c850d6a6ebf427345b23f362940ea80e599e1ebbe6930aacb30e5fa1c097943"
+      },
+      "风暴之眼-attack-7.png": {
+        "bytes": 22942,
+        "sha256": "7439999734b281d7c1d134bf43805481e7f6254ad92736d039fe1e2cf1d6aa98"
+      },
+      "风暴之眼-attack-8.png": {
+        "bytes": 23091,
+        "sha256": "ae21a511c1f099842d76299c821a26d3c4cf308e28c62f90a52ba29a6cdf9dab"
+      },
+      "风暴之眼-dead-1.png": {
+        "bytes": 22010,
+        "sha256": "c9f3880411bd340543cee27f54cca86d7798d0c872861225ffffda70c2f04029"
+      },
+      "风暴之眼-dead-2.png": {
+        "bytes": 9440,
+        "sha256": "ef2419f272934bb0aacddd97ab7d7257cbf093bea9e59bace9277efaf1a259bb"
+      },
+      "风暴之眼-dead-3.png": {
+        "bytes": 7103,
+        "sha256": "c76cc7f3cb03d36186d8b6916a7533446fe31eb29eb0b97b255d9b61d24c5422"
+      },
+      "风暴之眼-dead-4.png": {
+        "bytes": 8448,
+        "sha256": "3d6f6d65083d1fbfb7020d662694947a9a087fcde609f6bdf1083fb371c13d60"
+      },
+      "风暴之眼-move-1.png": {
+        "bytes": 22065,
+        "sha256": "3b747abe204ae09df936e9acdc1c7f055845242fa280b05fa530fb8297b47c04"
+      },
+      "风暴之眼-move-2.png": {
+        "bytes": 23517,
+        "sha256": "ecf885539dc29de65acd0b185d3d09181594be16b96555962a2383e14c5909c9"
+      },
+      "风暴之眼-move-3.png": {
+        "bytes": 22263,
+        "sha256": "56331fd5fa4f430f9804bc6ce02fd1608f77861bb2bb7ec20061256300745412"
+      },
+      "风暴之眼-move-4.png": {
+        "bytes": 23869,
+        "sha256": "356ae26b7afe3f17806ecbb04da1fe86f8cf9277039fa881ebc2f6d71739fc33"
       }
     },
-    "textureBytes": 335560,
+    "textureBytes": 1401104,
     "version": "1.0"
   }
 }

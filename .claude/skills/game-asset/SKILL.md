@@ -71,6 +71,39 @@ re-serialising it would throw all of that away — and the three things it has t
 | a face for an obstacle that already has a row | `obstacles.art.<kind>.variants` | append one `{ image, scale }` (the coral's shape) |
 | a WHOLE row for an obstacle that has none | `obstacles.art.<kind>` | `crate`, `wall` and `net` were drawn by code, so there was nothing to append to |
 | a creature | `hazardArt.<kind>.move` (+ `animations.<name>`) | `move` may name a still OR an animation; an animation needs its own row declared |
+| **a BOSS** | `hazardArt.<boss-kind>`, never `hazardArt.boss` | see below — the one row here whose WRONG key looks like a no-op rather than a mistake |
+| **a creature with SEVERAL animations** | `hazardArt.<kind>.<clip>` for each clip | `move`/`attack`/`dead`; the row already exists, so the edit REPLACES three values and declares three animations |
+
+**A CREATURE CAN HAVE SEVERAL ANIMATIONS, AND THE SPEC SAYS SO WITH `clips`.** An asset with no `clips` gets one,
+`move`, built from the old `idle` block — which is every asset made before the bosses. A boss needs three, and they
+are three different KINDS of animation rather than three lengths of one: an idle loop, the swing its attack is timed
+against (the release frame is a FRAME of that swing — `hazards.bosses.<kind>.attackSprayFrame`), and a death that
+plays once and holds. `clips_of(asset)` is the one place that knows the shape.
+
+- **They are ONE asset, not three**, and that is the whole point: three assets would each pick their own candidate
+  from their own render, so a creature's idle and its death would be two slightly different animals. Frame 1 of
+  EVERY clip is the selected candidate itself (ungenerated), so all of them begin and end on the approved picture.
+- **Every clip is normalised in ONE pass**, so all of a creature's frames land on one canvas at one scale. Per clip
+  would give each its own median width, and an attack whose claws are spread has a wider median than an idle — so
+  the creature would be drawn a few percent larger for the duration of the swing.
+- **`--clip <name>` regenerates ONE clip, and it BREAKS that sharing**, so a following `--reuse` over all the clips
+  is what puts them back on one canvas. Not hypothetical: a transient Ark 500 mid-run left a boss with its first clip
+  unrendered, and regenerating just the missing clips gave three clip-specific canvases until a `--reuse` pass
+  measured the three median content widths (1165 / 1162 / 1152) and locked them together.
+- **`--frames` is refused for a multi-clip asset** (one length cannot serve three), and **`--asset` takes ONE exact
+  name** — a comma-separated list is a `no asset 'a,b,c'` error, so a batch is a shell loop.
+
+**THE PAGE THAT PICKS CANDIDATES LETS ONE ASSET HOLD TWO PICKS.** It removed a pick only when the KEY matched
+exactly (`name#index`), so clicking candidate 1 and then candidate 3 of one creature left both in `selection.json` —
+and the answer then depended on which one `select` happened to write last. It now drops every pick for that NAME
+before pushing, so a second click replaces the first. Found by a real selection file with two picks for the jellyfish
+and two for the shark.
+
+**AND `new` MUST MERGE A CLIP, NOT REPLACE IT.** The spec owns a clip's INPUTS (how many frames, how fast, what each
+frame is asked for); `_render_frames` writes what came OUT into the same dicts (`sprites`, `boil`, `fps`, `name`).
+Replacing the list wholesale un-recorded a set of frames that were on disk and already imported — re-running `new`
+after editing any other line of the spec silently emptied them. Recoverable by looking at the disk and re-measuring,
+which is how it was repaired, but nothing should have needed repairing.
 
 **All three fail silently**, which is why they are worth a table. The picture installs, the atlas packs, typecheck
 passes, and the game draws the code version because a name does not match or a row does not exist. The brace
@@ -79,6 +112,23 @@ not have are `container_close` / `insert_before_close`, written once and shared.
 THE START OF A LINE, because this config explains itself in comments and `"animations"` is exactly the word such a
 comment would use — a plain `find` would happily return the position of that mention and brace-match from the wrong
 place.
+
+**A BOSS'S PICTURE GOES ON A BOSS'S KIND, AND `hazardArt.boss` IS NOW A TOMBSTONE.** The boss used to be one kind
+(`boss`) and is now six, one per level (`boss-crab` … `boss-eye`, `BOSS_KINDS` in `src/hazards.ts`), with a full
+dossier each in `hazards.bosses.<kind>`. What makes this trap-shaped rather than merely new: writing a boss's frames
+into `hazardArt.boss` **is a silent no-op**, because no level names that kind any more — every check passes, the
+atlas packs, and the game goes on drawing the old crab. Adding a boss's frames means editing ITS row:
+`hazardArt.<boss-kind>.move`, **and `hazards.bosses.<boss-kind>`** if the picture is a different size (the dossier's
+`radiusRatio` is what the grid is derived from, the same way `hazards.radius.<kind>` is for a creature). The six
+existing art rows all point at `boss-idle` / `boss-attack` / `boss-dead`, which is what makes them a one-line change
+each when the real frames land.
+
+**And the split's own check is worth copying: prove the refactor drew the same picture before you trust the new
+rows.** Six dossiers were generated from the old one and asserted equal field by field; then one boss of each kind
+was painted through the real painter with `deterministic`, a fixed position and a pinned `phase`, screenshotted, and
+hashed — **eight pictures, one hash** (the six, plus the old kind, plus the old kind again from `git stash`ed
+pre-split code). A refactor that cannot say "and nothing changed" in one number is a refactor with an unknown number
+of bugs in it.
 
 **THE BOOT CHECK IS THE CONFIG'S COMPILER, and a row written to satisfy the parser is not a row written to satisfy
 the game.** `obstacles.art.<kind>` requires `variants` AND `alpha` AND `swayDegrees` AND `swaySeconds`

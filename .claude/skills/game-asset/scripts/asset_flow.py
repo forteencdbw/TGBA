@@ -423,6 +423,21 @@ def command_new(arguments):
                 numbers = derive(table, kind, existing["scale"])
                 numbers.pop("lookup")
                 existing.update(numbers)
+            # CLIPS MERGE, they do not replace, and that is not tidiness -- it is a bug this had. The spec owns a
+            # clip's INPUTS (how many frames, how fast, what each frame is asked for), and `_render_frames` writes
+            # what came out into the SAME dicts (`sprites`, `boil`, `fps`, `name`). Replacing the list wholesale
+            # therefore un-recorded a set of frames that were on disk and already imported: re-running `new` after
+            # editing any other line of the spec silently emptied them.
+            if entry.get("clips"):
+                incoming = {clip["clip"]: clip for clip in entry["clips"]}
+                merged = []
+                for clip in existing.get("clips") or []:
+                    fresh = incoming.pop(clip["clip"], None)
+                    merged.append({**clip, **fresh} if fresh else clip)
+                merged.extend(incoming.values())
+                if merged != existing.get("clips"):
+                    changed.append("clips")
+                existing["clips"] = merged
             say(f"  {name}: updated {', '.join(changed) if changed else 'nothing'} "
                 f"(candidates and the selection are kept)")
             continue
@@ -459,6 +474,7 @@ def command_new(arguments):
             "candidates": [],
             "selected": None,
             "idle": entry.get("idle"),
+            "clips": entry.get("clips"),
             "frames": [],
             "sprites": [],
             "boil": None,
@@ -956,8 +972,11 @@ def command_gallery(arguments):
     for (const button of card.querySelectorAll('button')) {{
       button.addEventListener('click', () => {{
         const picks = window.__gallerySelection.picks;
-        const at = picks.findIndex(p => p.key === card.dataset.key);
-        if (at >= 0) picks.splice(at, 1);
+        // ONE PICK PER ASSET: picking a second candidate of the same creature REPLACES the first rather than adding
+        // to it. The old version only removed a pick whose key matched exactly (`name#index`), so clicking candidate
+        // 1 and then candidate 3 of one creature left BOTH in the record -- and what that produced was an ambiguous
+        // selection file whose answer depended on which of the two `select` happened to write last.
+        for (let i = picks.length - 1; i >= 0; i--) if (picks[i].name === name) picks.splice(i, 1);
         picks.push({{ key: card.dataset.key, name, candidate: Number(index), idle: button.dataset.pick === 'idle' }});
         render();
       }});
@@ -1084,7 +1103,52 @@ def frame_set_name(asset, state="move"):
     return f"{asset['name']}-{state}" if asset["table"] == "hazards" else asset["name"]
 
 
-def normalise_frames(paths, out_dir, threshold=ALPHA_FLOOR):
+# The phase prompt for a clip that does not give one. This is the only phase the pipeline asked for before a
+# creature could need more than one animation, and it is still the right one for an idle: a slow breath.
+BREATHING_PHASE = (
+    "这是同一个生物的同一个姿势的第 {n} 帧（共 {total} 帧），一次缓慢呼吸循环里的一瞬："
+    "形体、大小、位置、配色和朝向必须与参考图完全一致，只有缓慢的形变不同。"
+)
+
+
+def clips_of(asset):
+    """
+    The animation clips this asset has, in the order they are generated.
+
+    ONE CREATURE, SEVERAL ANIMATIONS. Every asset before the bosses had exactly one, so the pipeline had exactly
+    one -- but a boss needs three, and they are three different KINDS of animation rather than three lengths of
+    the same one: an idle loop that says it is alive, the swing its attack is timed against (the frame the grit
+    leaves the claw is a frame OF that swing, see `hazards.bosses.<kind>.attackSprayFrame`), and a death that plays
+    once and holds.
+
+    THEY ARE ONE ASSET RATHER THAN THREE, and that is the whole reason this exists. Three assets would each search
+    their own reference, render their own candidates and take their own pick -- so level 1's boss would be three
+    slightly different crabs that swap places mid-fight. Every clip here is generated from THIS asset's own
+    selected pose: frame 1 of every clip IS that pose, ungenerated, so all of them begin and end on the picture
+    that was approved and the creature cannot drift between its own animations.
+
+    A spec that says nothing gets one clip, `move`, built from the old `idle` block -- which is every asset made
+    before the bosses, and the reason this is a list with a default rather than a required field.
+
+    `count` is the whole clip INCLUDING frame 1, and frame 1 is the selected pose rather than a render: a clip of
+    `count: 4` costs 3 calls. `phase` is a template with `{n}` and `{total}` in it, and a clip without one breathes,
+    because that is what "animate this" meant for everything up to now. `framesPerSecond` and `once` are passed
+    straight through to the `animations.<name>` row `import` declares.
+    """
+    clips = asset.get("clips")
+    if clips:
+        return clips
+    idle = asset.get("idle") or {}
+    return [
+        {
+            "clip": "move",
+            "count": int(idle.get("frames") or 4),
+            "framesPerSecond": float(idle.get("fps") or 8),
+        }
+    ]
+
+
+def normalise_frames(paths, out_dir, threshold=ALPHA_FLOOR, out_dirs=None, target=None):
     """
     Scale every frame so they all have the same CONTENT WIDTH, then crop them to one shared box.
 
@@ -1101,6 +1165,15 @@ def normalise_frames(paths, out_dir, threshold=ALPHA_FLOOR):
 
     Scaling happens about each frame's own content-box centre, so nothing slides. Then the union box is taken again
     from the SCALED frames, because scaling changed what the union is.
+
+    `out_dirs` and `target` are for a creature with SEVERAL CLIPS, and both defaults keep the single-clip behaviour
+    exactly as it was. `out_dirs` says where each frame goes, because a clip's frames live in the clip's own
+    directory and two clips both have an `f1.png`. `target` OVERRIDES the width every frame is scaled to, so that
+    all of an asset's clips can be locked to ONE number: without it, each clip is locked to its own median, and an
+    attack whose claws are spread in half its frames has a wider median than an idle -- so the whole crab would be
+    drawn a few percent larger for the duration of the swing. Locking every clip to the idle's width is the same
+    judgement applied across clips instead of within one, and it is why `command_idle` normalises an asset's clips
+    in a SINGLE pass.
     """
     images, boxes = [], []
     for path in paths:
@@ -1113,7 +1186,8 @@ def normalise_frames(paths, out_dir, threshold=ALPHA_FLOOR):
         boxes.append((int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1))
 
     widths = [box[2] - box[0] for box in boxes]
-    target = sorted(widths)[len(widths) // 2]
+    if target is None:
+        target = sorted(widths)[len(widths) // 2]
     spread = max(widths) - min(widths)
 
     scaled = []
@@ -1127,11 +1201,13 @@ def normalise_frames(paths, out_dir, threshold=ALPHA_FLOOR):
         scaled.append(resized)
 
     common = union_box_of(scaled, threshold)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for path in out_dir.glob("*.png"):
-        path.unlink()
-    for path, image in zip(paths, scaled):
-        image.crop(common).save(out_dir / path.name, optimize=True)
+    destinations = list(out_dirs) if out_dirs else [out_dir] * len(paths)
+    for where in set(destinations):
+        where.mkdir(parents=True, exist_ok=True)
+        for stale in where.glob("*.png"):
+            stale.unlink()
+    for path, image, where in zip(paths, scaled, destinations):
+        image.crop(common).save(where / path.name, optimize=True)
     return target, spread, common
 
 
@@ -1146,39 +1222,63 @@ def union_box_of(images, threshold=ALPHA_FLOOR):
             max(b[2] for b in boxes), max(b[3] for b in boxes))
 
 
-def _render_frames(asset, directory, raw_frames, arguments):
+def _render_frames(asset, directory, raw_frames, arguments, clip=None):
     """
     Pixelate the cropped frames, record what came out, and measure it.
 
     Shared by the generate path and `--reuse`, end to end, because the two differ only in whether the frames were
     just rendered or were already sitting on disk -- and the numbers this writes into the batch record (the sprite
     names, the frame rate, the boiling) have to be the same either way or `import` wires a set that does not exist.
+
+    `clip` is which animation of the creature these frames are. Every asset has at least one (`move`) and a boss has
+    three, so this is never absent in practice -- the `None` default is the pre-clips call shape and reads as `move`.
+
+    THE FIRST CLIP IS ALSO WRITTEN TO THE ASSET'S OWN FIELDS. `frames`, `sprites`, `fps` and `boil` at the top level
+    are what every asset had before a creature could have more than one animation, and the readers that predate
+    clips (`gif`, `import`) still look there. Keeping the first clip mirrored rather than rewriting those readers is
+    one small rule instead of two parallel code paths -- and the mirror is exactly right for a single-clip asset,
+    which is still every asset except the bosses.
     """
     python = python_exe()
-    cropped_dir = directory / "frames-cropped"
+    name = frame_set_name(asset, clip["clip"] if clip else "move")
+    cropped_dir = (directory / "frames-cropped" / clip["clip"]) if clip else (directory / "frames-cropped")
     run_tool([
         python, ROOT / "scripts" / "import-sheet.py", cropped_dir,
-        "--name", frame_set_name(asset), "--cols", len(raw_frames), "--rows", 1,
+        "--name", name, "--cols", len(raw_frames), "--rows", 1,
         "--grid", arguments.grid or asset["grid"], "--colours", asset["colours"],
         "--out-dir", directory / "sprites",
     ])
 
-    sprites = sorted((directory / "sprites").glob(f"{frame_set_name(asset)}-*.png"),
+    sprites = sorted((directory / "sprites").glob(f"{name}-*.png"),
                      key=lambda p: int(p.stem.rsplit("-", 1)[1]))
-    asset["frames"] = [str(p.relative_to(directory)) for p in raw_frames]
-    asset["sprites"] = [str(p.relative_to(directory)) for p in sprites]
+    fps = float(getattr(arguments, "fps", None)
+                or (clip or {}).get("framesPerSecond")
+                or (asset.get("idle") or {}).get("fps")
+                or 8)
+    boil = boil_report([Image.open(p) for p in sprites])
+    if clip is not None:
+        clip["frames"] = [str(p.relative_to(directory)) for p in raw_frames]
+        clip["sprites"] = [str(p.relative_to(directory)) for p in sprites]
+        clip["fps"] = fps
+        clip["boil"] = boil
+        clip["name"] = name
+        if clip is clips_of(asset)[0]:
+            asset["frames"] = clip["frames"]
+            asset["sprites"] = clip["sprites"]
+            asset["fps"] = fps
+            asset["boil"] = boil
+    else:
+        asset["frames"] = [str(p.relative_to(directory)) for p in raw_frames]
+        asset["sprites"] = [str(p.relative_to(directory)) for p in sprites]
+        asset["fps"] = fps
+        asset["boil"] = boil
     # Kept on the record, not just used to build the GIF: `import` declares the `animations.<name>` row from it, and
     # a frame rate that only lived in the GIF call would make the config default to 8 behind the player's back. Read
     # HERE rather than in `command_gif` -- the first version of this line said `fps` and the variable only existed in
     # the OTHER function, so every frame set generated fine and then the run died before the batch was written: the
     # pictures on disk and no record that they existed.
-    # `getattr` because `--fps` belongs to `gif`, not to `idle`, and this function serves both: reading the
-    # attribute directly works from one caller and raises AttributeError from the other, AFTER the frames were
-    # rendered and before the batch was written.
-    asset["fps"] = float(getattr(arguments, "fps", None) or (asset.get("idle") or {}).get("fps") or 8)
-    asset["boil"] = boil_report([Image.open(p) for p in sprites])
     say("")
-    print_boil(asset["boil"])
+    print_boil(boil)
 
 
 def content_box_of(image, threshold=ALPHA_FLOOR):
@@ -1275,79 +1375,119 @@ def command_idle(arguments):
             say("    `import` will still install the picture; there are no frames to make.")
             continue
 
-        frames = int(arguments.frames or (asset.get("idle") or {}).get("frames") or 4)
-        if frames < 2:
-            fail("an animation needs at least 2 frames")
-        frames_dir = directory / "frames"
-        frames_dir.mkdir(parents=True, exist_ok=True)
+        clips = clips_of(asset)
+        # Materialised onto the record, and that is load-bearing rather than tidy: `_render_frames` recognises the
+        # FIRST clip by identity to decide whether to mirror it into the asset's own `frames`/`sprites`, and a
+        # freshly-built list would never match.
+        asset["clips"] = clips
+        if arguments.clip:
+            chosen = [c for c in clips if c["clip"] == arguments.clip]
+            if not chosen:
+                fail(f"no clip called {arguments.clip} -- this asset has {', '.join(c['clip'] for c in clips)}")
+        else:
+            chosen = clips
+        if arguments.frames and len(chosen) > 1:
+            fail("--frames sets ONE length, so it cannot serve several clips at once -- pass "
+                 f"--clip <{'|'.join(c['clip'] for c in chosen)}> to set the length of one of them")
+
+        # Where each clip's raw frames live and how many there should be. One directory per clip, because every clip
+        # has an `f1.png` and they are different pictures.
+        plan = []
+        for clip in chosen:
+            count = int(arguments.frames or clip.get("count") or (asset.get("idle") or {}).get("frames") or 4)
+            if count < 2:
+                fail("an animation needs at least 2 frames")
+            where = directory / "frames" / clip["clip"]
+            where.mkdir(parents=True, exist_ok=True)
+            plan.append((clip, count, where))
+
+        # A batch started before a creature could have more than one clip keeps its frames in the flat `frames/`.
+        # Moving them is one line and saves a silent re-spend: without it `--reuse` finds nothing where it now looks,
+        # decides there is nothing to reuse, and PAYS for the frames again.
+        legacy = directory / "frames"
+        old = sorted(p for p in legacy.glob("f*.png") if p.stem[1:].isdigit())
+        if old and len(clips) == 1 and not list((legacy / clips[0]["clip"]).glob("f*.png")):
+            (legacy / clips[0]["clip"]).mkdir(parents=True, exist_ok=True)
+            for path in old:
+                path.rename(legacy / clips[0]["clip"] / path.name)
+            say(f"  moved {len(old)} frame(s) from frames/ into frames/{clips[0]['clip']}/ (a batch from before clips)")
 
         # `--reuse` re-does the PIXELATION from frames that are already on disk. The frames are the expensive half
         # and they do not change when the thing being tuned is the crop, the normalisation or the grid.
-        existing = sorted(p for p in frames_dir.glob("f*.png") if p.stem[1:].isdigit())
-        if arguments.reuse and existing:
-            say(f"\n  {asset['name']}: reusing {len(existing)} frame(s) already in {frames_dir.name}/")
-            raw_frames = existing
-            target, spread, box = normalise_frames(raw_frames, directory / "frames-cropped")
-            say(f"    cropped {len(raw_frames)} frame(s) to {box[2] - box[0]}x{box[3] - box[1]}")
-            if spread > 1:
-                say(f"    content widths varied by {spread}px and were normalised to {target}px")
-            _render_frames(asset, directory, raw_frames, arguments)
-            continue
-
-        say(f"\n  {asset['name']}: route `frames`, {frames} frames "
-            f"(frame 1 is the candidate itself, {frames - 1} to generate)")
-        source = directory / asset["selected"]["raw"]
-        shutil.copy2(source, frames_dir / "f1.png")
-        say(f"    f1.png  <- {asset['selected']['raw']} (not generated: this is the pose you approved)")
-
-        ark = seedream()
-        key, _source = ark.resolve_key()
-        model = arguments.model or DEFAULT_MODEL
-        reference = directory / "refs" / "frame-keyed.png"
-        pipeline().command_grant(
-            argparse.Namespace(source=str(source), out=str(reference), seed="corner",
-                               seed_size=8, thickness=1, force=True)
-        )
-
-        failures = 0
-        for index in range(2, frames + 1):
-            phase = (
-                f"这是同一个生物的同一个姿势的第 {index} 帧（共 {frames} 帧），一次缓慢呼吸循环里的一瞬："
-                f"形体、大小、位置、配色和朝向必须与参考图完全一致，只有缓慢的形变不同。"
+        on_disk = {clip["clip"]: sorted(p for p in where.glob("f*.png") if p.stem[1:].isdigit())
+                   for clip, _count, where in plan}
+        if arguments.reuse and all(on_disk.values()):
+            for clip, _count, where in plan:
+                say(f"\n  {asset['name']}/{clip['clip']}: reusing {len(on_disk[clip['clip']])} frame(s) in "
+                    f"frames/{clip['clip']}/")
+        else:
+            source = directory / asset["selected"]["raw"]
+            ark = seedream()
+            key, _source = ark.resolve_key()
+            model = arguments.model or DEFAULT_MODEL
+            reference = directory / "refs" / "frame-keyed.png"
+            pipeline().command_grant(
+                argparse.Namespace(source=str(source), out=str(reference), seed="corner",
+                                   seed_size=8, thickness=1, force=True)
             )
-            call = {
-                "id": f"{asset['name']}-f{index}",
-                "tool": "generate_image",
-                "prompt": prompt_for(asset, phase),
-                "reference_images": [str(reference)],
-                "background": "transparent",
-                "output_format": "png",
-                "size": asset["size"],
-                "model": model,
-                "output_path": str(frames_dir / f"f{index}.png"),
-            }
-            if not ark.run_call(call, key, model, None, arguments.dry_run):
-                failures += 1
-        if failures:
-            fail(f"{failures} frame(s) failed -- see the messages above")
-        if arguments.dry_run:
-            say("    dry run -- nothing was sent, nothing was spent")
-            continue
 
-        raw_frames = sorted(frames_dir.glob("f*.png"), key=lambda p: int(p.stem[1:]))
-        raw_frames = [p for p in raw_frames if p.stem[1:].isdigit()]
-        cropped_dir = directory / "frames-cropped"
+            failures = 0
+            for clip, count, where in plan:
+                # FRAME 1 OF EVERY CLIP IS THE APPROVED POSE, not a render. That is what makes a creature's
+                # animations one creature: every clip starts on the same picture, so the idle, the swing and the
+                # death cannot drift apart into three drawings of similar things.
+                shutil.copy2(source, where / "f1.png")
+                say(f"\n  {asset['name']}/{clip['clip']}: route `frames`, {count} frames "
+                    f"({count - 1} to generate; frame 1 is the candidate itself)")
+                say(f"    f1.png  <- {asset['selected']['raw']} (not generated: this is the pose you approved)")
+                for index in range(2, count + 1):
+                    phase = (clip.get("phase") or BREATHING_PHASE).format(n=index, total=count)
+                    call = {
+                        "id": f"{asset['name']}-{clip['clip']}-f{index}",
+                        "tool": "generate_image",
+                        "prompt": prompt_for(asset, phase),
+                        "reference_images": [str(reference)],
+                        "background": "transparent",
+                        "output_format": "png",
+                        "size": asset["size"],
+                        "model": model,
+                        "output_path": str(where / f"f{index}.png"),
+                    }
+                    if not ark.run_call(call, key, model, None, arguments.dry_run):
+                        failures += 1
+            if failures:
+                fail(f"{failures} frame(s) failed -- see the messages above")
+            if arguments.dry_run:
+                say("\n    dry run -- nothing was sent, nothing was spent")
+                continue
+            on_disk = {clip["clip"]: sorted((where / f"f{n}.png" for n in range(1, count + 1)))
+                       for clip, count, where in plan}
 
-        # Normalise content width, THEN crop to the union of what that produced. See `normalise_frames`: the model
-        # draws the same creature at slightly different sizes frame to frame, and left alone that becomes a pulse.
-        target, spread, box = normalise_frames(raw_frames, cropped_dir)
-        say(f"    cropped {len(raw_frames)} frame(s) to {box[2] - box[0]}x{box[3] - box[1]} "
-            f"-- one canvas, so the body cannot change size between frames")
+        # ONE NORMALISATION PASS FOR THE WHOLE ASSET, so every clip lands on one canvas at one scale. Per clip
+        # would give each its own median width, and an attack whose claws are spread in half its frames has a wider
+        # median than an idle -- so the crab would be drawn a few percent larger for the duration of the swing. See
+        # `normalise_frames`.
+        ordered = [clip for clip, _count, _where in plan]
+        all_frames = [p for clip in ordered for p in on_disk[clip["clip"]]]
+        destinations = [directory / "frames-cropped" / clip["clip"]
+                        for clip in ordered for _ in on_disk[clip["clip"]]]
+        target, spread, box = normalise_frames(all_frames, None, out_dirs=destinations)
+        say(f"\n  cropped {len(all_frames)} frame(s) across {len(ordered)} clip(s) to "
+            f"{box[2] - box[0]}x{box[3] - box[1]} -- one canvas, so neither the body nor the sprite moves "
+            f"when the clip changes")
         if spread > 1:
             say(f"    content widths varied by {spread}px and were normalised to {target}px "
                 f"(without this the creature pulses at the frame rate)")
+        # Printed because it is the number that says whether the shared target is honest: if one clip's median
+        # really is much wider than another's, the shared width is being paid for by the narrower clip.
+        for clip in ordered:
+            widths = [content_box_of(Image.open(p))[2] - content_box_of(Image.open(p))[0]
+                      for p in on_disk[clip["clip"]]]
+            say(f"      {clip['clip']:<8} content width before normalising: "
+                f"min {min(widths)} median {sorted(widths)[len(widths) // 2]} max {max(widths)}")
 
-        _render_frames(asset, directory, raw_frames, arguments)
+        for clip, _count, _where in plan:
+            _render_frames(asset, directory, on_disk[clip["clip"]], arguments, clip)
 
     write_batch(data["batch"], data)
     # Route-aware, because the two routes end in different places: `sway` has no frames, so pointing at `gif`
@@ -1376,50 +1516,53 @@ def command_gif(arguments):
     data = read_batch(arguments.batch)
     for asset in assets_of(data, arguments.asset):
         directory = asset_dir(data["batch"], asset["name"])
-        sprites = [directory / path for path in asset["sprites"]]
-        if not sprites:
-            say(f"  {asset['name']}: no frames -- route `sway` assets have none, nothing to make here")
-            continue
-        fps = float(arguments.fps or (asset.get("idle") or {}).get("fps") or 5.5)
+        # One GIF per clip, because one GIF of a boss would play its idle, its swing and its death back to back and
+        # the thing to judge is each of them -- an idle that boils and a death that boils are two different problems.
+        for clip in clips_of(asset):
+            if not clip.get("sprites"):
+                continue
+            sprites = [directory / path for path in clip["sprites"]]
+            fps = float(arguments.fps or clip.get("fps") or 5.5)
 
-        images = [Image.open(path).convert("RGBA") for path in sprites]
-        width = images[0].width
-        factor = max(1, -(-GIF_MIN_WIDTH // width))  # ceil
-        boards = []
-        for image in images:
-            big = image.resize((image.width * factor, image.height * factor), Image.NEAREST)
-            # Run the checkerboard under the sprite rather than pasting it on top: `alpha_composite` keeps the
-            # sprite's own soft edge, which `paste` with the image as its own mask would flatten.
-            board = Image.new("RGBA", big.size, (255, 255, 255, 255))
-            for y in range(0, big.height, GIF_CHECKER):
-                for x in range(0, big.width, GIF_CHECKER):
-                    if (x // GIF_CHECKER + y // GIF_CHECKER) % 2:
-                        board.paste((205, 212, 222, 255), (x, y, min(x + GIF_CHECKER, big.width),
-                                                          min(y + GIF_CHECKER, big.height)))
-            board.alpha_composite(big)
-            # RGB first: the checkerboard is opaque, so nothing is lost, and quantising an RGBA frame makes PIL
-            # carry the alpha INTO the palette instead of leaving it out of it.
-            boards.append(board.convert("RGB"))
+            images = [Image.open(path).convert("RGBA") for path in sprites]
+            width = images[0].width
+            factor = max(1, -(-GIF_MIN_WIDTH // width))  # ceil
+            boards = []
+            for image in images:
+                big = image.resize((image.width * factor, image.height * factor), Image.NEAREST)
+                # Run the checkerboard under the sprite rather than pasting it on top: `alpha_composite` keeps the
+                # sprite's own soft edge, which `paste` with the image as its own mask would flatten.
+                board = Image.new("RGBA", big.size, (255, 255, 255, 255))
+                for y in range(0, big.height, GIF_CHECKER):
+                    for x in range(0, big.width, GIF_CHECKER):
+                        if (x // GIF_CHECKER + y // GIF_CHECKER) % 2:
+                            board.paste((205, 212, 222, 255), (x, y, min(x + GIF_CHECKER, big.width),
+                                                              min(y + GIF_CHECKER, big.height)))
+                board.alpha_composite(big)
+                # RGB first: the checkerboard is opaque, so nothing is lost, and quantising an RGBA frame makes PIL
+                # carry the alpha INTO the palette instead of leaving it out of it.
+                boards.append(board.convert("RGB"))
 
-        # ONE palette for the set, taken from the first frame.
-        #
-        # Per-frame quantisation is what the first version did (`convert("P", ADAPTIVE)` on each frame) and it
-        # fails at save time with "invalid palette size": PIL's GIF writer puts the first frame's palette on the
-        # background image and the frames no longer agree about it. Sharing one palette is also the rule the rest
-        # of this project follows -- two frames of one creature must not pick two different blues.
-        palette = boards[0].quantize(colors=255)
-        frames = [board.quantize(palette=palette, dither=Image.Dither.NONE) for board in boards]
-        scaled = frames
+            # ONE palette for the set, taken from the first frame.
+            #
+            # Per-frame quantisation is what the first version did (`convert("P", ADAPTIVE)` on each frame) and it
+            # fails at save time with "invalid palette size": PIL's GIF writer puts the first frame's palette on the
+            # background image and the frames no longer agree about it. Sharing one palette is also the rule the rest
+            # of this project follows -- two frames of one creature must not pick two different blues.
+            palette = boards[0].quantize(colors=255)
+            frames = [board.quantize(palette=palette, dither=Image.Dither.NONE) for board in boards]
+            scaled = frames
 
-        target = directory / f"{asset['name']}-idle.gif"
-        scaled[0].save(
-            target, save_all=True, append_images=scaled[1:],
-            duration=round(1000 / fps), loop=0, disposal=2, optimize=False,
-        )
-        say(f"\n  {asset['name']}: {len(scaled)} frames, {images[0].width}x{images[0].height} -> x{factor} "
-            f"({scaled[0].width}x{scaled[0].height}), {fps:g} fps")
-        say(f"  {target}  {target.stat().st_size / 1024:.1f} KB")
-        print_boil(asset["boil"])
+            target = directory / f"{asset['name']}-{clip['clip']}.gif"
+            scaled[0].save(
+                target, save_all=True, append_images=scaled[1:],
+                duration=round(1000 / fps), loop=0, disposal=2, optimize=False,
+            )
+            say(f"\n  {asset['name']}/{clip['clip']}: {len(scaled)} frames, "
+                f"{images[0].width}x{images[0].height} -> x{factor} "
+                f"({scaled[0].width}x{scaled[0].height}), {fps:g} fps")
+            say(f"  {target}  {target.stat().st_size / 1024:.1f} KB")
+            print_boil(clip["boil"])
 
     write_batch(data["batch"], data)
     return 0
@@ -1669,6 +1812,85 @@ def wire_hazard_state(text, kind, key, value):
     return text, value
 
 
+def set_member(text, container_at, key, value):
+    """
+    Set `"key": value` inside the object opening at `container_at`, whether or not the key is already in there.
+
+    `insert_before_close` is the APPEND half and this is the OVERWRITE half, and the boss needs both in one row: the
+    six boss rows already carry `move`, `attack` and `dead` (all pointing at the shared crab), so the edit is to move
+    those three somewhere else, while a creature's row has no keys at all and every one is appended.
+
+    Replacing rather than appending-twice matters because JSON5 keeps the LAST of a duplicated key -- so a row with
+    two `"move"` lines parses, typechecks and renders, and which picture it renders is a property of the file's line
+    order. That is exactly the class of silent edit this project refuses.
+    """
+    close_at = container_close(text, container_at)
+    if close_at < 0:
+        return text, False
+    match = re.search(r'("%s"\s*:\s*)("(?:[^"\\]|\\.)*")' % re.escape(key), text[container_at:close_at])
+    if not match:
+        indent = member_indent(text, close_at)
+        return insert_before_close(text, close_at, f'{indent}"{key}": "{value}"\n'), True
+    start = container_at + match.start(2)
+    end = container_at + match.end(2)
+    return text[:start] + f'"{value}"' + text[end:], True
+
+
+def wire_hazard_clips(text, kind, clips):
+    """
+    Point a CREATURE's `hazardArt.<kind>` at one animation PER CLIP, declaring each animation row as it goes.
+
+    THE BOSS'S SHAPE, and the reason it is not `wire_hazard`. That one CREATES a row and refuses when one is already
+    there, which is right for a creature that had no art at all. A boss already has a row -- the six of them point at
+    the shared crab's three animations -- and this edit moves `move`, `attack` and `dead` off that crab and onto the
+    boss's own frames: same three keys, three different values, plus an `animations` row per clip.
+
+    `once` is carried into the animation because it is the difference between two of the three states rather than a
+    preference: an idle LOOPS, and a swing and a death play through and hold their last frame. A boss whose attack
+    looped would be a boss that never stops swinging.
+    """
+    hazard_at = object_open(text, "hazardArt")
+    if hazard_at < 0:
+        return text, None
+
+    names = {}
+    for clip in clips:
+        animation_at = object_open(text, "animations")
+        if animation_at < 0:
+            return text, None
+        name = clip["name"]
+        if has_member(text, animation_at, name):
+            say(f"    animations.{name} already declared -- leaving it alone")
+        else:
+            close_at = container_close(text, animation_at)
+            indent = member_indent(text, close_at)
+            once = f',\n{indent}  "once": true' if clip.get("once") else ""
+            kind_of_loop = "播一遍停住" if clip.get("once") else "循环"
+            text = insert_before_close(
+                text,
+                close_at,
+                f'{indent}// {name}：{clip["clip"]}（{kind_of_loop}），import 生成的。\n'
+                f'{indent}"{name}": {{\n'
+                f'{indent}  "frames": "{name}-{{n}}",\n'
+                f'{indent}  "count": {len(clip["sprites"])},\n'
+                f'{indent}  "framesPerSecond": {float(clip["fps"]):g},\n'
+                f'{indent}  "maxSeconds": {float(clip.get("maxSeconds") or 2):g}{once}\n'
+                f'{indent}}}\n',
+            )
+            hazard_at = object_open(text, "hazardArt")
+        names[clip["clip"]] = name
+
+    row_at = object_open(text, kind, hazard_at)
+    if row_at < 0:
+        return text, None
+    for clip, name in names.items():
+        text, ok = set_member(text, row_at, clip, name)
+        if not ok:
+            return text, None
+        row_at = object_open(text, kind, object_open(text, "hazardArt"))
+    return text, names
+
+
 def wire_hazard(text, kind, image, scale, animation=None):
     """
     Point a CREATURE's `hazardArt.<kind>.move` at a picture, declaring the animation when the picture is one.
@@ -1745,12 +1967,20 @@ def command_import(arguments):
     # and the count printed next to each name would be the running total rather than that asset's own.
     for asset in ready:
         directory = asset_dir(data["batch"], asset["name"])
+        clips = [c for c in clips_of(asset) if c.get("sprites")]
         files = []
-        if asset.get("sprites"):
+        if clips:
+            for clip in clips:
+                for relative in clip["sprites"]:
+                    source = directory / relative
+                    # The sprite's OWN name, which `frame_set_name` chose and `wire_hazard*` declared. Re-deriving
+                    # it here as `<asset>-<index>` gave a file the animation does not ask for.
+                    target = ASSETS / source.name
+                    shutil.copy2(source, target)
+                    files.append(target)
+        elif asset.get("sprites"):
             for index, relative in enumerate(asset["sprites"], start=1):
                 source = directory / relative
-                # The sprite's OWN name, which `frame_set_name` chose and `wire_hazard` declared. Re-deriving it
-                # here as `<asset>-<index>` gave a file the animation does not ask for.
                 target = ASSETS / source.name
                 shutil.copy2(source, target)
                 files.append(target)
@@ -1786,6 +2016,28 @@ def command_import(arguments):
             # README had written down. It adds a key to the existing row rather than creating a row.
             updated, added = wire_hazard_state(text, asset["kind"], asset["state"], asset["name"])
             described = f'hazardArt.{asset["kind"]}.{asset["state"]} -> "{added}"'
+        elif [c for c in clips_of(asset) if c.get("sprites")]:
+            # A CREATURE WITH SEVERAL CLIPS -- a boss. Every clip becomes its own animation and its own key on the
+            # row, so `move`, `attack` and `dead` stop pointing at the shared crab and start pointing at this
+            # creature's own frames.
+            measured = []
+            for clip in clips_of(asset):
+                if not clip.get("sprites"):
+                    continue
+                configured = dict(clip)
+                configured["asset"] = asset["name"]
+                measured.append(configured)
+            updated, names = wire_hazard_clips(text, asset["kind"], measured)
+            # `added` is what the shared tail below reads to decide whether the config was writable at all, and
+            # this branch answers it with the clip names rather than a single one -- a row that took all three
+            # clips is as writable as a row that took one picture.
+            added = names
+            described = " + ".join(
+                f'hazardArt.{asset["kind"]}.{clip} -> "{name}" ({len(c["sprites"])} 帧 @ {float(c["fps"]):g}fps'
+                f'{", once" if c.get("once") else ""})'
+                for clip, name in (names or {}).items()
+                for c in measured if c["clip"] == clip
+            )
         else:
             # A CREATURE: `hazardArt.<kind>.move` points at a still or at an animation, and an animation needs its
             # own row declared. The frames are the ones this asset just produced, named `<asset>-move-N`.
@@ -1933,6 +2185,7 @@ def main():
     idle = subparsers.add_parser("idle", parents=[batch_parent], help="generate the idle frames for a selected asset")
     idle.add_argument("--asset")
     idle.add_argument("--route", choices=["sway", "frames"], help="overrule the spec's route")
+    idle.add_argument("--clip", help="only this clip (a boss has move/attack/dead); default is all of them")
     idle.add_argument("--frames", type=int, help="frame count (default: the spec's, else 4)")
     idle.add_argument("--grid", type=int)
     idle.add_argument("--model")

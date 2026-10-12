@@ -1,4 +1,5 @@
 import JSON5 from 'json5';
+import { BOSS_KINDS, isBossKind, type HazardKind } from './hazards';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
 import { rowGapIsPassable, type ObstacleKind } from './obstacles';
 
@@ -314,8 +315,14 @@ export interface Level {
    * completed.
    *
    * `health` and `name` are HERE rather than in `mechanics.json5` because they are level design -- how long the fight
-   * lasts and what the thing is called. The shared mechanics (how it moves, what it fires, how big it is) live in the
-   * config's `hazards.boss`, exactly as a fish's motion lives there and its spawn position lives in the level.
+   * lasts and what the thing is called. `kind` is here too, and it is the seam between the two: a level CHOOSES which
+   * creature it ends with, and that creature's mechanics -- how it moves, what it fires, how big it is, what colour it
+   * is -- live in the config's `hazards.bosses.<kind>`, exactly as a fish's motion lives there and its spawn position
+   * lives in the level.
+   *
+   * The colour used to be here as well, which was the shape of the mistake the split fixed: a level could say what its
+   * boss LOOKED like but nothing about how it fought, so six different creatures were one creature repainted. What a
+   * boss looks like is a property of the boss.
    */
   boss: BossSpec;
   /**
@@ -395,16 +402,16 @@ export interface LevelPalette {
   tintStrength: number;
 }
 
-/** One level's boss, as authored: where it arrives, how tough it is, and what it is called. */
+/** One level's boss, as authored: which creature it is, where it arrives, how tough it is, and what it is called. */
 export interface BossSpec {
+  /** Which boss this is -- a hazard kind, and one of `BOSS_KINDS`. The level's answer to "what am I ending on". */
+  kind: HazardKind;
   /** Metres travelled when it arrives. Must be inside the level, or the fight could never start. */
   at: number;
   /** Hit points. The length of the fight. */
   health: number;
   /** Shown above its health bar. */
   name: string;
-  /** Body colour, so two levels' bosses do not look like the same creature. */
-  colour?: number;
 }
 
 
@@ -528,13 +535,17 @@ const sizes = (pattern: readonly number[]) => (i: number) => pattern[i % pattern
  * The creatures come from `hazards.health`, which the config checks against every hazard kind ON LOAD, in both
  * directions and by name (see the check beside its rule in `mechanisms.ts`): a creature with no health row fails the
  * load, and a health row for something that is not a creature fails it too. So this list is complete by construction
- * for the same reason `isScenery` asks the obstacle table -- and the boss is the one creature filtered out, because a
+ * for the same reason `isScenery` asks the obstacle table -- and the bosses are the ones filtered out, because a
  * level does not place its boss in a spawn block, it names it in its own `boss` field.
+ *
+ * The filter asks `isBossKind` rather than comparing against one name: it used to be `kind !== 'boss'`, which was
+ * correct exactly until the boss became six kinds -- at which point all six would have become spawnable by a level
+ * file, and a level could have placed 长尾鲨 in a `spawns` line like any fish.
  */
 const SPAWN_KINDS: readonly string[] = [
   // The collectable. Spelled out because it is not a creature: nothing about it lives in the hazard tables.
   'bubble',
-  ...Object.keys(mech.hazards.health).filter((kind) => kind !== 'boss'),
+  ...Object.keys(mech.hazards.health).filter((kind) => !isBossKind(kind as HazardKind)),
   ...OBSTACLE_KINDS,
 ];
 const ARRANGEMENTS: readonly string[] = ['single', 'line', 'column', 'spread', 'barrier'];
@@ -913,13 +924,25 @@ if (bossAt >= scrollLength) {
     `is ${bossAt}, but the level is only ${scrollLength} long and the scroll stops there -- the boss would never arrive and the level could never end. Put it below ${scrollLength}.`,
   );
 }
+/**
+ * Which boss this level ends on, checked against the real list.
+ *
+ * Named rather than defaulted, because the failure a default would hide is the interesting one: a level that forgot
+ * to say which boss it ends with would silently end on whichever creature the default named, and the only symptom
+ * would be the wrong monster -- which looks exactly like a level whose boss was swapped on purpose.
+ */
+const bossKind = bossNode['kind'];
+if (typeof bossKind !== 'string' || !isBossKind(bossKind as HazardKind)) {
+  fail(
+    `${where}.boss.kind`,
+    `is ${JSON.stringify(bossNode['kind'])}, but it must be one of: ${BOSS_KINDS.filter((k) => k !== 'boss').join(', ')}.`,
+  );
+}
 const boss: BossSpec = {
+  kind: bossKind as HazardKind,
   at: bossAt,
   health: reqNum(bossNode, 'health', `${where}.boss`, 1, 100000),
   name: typeof bossNode['name'] === 'string' ? (bossNode['name'] as string) : 'BOSS',
-  ...(bossNode['colour'] === undefined
-    ? {}
-    : { colour: reqNum(bossNode, 'colour', `${where}.boss`, 0, 0xffffff) }),
 };
 
   return {

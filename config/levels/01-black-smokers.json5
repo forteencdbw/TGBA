@@ -237,7 +237,10 @@
     health: 140,
     // 攀附在巨大热液烟囱上的蟹：横向挥螯、喷矿物颗粒、堵住喷口制造一次猛烈爆发。
     name: '烟囱蟹王',
-    colour: 0x6b2f2a
+    // **这一关的 BOSS 是哪一只**：它怎么动、多大、什么颜色、怎么开火，全在
+    // config/mechanics.json5 的 `hazards.bosses.boss-crab`。这一关原来还写着一个 `colour: 0x6b2f2a` ——
+    // "这一关的 BOSS 是什么颜色"从来不该由关卡来说，它属于那只 BOSS。
+    kind: 'boss-crab'
   },
 
   // 教学关：慢（30 m/s = 50 秒跑完）。

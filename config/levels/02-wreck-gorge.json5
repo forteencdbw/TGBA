@@ -34,7 +34,10 @@
     health: 220,
     // 藏在船头残骸里：用触手封锁通道，吸进附近的漂浮物再喷向玩家。触手被破坏后船体坍塌，战场改变。
     name: '寄居沉船章鱼',
-    colour: 0x6b4a3a
+    // **这一关的 BOSS 是哪一只**：它怎么动、多大、什么颜色、怎么开火，全在
+    // config/mechanics.json5 的 `hazards.bosses.boss-octopus`。这一关原来还写着一个 `colour: 0x6b4a3a` ——
+    // "这一关的 BOSS 是什么颜色"从来不该由关卡来说，它属于那只 BOSS。
+    kind: 'boss-octopus'
   },
 
   scrollSpeed: 32,

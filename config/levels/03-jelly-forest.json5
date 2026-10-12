@@ -34,7 +34,10 @@
     at: 1200,
     health: 200,
     name: '冠冕水母',
-    colour: 0xb98cff
+    // **这一关的 BOSS 是哪一只**：它怎么动、多大、什么颜色、怎么开火，全在
+    // config/mechanics.json5 的 `hazards.bosses.boss-jelly`。这一关原来还写着一个 `colour: 0xb98cff` ——
+    // "这一关的 BOSS 是什么颜色"从来不该由关卡来说，它属于那只 BOSS。
+    kind: 'boss-jelly'
   },
 
   scrollSpeed: 28,

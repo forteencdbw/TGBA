@@ -56,13 +56,32 @@ export class ChargeTrail {
     void loadAssetTexture(cfg.image).then((sheet) => {
       this.loading = false;
       if (!sheet) return;
-      const fw = Math.floor(sheet.width / Math.max(1, cfg.columns));
-      const fh = Math.floor(sheet.height / Math.max(1, cfg.rows));
+      /**
+       * THE CUT IS RELATIVE TO WHERE THIS PICTURE ACTUALLY IS, not to the corner of the atlas.
+       *
+       * `sheet` is one RECTANGLE inside a packed page, so `sheet.source` is the whole page -- 1308x3188 now that the
+       * six bosses are in it -- while `sheet.frame` says where this picture lives inside that page. Cutting from
+       * (0, 0) with the frame's own width therefore took six slices off the TOP-LEFT OF THE ATLAS and drew whatever
+       * is packed there.
+       *
+       * That was invisible for as long as it was, and the reason is worth keeping: the packer had put this sheet at
+       * x=2, y=2 -- the first slot on the page -- so "the corner of the atlas" and "the corner of this picture"
+       * were the same place, and the bug was a two-pixel error nobody could see. Packing more art moved this sheet
+       * to (336, 656) and the slices started landing on the bosses, which is the report: a charging creature trailed
+       * tall strips of crowned jellyfish. It was never a creature wearing another creature's picture; it was this
+       * cut, reading the page instead of the frame.
+       */
+      const frame = sheet.frame;
+      const fw = Math.floor(frame.width / Math.max(1, cfg.columns));
+      const fh = Math.floor(frame.height / Math.max(1, cfg.rows));
       if (fw <= 0 || fh <= 0) return;
       for (let i = 0; i < cfg.columns * cfg.rows; i++) {
         const col = i % cfg.columns;
         const row = Math.floor(i / cfg.columns);
-        this.textures.push(new Texture({ source: sheet.source, frame: new Rectangle(col * fw, row * fh, fw, fh) }));
+        this.textures.push(new Texture({
+          source: sheet.source,
+          frame: new Rectangle(frame.x + col * fw, frame.y + row * fh, fw, fh),
+        }));
       }
       this.ready = this.textures.length > 0;
     });

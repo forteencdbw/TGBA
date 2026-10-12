@@ -180,6 +180,72 @@ export interface PopupStyle {
   max: number;
 }
 
+/**
+ * One boss's complete dossier: where it holds station, what it is made of, and how it attacks.
+ *
+ * Split out of `Mechanisms.hazards` when the boss stopped being one creature. The six rows in `hazards.bosses` are
+ * each one of these, and `hazards.boss` -- the tombstone -- is the seventh.
+ */
+export interface BossDossier {
+  /**
+   * Where it holds station above the player: a CEILING in metres, a fraction of the visible band, and a floor.
+   *
+   * All three are needed. The ceiling stops a huge window putting the fight absurdly far away, the ratio is
+   * what keeps the boss ON SCREEN (the visible band shrinks as the window gets wider and shorter), and the floor
+   * stops a short window putting it in the player's lap.
+   */
+  holdMeters: number;
+  holdBandRatio: number;
+  holdMinMeters: number;
+  /** Lateral patrol: amplitude as a fraction of the lane width, and the period in seconds. */
+  patrolAmplitude: number;
+  patrolPeriodSeconds: number;
+  /** How fast it tracks the player sideways, in lane widths per second. Kept below the player's own speed. */
+  seekSpeedFactor: number;
+  contactDamage: number;
+  /** Body radius as a fraction of the lane width. Large on purpose: this is the level's answer, not another fish. */
+  radiusRatio: number;
+  colour: number;
+  eyeColour: number;
+  armourColour: number;
+  weakPointWidthRatio: number;
+  hitFlashColour: number;
+  /** Intensity of the DRAWN body's flash, 0..1. The sprite path uses `hazardArt.*.spriteFlashScale` instead. */
+  hitFlashStrength: number;
+  /**
+   * What multiplies `hitKnockback.meters` when the BOSS is shot.
+   *
+   * A per-kind knob rather than a table, because it is the only creature that does not ride the current: everything
+   * else is shoved inside a drift it was already making, while a shove on the boss moves a hovering giant -- the same
+   * metres read as a much bigger event, which is why its default is half.
+   */
+  knockbackScale: number;
+  /**
+   * The claw swing: how often it happens, when in the animation the grit leaves the claw, and where it goes.
+   *
+   * The boss is the only creature whose attack is an ANIMATION first and a hitbox second. Every other threat here
+   * announces itself with drawn geometry (a bow, a telegraph arc, a brightening plume); the boss announces this one
+   * by swinging its claw, which is why the moment the grit is released is expressed as a FRAME of `boss-attack`
+   * rather than as a number of seconds. Two clocks would be two things to keep in agreement, and the art is the one
+   * the player is actually reading.
+   */
+  /** Seconds between the end of one swing and the start of the next. */
+  attackEverySeconds: number;
+  /** Which frame of `animations.boss-attack` throws the grit -- the frame where the claw has just snapped shut. */
+  attackSprayFrame: number;
+  /** How many pieces of grit leave the claw in one swing. */
+  attackSprayCount: number;
+  /** The width the pieces are spread over, as a fraction of the lane, centred on the player's aim point. */
+  attackSpraySpread: number;
+  /** How far the grit takes to reach its target, in seconds. This is the dodge window. */
+  attackSpraySeconds: number;
+  /** Where the claw is, relative to the boss's own radius: +x is its front, -y is below it. */
+  attackSprayFromX: number;
+  attackSprayFromY: number;
+  /** Bow of each piece's curve, as a fraction of the distance travelled. 0 is a straight line. */
+  attackSprayBowRatio: number;
+}
+
 export interface Mechanisms {
   /**
    * What a run is worth, per event. The keys are `ScoreEvent` in `src/score.ts`.
@@ -530,67 +596,18 @@ export interface Mechanisms {
      *
      * It holds station above the player instead of drifting, so it cannot be outrun -- the fight ends when one of the
      * two of them does. Its health, name and arrival point are the LEVEL's (see `BossSpec`), because those are level
-     * design; everything here is shared mechanics.
+     * design; everything here is shared mechanics, and shared mechanics are now per-kind like every other creature's.
      */
-    boss: {
-      /**
-       * Where it holds station above the player: a CEILING in metres, a fraction of the visible band, and a floor.
-       *
-       * All three are needed. The ceiling stops a huge window putting the fight absurdly far away, the ratio is
-       * what keeps the boss ON SCREEN (the visible band shrinks as the window gets wider and shorter), and the floor
-       * stops a short window putting it in the player's lap.
-       */
-      holdMeters: number;
-      holdBandRatio: number;
-      holdMinMeters: number;
-      /** Lateral patrol: amplitude as a fraction of the lane width, and the period in seconds. */
-      patrolAmplitude: number;
-      patrolPeriodSeconds: number;
-      /** How fast it tracks the player sideways, in lane widths per second. Kept below the player's own speed. */
-      seekSpeedFactor: number;
-      contactDamage: number;
-      /** Body radius as a fraction of the lane width. Large on purpose: this is the level's answer, not another fish. */
-      radiusRatio: number;
-      colour: number;
-      eyeColour: number;
-      armourColour: number;
-      weakPointWidthRatio: number;
-      hitFlashColour: number;
-      /** Intensity of the DRAWN body's flash, 0..1. The sprite path uses `hazardArt.*.spriteFlashScale` instead. */
-      hitFlashStrength: number;
-      /**
-       * What multiplies `hitKnockback.meters` when the BOSS is shot.
-       *
-       * A per-kind knob rather than a table, because it is the only creature that does not ride the current: everything
-       * else is shoved inside a drift it was already making, while a shove on the boss moves a hovering giant -- the same
-       * metres read as a much bigger event, which is why its default is half.
-       */
-      knockbackScale: number;
-      /**
-       * The claw swing: how often it happens, when in the animation the grit leaves the claw, and where it goes.
-       *
-       * The boss is the only creature whose attack is an ANIMATION first and a hitbox second. Every other threat here
-       * announces itself with drawn geometry (a bow, a telegraph arc, a brightening plume); the boss announces this one
-       * by swinging its claw, which is why the moment the grit is released is expressed as a FRAME of `boss-attack`
-       * rather than as a number of seconds. Two clocks would be two things to keep in agreement, and the art is the one
-       * the player is actually reading.
-       */
-      /** Seconds between the end of one swing and the start of the next. */
-      attackEverySeconds: number;
-      /** Which frame of `animations.boss-attack` throws the grit -- the frame where the claw has just snapped shut. */
-      attackSprayFrame: number;
-      /** How many pieces of grit leave the claw in one swing. */
-      attackSprayCount: number;
-      /** The width the pieces are spread over, as a fraction of the lane, centred on the player's aim point. */
-      attackSpraySpread: number;
-      /** How far the grit takes to reach its target, in seconds. This is the dodge window. */
-      attackSpraySeconds: number;
-      /** Where the claw is, relative to the boss's own radius: +x is its front, -y is below it. */
-      attackSprayFromX: number;
-      attackSprayFromY: number;
-      /** Bow of each piece's curve, as a fraction of the distance travelled. 0 is a straight line. */
-      attackSprayBowRatio: number;
-    };
+    boss: BossDossier;
+    /**
+     * 六个 BOSS，一个 kind 一份完整档案。**键就是 hazard kind**，和 `hazards.radius`、`hazards.health`、
+     * `hazardArt` 同一个写法。
+     *
+     * 这里从前只有一个 `hazardArt` 那样的共享档案加一个"关卡自己给颜色"的 `boss.colour`，结果是六场 BOSS 战里
+     * 有五场是同一场画了六遍：决定它怎么动、怎么贴、怎么开火的每一个数都是共享的。拆开之后，一只 BOSS 的手感
+     * 终于有地方可写——而**第一版六份值是一模一样的**，那是有意的：拆分必须先证明"行为没变"，再谈各不相同。
+     */
+    bosses: Record<string, BossDossier>;
     /** LEVEL 1's signature: the black smoker's lethal column. */
     vent: {
       radiusRatio: number;
@@ -1581,6 +1598,60 @@ function isNumberTable(v: unknown): v is Record<string, number> {
  * the other is a config key that silently stops being checked -- which is how a mistyped number becomes a popup that
  * never appears. `score.popups` and `damagePopups` are the two callers.
  */
+/**
+ * The boss's rule set, one row per key, for whichever dossier `prefix` names.
+ *
+ * Twenty-three values are read by a boss fight, and they are the same twenty-three for every boss -- so they are
+ * written once here and expanded per dossier: `hazards.boss` (the tombstone) and `hazards.bosses.<kind>` for each of
+ * the six. This block had NO rules at all until it did, which is the shape of gap the coverage check at the end of this
+ * file exists to find: twenty-three values read by the whole fight, none of which would have named itself if mistyped.
+ *
+ * WHICH dossiers exist is read out of the file rather than listed here (see `bossDossierKinds`), because a seventh
+ * boss would otherwise need its kind name spelled in two languages -- and forgetting the second one is exactly the
+ * failure this file is built to make loud rather than quiet.
+ */
+function bossRules(prefix: string): { path: string; check: (v: unknown) => boolean; describe: string }[] {
+  return [
+    { path: `${prefix}.holdMeters`, check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
+    { path: `${prefix}.holdBandRatio`, check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction of the visible depth, above 0 and at most 1' },
+    { path: `${prefix}.holdMinMeters`, check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
+    { path: `${prefix}.patrolAmplitude`, check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a lane fraction between 0 and 1' },
+    { path: `${prefix}.patrolPeriodSeconds`, check: (v) => typeof v === 'number' && v > 0.2 && v <= 60, describe: 'seconds above 0.2 and at most 60' },
+    { path: `${prefix}.seekSpeedFactor`, check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
+    { path: `${prefix}.contactDamage`, check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
+    { path: `${prefix}.radiusRatio`, check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.5, describe: 'a lane fraction above 0.001 and at most 0.5' },
+    { path: `${prefix}.colour`, check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+    { path: `${prefix}.eyeColour`, check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+    { path: `${prefix}.armourColour`, check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+    { path: `${prefix}.weakPointWidthRatio`, check: (v) => typeof v === 'number' && v > 0 && v <= 0.5, describe: 'a lane fraction above 0 and at most 0.5' },
+    { path: `${prefix}.hitFlashColour`, check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+    { path: `${prefix}.hitFlashStrength`, check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an intensity between 0 and 1 for the DRAWN boss body; 0 means it does not flash' },
+    { path: `${prefix}.knockbackScale`, check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier on hitKnockback.meters between 0 and 2; the boss holds station, so 0.5 is a nudge rather than a shove' },
+    { path: `${prefix}.attackEverySeconds`, check: (v) => typeof v === 'number' && v >= 0.5 && v <= 60, describe: 'seconds between claw swings, at least 0.5 and at most 60' },
+    { path: `${prefix}.attackSprayFrame`, check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 64, describe: 'a frame number of the attack animation, from 1' },
+    { path: `${prefix}.attackSprayCount`, check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 40, describe: 'a whole number of grit pieces from 0 to 40; 0 makes the swing a pure animation' },
+    { path: `${prefix}.attackSpraySpread`, check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a lane fraction between 0 and 3' },
+    { path: `${prefix}.attackSpraySeconds`, check: (v) => typeof v === 'number' && v >= 0.05 && v <= 3, describe: 'seconds of travel between 0.05 and 3; this is the dodge window, so short is unfair and long is harmless' },
+    { path: `${prefix}.attackSprayFromX`, check: (v) => typeof v === 'number' && v >= -4 && v <= 4, describe: 'a multiple of the boss radius between -4 and 4' },
+    { path: `${prefix}.attackSprayFromY`, check: (v) => typeof v === 'number' && v >= -4 && v <= 4, describe: 'a multiple of the boss radius between -4 and 4; negative is below the body, which is where a claw is' },
+    { path: `${prefix}.attackSprayBowRatio`, check: (v) => typeof v === 'number' && Math.abs(v) <= 2, describe: 'a bow as a fraction of the distance travelled, between -2 and 2' },
+  ];
+}
+
+/**
+ * The boss dossiers the config actually declares, in file order.
+ *
+ * Asked of `parsed` rather than of a constant, and it is the one place this file reaches into the config to decide
+ * what to VALIDATE. The alternative -- a hand-written list of six kinds -- is a parallel list, and a parallel list goes
+ * stale in silence: a dossier added to the config but not to the list would be validated by nothing, and the coverage
+ * check below cannot catch that on its own, because it checks the other direction.
+ */
+function bossDossierKinds(): string[] {
+  const hazards = (parsed as { hazards?: { bosses?: Record<string, unknown> } } | null)?.hazards;
+  const bosses = hazards?.bosses;
+  return bosses && typeof bosses === 'object' ? Object.keys(bosses) : [];
+}
+
 function popupRules(prefix: string): { path: string; check: (v: unknown) => boolean; describe: string }[] {
   return [
     { path: `${prefix}.lifeSeconds`, check: (v) => typeof v === 'number' && v > 0.2 && v <= 12, describe: 'seconds above 0.2 and at most 12' },
@@ -2280,26 +2351,9 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazardFront', check: (v) => v === 'left' || v === 'right', describe: '"left" or "right": which way round a creature with a picture counts as facing' },
   { path: 'hazardFacing.cooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30; 0 lets a creature turn every frame' },
   { path: 'angry.look.inner', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  /**
-   * The boss, one row per key.
-   *
-   * It had NO rules at all, which is the shape of gap the coverage check at the end of this file exists to find: twelve
-   * values read by the whole boss fight, none of which would have named itself if it were mistyped.
-   */
-  { path: 'hazards.boss.holdMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
-  { path: 'hazards.boss.holdBandRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction of the visible depth, above 0 and at most 1' },
-  { path: 'hazards.boss.holdMinMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
-  { path: 'hazards.boss.patrolAmplitude', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a lane fraction between 0 and 1' },
-  { path: 'hazards.boss.patrolPeriodSeconds', check: (v) => typeof v === 'number' && v > 0.2 && v <= 60, describe: 'seconds above 0.2 and at most 60' },
-  { path: 'hazards.boss.seekSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
-  { path: 'hazards.boss.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
-  { path: 'hazards.boss.radiusRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.5, describe: 'a lane fraction above 0.001 and at most 0.5' },
-  { path: 'hazards.boss.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  { path: 'hazards.boss.eyeColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  { path: 'hazards.boss.armourColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  { path: 'hazards.boss.weakPointWidthRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 0.5, describe: 'a lane fraction above 0 and at most 0.5' },
-  { path: 'hazards.boss.hitFlashColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  { path: 'hazards.boss.hitFlashStrength', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an intensity between 0 and 1 for the DRAWN boss body; 0 means it does not flash' },
+  // The boss dossiers, expanded: the tombstone's row, then one per kind the file declares.
+  ...bossRules('hazards.boss'),
+  ...bossDossierKinds().flatMap((kind) => bossRules(`hazards.bosses.${kind}`)),
   { path: 'chargeTrail.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string to disable it' },
   { path: 'chargeTrail.columns', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole columns between 1 and 16' },
   { path: 'chargeTrail.rows', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 16, describe: 'whole rows between 1 and 16' },
@@ -2370,15 +2424,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hitFeedback.heavyShakeSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'seconds between 0 and 2' },
   { path: 'hitKnockback.meters', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'metres of recoil per landed hit, between 0 and 200; 0 turns the knockback off' },
   { path: 'hitKnockback.seconds', check: (v) => typeof v === 'number' && v > 0.01 && v <= 2, describe: 'seconds above 0.01 and at most 2, over which the recoil is spent' },
-  { path: 'hazards.boss.knockbackScale', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a multiplier on hitKnockback.meters between 0 and 2; the boss holds station, so 0.5 is a nudge rather than a shove' },
-  { path: 'hazards.boss.attackEverySeconds', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 60, describe: 'seconds between claw swings, at least 0.5 and at most 60' },
-  { path: 'hazards.boss.attackSprayFrame', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 64, describe: 'a frame number of animations.boss-attack, from 1' },
-  { path: 'hazards.boss.attackSprayCount', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 40, describe: 'a whole number of grit pieces from 0 to 40; 0 makes the swing a pure animation' },
-  { path: 'hazards.boss.attackSpraySpread', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a lane fraction between 0 and 3' },
-  { path: 'hazards.boss.attackSpraySeconds', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 3, describe: 'seconds of travel between 0.05 and 3; this is the dodge window, so short is unfair and long is harmless' },
-  { path: 'hazards.boss.attackSprayFromX', check: (v) => typeof v === 'number' && v >= -4 && v <= 4, describe: 'a multiple of the boss radius between -4 and 4' },
-  { path: 'hazards.boss.attackSprayFromY', check: (v) => typeof v === 'number' && v >= -4 && v <= 4, describe: 'a multiple of the boss radius between -4 and 4; negative is below the body, which is where a claw is' },
-  { path: 'hazards.boss.attackSprayBowRatio', check: (v) => typeof v === 'number' && Math.abs(v) <= 2, describe: 'a bow as a fraction of the distance travelled, between -2 and 2' },
   { path: 'playerBubble.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string for the drawn bubble' },
   { path: 'playerBubble.imageAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'playerBubble.imageTint', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },

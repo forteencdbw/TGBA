@@ -30,6 +30,7 @@
 import { ColorMatrixFilter, Graphics, Sprite, Texture } from 'pixi.js';
 import { animationFrameAt, animationSeconds, assetTextureNow, isYFlipped, loadAnimationTextures } from './assets';
 import { mech, tuning } from './config';
+import type { BossDossier } from './mechanisms';
 import { hazardMass } from './consumption';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
 export type HazardKind =
@@ -41,14 +42,40 @@ export type HazardKind =
   | 'bombfish'
   | 'eel'
   /**
-   * The level's boss.
+   * The level's boss -- as ONE kind, which is what it was until the six below took over.
    *
    * A hazard kind like the rest, which is what makes the player's gun hit it with no new code at all -- and what makes
    * shooting the boss the same act as shooting a fish. What differs is stated where it matters: it does not drift with
    * the current, it does not flee when its health runs out (it DIES, and that is what ends the level), and it cannot be
    * eaten.
+   *
+   * **This one is a tombstone now, and deleting it is the last step of the migration rather than the first.** A level
+   * names one of the six below instead, so nothing spawns this any more -- but its three pictures are still the only
+   * pictures any boss has, and the six `hazardArt` rows point straight at them. Delete `boss`, `hazards.boss` and
+   * `hazardArt.boss` together, once all six have frames of their own.
    */
   | 'boss'
+  /**
+   * THE SIX BOSSES -- one kind each, so that a boss is a creature rather than a level-supplied pair of numbers.
+   *
+   * They were one kind with one shared dossier (`hazards.boss`) plus a per-level `colour`, and what that produced is
+   * six fights that were the same fight drawn twice: every number deciding how a boss moves, how close it presses and
+   * what it fires was shared, so the only thing a level could say about its OWN boss was how much health it had and
+   * what colour it was. The split is the same move the hazard kinds are built on -- a kind is a behaviour, and its
+   * numbers live in `hazards.bosses.<kind>`.
+   *
+   * **The six dossiers start as copies of the one they replace.** That is deliberate and it is what makes the split
+   * checkable: every boss must render and fight exactly as the old shared one did, pixel for pixel, before any of them
+   * is given a rhythm of its own. A boss that quietly changed behaviour during a refactor is a bug, not a feature.
+   *
+   * Declared in the order the levels meet them, so the list reads as the campaign.
+   */
+  | 'boss-crab'
+  | 'boss-octopus'
+  | 'boss-jelly'
+  | 'boss-shark'
+  | 'boss-netshark'
+  | 'boss-eye'
   /**
    * LEVEL 1 -- 黑烟囱墓场.
    *
@@ -129,6 +156,40 @@ export type HazardKind =
   | 'pistol'
   | 'puffer'
   | 'starfish';
+
+/**
+ * Every boss kind, the tombstone included.
+ *
+ * The list exists because "is this a boss" stopped being a question about one string. Five places asked
+ * `kind === 'boss'` and each of them meant "is this the level's win condition" -- the knockback scale, the
+ * death-rather-than-flight branch, the attack, and the two in `main.ts` that spawn it and watch it. Naming the
+ * question once is what kept the split from being five chances to miss one.
+ */
+export const BOSS_KINDS: readonly HazardKind[] = [
+  'boss',
+  'boss-crab',
+  'boss-octopus',
+  'boss-jelly',
+  'boss-shark',
+  'boss-netshark',
+  'boss-eye',
+];
+
+/** Whether a kind is a level's boss. See `BOSS_KINDS`. */
+export function isBossKind(kind: HazardKind): boolean {
+  return BOSS_KINDS.includes(kind);
+}
+
+/**
+ * The dossier for a boss kind: its own row, falling back to the shared one.
+ *
+ * The fallback is only for `boss` itself -- the kind that predates the split, whose numbers are still `hazards.boss`;
+ * every one of the six has a row of its own, and the boot check cross-examines the two tables so a missing row is a
+ * startup error rather than a boss that silently fights with the old crab's numbers.
+ */
+export function bossDossier(kind: HazardKind): BossDossier {
+  return mech.hazards.bosses[kind] ?? mech.hazards.boss;
+}
 
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
@@ -377,11 +438,6 @@ export interface Hazard {
   /** Seconds left of a zapper's discharge ring, and its cooldown. Both per instance: a shoal does not fire in unison. */
   discharge: number;
   dischargeRest: number;
-  /**
-   * A per-INSTANCE colour, or null for the kind's own.\n   *\n   * Exists for the boss alone: a level picks its boss's colour (see BossSpec.colour), which is the one piece of a
-   * creature's look that is level design rather than mechanics -- two levels should not look like the same monster.
-   */
-  tint: number | null;
   /**
    * Seconds until this creature may fire again, for the kinds that shoot.
    *
@@ -640,6 +696,19 @@ export const hazardTuning = {
  * place this lives: there used to be a second copy of these numbers in `main.ts` for the spawn hooks, which meant
  * a new creature could be edible at one size and painted at another.
  */
+/**
+ * One boss kind's row of `KIND_TUNING`, read out of the boss's own dossier.
+ *
+ * A function rather than seven hand-written rows because the three fields are the same three reads for every boss --
+ * what differs is WHICH dossier, and that is where a boss's size and colour are decided. The rows below are still
+ * spelled out one per kind, which is what keeps `Record<HazardKind, ...>` total by compiler rather than by a spread
+ * that would type-check while covering nothing.
+ */
+function bossTuning(kind: HazardKind): { radius: number; colour: number; spin: number } {
+  const dossier = bossDossier(kind);
+  return { radius: dossier.radiusRatio, colour: dossier.colour, spin: 0 };
+}
+
 export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; spin: number }> = {  fish: { radius: 0.035, colour: 0x9ad7ff, spin: 0 },
   /**
    * The tuna: a size up from the fish, and the colour of the picture rather than the fish's pale cyan.
@@ -676,9 +745,16 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   urchin: { radius: 0.052, colour: 0x3d4a7a, spin: 0.2 },
   /** Deep red, well away from the crab's orange, with a stubby body: round and heavy rather than sleek. */
   bombfish: { radius: 0.048, colour: 0xd94a3f, spin: 0 },
-  // The boss's size and colour come from `mech.hazards.boss` (a level may override the colour); this row exists because
-  // every kind needs one, and it has to be BIG -- a boss the size of a fish is a fish.
-  boss: { radius: mech.hazards.boss.radiusRatio, colour: mech.hazards.boss.colour, spin: 0 },
+  // The boss's size and colour come from its own dossier -- `hazards.bosses.<kind>`, or `hazards.boss` for the
+  // tombstone. Six rows rather than one is the whole point of the split: 长尾鲨 and 风暴之眼 are allowed to be
+  // different sizes. It has to be BIG -- a boss the size of a fish is a fish.
+  boss: bossTuning('boss'),
+  'boss-crab': bossTuning('boss-crab'),
+  'boss-octopus': bossTuning('boss-octopus'),
+  'boss-jelly': bossTuning('boss-jelly'),
+  'boss-shark': bossTuning('boss-shark'),
+  'boss-netshark': bossTuning('boss-netshark'),
+  'boss-eye': bossTuning('boss-eye'),
   vent: { radius: mech.hazards.vent.radiusRatio, colour: mech.hazards.vent.plumeColour, spin: 0 },
   mineral: { radius: 0.018, colour: 0xffb066, spin: 2.4 },
   shrimp: { radius: 0.033, colour: 0xffd9d0, spin: 0 },
@@ -1046,7 +1122,7 @@ function stepBoss(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext
    * is the whole reason it is a fight rather than an encounter the player can simply outrun. It patrols sideways
    * and tracks the player's lane slowly: slowly enough that being cornered is always something the player did.
    */
-  const cfg = mech.hazards.boss;
+  const cfg = bossDossier(h.kind);
   const targetX = ctx.playerX + Math.sin(ctx.elapsed * ((Math.PI * 2) / cfg.patrolPeriodSeconds)) * cfg.patrolAmplitude * ctx.laneWidth;
   const gapX = targetX - h.x;
   const step = cfg.seekSpeedFactor * ctx.laneWidth * dt;
@@ -1263,6 +1339,16 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
   urchin: stepUrchin,
   bombfish: stepBombfish,
   boss: stepBoss,
+  // The six share the boss's step for the same reason `tuna` shares the fish's: what makes a boss a boss is not its
+  // movement rule, it is that it holds station and dies rather than leaves. The DOSSIER is where they differ, and it
+  // is keyed by kind (`hazards.bosses`), so a boss that should patrol wider or press closer changes a number rather
+  // than growing a second copy of `stepBoss`.
+  'boss-crab': stepBoss,
+  'boss-octopus': stepBoss,
+  'boss-jelly': stepBoss,
+  'boss-shark': stepBoss,
+  'boss-netshark': stepBoss,
+  'boss-eye': stepBoss,
   vent: stepVent,
   mineral: stepMineral,
   shrimp: stepShrimp,
@@ -1453,7 +1539,7 @@ function contactMineral(_field: HazardField, h: Hazard, ctx: HazardContext, effe
 function contactBoss(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
   const r = ctx.laneWidth * h.radiusFraction;
   if (ctx.invulnerable) return;
-  effects.push({ kind: h.kind, damage: mech.hazards.boss.contactDamage, broke: false });
+  effects.push({ kind: h.kind, damage: bossDossier(h.kind).contactDamage, broke: false });
   // Bounce it away so one cannot immediately re-hit, as a fish does.
   h.y -= r * 2;
   return;
@@ -1483,6 +1569,15 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   angler: contactPlain,
   torpedo: contactPlain,
   boss: contactBoss,
+  // Touching any boss is the same event as touching the old one -- `contactBoss` is what makes the contact damage come
+  // out of the kind's own dossier (`hazards.bosses.<kind>.contactDamage`) instead of a shared constant, so six rows
+  // are still one rule.
+  'boss-crab': contactBoss,
+  'boss-octopus': contactBoss,
+  'boss-jelly': contactBoss,
+  'boss-shark': contactBoss,
+  'boss-netshark': contactBoss,
+  'boss-eye': contactBoss,
   shrimp: contactShrimp,
   zapper: contactZapper,
   mineral: contactMineral,
@@ -1563,7 +1658,15 @@ export class HazardField {
    */
   eaten = 0;
 
-  private nextId = 1;
+  /**
+   * The ids come from `NEXT_HAZARD_ID` at the top of this file, NOT from a counter of this field's own.
+   *
+   * It was `private nextId = 1`, and the reason it cannot be is written out there: the art pool is keyed by this id
+   * and reaches across fields, so two fields counting from 1 hand the same Sprite to two different creatures.
+   */
+  private newHazardId(): number {
+    return NEXT_HAZARD_ID++;
+  }
 
   /**
    * Place one named hazard at a chosen spot, with a REAL id from the same counter the spawner uses.
@@ -1778,7 +1881,7 @@ export class HazardField {
      * the outcome it reports is the one the game watches for to end the level. `killed` rather than `fled` is what
      * keeps "I survived that" and "I beat that" from being the same message.
      */
-    if (hazard.kind === 'boss') {
+    if (isBossKind(hazard.kind)) {
       this.killed++;
       /**
        * `flee: 'dead'` rather than immediate removal, because a boss that vanishes on the killing shot throws away the one
@@ -2217,7 +2320,7 @@ export class HazardField {
           // rather than as one fish becoming two identical fish in place.
           newborns.push({
             ...h,
-            id: this.nextId++,
+            id: this.newHazardId(),
             x: Math.max(0, Math.min(ctx.laneWidth, h.x + (Math.random() - 0.5) * ctx.laneWidth * 0.2)),
             y: h.y + 14,
             radiusFraction: h.radiusFraction * 0.88,
@@ -2306,7 +2409,7 @@ export class HazardField {
     const health = opts.health ?? hazardHealth(kind);
     const headStart = opts.deterministic ? 0 : 1;
     return {
-      id: this.nextId++,
+      id: this.newHazardId(),
       kind,
       x,
       y,
@@ -2336,14 +2439,13 @@ export class HazardField {
       discharge: 0,
       dischargeRest: 0,
       foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
-      tint: null,
       // A random head start, so a group does not lunge in unison. Zero for a probe, where "did it lunge" must not be a
       // coin flip.
       chargeRest: headStart * Math.random() * (mech.charges.chargers[kind]?.cooldownSeconds ?? 0),
       // The boss's swing starts on a random offset for the same reason a charge does: a player who re-enters the
       // fight should not be able to time the first one by having watched the last one.
       attackSince: null,
-      attackRest: headStart * Math.random() * mech.hazards.boss.attackEverySeconds,
+      attackRest: headStart * Math.random() * bossDossier(kind).attackEverySeconds,
       attacked: false,
       // And a random offset on the trigger finger, so a colony does not volley.
       shootTimer: headStart * (Math.random() / Math.max(0.01, mech.enemyBullets.shooters[kind]?.perSecond ?? 1)),
@@ -2389,7 +2491,7 @@ export class HazardField {
      * which reads as a shove. `hazards.boss.knockbackScale` is that judgement, and setting it to 0 makes the boss
      * immune to recoil (the flash is then the whole of its hit feedback).
      */
-    const meters = cfg.meters * (h.kind === 'boss' ? Math.max(0, mech.hazards.boss.knockbackScale) : 1);
+    const meters = cfg.meters * (isBossKind(h.kind) ? Math.max(0, bossDossier(h.kind).knockbackScale) : 1);
     if (meters <= 0 || cfg.seconds <= 0) return;
     let dirX = 0;
     let dirY = 1;
@@ -2777,16 +2879,16 @@ export class HazardField {
    * it can be read during the wind-up and stepped out of.
    */
   private updateAttack(h: Hazard, dt: number, ctx: HazardContext): HazardEffect['spray'] | null {
-    if (h.kind !== 'boss') return null;
+    if (!isBossKind(h.kind)) return null;
     // Never while it is dying or leaving: a death animation is not a threat, and a boss on its way out firing at the
     // player would be the one hit in this game with no warning attached to it.
     if (h.deadSince !== undefined || h.flee || h.entry) return null;
-    const animation = mech.animations[mech.hazardArt.boss?.attack ?? ''];
+    const animation = mech.animations[mech.hazardArt[h.kind]?.attack ?? ''];
     // No swing without its art: the attack is DEFINED by the animation (its release frame is a frame of it), so a
     // boss with no claw-swing pictures is a boss that swings at nothing, which is worse than one that does not swing.
     if (!animation) return null;
 
-    const cfg = mech.hazards.boss;
+    const cfg = bossDossier(h.kind);
     if (h.attackSince === null) {
       h.attackRest -= dt;
       if (h.attackRest > 0) return null;
@@ -2992,6 +3094,22 @@ const ART_SPRITES = new Map<number, Sprite>();
 const ART_SEEN = new Map<number, number>();
 /** A monotonic clock for the sweep, set by the painter on each pass. */
 let ART_NOW = 0;
+
+/**
+ * The id every hazard is given, from ONE counter for the whole module rather than one per field.
+ *
+ * `HazardField.nextId` used to count from 1 in every field, which is right for everything a field does on its own --
+ * eaten hazards are retired by collecting their ids, and ids unique WITHIN a field are enough for that. The art pool
+ * above is the one consumer that reaches ACROSS fields, and it is keyed by this id: the game's own field, the
+ * throwaway field `src/codexUi.ts` builds per card, and any probe's field all handed out 1, 2, 3, so two unrelated
+ * creatures could be given the SAME pooled Sprite -- one whose parent, texture, position and scale belonged to the
+ * other field. What that looks like on screen is a creature wearing another creature's picture, at another creature's
+ * size, in another creature's place, which is a report this project has had.
+ *
+ * The counter is module-level rather than a field's own so that the id stays a plain number: `ART_SPRITES` and
+ * `hazardArtSpriteForTest(id)` are keyed by it, and a composite key would change both.
+ */
+let NEXT_HAZARD_ID = 1;
 
 /**
  * The textures of every animation, by animation name, once each.
@@ -3811,11 +3929,11 @@ function drawBoss(g: Graphics, h: Hazard, r: number, laneWidth: number, elapsed:
    *
    * It borrows the fish's silhouette on purpose -- it should read as "a creature, and much larger" rather than as
    * a different order of thing -- and adds two marks that only it has: a plated shell and a single lit eye. The
-   * colour comes from the instance when the level set one (`tint`), so two levels do not look like the same
-   * monster.
+   * colour comes from the kind's own dossier (`hazards.bosses.<kind>`), so two bosses do not look like the same
+   * monster -- and it is the FALLBACK path, taken only while a boss has no `hazardArt` row.
    */
-  const cfg = mech.hazards.boss;
-  const body = h.tint ?? cfg.colour;
+  const cfg = bossDossier(h.kind);
+  const body = cfg.colour;
   /**
    * The drawn body's flash, from the same curve the sprite's filter uses.
    *
@@ -4064,6 +4182,15 @@ const CREATURE_DRAWING: Record<HazardKind, CreatureDraw> = {
   bombfish: drawBombfish,
   eel: drawEel,
   boss: drawBoss,
+  // The DRAWN body, which is what a boss falls back to when `hazardArt` has no row for it. That is exactly the state
+  // these six are in until their frames land: they are drawn as the ellipse, in their own dossier's colours, so a
+  // boss with no art is still the right colour rather than a fish.
+  'boss-crab': drawBoss,
+  'boss-octopus': drawBoss,
+  'boss-jelly': drawBoss,
+  'boss-shark': drawBoss,
+  'boss-netshark': drawBoss,
+  'boss-eye': drawBoss,
   vent: drawVent,
   mineral: drawMineral,
   shrimp: drawShrimp,
@@ -4277,6 +4404,18 @@ export function paintHazards(
       const state = pose.state;
       const stateElapsed = pose.elapsed;
       const texture = state ? hazardArtState(state, stateElapsed) : null;
+      /**
+       * NO PICTURE YET MEANS NO PICTURE, and the sprite is HIDDEN rather than left as it was.
+       *
+       * `else` is not tidiness. A pooled sprite keeps everything it had -- its texture, its scale, its position --
+       * and the block below only ever writes those when a texture resolved. So a creature whose animation has not
+       * loaded yet (the first frames after a cold start, or any moment the atlas is not ready) used to leave its
+       * sprite showing the LAST thing that slot held, in the place and at the size that creature had. On a shared
+       * pool that is a creature drawn with somebody else's body -- which is the reported shape of this bug.
+       *
+       * Hiding it costs nothing: the drawn body underneath is the fallback this file already has for a creature with
+       * no art, so the honest answer for "no picture" is the drawing, not a stale photograph.
+       */
       if (texture) {
         let sprite = ART_SPRITES.get(h.id);
         if (!sprite) {
@@ -4466,6 +4605,10 @@ export function paintHazards(
         paintTelegraph(g, h, r, laneWidth, elapsed);
         continue;
       }
+      // No picture resolved: hide the sprite this id may already be holding, and let the drawn body below stand in
+      // for it. See the note on the `if` -- a pooled sprite left alone is a creature wearing its slot's last body.
+      const stale = ART_SPRITES.get(h.id);
+      if (stale) stale.visible = false;
     }
 
     /**

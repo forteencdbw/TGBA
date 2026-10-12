@@ -704,16 +704,85 @@ playing → cleared → ascend → intro（下一关）
 一颗颗粒：配置 0.62 秒，实测在 0.617 秒**精确抵达目标点**（误差 0.0m）✓
 ```
 
-**在哪调**：`hazards.boss.attackEverySeconds`（多久挥一次）、`attackSprayFrame`（第几帧甩出去）、
+**在哪调**：`hazards.bosses.<kind>.attackEverySeconds`（多久挥一次）、`attackSprayFrame`（第几帧甩出去）、
 `attackSprayCount` / `attackSpraySpread`（几颗、摊多宽）、`attackSpraySeconds`… 等等，
 `attackSpraySeconds` 与 `charges.chargers.mineral.travelSeconds` 是同一个东西的两处写法（前者是 BOSS 的意图、
 后者是曲线的时间参数），**改哪个都行但要让它们一致**——当前两处都是 0.62。
 动画手感在 `animations.boss-attack.framesPerSecond`（改它不用改任何别的数：甩颗粒的时刻是**帧号**，不是秒）。
+（`<kind>` 现在是六只 BOSS 各自的 kind，见下面"六只 BOSS"一节；旧的 `hazards.boss` 是墓碑。）
 
 **图像**：`src/assets/螃蟹-BOSS-攻击-1..8.png`，8 帧、512×590、`once: true`（播完停在第 8 帧，也就是回到待机姿势）。
 生成用的参考图就是**待机帧自己**（`generated-images/boss-attack/reference.png`），所以是同一只螃蟹；
 8 帧的构图靠"同尺寸画布 + 底部对齐 + 左右居中"钉住（钳子挥动时身体不跟着漂），细节见
 `generated-images/boss-attack/frames.spec.json`。（**`generated-images/boss-attack/` 已随中间产物删除**。）
+
+### 六只 BOSS：一个 kind 一只，而拆分的第一步是"证明没变"
+
+六关的 BOSS 从"一个 `boss` kind + 一个共享档案 + 每关自己写一个颜色"变成了**六个 hazard kind**
+（`boss-crab` / `boss-octopus` / `boss-jelly` / `boss-shark` / `boss-netshark` / `boss-eye`），
+每只一份完整档案放在 `config/mechanics.json5` 的 `hazards.bosses.<kind>`（23 个字段，不再是共享的）。
+
+**为什么非拆不可**：从前决定"它怎么动、怎么贴、怎么开火"的每一个数都是六只共用的，所以一个关卡能说的
+关于**自己那只** BOSS 的话只有"多少血、叫什么、什么颜色"。结果是六场 BOSS 战里有五场是同一场画了六遍——
+而且那个"什么颜色"（`boss.colour`）其实**从来没生效过**：它写进 `hazard.kind` 的 `tint` 字段，而 `tint` 只在
+**代码画的那条路径**（`drawBoss`）里被读；BOSS 有贴图，走的是贴图分支，`drawBoss` 根本不会被调用。所以六个
+颜色是死代码，六只 BOSS 渲染得逐像素相同。拆开之后这只 BOSS 的手感终于有地方可写。
+
+**拆分本身先证明了"行为没变"，这一步是量出来的**：六份档案是从 `hazards.boss` **生成**的（写脚本抄，不手打
+23 个数 × 6 遍），脚本断言六份与旧档案逐字段相等；`hazardArt.<六个kind>` 也各抄了一份旧的、全指向
+`boss-idle` / `boss-attack` / `boss-dead`。然后用 CDP 把**旧 BOSS 与六只新 BOSS 各画一张**（位置、
+`phase`、`deterministic` 全部钉死），再拿 `git stash` 切回拆分前的提交重画一张：
+
+```
+拆分前 boss      fe67243a2a408051
+拆分后 boss      fe67243a2a408051
+拆分后 boss-crab / -octopus / -jelly / -shark / -netshark / -eye    同上，6 张完全一致
+```
+
+**8 张图 1 个哈希**：既证明旧的没被改坏，也证明六个新 kind 画的正是旧的那一张。
+
+**拆分顺带暴露了配置里的四条"按 kind 键的表"**，它们都是启动检查里\"每种危险物一行\"那条约定管着的：
+`hazards.health`、`consumption.mass`、`consumption.edibleAtTier`、`angry.burst.hazardMode`。
+六个 kind 一加，游戏**直接拒绝启动并逐个点名**（`missing from edibleAtTier: boss-crab, …`）——
+这正是"数据没有编译器，那个检查就是编译器"那条经验最好的一次示范：四条表一条都没漏掉，
+而且四条都不是我找到的，是启动检查找的。
+
+**`SPAWN_KINDS`（关卡能不能用 `spawns` 摆一只出来）原来写的是 `kind !== 'boss'`**，现在改问
+`isBossKind(kind)`——不然六个新 kind 里除了 `boss` 之外全都会变成可以像鱼一样摆进关卡的东西。
+
+### 六只 BOSS 的图：一个生物三套动画
+
+六只现在各有自己的 16 帧（`move` 4 + `attack` 8 + `dead` 4），全部走 `.claude/skills/game-asset/SKILL.md`
+那条管线：真实照片 → Seedream 出 3 张候选 → 人工挑一张 → 逐帧生成 → 本地像素化 → 进游戏。
+
+| BOSS | 关卡 | 是什么 | 参考照片 |
+|---|---|---|---|
+| 烟囱蟹王 | 1 黑烟囱墓场 | 结满矿物沉积和管虫残骸的巨蟹，深红褐 + 热液烧红的裂缝 | Maja squinado 水下活体 |
+| 寄居沉船章鱼 | 2 沉船幽谷 | 头上扣一块锈蚀船体钢板当铁壳帽的巨章鱼，锈红到赭石 | Octopus vulgaris 活体 |
+| 冠冕水母 | 3 发光水母林 | 伞盖边缘一圈立起来的冠冕尖瓣、发紫白光，触须垂落 | 发紫光的真水母 |
+| 长尾鲨 | 4 猎食者温跃层 | 鞭状长尾比身体还长、高高扬起；钢蓝背灰白腹 | 清水里的真长尾鲨 |
+| 废网巨鲨 | 5 风暴暗流 | 被废渔网缠住、网上挂着褪色橙浮球的大白鲨 | 侧面完整的大白鲨 |
+| 风暴之眼 | 6 破晓海面 | 仰面展开的巨型鳐形兽，两只巨大暖金眼睛占满整张脸，边缘一圈翻卷白浪 | 自下仰视的蝠鲼 |
+
+**三套动画共用一个画布、一个缩放、一个锚点。** 16 帧一次性归一化（见 `normalise_frames`），而不是每套各自
+归一——挥螯/张伞的那几帧内容更宽，各自归一会把中位数抬高，整只生物在攻击时变大几个百分点。帧 1 是**被选中的
+那张候选本身**，不是重画的，所以三套动画起止都是同一张被批准的图，生物不会在自己的动画之间漂移。
+
+**`attack` 的节拍是写死在帧号上的**：第 6 帧是发力那一下（`hazards.bosses.<kind>.attackSprayFrame` 指的就是
+第 6 帧），第 2–5 帧蓄力、7–8 收回。动手做的时候量出来的三个问题值得记在这里，因为它们是这类生成的通病：
+
+- **`move` 的"沸腾"是量出来的**：帧间 mean |dRGB| 从 8.0（章鱼，最干净）到 27.6（水母），而"看着像重画"的那几只
+  也确实在这个区间。`boil_report` 本来是为"本该静止的循环"标定的，套在 `attack`/`dead` 上报警是**用错了地方**——
+  挥螯和崩塌本来就该帧间大改。
+- **烟囱蟹王的第一版每帧带着 ~12% 的深青色投影**（均值 RGB 7,81,89），因为它的 `composition` 里写了"整片均匀的
+  青色背景"，同时又要 `background: transparent`——两条指令互相打架，模型就留了一片地面影子。后面五只写的是
+  "主体之外**完全透明**，没有影子、没有地面、没有倒影"，一张都没出现这个问题。**那一段照原样留在批记录里**，
+  它是产出那 16 帧的那次运行的记录。
+
+**旧的一只还在**（`'boss'` kind、`hazards.boss`、`hazardArt.boss` 和螃蟹那 16 帧），`src/hazards.ts` 里标成
+墓碑。删它是**迁移的最后一步**，而且它现在牵连着一件必须一起做的事：`'boss'` 一删，`Object.keys(KIND_TUNING)`
+就是六个新 kind，`e2e/codex.spec.ts` 的覆盖检查立刻要求**六张 BOSS 卡片**（现在只有一张 `enemy:boss`，
+那处豁免就是为它写的）。所以删墓碑 = 六张卡 + 一次真正的删除，不是一次删除。
 
 ### 图集：所有贴图打进 Pixi 图集（`pnpm atlas`）
 
@@ -1759,7 +1828,9 @@ canvas，headless 跑不起来（这正是要拆它的原因）。这一步的�
 }
 ```
 
-**它同时决定碰撞、绘制和图鉴卡片**——一处来源，改完**刷新即可，不用重新构建**。表里现在有 **15 种**（所有有调参行的敌人；BOSS / 喷泉 不在这张表里，它们的尺寸由各自的条目管）。
+**它同时决定碰撞、绘制和图鉴卡片**——一处来源，改完**刷新即可，不用重新构建**。表里现在有 **24 种**
+（这 24 就是 `hazards.radius` 的键；六只 BOSS / 喷泉 不在这张表里，它们的尺寸由各自的条目管——
+BOSS 的在 `hazards.bosses.<kind>.radiusRatio`）。
 
 **还有第二个尺寸参数，别混淆**：
 
@@ -2086,6 +2157,49 @@ backdrop: {
 | 412×915 | 802 m | −18 m | ✓ |
 | 1280×720 | 289 m | +47 m | ✓ |
 | **1600×420**（极扁） | **168 m** | +52 m | ✓ |
+
+### 修复：冲锋拖尾画成了 BOSS（"金枪鱼和灯笼鱼的冲刺变成了水母"）
+
+**症状**：敌人冲锋时身后那串气泡（`chargeTrail`，"rides behind every charge"）变成了**又高又窄的冠冕水母竖条**，
+盖在玩家气泡上。第 1 关并没有水母。
+
+**根因**：`src/chargeTrail.ts` 把那张 6 格气泡表**切成 6 块**，而它切片的原点是**图集页的左上角**，不是这张图自己：
+
+```ts
+// 错的：source 是整页，frame 却从 (0,0) 起算
+const fw = Math.floor(sheet.width / cfg.columns);
+new Texture({ source: sheet.source, frame: new Rectangle(col * fw, row * fh, fw, fh) });
+```
+
+`loadAssetTexture` 返回的是**页里的一个矩形**：`sheet.source` 是整页（现在 1308×3188），
+`sheet.frame` 才是这张图在页里的位置。所以那 6 块是从**图集左上角**切的——切到的是**恰好打包在那里的东西**。
+
+**为什么一直没暴露，这一点比 bug 本身值得记**：打包器**碰巧**把这张图放在了 `(2,2)`，也就是全页第一个槽位。
+于是"图集左上角"和"这张图的左上角"是同一个地方，错误只有 2 像素，谁也看不出来。
+这一轮加进 80 帧 BOSS 图之后，它被挪到 `(336,656)`，那 6 块切到了排在我新图首的 BOSS——**症状才会以"水母"的形式出现**。
+
+**修法**：按 `sheet.frame` 偏移，而不是从零起算：
+
+```ts
+const frame = sheet.frame;
+const fw = Math.floor(frame.width / cfg.columns);
+new Texture({ source: sheet.source, frame: new Rectangle(frame.x + col * fw, frame.y + row * fh, fw, fh) });
+```
+
+**验证是确定性的，不靠跑游戏碰运气**：把同一张图按新旧两种算法各切一遍，逐块问它落没落在这张图的边框里
+（`node .scratch/asset-pipeline/cut-page.js`）：
+
+| | 6 块的位置与尺寸 | |
+|---|---|---|
+| 旧 | `0,0` `47,0` … `235,0`，各 **47×284** | 全部**在图框之外**——在切图集 |
+| 新 | `336,656` `383,656` … `571,656`，各 47×284 | 全部**在图内** |
+
+`47×284` 就是 1:6 的竖条，和截图里那条水母的宽高比一致——形状这一半也对上了。
+
+**另外两处同区域的小加固**（都不是这个 bug 的原因，但都是真的，一起留下了）：
+`ART_SPRITES` 是按 `h.id` 键的**模块级**贴图池，而 `HazardField.nextId` 每个 field 都从 1 开始数，
+游戏自己的 field、图鉴每张卡新建的临时 field 都会发出同一批 id——`NEXT_HAZARD_ID` 因此提到模块级，
+让 id 在跨 field 意义上唯一；以及纹理没解析出来时把 sprite **藏起来**，而不是留着上一次贴的图和位置。
 
 ### 修复：宽窗口下 BOSS 悬在画面外（"第一关的 BOSS 没有出现"）
 

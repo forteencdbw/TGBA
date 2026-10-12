@@ -390,6 +390,15 @@ const HAZARD_NAMES: Record<HazardKind, string> = {
   urchin: '海胆',
   eel: '电鳗',
   boss: 'BOSS',
+  // 六个 BOSS，一关一只。名字和 config/levels/*.json5 里 `boss.name` 是同一个 —— 关卡文件决定"这一关的 BOSS
+  // 叫什么"（那是关卡的声音），而这张表要有每一行只是因为它是 `Record<HazardKind, ...>`：**编译器就是清单**。
+  // 目前图鉴只列旧的那一只（`boss`），这六行是清单完整性，不是六张新卡片。
+  'boss-crab': '烟囱蟹王',
+  'boss-octopus': '寄居沉船章鱼',
+  'boss-jelly': '冠冕水母',
+  'boss-shark': '长尾鲨',
+  'boss-netshark': '废网巨鲨',
+  'boss-eye': '风暴之眼',
   vent: '热液喷口',
   mineral: '矿物颗粒',
   shrimp: '盲眼虾',

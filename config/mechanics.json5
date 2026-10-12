@@ -1337,6 +1337,144 @@
       "count": 4,
       "framesPerSecond": 8,
       "maxSeconds": 2
+    },
+    // 烟囱蟹王-move：move（循环），import 生成的。
+    "烟囱蟹王-move": {
+      "frames": "烟囱蟹王-move-{n}",
+      "count": 4,
+      "framesPerSecond": 4,
+      "maxSeconds": 4
+    },
+    // 烟囱蟹王-attack：attack（播一遍停住），import 生成的。
+    "烟囱蟹王-attack": {
+      "frames": "烟囱蟹王-attack-{n}",
+      "count": 8,
+      "framesPerSecond": 11,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 烟囱蟹王-dead：dead（播一遍停住），import 生成的。
+    "烟囱蟹王-dead": {
+      "frames": "烟囱蟹王-dead-{n}",
+      "count": 4,
+      "framesPerSecond": 3.5,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 冠冕水母-move：move（循环），import 生成的。
+    "冠冕水母-move": {
+      "frames": "冠冕水母-move-{n}",
+      "count": 4,
+      "framesPerSecond": 4,
+      "maxSeconds": 4
+    },
+    // 冠冕水母-attack：attack（播一遍停住），import 生成的。
+    "冠冕水母-attack": {
+      "frames": "冠冕水母-attack-{n}",
+      "count": 8,
+      "framesPerSecond": 11,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 冠冕水母-dead：dead（播一遍停住），import 生成的。
+    "冠冕水母-dead": {
+      "frames": "冠冕水母-dead-{n}",
+      "count": 4,
+      "framesPerSecond": 3.5,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 寄居沉船章鱼-move：move（循环），import 生成的。
+    "寄居沉船章鱼-move": {
+      "frames": "寄居沉船章鱼-move-{n}",
+      "count": 4,
+      "framesPerSecond": 4,
+      "maxSeconds": 4
+    },
+    // 寄居沉船章鱼-attack：attack（播一遍停住），import 生成的。
+    "寄居沉船章鱼-attack": {
+      "frames": "寄居沉船章鱼-attack-{n}",
+      "count": 8,
+      "framesPerSecond": 11,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 寄居沉船章鱼-dead：dead（播一遍停住），import 生成的。
+    "寄居沉船章鱼-dead": {
+      "frames": "寄居沉船章鱼-dead-{n}",
+      "count": 4,
+      "framesPerSecond": 3.5,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 长尾鲨-move：move（循环），import 生成的。
+    "长尾鲨-move": {
+      "frames": "长尾鲨-move-{n}",
+      "count": 4,
+      "framesPerSecond": 4,
+      "maxSeconds": 4
+    },
+    // 长尾鲨-attack：attack（播一遍停住），import 生成的。
+    "长尾鲨-attack": {
+      "frames": "长尾鲨-attack-{n}",
+      "count": 8,
+      "framesPerSecond": 11,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 长尾鲨-dead：dead（播一遍停住），import 生成的。
+    "长尾鲨-dead": {
+      "frames": "长尾鲨-dead-{n}",
+      "count": 4,
+      "framesPerSecond": 3.5,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 废网巨鲨-move：move（循环），import 生成的。
+    "废网巨鲨-move": {
+      "frames": "废网巨鲨-move-{n}",
+      "count": 4,
+      "framesPerSecond": 4,
+      "maxSeconds": 4
+    },
+    // 废网巨鲨-attack：attack（播一遍停住），import 生成的。
+    "废网巨鲨-attack": {
+      "frames": "废网巨鲨-attack-{n}",
+      "count": 8,
+      "framesPerSecond": 11,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 废网巨鲨-dead：dead（播一遍停住），import 生成的。
+    "废网巨鲨-dead": {
+      "frames": "废网巨鲨-dead-{n}",
+      "count": 4,
+      "framesPerSecond": 3.5,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 风暴之眼-move：move（循环），import 生成的。
+    "风暴之眼-move": {
+      "frames": "风暴之眼-move-{n}",
+      "count": 4,
+      "framesPerSecond": 4,
+      "maxSeconds": 4
+    },
+    // 风暴之眼-attack：attack（播一遍停住），import 生成的。
+    "风暴之眼-attack": {
+      "frames": "风暴之眼-attack-{n}",
+      "count": 8,
+      "framesPerSecond": 11,
+      "maxSeconds": 2,
+      "once": true
+    },
+    // 风暴之眼-dead：dead（播一遍停住），import 生成的。
+    "风暴之眼-dead": {
+      "frames": "风暴之眼-dead-{n}",
+      "count": 4,
+      "framesPerSecond": 3.5,
+      "maxSeconds": 2,
+      "once": true
     }
   },
 
@@ -1547,6 +1685,29 @@
       "scale": 2.8,
       "alpha": 1
     },
+    // ---------------------------------------------------------------------------------------------
+    // 六个 BOSS 的图：**现在都还指着旧 BOSS 的那三套动画**
+    // ---------------------------------------------------------------------------------------------
+    //
+    // 这是拆分中间态，不是最终形态。六行现在只是把 `hazardArt.boss` 抄了一遍，所以：
+    //   * 六个 kind 都能查到自己的图 → 画面上和拆分前**完全一样**，没有回归；
+    //   * 每一行都独立了 → 某只 BOSS 的帧做好之后，改**这一行**的 `move`/`attack`/`dead` 就行，
+    //     不需要动代码，也不需要动别的 BOSS。
+    //
+    // 六只都换完之后，旧的 `boss` kind、`hazards.boss` 和这一组 `hazardArt.boss` 一起删掉（那才是最后一步）。
+    // 第 1 关 —— 烟囱蟹王
+    "boss-crab": { "front": "left", "move": "烟囱蟹王-move", "attack": "烟囱蟹王-attack", "dead": "烟囱蟹王-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    // 第 2 关 —— 寄居沉船章鱼
+    "boss-octopus": { "front": "left", "move": "寄居沉船章鱼-move", "attack": "寄居沉船章鱼-attack", "dead": "寄居沉船章鱼-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    // 第 3 关 —— 冠冕水母
+    "boss-jelly": { "front": "left", "move": "冠冕水母-move", "attack": "冠冕水母-attack", "dead": "冠冕水母-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    // 第 4 关 —— 长尾鲨
+    "boss-shark": { "front": "left", "move": "长尾鲨-move", "attack": "长尾鲨-attack", "dead": "长尾鲨-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    // 第 5 关 —— 废网巨鲨
+    "boss-netshark": { "front": "left", "move": "废网巨鲨-move", "attack": "废网巨鲨-attack", "dead": "废网巨鲨-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    // 第 6 关 —— 风暴之眼
+    "boss-eye": { "front": "left", "move": "风暴之眼-move", "attack": "风暴之眼-attack", "dead": "风暴之眼-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+
 
     // ---------------------------------------------------------------------------------------------
     // 四位枪手
@@ -1708,6 +1869,12 @@
       "bombfish": 10,
       // BOSS 的血量在**关卡**里给（见 config/levels.json5 的 boss.health）：同一只 BOSS 在第二关可以更厚，`n      // 那是关卡强度，不是机制。这里留一行是为了让"每种危险物一行"这条约定继续成立。
       "boss": 0,
+      "boss-crab": 0,
+      "boss-octopus": 0,
+      "boss-jelly": 0,
+      "boss-shark": 0,
+      "boss-netshark": 0,
+      "boss-eye": 0,
       // 喷口（黑烟囱）：**碰到就是死**（5 点伤害，而体积 1 的气泡只有 1 点血）。`n      // 它不"打跑"，它是地形：这一关要学的是**横向离开**，不是硬扛。
       "vent": 0,
       "mineral": 0,
@@ -1991,12 +2158,16 @@
     },
 
     // ---------------------------------------------------------------------------------------------
-    // BOSS：每关最后必须打掉的那只
+    // BOSS 的老档案 —— **这是一块墓碑，删掉它是迁移的最后一步**
     // ---------------------------------------------------------------------------------------------
     //
     // **它不属于水流**：BOSS 不随水漂走，而是**咬住画面**——它一直停在你上方 `holdMeters` 处横向游弋，
-    // 所以你不可能"跑过去"。血量、名字、出现位置是**关卡**给的（那只属于关卡强度），
-    // 这里只管它怎么动、怎么打、多大、什么颜色。
+    // 所以你不可能"跑过去"。血量、名字、出现位置是**关卡**给的（那只属于关卡强度）。
+    //
+    // 从前"它怎么动、怎么打、多大、什么颜色"也在这里，六只 BOSS 共用一份 —— 见上面 `hazards.bosses`。
+    // 那一块落地的同时，这一块就只剩一个用处：**旧 `boss` kind 的取值**，以及下面这些注释所记的"为什么"
+    // （比如 holdMeters 那三个数为什么必须一起用）。六个 kind 各有了自己的皮之后，
+    // 这一块、`hazardArt.boss` 和 `src/hazards.ts` 里的 `'boss'` 一起删。
     "boss": {
       // 它悬停的高度，三个数一起决定，**因为它必须以"看得见"为准**。
       //
@@ -2023,7 +2194,8 @@
       // 体型（泳道比例）。做得大是刻意的：它是这一关的答案，不是又一条鱼。
       "radiusRatio": 0.11,
 
-      // 默认颜色；关卡可以覆盖它（config/levels.json5 的 boss.colour）。
+      // 默认颜色。**关卡不再覆盖它了**：颜色是 `hazards.bosses.<kind>.colour`，也就是"这只 BOSS 长什么样"，
+      // 而不是"这一关的强度"——这本来就不该由关卡来说。
       "colour": 0x53306b,
       "eyeColour": 0xffd479,
       "armourColour": 0x7a4f9c,
@@ -2073,6 +2245,198 @@
       // 每颗的弧度（占飞行距离的比例）。一点点就够，让一片颗粒读起来是"甩出来的"而不是一排子弹。
       "attackSprayBowRatio": 0.09
     },
+    // ---------------------------------------------------------------------------------------------
+    // 六个 BOSS：一个 kind 一份完整档案
+    // ---------------------------------------------------------------------------------------------
+    //
+    // **这里是 BOSS 的"手感"唯一该写的地方。** 从前 BOSS 只有一个共享档案（下面那个旧的 `boss`）加一个
+    // "关卡自己给颜色"的 `boss.colour`，于是决定它怎么动、怎么贴、怎么开火的每一个数都是六只共用的 ——
+    // 六场 BOSS 战里有五场其实是同一场画了六遍。拆开之后，一只 BOSS 的节奏终于有地方可写。
+    //
+    // 键就是 hazard kind（见 `src/hazards.ts` 的 `BOSS_KINDS`），写法和 `hazards.radius`、`hazards.health`、
+    // `hazardArt` 一致。**每行都是完整的 23 个字段，不留默认值**：留默认值就等于"这个数在别处"，
+    // 而调一只 BOSS 的时候不该需要同时记住另一只的数。
+    //
+    // 字段含义（这样六行可以并排看，不用每行都读一遍注释）：
+    //   holdMeters / holdBandRatio / holdMinMeters  悬停高度的上限、可见深度的比例、下限。三个一起才保证"它一定在屏内"
+    //                                               （窗口越宽越扁，可见深度越小，所以不能只写绝对值）。
+    //   patrolAmplitude / patrolPeriodSeconds       横向游弋的幅度（泳道比例）与周期（秒）——"弹幕来自一个会动的炮台"
+    //   seekSpeedFactor                             横向追你的速度（泳道/秒）。比玩家慢，所以它压过来时你有地方去
+    //   contactDamage                               碰到它扣几点
+    //   radiusRatio                                 体型（泳道比例）
+    //   colour / eyeColour / armourColour           身体、眼睛、甲壳的颜色（**代码画的那条路径**用；有贴图时以贴图为准）
+    //   weakPointWidthRatio                         弱点标记的宽度（泳道比例）
+    //   hitFlashColour / hitFlashStrength           命中闪白：颜色，以及程序画的身体的强度（贴图版用 hazardArt 的
+    //                                               spriteFlashScale）。时长和曲线在顶层的 hitFlash
+    //   knockbackScale                              被击中时的后退倍率，乘在顶层 hitKnockback.meters 上（普通敌人是 1）
+    //   attackEverySeconds                          两次挥螯之间的间隔（秒）
+    //   attackSprayFrame                            挥到动画的第几帧甩出颗粒（钳子合上那一下）
+    //   attackSprayCount / attackSpraySpread        一次甩几颗，摊开多宽（泳道比例）
+    //   attackSpraySeconds                          颗粒飞到落点用多久（秒）——**这就是躲的时间**
+    //   attackSprayFromX / attackSprayFromY         钳子在哪（相对它自己的半径）
+    //   attackSprayBowRatio                         每颗的弧度（占飞行距离的比例）
+    //
+    // **六行现在的值是一模一样的**，抄自旧的 `hazards.boss`，而且这一步是**先证明"行为没变"**：
+    // 六只 BOSS 必须和拆分前那只逐像素一致，之后才谈各不相同。烟囱蟹王先走通，再复制到其余五个。
+    "bosses": {
+      // 第 1 关 —— 烟囱蟹王。
+      "boss-crab": {
+        "holdMeters": 330,
+        "holdBandRatio": 0.34,
+        "holdMinMeters": 90,
+        "patrolAmplitude": 0.36,
+        "patrolPeriodSeconds": 4.6,
+        "seekSpeedFactor": 0.16,
+        "contactDamage": 1,
+        "radiusRatio": 0.11,
+        "colour": 0x53306b,
+        "eyeColour": 0xffd479,
+        "armourColour": 0x7a4f9c,
+        "weakPointWidthRatio": 0.03,
+        "hitFlashColour": 0xffffff,
+        "hitFlashStrength": 1,
+        "knockbackScale": 0.5,
+        "attackEverySeconds": 4.6,
+        "attackSprayFrame": 6,
+        "attackSprayCount": 7,
+        "attackSpraySpread": 0.55,
+        "attackSpraySeconds": 0.62,
+        "attackSprayFromX": 0.55,
+        "attackSprayFromY": -1.25,
+        "attackSprayBowRatio": 0.09
+      },
+      // 第 2 关 —— 寄居沉船章鱼。
+      "boss-octopus": {
+        "holdMeters": 330,
+        "holdBandRatio": 0.34,
+        "holdMinMeters": 90,
+        "patrolAmplitude": 0.36,
+        "patrolPeriodSeconds": 4.6,
+        "seekSpeedFactor": 0.16,
+        "contactDamage": 1,
+        "radiusRatio": 0.11,
+        "colour": 0x53306b,
+        "eyeColour": 0xffd479,
+        "armourColour": 0x7a4f9c,
+        "weakPointWidthRatio": 0.03,
+        "hitFlashColour": 0xffffff,
+        "hitFlashStrength": 1,
+        "knockbackScale": 0.5,
+        "attackEverySeconds": 4.6,
+        "attackSprayFrame": 6,
+        "attackSprayCount": 7,
+        "attackSpraySpread": 0.55,
+        "attackSpraySeconds": 0.62,
+        "attackSprayFromX": 0.55,
+        "attackSprayFromY": -1.25,
+        "attackSprayBowRatio": 0.09
+      },
+      // 第 3 关 —— 冠冕水母。
+      "boss-jelly": {
+        "holdMeters": 330,
+        "holdBandRatio": 0.34,
+        "holdMinMeters": 90,
+        "patrolAmplitude": 0.36,
+        "patrolPeriodSeconds": 4.6,
+        "seekSpeedFactor": 0.16,
+        "contactDamage": 1,
+        "radiusRatio": 0.11,
+        "colour": 0x53306b,
+        "eyeColour": 0xffd479,
+        "armourColour": 0x7a4f9c,
+        "weakPointWidthRatio": 0.03,
+        "hitFlashColour": 0xffffff,
+        "hitFlashStrength": 1,
+        "knockbackScale": 0.5,
+        "attackEverySeconds": 4.6,
+        "attackSprayFrame": 6,
+        "attackSprayCount": 7,
+        "attackSpraySpread": 0.55,
+        "attackSpraySeconds": 0.62,
+        "attackSprayFromX": 0.55,
+        "attackSprayFromY": -1.25,
+        "attackSprayBowRatio": 0.09
+      },
+      // 第 4 关 —— 长尾鲨。
+      "boss-shark": {
+        "holdMeters": 330,
+        "holdBandRatio": 0.34,
+        "holdMinMeters": 90,
+        "patrolAmplitude": 0.36,
+        "patrolPeriodSeconds": 4.6,
+        "seekSpeedFactor": 0.16,
+        "contactDamage": 1,
+        "radiusRatio": 0.11,
+        "colour": 0x53306b,
+        "eyeColour": 0xffd479,
+        "armourColour": 0x7a4f9c,
+        "weakPointWidthRatio": 0.03,
+        "hitFlashColour": 0xffffff,
+        "hitFlashStrength": 1,
+        "knockbackScale": 0.5,
+        "attackEverySeconds": 4.6,
+        "attackSprayFrame": 6,
+        "attackSprayCount": 7,
+        "attackSpraySpread": 0.55,
+        "attackSpraySeconds": 0.62,
+        "attackSprayFromX": 0.55,
+        "attackSprayFromY": -1.25,
+        "attackSprayBowRatio": 0.09
+      },
+      // 第 5 关 —— 废网巨鲨。
+      "boss-netshark": {
+        "holdMeters": 330,
+        "holdBandRatio": 0.34,
+        "holdMinMeters": 90,
+        "patrolAmplitude": 0.36,
+        "patrolPeriodSeconds": 4.6,
+        "seekSpeedFactor": 0.16,
+        "contactDamage": 1,
+        "radiusRatio": 0.11,
+        "colour": 0x53306b,
+        "eyeColour": 0xffd479,
+        "armourColour": 0x7a4f9c,
+        "weakPointWidthRatio": 0.03,
+        "hitFlashColour": 0xffffff,
+        "hitFlashStrength": 1,
+        "knockbackScale": 0.5,
+        "attackEverySeconds": 4.6,
+        "attackSprayFrame": 6,
+        "attackSprayCount": 7,
+        "attackSpraySpread": 0.55,
+        "attackSpraySeconds": 0.62,
+        "attackSprayFromX": 0.55,
+        "attackSprayFromY": -1.25,
+        "attackSprayBowRatio": 0.09
+      },
+      // 第 6 关 —— 风暴之眼。
+      "boss-eye": {
+        "holdMeters": 330,
+        "holdBandRatio": 0.34,
+        "holdMinMeters": 90,
+        "patrolAmplitude": 0.36,
+        "patrolPeriodSeconds": 4.6,
+        "seekSpeedFactor": 0.16,
+        "contactDamage": 1,
+        "radiusRatio": 0.11,
+        "colour": 0x53306b,
+        "eyeColour": 0xffd479,
+        "armourColour": 0x7a4f9c,
+        "weakPointWidthRatio": 0.03,
+        "hitFlashColour": 0xffffff,
+        "hitFlashStrength": 1,
+        "knockbackScale": 0.5,
+        "attackEverySeconds": 4.6,
+        "attackSprayFrame": 6,
+        "attackSprayCount": 7,
+        "attackSpraySpread": 0.55,
+        "attackSpraySeconds": 0.62,
+        "attackSprayFromX": 0.55,
+        "attackSprayFromY": -1.25,
+        "attackSprayBowRatio": 0.09
+      },
+    },
+
 
     // ---------------------------------------------------------------------------------------------
     // 电鳗
@@ -2189,6 +2553,12 @@
       "urchin": 0.5,
       // 只有值，没有用武之地：edibleAtTier 把它锁在 99，所以 BOSS 永远吃不到。表要有这一行，`n      // 只是为了让"两张表的键必须一致"那条加载期检查继续有效。
       "boss": 40,
+    "boss-crab": 40,
+    "boss-octopus": 40,
+    "boss-jelly": 40,
+    "boss-shark": 40,
+    "boss-netshark": 40,
+    "boss-eye": 40,
       "vent": 0,
       "mineral": 0.05,
       "shrimp": 0.22,
@@ -2233,6 +2603,12 @@
       "bombfish": 2,
       // 5 = 最高档（tierVolume 的最后一档）也吃不了它。BOSS 不是食物，这个值只是"永远够不到"。
       "boss": 5,
+      "boss-crab": 5,
+      "boss-octopus": 5,
+      "boss-jelly": 5,
+      "boss-shark": 5,
+      "boss-netshark": 5,
+      "boss-eye": 5,
       "vent": 5,
       "mineral": 5,
       "shrimp": 2,
@@ -3006,6 +3382,12 @@
         "starfish": "destroy",
         // BOSS 也是 push：怒气爆发推得动它，但清不掉。**这是刻意的**——一个能被技能删掉的 BOSS`n        // 会让"这一关的终点"取决于你有没有那个技能，那它就不是终点了。
         "boss": "push",
+        "boss-crab": "push",
+        "boss-octopus": "push",
+        "boss-jelly": "push",
+        "boss-shark": "push",
+        "boss-netshark": "push",
+        "boss-eye": "push",
         // 热液喷口和它的矿物颗粒是**地形**：冲击波推不动它们，也清不掉。`n        "vent": "push",
         "mineral": "push",
         "zapper": "destroy",

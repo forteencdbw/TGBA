@@ -96,10 +96,19 @@ if (!['hazards', 'obstacles'].includes(table)) fail(`--table must be hazards or 
 const section = config[table];
 if (!section) fail(`no ${table} section in the config`);
 
-const radius = section.radius?.[kind];
+/**
+ * The radius, from wherever this kind keeps it.
+ *
+ * `hazards.radius` is the table for ordinary creatures, and a BOSS is not in it: the boss's size is part of its
+ * dossier (`hazards.bosses.<kind>.radiusRatio`), the same way its colour and its attacks are -- a boss is a
+ * creature whose every number belongs to that one boss. Asking the dossier as a second place is what lets the
+ * pipeline derive a boss's grid at all; the alternative was putting the boss back into `hazards.radius`, which is
+ * the design the README explains the boss does NOT follow.
+ */
+const radius = section.radius?.[kind] ?? section.bosses?.[kind]?.radiusRatio;
 if (radius === undefined) {
   const known = Object.keys(section.radius ?? {}).join(', ');
-  fail(`no ${table}.radius.${kind}. Known kinds: ${known}`);
+  fail(`no ${table}.radius.${kind} and no ${table}.bosses.${kind}.radiusRatio. Known kinds: ${known}`);
 }
 
 // `hazardArt` is a flat table keyed by kind; `obstacles.art` is too. Either may carry a single `scale`, or a
