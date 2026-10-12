@@ -3468,22 +3468,8 @@ function drawTrash(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elaps
 }
 
 function drawCrab(g: Graphics, h: Hazard, r: number, _laneWidth: number, elapsed: number): void {
-  // TELEGRAPH FIRST: a visible arc showing exactly where the player will be thrown.
-  if (h.fuse > 0) {
-    const progress = 1 - h.fuse / hazardTuning.crabFuseSeconds;
-    const arcTop = h.y + hazardTuning.crabLaunchMps * hazardTuning.crabApexSeconds * progress;
-    g.moveTo(h.x, h.y)
-      .quadraticCurveTo(h.x, (h.y + arcTop) / 2 + r * 3, h.x, arcTop)
-      .stroke({ color: 0xffd479, alpha: 0.15 + progress * 0.5, width: Math.max(1, r * 0.18) });
-    // Sand puffs while it winds up.
-    for (let i = 0; i < 3; i++) {
-      const p = (h.phase * 1.8 + i * 0.33) % 1;
-      g.circle(h.x + Math.sin(i * 2.1) * r * 1.4, h.y - r * 0.5 - p * r * 2.2, r * (0.16 + p * 0.2)).fill({
-        color: 0xd9c39a,
-        alpha: 0.3 * (1 - p),
-      });
-    }
-  }
+  // Under the body, where it has always been: see `paintCrabLaunchTelegraph`.
+  paintCrabLaunchTelegraph(g, h, r);
   g.ellipse(h.x, h.y, r * 1.35, r * 0.95).fill({ color: KIND_TUNING.crab.colour, alpha: 0.9 });
   // Claws, plus legs that flail after firing.
   const flail = h.fired ? Math.sin(elapsed * 14) * 0.6 : 0;
@@ -3717,12 +3703,10 @@ function drawZapper(g: Graphics, h: Hazard, r: number, laneWidth: number, elapse
   /**
    * An electric jellyfish: a violet bell, a few thick tentacles, and the discharge ring.
    *
-   * The ring is drawn at exactly the radius the hitbox uses (`ringRadiusRatio`), which is the rule this project
-   * keeps everywhere: what the player aims at and what the game tests are the same number, or the picture is a
-   * lie. It fades as it expires, so "how much of it is left" is answerable from the picture alone.
+   * The ring is a telegraph and now comes from `paintZapperDischarge`; it is OVER the body, which is where it has
+   * always been and the opposite of the crab's arc and the bomb fish's ring.
    */
   const zc = mech.hazards.zapper;
-  const ring = laneWidth * zc.ringRadiusRatio;
   g.ellipse(h.x, h.y, r, r * 0.85).fill({ color: zc.bellColour, alpha: 0.85 });
   g.ellipse(h.x, h.y, r, r * 0.85).stroke({ color: 0xffffff, alpha: 0.5, width: Math.max(1, r * 0.12) });
   for (const offset of [-0.5, 0, 0.5]) {
@@ -3730,15 +3714,7 @@ function drawZapper(g: Graphics, h: Hazard, r: number, laneWidth: number, elapse
       .lineTo(h.x + r * offset * 1.6 + Math.sin(elapsed * 1.5 + offset * 4) * r * 0.3, h.y - r * 2.4)
       .stroke({ color: zc.bellColour, alpha: 0.7, width: Math.max(1, r * 0.14) });
   }
-  if (h.discharge > 0) {
-    const left = Math.max(0, Math.min(1, h.discharge / Math.max(0.01, zc.ringSeconds)));
-    g.circle(h.x, h.y, ring * (0.4 + 0.6 * (1 - left))).stroke({
-      color: zc.ringColour,
-      alpha: zc.ringAlpha * left,
-      width: Math.max(1, r * 0.35 * (0.4 + left)),
-    });
-    g.circle(h.x, h.y, ring * 0.55).fill({ color: zc.ringColour, alpha: 0.12 * left });
-  }
+  paintZapperDischarge(g, h, r, laneWidth);
   return;
 }
 
@@ -3877,26 +3853,11 @@ function drawBombfish(g: Graphics, h: Hazard, r: number, _laneWidth: number, ela
   /**
    * A round, heavy fish with a stub of fuse, which is the whole joke: it looks like a bomb.
    *
-   * The stub is NOT drawn burning: it has no timer of its own. While it hunts, the timer is the ARMING ring
-   * below; while it is inside the player, the countdown is drawn on the bubble (see `Game.drawStomach`).
+   * The stub is NOT drawn burning: it has no timer of its own. While it hunts, the timer is the ARMING ring below;
+   * while it is inside the player, the countdown is drawn on the bubble (see `Game.drawStomach`).
    */
-  /**
-   * A LIT FUSE, drawn around the body: a ring that closes in as the clock runs out.
-   *
-   * The same language the crab's launch arc uses -- a threat states its own timing, so the player never has to
-   * guess whether this one is about to go off. Inside the case rather than as a general overlay because only one
-   * kind has an external fuse.
-   */
-  if (h.blastFuse !== null) {
-    const total = Math.max(0.01, mech.hazards.bombfish.fuseSeconds);
-    const left = Math.max(0, Math.min(1, h.blastFuse / total));
-    const pulse = 0.75 + 0.25 * Math.sin(elapsed * 22);
-    g.circle(h.x, h.y, r * (1.3 + 1.6 * (1 - left))).stroke({
-      color: KIND_TUNING.bombfish.colour,
-      alpha: (0.35 + 0.5 * (1 - left)) * pulse,
-      width: Math.max(1, r * 0.22),
-    });
-  }
+  // Under the body, where it has always been: see `paintBombfishFuse`.
+  paintBombfishFuse(g, h, r, elapsed);
   g.ellipse(h.x, h.y, r * 1.25, r * 1.1).fill({ color: KIND_TUNING.bombfish.colour, alpha: 0.9 });
   // A stubby tail, so it still reads as a fish rather than as a ball.
   g.moveTo(h.x - r * 1.1, h.y)
@@ -3957,6 +3918,98 @@ function drawEel(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed
  * Total, like the other per-kind tables: a new kind with no drawing is a compile error rather than a creature that is
  * invisible and — worse — silently unmissable, since a hazard with no body still has a hitbox.
  */
+/**
+ * THE PARTS OF A CREATURE THAT ARE A TELEGRAPH RATHER THAN A BODY.
+ *
+ * Each of these was drawn inside its kind's `draw*`, and each said something the player has to know:
+ *
+ *   crab      the arc it is about to throw you along, and the sand it kicks up winding back
+ *   bombfish  the arming ring, closing in as the fuse runs out
+ *   zapper    the discharge ring, at EXACTLY the radius the hitbox uses
+ *
+ * The drawn body is a fallback that a picture replaces. A telegraph is not: it is the state of the threat, and a
+ * picture arrives with its own body already painted and no arc, no fuse and no hitbox ring on it. They were inline
+ * in the `draw*` functions, which are only reached when there is NO picture -- so the moment one of these kinds
+ * gets art, its telegraph silently disappears, and for the zapper that is worse than losing a flourish: the ring
+ * IS the hitbox, so the picture would be a lie.
+ *
+ * Extracted rather than duplicated, and each `draw*` still calls its own at the SAME point it always did, because
+ * the three z-orders differ: the crab's arc and the bomb fish's ring go UNDER the body, the zapper's ring goes
+ * OVER it. `paintTelegraph` is the one the ART path calls -- there the picture is drawn first and the telegraph
+ * last, which is the only order that makes sense over a sprite.
+ */
+function paintCrabLaunchTelegraph(g: Graphics, h: Hazard, r: number): void {
+  // TELEGRAPH FIRST: a visible arc showing exactly where the player will be thrown.
+  if (h.fuse <= 0) return;
+  const progress = 1 - h.fuse / hazardTuning.crabFuseSeconds;
+  const arcTop = h.y + hazardTuning.crabLaunchMps * hazardTuning.crabApexSeconds * progress;
+  g.moveTo(h.x, h.y)
+    .quadraticCurveTo(h.x, (h.y + arcTop) / 2 + r * 3, h.x, arcTop)
+    .stroke({ color: 0xffd479, alpha: 0.15 + progress * 0.5, width: Math.max(1, r * 0.18) });
+  // Sand puffs while it winds up.
+  for (let i = 0; i < 3; i++) {
+    const p = (h.phase * 1.8 + i * 0.33) % 1;
+    g.circle(h.x + Math.sin(i * 2.1) * r * 1.4, h.y - r * 0.5 - p * r * 2.2, r * (0.16 + p * 0.2)).fill({
+      color: 0xd9c39a,
+      alpha: 0.3 * (1 - p),
+    });
+  }
+}
+
+function paintBombfishFuse(g: Graphics, h: Hazard, r: number, elapsed: number): void {
+  /**
+   * A LIT FUSE, drawn around the body: a ring that closes in as the clock runs out.
+   *
+   * The same language the crab's launch arc uses -- a threat states its own timing, so the player never has to
+   * guess whether this one is about to go off.
+   */
+  if (h.blastFuse === null) return;
+  const total = Math.max(0.01, mech.hazards.bombfish.fuseSeconds);
+  const left = Math.max(0, Math.min(1, h.blastFuse / total));
+  const pulse = 0.75 + 0.25 * Math.sin(elapsed * 22);
+  g.circle(h.x, h.y, r * (1.3 + 1.6 * (1 - left))).stroke({
+    color: KIND_TUNING.bombfish.colour,
+    alpha: (0.35 + 0.5 * (1 - left)) * pulse,
+    width: Math.max(1, r * 0.22),
+  });
+}
+
+function paintZapperDischarge(g: Graphics, h: Hazard, r: number, laneWidth: number): void {
+  /**
+   * The discharge ring, at exactly the radius the hitbox uses (`ringRadiusRatio`).
+   *
+   * The rule this project keeps everywhere: what the player aims at and what the game tests are the same number,
+   * or the picture is a lie. It fades as it expires, so "how much of it is left" is answerable from the picture.
+   */
+  if (h.discharge <= 0) return;
+  const zc = mech.hazards.zapper;
+  const ring = laneWidth * zc.ringRadiusRatio;
+  const left = Math.max(0, Math.min(1, h.discharge / Math.max(0.01, zc.ringSeconds)));
+  g.circle(h.x, h.y, ring * (0.4 + 0.6 * (1 - left))).stroke({
+    color: zc.ringColour,
+    alpha: zc.ringAlpha * left,
+    width: Math.max(1, r * 0.35 * (0.4 + left)),
+  });
+  g.circle(h.x, h.y, ring * 0.55).fill({ color: zc.ringColour, alpha: 0.12 * left });
+}
+
+/** The telegraph this kind carries, whoever drew its body. See the note above the three painters. */
+function paintTelegraph(g: Graphics, h: Hazard, r: number, laneWidth: number, elapsed: number): void {
+  switch (h.kind) {
+    case 'crab':
+      paintCrabLaunchTelegraph(g, h, r);
+      break;
+    case 'bombfish':
+      paintBombfishFuse(g, h, r, elapsed);
+      break;
+    case 'zapper':
+      paintZapperDischarge(g, h, r, laneWidth);
+      break;
+    default:
+      break;
+  }
+}
+
 const CREATURE_DRAWING: Record<HazardKind, CreatureDraw> = {
   fish: drawFish,
   // The drawn fallback, used until the picture loads (or if it never does): the same body the fish gets, at the
@@ -4359,6 +4412,20 @@ export function paintHazards(
           g.circle(head, y, Math.max(1, size * 0.045)).fill({ color: 0xffffff, alpha: 0.92 });
         }
         if (art.lure) paintLure(g, x, y, r, art.lure, elapsed);
+        /**
+         * THE TELEGRAPH, LAST, over the picture.
+         *
+         * The `draw*` bodies under this branch are skipped entirely once a picture exists -- that is the whole
+         * point of them, and it is why the three telegraphs had to be lifted out of them. Without this call a
+         * pictured crab would not show where it is about to throw you, a pictured bomb fish would not show its
+         * fuse, and a pictured zapper would not show the ring that IS its hitbox.
+         *
+         * Over the sprite rather than under it, which is the opposite of two of the three in their `draw*`
+         * bodies. That asymmetry is deliberate and it is not a mistake to be tidied: under a flat drawn body an
+         * arc reads as though the creature is standing in front of it, and over a picture the same arc would be
+         * hidden by the body it is warning about.
+         */
+        paintTelegraph(g, h, r, laneWidth, elapsed);
         continue;
       }
     }

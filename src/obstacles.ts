@@ -571,44 +571,7 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
       g.stroke({ color: rim, alpha: 0.8, width: r * 0.1 });
       g.rect(o.x - r, o.y - r, r * 2, r * 2).stroke({ color: rim, alpha: 0.95, width: r * 0.16 });
     } else if (o.kind === 'net') {
-      /**
-       * A mesh, and the hole GROWS as it tears.
-       *
-       * The tear is the whole interaction -- you hold a direction for a second and a half and it gives -- so it has
-       * to be visible from the inside of it. A net that looked the same the whole time would read as "this is a wall
-       * and the game is broken", which is the one failure a soft obstacle cannot afford.
-       *
-       * Drawn as whole grid lines with the middle ones omitted near the tear, so the hole is a real gap in the mesh
-       * rather than a dot drawn on top of it.
-       */
-      const body = mech.obstacles.netColor;
-      const rim = shade(mech.obstacles.netRimColor, darken);
-      const mesh = mech.obstacles.netMesh;
-      // 1 when whole, 0 when torn through: the radius of the intact ring around the hole.
-      const torn = Math.min(1, damaged * 1.6);
-      const hole = r * 0.9 * torn;
-      g.rect(o.x - r, o.y - r, r * 2, r * 2).fill({ color: rim, alpha: 0.22 });
-      for (let i = 0; i < mesh; i++) {
-        const t = (i / (mesh - 1)) * 2 - 1; // -1..1 across the square
-        const d = Math.abs(t * r);
-        /**
-         * Where this line meets the edge of the hole, or 0 when it misses the hole entirely.
-         *
-         * The exact chord rather than a flat `hole` radius: with a flat radius every line stops at the same distance
-         * from the centre, so the "hole" comes out as a square-ish notch and the rope ends float away from the tear.
-         * `sqrt(hole^2 - d^2)` is where a line at distance `d` actually leaves the circle, and it is automatically 0
-         * for lines outside it -- which is why there is no separate skip case.
-         */
-        const gap = hole > 0 && d < hole ? Math.sqrt(hole * hole - d * d) : 0;
-        for (const sign of [-1, 1] as const) {
-          g.moveTo(o.x + t * r, o.y + sign * r);
-          g.lineTo(o.x + t * r, o.y + sign * gap);
-          g.moveTo(o.x + sign * r, o.y + t * r);
-          g.lineTo(o.x + sign * gap, o.y + t * r);
-        }
-      }
-      g.stroke({ color: body, alpha: 0.85, width: r * 0.09 });
-      g.rect(o.x - r, o.y - r, r * 2, r * 2).stroke({ color: rim, alpha: 0.75, width: r * 0.11 });
+      paintNet(g, o.x, o.y, r, damaged, darken);
     } else if (o.kind === 'tube') {
       /**
        * Tube worms: a fan of pale tubes on a dark base.
@@ -655,8 +618,8 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
     }
   }
 
-  /**
-   * The white flash, as a SECOND pass -- the same shape as the creatures' pass, and for the same reasons.
+/**
+ * The white flash, as a SECOND pass -- the same shape as the creatures' pass, and for the same reasons.
    *
    * One place rather than a line in each kind's branch means a crate, a coral, a wall and a net all flash identically,
    * and the next breakable thing someone adds gets it without being told.
@@ -675,6 +638,60 @@ function shade(colour: number, factor: number): number {
   const g = Math.max(0, Math.min(255, Math.round(((colour >> 8) & 255) * factor)));
   const b = Math.max(0, Math.min(255, Math.round((colour & 255) * factor)));
   return (r << 16) | (g << 8) | b;
+}
+
+/**
+ * The tear's hole, as a radius.
+ *
+ * `damaged` is 0..1 and the hole grows faster than it: `1.6` means the mesh is fully open while the thing still
+ * has a third of its health left, which is the point -- a net that only opened at zero would read as "this is a
+ * wall and the game is broken" for the whole second and a half the player is pushing through it.
+ *
+ * Named and exported because it is the ONE thing about a net that changes, and because a pictured net has to be
+ * able to draw the same hole over itself: the mesh can move into a picture and the tear cannot, since a gap in a
+ * grid of lines is not something a sprite arrives with.
+ */
+export function netHoleRadius(radius: number, damaged: number): number {
+  return radius * 0.9 * Math.min(1, damaged * 1.6);
+}
+
+/**
+ * A net: a mesh, with the hole GROWING as it tears.
+ *
+ * The tear is the whole interaction -- you hold a direction for a second and a half and it gives -- so it has to be
+ * visible from the inside of it. Drawn as whole grid lines with the middle ones omitted near the tear, so the hole
+ * is a real gap in the mesh rather than a dot drawn on top of it.
+ *
+ * Extracted from `paintObstacles` rather than left inline, for the same reason the three creature telegraphs were:
+ * it is the part of the net that a picture cannot supply.
+ */
+function paintNet(g: Graphics, x: number, y: number, r: number, damaged: number, darken: number): void {
+  const body = mech.obstacles.netColor;
+  const rim = shade(mech.obstacles.netRimColor, darken);
+  const mesh = mech.obstacles.netMesh;
+  const hole = netHoleRadius(r, damaged);
+  g.rect(x - r, y - r, r * 2, r * 2).fill({ color: rim, alpha: 0.22 });
+  for (let i = 0; i < mesh; i++) {
+    const t = (i / (mesh - 1)) * 2 - 1; // -1..1 across the square
+    const d = Math.abs(t * r);
+    /**
+     * Where this line meets the edge of the hole, or 0 when it misses the hole entirely.
+     *
+     * The exact chord rather than a flat `hole` radius: with a flat radius every line stops at the same distance
+     * from the centre, so the "hole" comes out as a square-ish notch and the rope ends float away from the tear.
+     * `sqrt(hole^2 - d^2)` is where a line at distance `d` actually leaves the circle, and it is automatically 0
+     * for lines outside it -- which is why there is no separate skip case.
+     */
+    const gap = hole > 0 && d < hole ? Math.sqrt(hole * hole - d * d) : 0;
+    for (const sign of [-1, 1] as const) {
+      g.moveTo(x + t * r, y + sign * r);
+      g.lineTo(x + t * r, y + sign * gap);
+      g.moveTo(x + sign * r, y + t * r);
+      g.lineTo(x + sign * gap, y + t * r);
+    }
+  }
+  g.stroke({ color: body, alpha: 0.85, width: r * 0.09 });
+  g.rect(x - r, y - r, r * 2, r * 2).stroke({ color: rim, alpha: 0.75, width: r * 0.11 });
 }
 
 
