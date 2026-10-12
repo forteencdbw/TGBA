@@ -48,6 +48,7 @@ import base64
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -409,6 +410,7 @@ def command_new(arguments):
                 ("colours", int(entry.get("colours") or existing["colours"])),
                 ("aspect", entry.get("aspect") or existing["aspect"]),
                 ("candidateCount", int(entry.get("candidates") or existing["candidateCount"])),
+                ("alpha", float(entry.get("alpha") or existing.get("alpha") or 1.0)),
                 ("originalDir", entry.get("originalDir")),
                 ("photo", entry.get("photo") or existing.get("photo")),
             ):
@@ -441,6 +443,7 @@ def command_new(arguments):
             "size": entry.get("size") or DEFAULT_SIZE,
             "aspect": entry.get("aspect") or "1:1",
             "candidateCount": int(entry.get("candidates") or DEFAULT_CANDIDATES),
+            "alpha": float(entry.get("alpha") or 1.0),
             "prompt": entry.get("prompt") or "",
             "composition": entry.get("composition"),
             "originalDir": entry.get("originalDir"),
@@ -1046,6 +1049,19 @@ def union_box(paths, threshold=ALPHA_FLOOR):
             max(b[2] for b in boxes), max(b[3] for b in boxes))
 
 
+def frame_set_name(asset, state="move"):
+    """
+    What a frame set is called on disk: `<asset>-<state>` for a creature, `<asset>` for anything else.
+
+    THE NAME IS LOAD-BEARING, and getting it wrong is silent. `wire_hazard` declares
+    `animations.<name>.frames = "<name>-{n}"` and `hazardArt.<kind>.move = "<name>"`, and the atlas looks up a frame
+    by FILE NAME -- so a frame written as `螃蟹-1.png` under an animation that asks for `螃蟹-move-1` is a picture
+    the game never finds, with nothing failing anywhere. The two are derived from this one function so they cannot
+    disagree.
+    """
+    return f"{asset['name']}-{state}" if asset["table"] == "hazards" else asset["name"]
+
+
 def command_idle(arguments):
     """
     Turn the selected candidate into an idle animation, two ways, with the choice made deliberately.
@@ -1145,7 +1161,7 @@ def command_idle(arguments):
 
         run_tool([
             python, ROOT / "scripts" / "import-sheet.py", cropped_dir,
-            "--name", asset["name"], "--cols", len(raw_frames), "--rows", 1,
+            "--name", frame_set_name(asset), "--cols", len(raw_frames), "--rows", 1,
             "--grid", arguments.grid or asset["grid"], "--colours", asset["colours"],
             "--out-dir", directory / "sprites",
         ])
@@ -1154,6 +1170,10 @@ def command_idle(arguments):
                          key=lambda p: int(p.stem.rsplit("-", 1)[1]))
         asset["frames"] = [str(p.relative_to(directory)) for p in raw_frames]
         asset["sprites"] = [str(p.relative_to(directory)) for p in sprites]
+        # Kept on the record, not just used to build the GIF: `import` declares the `animations.<name>` row from it,
+        # and a frame rate that only lived in the GIF call would make the config default to 8 behind the player's
+        # back. See `wire_hazard`.
+        asset["fps"] = fps
         asset["boil"] = boil_report([Image.open(p) for p in sprites])
         say("")
         print_boil(asset["boil"])
@@ -1253,29 +1273,14 @@ def validate_config_text(text):
         probe.unlink(missing_ok=True)
 
 
-def wire_variant(text, table, kind, image, scale):
+def container_close(text, open_at):
     """
-    Add one `{ "image", "scale" }` entry to an art row's `variants` list, as text.
+    The index of the `}` or `]` that closes the container opening at `open_at`, or -1.
 
-    As text because the config is JSON5 full of comments, and the comments are the point of it: re-serialising it
-    would throw away the file's whole value. So this finds the array by brace-matching -- skipping strings and
-    comments as it goes, because a `}` inside either of those is not structural -- and inserts one line before the
-    closing bracket.
+    Skips strings and comments as it goes, because a bracket inside either of those is not structural. Written ONCE
+    and shared: the config is now edited in three places (`obstacles.art.<kind>.variants`, `hazardArt.<kind>`,
+    `animations.<name>`) and a second copy of this scanner would be a second chance to get the escaping wrong.
     """
-    if table != "obstacles":
-        return text, None
-
-    art_at = text.find('"art"')
-    if art_at < 0:
-        return text, None
-    kind_at = text.find(f'"{kind}"', art_at)
-    if kind_at < 0:
-        return text, None
-    variants_at = text.find('"variants"', kind_at)
-    if variants_at < 0:
-        return text, None
-    open_at = text.find("[", variants_at)
-
     index, depth, in_string, escaped = open_at, 0, False, False
     while index < len(text):
         char = text[index]
@@ -1291,59 +1296,211 @@ def wire_variant(text, table, kind, image, scale):
         elif char == "/" and text[index:index + 2] == "//":
             index = text.find("\n", index)
             if index < 0:
-                break
+                return -1
         elif char == "/" and text[index:index + 2] == "/*":
-            index = text.find("*/", index) + 1
-        elif char == "[":
+            found = text.find("*/", index)
+            if found < 0:
+                return -1
+            index = found + 1
+        elif char in "{[":
             depth += 1
-        elif char == "]":
+        elif char in "}]":
             depth -= 1
             if depth == 0:
-                break
+                return index
         index += 1
+    return -1
 
-    if depth != 0:
-        return text, None
 
-    # Refuse to add the same picture twice. `import` is meant to be re-runnable (typecheck can fail, the atlas can
-    # need a second go), and without this a second run appends a duplicate variants entry -- which does not fail
-    # anything, it just quietly gives one obstacle kind two identical faces.
-    kind_block_start = text.find('"variants"', text.find(f'"{kind}"', text.find('"art"')))
-    kind_block_end = text.find("]", kind_block_start)
-    if f'"{image}"' in text[kind_block_start:kind_block_end]:
-        return text, None
+def insert_before_close(text, close_at, entry):
+    """
+    Put `entry` -- already indented and newline-terminated -- just before `close_at`, on a line of its own.
 
-    close_at = index
+    THE COMMA, and why this is split out rather than inlined. JSON5 tolerates a TRAILING comma but still requires one
+    BETWEEN members, and the last member before a closing bracket has none. The first version of this appende the
+    comma to the previous line of the WHOLE text and then sliced at the old insertion index -- but that comma is one
+    character before that index, so the slice moved one character left, swallowed the newline, and put the new
+    entry's comment on the end of the previous line. Still valid JSON5 (a comment after a comma on the same line is
+    fine), which is why nothing caught it: the parse check passed and the atlas packed. It only showed up when
+    somebody read the file. Splitting at the insertion point and working on the head alone removes the arithmetic.
+    """
     line_start = text.rfind("\n", 0, close_at) + 1
-    indent = " " * (close_at - line_start)
-
-    # Split ONCE, at the insertion point, and work on the head alone.
-    #
-    # The first version appended the comma to the previous line of the WHOLE text and then sliced at the old
-    # `line_start` -- but that comma is one character before that index, so the slice moved one character left,
-    # swallowed the newline, and put the new entry's comment on the end of the previous line. Still valid JSON5
-    # (a comment after a comma on the same line is fine), which is why nothing caught it: the parse check passed
-    # and the atlas packed. It only shows up when you read the file. Keeping the head in its own variable removes
-    # the arithmetic entirely.
-    head_text = text[:line_start]
-    tail_text = text[line_start:]
+    head_text, tail_text = text[:line_start], text[line_start:]
     lines = head_text.split("\n")
     for position in range(len(lines) - 1, -1, -1):
         stripped = lines[position].strip()
         if not stripped or stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*"):
             continue
-        if stripped.endswith("[") or stripped.endswith(","):
-            break  # an empty array, or a comma already there
+        if stripped.endswith("{") or stripped.endswith("[") or stripped.endswith(","):
+            break  # an empty container, or a comma already there
         lines[position] = lines[position].rstrip() + ","
         break
-    head_text = "\n".join(lines)
+    return "\n".join(lines) + entry + tail_text
 
+
+def member_indent(text, close_at):
+    """The indent members of the container closing at `close_at` should use."""
+    return " " * (close_at - text.rfind("\n", 0, close_at) - 1 + 2)
+
+
+def object_open(text, key, from_at=0):
+    """
+    The index of the `{` opening the top-level object named `key`, or -1.
+
+    Anchored to a KEY at the start of a line rather than to the first `"key"` anywhere, and that is not pedantry:
+    this config explains itself in comments, `"animations"` is exactly the kind of word a comment about animations
+    would use, and a plain `find` would happily return the position of that mention and then brace-match from the
+    wrong place.
+    """
+    match = re.search(rf'^[ \t]*"{re.escape(key)}"[ \t]*:[ \t]*\{{', text[from_at:], re.MULTILINE)
+    if not match:
+        return -1
+    return from_at + match.end() - 1
+
+
+def has_member(text, open_at, key):
+    """
+    Whether `key` is already a member of the container opening at `open_at`.
+
+    Checked before every insert. `import` is meant to be re-runnable -- typecheck can fail, the atlas can want a
+    second go -- and without this a second run appends a duplicate row that fails nothing and quietly gives one kind
+    two conflicting art rows.
+    """
+    close_at = container_close(text, open_at)
+    if close_at < 0:
+        return False
+    return f'"{key}"' in text[open_at:close_at]
+
+
+def wire_variant(text, table, kind, image, scale):
+    """
+    Add one `{ "image", "scale" }` entry to an obstacle art row's `variants` list, as text.
+
+    As text because the config is JSON5 full of comments, and the comments are the point of it: re-serialising it
+    would throw away the file's whole value.
+    """
+    if table != "obstacles":
+        return text, None
+
+    art_at = text.find('"art"')
+    if art_at < 0:
+        return text, None
+    kind_at = text.find(f'"{kind}"', art_at)
+    if kind_at < 0:
+        return text, None
+    variants_at = text.find('"variants"', kind_at)
+    if variants_at < 0:
+        return text, None
+    open_at = text.find("[", variants_at)
+    close_at = container_close(text, open_at)
+    if close_at < 0:
+        return text, None
+    if f'"{image}"' in text[open_at:close_at]:
+        return text, None
+
+    indent = member_indent(text, close_at)
     entry = (
-        f'{indent}  // 后加的：{image}。scale 是按"画出来多大"反推的，和旁边那些一样——\n'
-        f'{indent}  // 改它就要按新宽度重跑一遍导入，否则密度会和邻居对不上。\n'
-        f'{indent}  {{ "image": "{image}", "scale": {scale:g} }}\n'
+        f'{indent}// 后加的：{image}。scale 是按"画出来多大"反推的，和旁边那些一样——\n'
+        f'{indent}// 改它就要按新宽度重跑一遍导入，否则密度会和邻居对不上。\n'
+        f'{indent}{{ "image": "{image}", "scale": {scale:g} }}\n'
     )
-    return head_text + entry + tail_text, image
+    return insert_before_close(text, close_at, entry), image
+
+
+def wire_obstacle(text, kind, image, scale, alpha=1.0):
+    """
+    Point `obstacles.art.<kind>` at a picture, CREATING the row when the kind has none.
+
+    Returned to this after the coral, which already had a `coral` row with six variants: appending to an existing
+    array and creating a row from nothing are different edits, and `crate`, `wall` and `net` have no row at all --
+    they were drawn by code, so there was nothing to append to. Doing only the first is the kind of gap that shows
+    up as "the picture is installed and the game ignores it", with no error anywhere.
+
+    `alpha` is a row-level field, not a per-variant one -- a net that is translucent is translucent, it is not a
+    property of one of its faces.
+    """
+    obstacles_at = object_open(text, "obstacles")
+    if obstacles_at < 0:
+        return text, None
+    art_at = object_open(text, "art", obstacles_at)
+    if art_at < 0:
+        return text, None
+    art_close = container_close(text, art_at)
+    if art_close < 0:
+        return text, None
+
+    row_at = object_open(text, kind, art_at)
+    if 0 <= row_at < art_close:
+        # The row exists: add a face to it, which is the coral's shape.
+        return wire_variant(text, "obstacles", kind, image, scale)
+
+    indent = member_indent(text, art_close)
+    inner = f"{indent}  "
+    alpha_line = "" if abs(alpha - 1.0) < 1e-9 else f'{inner}"alpha": {alpha:g},\n'
+    # Re-find `art`'s close after each insert: the first one moves it.
+    text = insert_before_close(
+        text,
+        art_close,
+        f'{indent}// {kind}：{image}。scale 是按"画出来多大"反推的，和 coral 那行一样。\n'
+        f'{indent}"{kind}": {{\n'
+        f'{inner}"variants": [\n'
+        f'{inner}  {{ "image": "{image}", "scale": {scale:g} }}\n'
+        f'{inner}],\n'
+        f"{alpha_line}"
+        f'{indent}}}\n',
+    )
+    return text, image
+
+
+def wire_hazard(text, kind, image, scale, animation=None):
+    """
+    Point a CREATURE's `hazardArt.<kind>.move` at a picture, declaring the animation when the picture is one.
+
+    Returns `(text, description)` on success and `(text, None)` when the config has no place to put it -- which is
+    the honest answer for a kind that is not in `hazardArt` at all, rather than inventing a row somewhere.
+
+    THE TWO SHAPES, and why they are one function. `hazardArt.<kind>.move` may name either a single file
+    (`"海星"`) or an animation (`"fish-swim"`), and `hazardArtState` resolves both -- so the only difference here is
+    whether an `animations.<name>` row has to be declared as well. Splitting them into two functions would mean two
+    places that know the row's shape.
+    """
+    hazard_at = object_open(text, "hazardArt")
+    if hazard_at < 0:
+        return text, None
+
+    if animation:
+        animation_at = object_open(text, "animations")
+        if animation_at < 0:
+            return text, None
+        if not has_member(text, animation_at, animation["name"]):
+            close_at = container_close(text, animation_at)
+            indent = member_indent(text, close_at)
+            text = insert_before_close(
+                text,
+                close_at,
+                f'{indent}// {animation["name"]}：一个资产一套动画，import 生成的。\n'
+                f'{indent}"{animation["name"]}": {{\n'
+                f'{indent}  "frames": "{animation["frames"]}",\n'
+                f'{indent}  "count": {animation["count"]},\n'
+                f'{indent}  "framesPerSecond": {animation["framesPerSecond"]:g},\n'
+                f'{indent}  "maxSeconds": {animation["maxSeconds"]:g}\n'
+                f'{indent}}}\n',
+            )
+            # `hazardArt`'s `{` may have moved; find it again rather than trusting the old index.
+            hazard_at = object_open(text, "hazardArt")
+
+    state = animation["name"] if animation else image
+    if has_member(text, hazard_at, kind):
+        return text, None
+    close_at = container_close(text, hazard_at)
+    indent = member_indent(text, close_at)
+    text = insert_before_close(
+        text,
+        close_at,
+        f'{indent}// {kind}：{image}。scale 是按"画出来多大"反推的，和旁边那些一样。\n'
+        f'{indent}"{kind}": {{ "move": "{state}", "scale": {scale:g}, "alpha": 1 }}\n',
+    )
+    return text, state
 
 
 def command_import(arguments):
@@ -1374,8 +1531,11 @@ def command_import(arguments):
         files = []
         if asset.get("sprites"):
             for index, relative in enumerate(asset["sprites"], start=1):
-                target = ASSETS / f"{asset['name']}-{index}.png"
-                shutil.copy2(directory / relative, target)
+                source = directory / relative
+                # The sprite's OWN name, which `frame_set_name` chose and `wire_hazard` declared. Re-deriving it
+                # here as `<asset>-<index>` gave a file the animation does not ask for.
+                target = ASSETS / source.name
+                shutil.copy2(source, target)
                 files.append(target)
         else:
             target = ASSETS / f"{asset['name']}.png"
@@ -1395,11 +1555,36 @@ def command_import(arguments):
             say(f"\n  --no-config: {asset['name']} was not wired. By hand:")
             say(manual)
             continue
-        updated, added = wire_variant(text, asset["table"], asset["kind"], asset["name"], scale)
+
+        if asset["table"] == "obstacles":
+            updated, added = wire_obstacle(
+                text, asset["kind"], asset["name"], scale, float(asset.get("alpha") or 1.0)
+            )
+            described = f'obstacles.art.{asset["kind"]} -> "{added}" (scale {scale:g})'
+        else:
+            # A CREATURE: `hazardArt.<kind>.move` points at a still or at an animation, and an animation needs its
+            # own row declared. The frames are the ones this asset just produced, named `<asset>-move-N`.
+            animation = None
+            if asset.get("sprites"):
+                name = frame_set_name(asset)
+                animation = {
+                    "name": name,
+                    "frames": f"{name}-{{n}}",
+                    "count": len(asset["sprites"]),
+                    "framesPerSecond": float(asset.get("fps") or 8),
+                    "maxSeconds": 2,
+                }
+            updated, added = wire_hazard(text, asset["kind"], asset["name"], scale, animation)
+            described = (
+                f'hazardArt.{asset["kind"]}.move -> "{added}"'
+                + (f' + animations."{animation["name"]}" ({animation["count"]} 帧 @ '
+                   f'{animation["framesPerSecond"]:g}fps)' if animation else '')
+            )
+
         if not added:
-            say(f"\n  config: no writable `variants` row for {asset['table']}.{asset['kind']} -- wire it by hand")
+            say(f"\n  config: no writable row for {asset['table']}.{asset['kind']} -- wire it by hand")
             if asset["table"] == "hazards":
-                say(f'    needs {asset["table"]}.radius.{asset["kind"]} and hazardArt.{asset["kind"]}, '
+                say(f'    needs hazards.radius.{asset["kind"]} and hazardArt.{asset["kind"]}, '
                     f"and a row in every Record<HazardKind, ...> in src/hazards.ts")
             continue
         complaint = validate_config_text(updated)
@@ -1409,8 +1594,7 @@ def command_import(arguments):
                 f"  Nothing was changed. Wire it by hand:\n{manual}"
             )
         text = updated
-        say(f'\n  config: added {{ "image": "{added}", "scale": {scale:g} }} to '
-            f'{asset["table"]}.art.{asset["kind"]}.variants')
+        say(f"\n  config: {described}")
     if not arguments.no_config and text != MECHANICS.read_text(encoding="utf-8"):
         MECHANICS.write_text(text, encoding="utf-8")
 
