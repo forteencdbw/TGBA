@@ -3778,32 +3778,12 @@ function drawTorpedo(g: Graphics, h: Hazard, r: number, _laneWidth: number, _ela
   /**
    * A torpedo: a metal cylinder with a lit nose, pointing the way it is going.
    *
-   * `fed` tells the painter which half of its life it is in, so the LOOK changes when it turns -- the dive light
-   * goes from white to red. That is the only warning the player gets that a dodged round is now a pursuer, and
-   * without it the turn is invisible.
+   * The BODY is these three shapes; everything that says "this one has turned and is hunting" is
+   * `paintTorpedoHoming`, extracted for the same reason the other four telegraphs were -- see its own note.
    */
-  const cfg = mech.hazards.torpedo;
-  const homing = h.fed >= cfg.runMeters;
-  // No transform stack on a Graphics in this project: the body is drawn along the lane and the FIN carries the
-  // tilt, which is enough to read a turn without a rotation.
-  const droop = homing ? r * 0.5 : 0;
   g.roundRect(h.x - r * 1.7, h.y - r * 0.55, r * 3.4, r * 1.1, r * 0.5).fill({ color: KIND_TUNING.torpedo.colour, alpha: 1 });
   g.moveTo(h.x + r * 1.7, h.y - r * 0.55).lineTo(h.x + r * 2.4, h.y).lineTo(h.x + r * 1.7, h.y + r * 0.55).closePath().fill({ color: 0xc9d4de, alpha: 1 });
-  g.circle(h.x + r * 1.9, h.y, r * 0.34).fill({ color: homing ? 0xff5a5a : 0xdff3ff, alpha: 1 });
-  // A tail flame while it is running, which is the "it is coming" half of the warning.
-  g.moveTo(h.x - r * 1.7, h.y)
-    .lineTo(h.x - r * (homing ? 3.4 : 2.6), h.y + droop)
-    .stroke({ color: homing ? 0xff8a5a : 0xa8d8ff, alpha: 0.6, width: Math.max(1, r * 0.4) });
-  if (homing) {
-    // The turn itself, drawn: two fins that were flat while it ran and are swept back once it is hunting.
-    for (const side of [-1, 1]) {
-      g.moveTo(h.x - r * 1.2, h.y + side * r * 0.5)
-        .lineTo(h.x - r * 2.2, h.y + side * r * 1.4)
-        .lineTo(h.x - r * 0.6, h.y + side * r * 0.6)
-        .closePath()
-        .fill({ color: KIND_TUNING.torpedo.colour, alpha: 0.9 });
-    }
-  }
+  paintTorpedoHoming(g, h, r);
   return;
 }
 
@@ -3993,6 +3973,43 @@ function paintZapperDischarge(g: Graphics, h: Hazard, r: number, laneWidth: numb
   g.circle(h.x, h.y, ring * 0.55).fill({ color: zc.ringColour, alpha: 0.12 * left });
 }
 
+function paintTorpedoHoming(g: Graphics, h: Hazard, r: number): void {
+  /**
+   * THE MOMENT A DODGED ROUND BECOMES A PURSUER, as three things a picture cannot supply.
+   *
+   * `h.fed >= runMeters` is when it turns, and the whole warning is that the look changes: the dive light goes from
+   * white to red, the exhaust goes from cold blue to hot orange, and two fins that were flat sweep back. Without it
+   * the turn is invisible, and "the thing that went past" quietly becomes "the thing behind you" with nothing said.
+   *
+   * A TELEGRAPH, so it belongs here next to the other four rather than in a second picture of the torpedo. The
+   * light is drawn at a fixed offset in the body's own proportions, so where it sits does not depend on where the
+   * artist happened to put the nose -- and a state that a picture can only express by swapping the whole picture is
+   * a state that goes stale the moment the body art changes.
+   *
+   * The nose light goes OVER the picture (it is on the nose, which the picture draws) and the exhaust goes UNDER
+   * the body in the drawn version; over is the only order that works for both when the body is a sprite, and the
+   * flame is behind the tail anyway.
+   */
+  const cfg = mech.hazards.torpedo;
+  const homing = h.fed >= cfg.runMeters;
+  const droop = homing ? r * 0.5 : 0;
+  // Light, then exhaust, then fins -- the order the drawn body has always used, so the code path is unchanged.
+  g.circle(h.x + r * 1.9, h.y, r * 0.34).fill({ color: homing ? 0xff5a5a : 0xdff3ff, alpha: 1 });
+  g.moveTo(h.x - r * 1.7, h.y)
+    .lineTo(h.x - r * (homing ? 3.4 : 2.6), h.y + droop)
+    .stroke({ color: homing ? 0xff8a5a : 0xa8d8ff, alpha: 0.6, width: Math.max(1, r * 0.4) });
+  if (homing) {
+    // The turn itself, drawn: two fins that were flat while it ran and are swept back once it is hunting.
+    for (const side of [-1, 1]) {
+      g.moveTo(h.x - r * 1.2, h.y + side * r * 0.5)
+        .lineTo(h.x - r * 2.2, h.y + side * r * 1.4)
+        .lineTo(h.x - r * 0.6, h.y + side * r * 0.6)
+        .closePath()
+        .fill({ color: KIND_TUNING.torpedo.colour, alpha: 0.9 });
+    }
+  }
+}
+
 /** The telegraph this kind carries, whoever drew its body. See the note above the three painters. */
 function paintTelegraph(g: Graphics, h: Hazard, r: number, laneWidth: number, elapsed: number): void {
   switch (h.kind) {
@@ -4004,6 +4021,9 @@ function paintTelegraph(g: Graphics, h: Hazard, r: number, laneWidth: number, el
       break;
     case 'zapper':
       paintZapperDischarge(g, h, r, laneWidth);
+      break;
+    case 'torpedo':
+      paintTorpedoHoming(g, h, r);
       break;
     default:
       break;
