@@ -446,6 +446,9 @@ def command_new(arguments):
             "aspect": entry.get("aspect") or "1:1",
             "candidateCount": int(entry.get("candidates") or DEFAULT_CANDIDATES),
             "alpha": float(entry.get("alpha") or 1.0),
+            "state": entry.get("state"),
+            "alignTo": entry.get("alignTo"),
+            "alignRatio": float(entry.get("alignRatio") or 0.63),
             "swayDegrees": float(entry.get("swayDegrees") or 0.0),
             "swaySeconds": float(entry.get("swaySeconds") or 6.0),
             "prompt": entry.get("prompt") or "",
@@ -714,12 +717,27 @@ def command_pixelate(arguments):
                 say(f"    candidate {candidate['index']}: {raw.name} is missing, skipping")
                 continue
             sprite_name = f"{asset['name']}-候选{candidate['index']}"
-            run_tool([
-                python, ROOT / "scripts" / "import-picture.py", raw,
-                "--name", sprite_name, "--grid", grid,
-                "--colours", asset["colours"],
-                "--out-dir", directory / "candidates",
-            ])
+            if asset.get("alignTo"):
+                # A second state of a creature that already has one: same canvas, same palette, smaller. See
+                # `pixelate_aligned` -- and note the template is the SHIPPED file, not the raw render, so what this
+                # lines up against is what the game is actually drawing.
+                template = ASSETS / f"{asset['alignTo']}.png"
+                if not template.exists():
+                    fail(f"{asset['name']} says alignTo {asset['alignTo']!r}, but {template} does not exist -- "
+                         f"the base picture has to be imported first")
+                result = pixelate_aligned(
+                    raw, directory / "candidates", sprite_name, grid, asset["colours"],
+                    template, float(asset.get("alignRatio") or 0.63),
+                )
+                say(f"    aligned to {template.name}: content {result['templateWidth']}px canvas, "
+                    f"drawn at {float(asset.get('alignRatio') or 0.63):.2f} of it")
+            else:
+                run_tool([
+                    python, ROOT / "scripts" / "import-picture.py", raw,
+                    "--name", sprite_name, "--grid", grid,
+                    "--colours", asset["colours"],
+                    "--out-dir", directory / "candidates",
+                ])
             sprite = directory / "candidates" / f"{sprite_name}.png"
             if sprite.exists():
                 width, height = png_size(sprite)
@@ -1163,6 +1181,61 @@ def _render_frames(asset, directory, raw_frames, arguments):
     print_boil(asset["boil"])
 
 
+def content_box_of(image, threshold=ALPHA_FLOOR):
+    alpha = np.array(image)[:, :, 3] > threshold
+    if not alpha.any():
+        fail("a picture has no opaque pixels at all")
+    ys, xs = np.where(alpha)
+    return (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+
+
+def pixelate_aligned(source, out_dir, name, grid, colours, template, ratio, margin=IMPORTER_MARGIN):
+    """
+    Pixelate `source` on the SAME canvas and with the SAME palette as `template`, at `ratio` of its width.
+
+    FOR THE PUFFER, and the puffer is the case that needs it. A creature can have a second state whose whole point is
+    that it is SMALLER -- the puffer deflates while its counter is cooling, and `drawPuffer`'s own comment says the
+    spikes ARE that state rather than decoration. But `import-picture.py` crops to content and scales the result to
+    the grid width, so a picture of a deflated puffer comes out exactly as wide as the inflated one: the spikes get
+    shorter and the BODY gets bigger, which says the opposite of what it means.
+
+    So this one is not cropped to its own box and not scaled to the grid. It is placed, at `ratio` of the template's
+    content width, on a canvas sized to the template's content box -- and pixelated at the same grid with the
+    template's own palette, so the two states are one creature rather than two pictures that happen to be near each
+    other. `ratio` comes from the DRAWN version's proportions (2.14r / 3.4r = 0.63), which is a measurement rather
+    than a guess.
+    """
+    base = Image.open(template).convert("RGBA")
+    base_box = content_box_of(base)
+    box_w = base_box[2] - base_box[0]
+    box_h = base_box[3] - base_box[1]
+
+    art = Image.open(source).convert("RGBA")
+    art_box = content_box_of(art)
+    art_content = art.crop(art_box)
+
+    target_w = max(1, round(box_w * ratio))
+    target_h = max(1, round(art_content.height * target_w / art_content.width))
+    if target_h > box_h:
+        target_h = box_h
+        target_w = max(1, round(art_content.width * target_h / art_content.height))
+    scaled = art_content.resize((target_w, target_h), Image.LANCZOS)
+
+    canvas = Image.new("RGBA", (box_w, box_h), (0, 0, 0, 0))
+    canvas.alpha_composite(scaled, ((box_w - target_w) // 2, (box_h - target_h) // 2))
+
+    # The TEMPLATE's palette, not this picture's: one creature, one set of colours.
+    palette = base.crop(base_box).convert("RGB").quantize(colors=colours, method=Image.MEDIANCUT)
+    piece, _ = pipeline().pixelate(canvas, grid, palette, colours)
+
+    padded = Image.new("RGBA", (piece.width + margin * 2, piece.height + margin * 2), (0, 0, 0, 0))
+    padded.alpha_composite(piece, (margin, margin))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = out_dir / f"{name}.png"
+    padded.save(target, optimize=True)
+    return {"path": target, "width": padded.width, "height": padded.height, "templateWidth": box_w}
+
+
 def command_idle(arguments):
     """
     Turn the selected candidate into an idle animation, two ways, with the choice made deliberately.
@@ -1567,6 +1640,35 @@ def wire_obstacle(text, kind, image, scale, alpha=1.0, sway_degrees=0.0, sway_se
     return text, image
 
 
+def wire_hazard_state(text, kind, key, value):
+    """
+    Add one state (`charge`, `dead`, ...) to a `hazardArt` row that already exists.
+
+    The puffer's shape: it has a `move` picture already, and the thing it was missing is a second STATE rather than a
+    second creature. `wire_hazard` creates a whole row and refuses when one is there -- which is right for a new kind
+    and wrong for this, so the two are separate edits for the same reason `wire_obstacle` and `wire_variant` are.
+    """
+    hazard_at = object_open(text, "hazardArt")
+    if hazard_at < 0:
+        return text, None
+    row_at = object_open(text, kind, hazard_at)
+    if row_at < 0:
+        return text, None
+    close_at = container_close(text, row_at)
+    if close_at < 0:
+        return text, None
+    if f'"{key}"' in text[row_at:close_at]:
+        return text, None
+    indent = member_indent(text, close_at)
+    text = insert_before_close(
+        text,
+        close_at,
+        f'{indent}// {key}：{value}。这张是同一个生物的第二副样子，不是另一个种类。\n'
+        f'{indent}"{key}": "{value}"\n',
+    )
+    return text, value
+
+
 def wire_hazard(text, kind, image, scale, animation=None):
     """
     Point a CREATURE's `hazardArt.<kind>.move` at a picture, declaring the animation when the picture is one.
@@ -1679,6 +1781,11 @@ def command_import(arguments):
                 float(asset.get("swaySeconds") or 6.0),
             )
             described = f'obstacles.art.{asset["kind"]} -> "{added}" (scale {scale:g})'
+        elif asset.get("state"):
+            # A SECOND STATE of a creature that already has art -- the puffer deflating, which is the one gap the
+            # README had written down. It adds a key to the existing row rather than creating a row.
+            updated, added = wire_hazard_state(text, asset["kind"], asset["state"], asset["name"])
+            described = f'hazardArt.{asset["kind"]}.{asset["state"]} -> "{added}"'
         else:
             # A CREATURE: `hazardArt.<kind>.move` points at a still or at an animation, and an animation needs its
             # own row declared. The frames are the ones this asset just produced, named `<asset>-move-N`.

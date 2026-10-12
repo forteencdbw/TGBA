@@ -1581,7 +1581,9 @@
       // 再给 puffer 加一条 pose 规则（见 hazards.ts 的 POSE_RULES）。
       "move": "刺魨",
       "scale": 1.55,
-      "alpha": 1
+      "alpha": 1,
+      // charge：刺魨-瘪。这张是同一个生物的第二副样子，不是另一个种类。
+      "charge": "刺魨-瘪"
     },
     "starfish": {
       // **海星不能用 `spin`。** `spin` 是"每秒转多少弧度"的速率，而海星的五条腕**就是**下一轮齐射的五个方向：

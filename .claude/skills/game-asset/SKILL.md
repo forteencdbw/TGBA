@@ -107,6 +107,22 @@ creatures: the bomb fish measured 2.4–3.7/255 (four frames of a uniform dark-r
 (tentacles ripple, which reads as motion). Measure all PAIRS, not frame 1 against the rest: one crab pair was 7.7
 while another was 33.3, and averaging over pairs starting at frame 1 hides which transition the eye will catch.
 
+**A SECOND STATE OF A CREATURE IS NOT A SECOND CREATURE.** The puffer deflates while its counter cools —
+`drawPuffer` says the spikes ARE that state — and a picture of a deflated puffer goes through
+`import-picture.py` like any other, which crops it to its own content box and scales that to the grid width. The
+result is a puffer EXACTLY as wide as the inflated one with shorter spikes and a bigger body: it says the opposite
+of what it means. `pixelate_aligned` is the way out — same canvas as the base picture, same palette, placed at
+`ratio` of the base's content width. The ratio is the DRAWN version's own proportion, measured not guessed:
+`(2*0.72 + 2*0.35) / (2*0.95 + 2*0.75) = 0.63`. A spec says `state: "charge"` (which wires a KEY onto the
+existing `hazardArt` row rather than creating one) and `alignTo: "<base asset>"`, and the base has to be imported
+first because the template is the SHIPPED file, not the raw render.
+
+**Give a second state a POSE RULE, and check what it is keyed on.** `poseOnWindup` knows about `h.charge` only, and
+the puffer has no charge — its window is `counterRest > 0` (the seconds in which shooting it is free, which is a
+different thing from a wind-up that is about to become an attack). `POSE_RULES.puffer = poseOnCounterRest` is the
+rule it needs; a `charge` picture with no rule is a picture the game never shows, and `hazardArtPose` is exported
+so the rule can be asked rather than assumed.
+
 ### The three numbers, and the check that keeps them honest
 
 Every picture in TGBA is drawn at **1.4 screen pixels per texel**, so:
