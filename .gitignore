@@ -58,6 +58,15 @@ msg.txt
 .scratch/**/*.mjs
 .scratch/**/*.png
 .scratch/**/*.py
+
+# Python bytecode caches.
+#
+# `refs/__pycache__/asset_pipeline.cpython-312.pyc` was tracked, which is worth a line because of what happens
+# now: the asset pipeline IMPORTS `refs/asset_pipeline.py`, so every run of it rewrites that cache and dirties the
+# working tree -- a file nobody can read, that only matches one Python build, appearing in every `git status`.
+# Untracked here; the file itself is untouched on disk.
+__pycache__/
+*.py[cod]
 .scratch/**/*.json
 # The asset pipeline's `sheet` writes an `idle-loop.gif` beside every sprite it makes, so a run of the
 # game-asset skill drops one per creature into the scratch directory. It was the one extension the four

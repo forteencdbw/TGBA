@@ -26,7 +26,13 @@
     pwsh -NoProfile -ExecutionPolicy Bypass -File run.ps1 verify --dir sheet
     pwsh -NoProfile -ExecutionPolicy Bypass -File run.ps1 grant raw\ref.png -o keyed\ref.png
     pwsh -NoProfile -ExecutionPolicy Bypass -File run.ps1 sheet --frames frames --out sheet --grid 192
+    pwsh -NoProfile -ExecutionPolicy Bypass -File run.ps1 flow new --spec batch.spec.json
     pwsh -NoProfile -ExecutionPolicy Bypass -File run.ps1 python      # print the interpreter, for the project's own scripts
+
+TWO SCRIPTS, ONE WRAPPER. Everything except `flow` goes to `asset_pipeline.py` -- the substrate (grant, key, plan,
+sheet, atlas, verify). `flow` goes to `asset_flow.py`, the pipeline that stands on top of it. The split is
+deliberate rather than tidy: `asset_pipeline.py` is kept byte-identical between this skill and `refs/`, so new
+work must not go inside it, and the wrapper is where both become reachable by the same name.
 #>
 $ErrorActionPreference = 'Stop'
 
@@ -82,6 +88,20 @@ if (-not $python) {
 #     & $py scripts\import-sheet.py sheet.png --name 名字 --cols 2 --rows 2
 if ($args.Count -ge 1 -and $args[0] -eq 'python') { $python; exit 0 }
 
+# `flow <subcommand> [args]` -> asset_flow.py. Anything else -> asset_pipeline.py, so every command in the skill's
+# documentation keeps working exactly as written.
 $ErrorActionPreference = 'Continue'
+if ($args.Count -ge 1 -and $args[0] -eq 'flow') {
+    $flow = Join-Path $PSScriptRoot 'asset_flow.py'
+    if (-not (Test-Path $flow)) { throw "asset_flow.py not found next to this script ($flow)" }
+    # `@(...)` is not decoration. `$args[1..1]` is a SCALAR when there is exactly one trailing argument, and
+    # splatting a scalar string enumerates its CHARACTERS -- so `flow --help` arrived at argparse as `-`, `-`, `h`,
+    # ... and died with "invalid choice: '-'" while every multi-argument call worked. Wrapping the slice in `@()`
+    # keeps it a collection whatever its length.
+    $rest = @()
+    if ($args.Count -gt 1) { $rest = @($args[1..($args.Count - 1)]) }
+    & $python $flow @rest
+    exit $LASTEXITCODE
+}
 & $python $pipeline @args
 exit $LASTEXITCODE

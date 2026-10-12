@@ -1,10 +1,186 @@
 ---
 name: game-asset
-description: Generate and ship art for 冒泡大作战 / Bubble Battle - call the Seedream image API (transparency, interactive editing by coordinate, layer decomposition), then seed transparency, pixelate and anchor-align the frames, import into src/assets/ and repack the atlas. Use when adding or redoing creature, prop, pickup, background or HUD art (an idle/walk/attack animation, sprite frames, a sprite sheet, a transparent PNG asset, a TexturePacker atlas JSON), when asked to generate or regenerate a picture with Seedream / Doubao / Ark, or to re-pixelate, re-align, resize or re-pack existing frames, or when a new creature needs art wired into config/mechanics.json5.
+description: Generate and ship art for 冒泡大作战 / Bubble Battle. The pipeline (`asset_flow.py`) goes from a real reference photograph to a wired-in game asset — find and screen a reference image, ask the Seedream API for three candidates, pixelate them at the game's density, decide about an idle animation, and import. The substrate under it (`asset_pipeline.py`) does the Seedream image API itself (transparency, interactive editing by coordinate, layer decomposition), transparency seeding, pixelation, anchor alignment and atlas packing. Use when adding or redoing creature, prop, pickup, background or HUD art (an idle/walk/attack animation, sprite frames, a sprite sheet, a transparent PNG asset, a TexturePacker atlas JSON), when asked to pick a reference photo or generate/review candidate art, when asked to generate or regenerate a picture with Seedream / Doubao / Ark, to re-pixelate, re-align, resize or re-pack existing frames, or when a new creature needs art wired into config/mechanics.json5.
 ---
 
 # Game asset pipeline
 
+**Two layers, and the order matters.** `asset_flow.py` is the PIPELINE — the whole procedure from "find a real
+reference photograph" to "the picture is in the game and the config knows about it", as one command per step.
+`asset_pipeline.py` underneath it is the SUBSTRATE — transparency seeding, the pixelation itself, alignment, atlas
+packing, verification — and it is deliberately subject-agnostic: nothing in it knows whether it is drawing a crab
+or a bullet. Read "The pipeline" first; everything after it is the substrate and the measurements behind it.
+
+## The pipeline (`asset_flow.py`)
+
+It exists because the four-gunner batch was done BY HAND and the procedure was worth keeping: a photograph from
+Wikimedia, `grant`, Seedream flash, a grid derived from `obstacles.radius`, `import-picture.py`, a config row. That
+is now six commands with a JSON file holding the state between them.
+
+```powershell
+$run = ".claude\skills\game-asset\scripts\run.ps1"
+pwsh -NoProfile -ExecutionPolicy Bypass -File $run flow <subcommand> --batch <name> [options]
+```
+
+`run.ps1` reaches both scripts: `flow …` goes to `asset_flow.py`, anything else to `asset_pipeline.py`, so every
+command documented further down still works exactly as written.
+
+### The state, and why it is a file
+
+`.scratch/asset-pipeline/<batch>/batch.json` is the whole of the pipeline's memory — the derived numbers, the
+candidates, what was picked, whether it wants an idle animation, what was imported. One record per asset, and a
+batch holds SEVERAL assets, because "generate a lot of them at once and let me pick quickly" is the request this
+was built for. Every step re-reads it, so "regenerate candidate 3" or "that one does want an idle after all" is
+one command rather than a re-run from the top. `.scratch/**` is gitignored: this is working state.
+
+### The six steps
+
+```powershell
+# 1. the spec, written first so the prompts are reviewable before anything is paid for
+& $run flow new --spec .scratch/asset-pipeline/<batch>.spec.json
+
+# 2. seed the reference and ask Ark for three candidates  (--dry-run sends nothing)
+& $run flow render --batch <batch> [--dry-run] [--candidate 2]
+
+# 3. pixelate each candidate at the game's density
+& $run flow pixelate --batch <batch>
+
+# 4. look at them, pick one, say whether it wants an idle animation
+& $run flow gallery --batch <batch>
+node .claude\skills\game-asset\scripts\gallery-driver.mjs <batch>/gallery.html <batch>/selection.json
+& $run flow select --batch <batch>
+
+# 5a. no idle: straight in
+& $run flow import --batch <batch> --asset <name>
+
+# 5b. idle: frames, a GIF to confirm, then in
+& $run flow idle --batch <batch> --asset <name> [--frames 4]
+& $run flow gif  --batch <batch> --asset <name>
+& $run flow import --batch <batch> --asset <name>
+
+& $run flow status --batch <batch>        # where it got to
+```
+
+### The three numbers, and the check that keeps them honest
+
+Every picture in TGBA is drawn at **1.4 screen pixels per texel**, so:
+
+```
+drawn      = 2 x radius x 412 x scale      radius from config/mechanics.json5, scale from the art row
+file width = round(drawn / 1.4)
+grid       = file width - 2 x margin       margin is the IMPORTER's own MARGIN_TEXELS (2)
+```
+
+`--grid` takes the third. **Passing `--drawn` instead is a trap**: the importers treat it as "content width", so
+the file comes out `drawn/1.4 + 2*margin` wide and the density lands at 1.66 rather than 1.4. `asset_flow.py`
+always computes the grid and always states it.
+
+**And it checks the answer against the neighbours, which is the part that actually matters.** Measured on the first
+run: the formula gave **1.39** for a new coral, while the six corals already in `src/assets/` sit at **1.32–1.34** —
+they were imported before the `- 2 x margin` correction and are ~5% coarser. So the pipeline printed:
+
+```
+  WARNING: 1.39 is outside that range -- this one will look finer than the pictures it stands next to
+```
+
+That is the honest report: the formula is the documented rule and the shipped art predates it. Decide deliberately
+(`--grid` overrides) rather than discovering it in the level.
+
+### Idle animations, two routes, and the number that picks between them
+
+`idle --route` comes from the spec. **`sway` generates nothing**: the picture is turned about its own base by the
+renderer, `swayDegrees` and `swaySeconds` are the two config numbers, and the body is the same pixels in every
+orientation. For a coral or an urchin that is not a compromise, it is correct — and `obstacles.art` in the config
+already argues the case in its own comments (four per-frame re-renders measured 30–40/255 against 1.5/255 for a
+composed cycle).
+
+**`frames` generates N-1 pictures, not N.** Frame 1 is the candidate's own un-pixelated render, copied, so the pose
+that was approved is the anchor byte for byte and the loop has a stable home. Frames 2..N ask for the same creature
+in the same pose at a different phase of one breath.
+
+Then the set is MEASURED before anyone is asked to look at it. `boil_report` compares only pixels that are opaque in
+both frames and reports the mean |dRGB| — the unit `reference/api-notes.md` established, where 30.7–39.5 was
+rejected on an octopus and a composed cycle measures 1.0–2.1. Over 20 and the GIF says so. It does not decide; a
+creature whose body is supposed to move can still be right. It exists so the decision is made on a number.
+
+### What is deliberately NOT in `asset_pipeline.py`
+
+**Nothing.** The skill's copy of `asset_pipeline.py` and `refs/`'s copy are kept byte-identical on purpose — a
+skill that can be copied to another project on its own — so an edit to one is a silent divergence until someone
+notices. `asset_flow.py` imports it instead and calls `pixelate()`, `content_box()` and the whole `grant` command
+through their own entry points. It also imports `scripts/seedream.py` for the Ark half. **`md5sum` both after any
+change to either.** (The hash recorded below was already stale when this was written: both copies are
+`7f4c4feacf674f29dc0baf19930ca02f`, not the `e918726b…` from the migration.)
+
+## Traps this build paid for
+
+Every one of these is a real failure that happened while the pipeline was being written, not a precaution.
+
+**PowerShell, one line.** `run.ps1 flow --help` died with `invalid choice: '-'` while every multi-argument call
+worked. `$args[1..1]` returns a SCALAR when there is exactly one trailing argument, and splatting a scalar string
+enumerates its CHARACTERS — so argparse received `-`, `-`, `h`, … Wrapping the slice in `@()` keeps it a collection.
+
+**JSON5 needs the comma.** The config is edited as TEXT (JSON5 full of the comments that make it worth reading, so
+re-serialising it would throw all of that away). Inserting a `variants` entry before the closing `]` produced two
+adjacent objects with no separator — valid to the eye, `invalid character '{'` to the parser. `wire_variant` now
+adds the comma, and **`import` re-parses the edited config through the same `json5` the game's tooling uses and
+refuses to write if it does not parse.** A bad asset is a bad asset; a config that does not parse is a game that
+does not start.
+
+**The browser has to be closed over CDP, not killed.** Killing the Chrome launcher leaves its renderer children
+orphaned, and from a sandboxed shell they could not be killed afterwards (`taskkill` reported "no running instance"
+while `Get-CimInstance` still listed them; three survived every attempt). `Browser.close` is in-band, takes the
+whole browser, and needs no privileges.
+
+**The driver must own its own Chrome.** Loopback in this environment is per-process: the driver reaches the browser
+it spawned, and a second process cannot reach the driver's port at all. That is fine for the real flow and it means
+the click path can only be tested from inside — `.scratch/asset-pipeline/driver-selftest.mjs` does exactly that,
+dispatching real mouse events at the button's real coordinates. It found two bugs: the clicked button never lit up
+(`pick.idle` is a boolean, `dataset.pick` is the string `"idle"`), and the driver could attach before the page's
+script had run.
+
+**Downscale the reference, THEN seed it.** A 3872x2592 photograph is a 15.3 MB seeded PNG — ~20 MB base64'd, sent
+once per candidate, and worth nothing when the output is 1K. `prepare_reference` resizes to 1536 on the long edge
+first. **The order is the trick**: `grant` writes an 8x8 block of alpha-0 as the permission signal Ark needs, and
+resampling afterwards would blend that edge and leave the corner at alpha 3 instead of 0.
+
+**COMPOSITION is the axis to check first, and no metric measures it.** The first real coral was pixelated, put in a
+gallery, picked, and imported — and only then did the line-up against its neighbours show the actual mistake: every
+coral already in `src/assets/` is a little SCENE (a coral plus its rock-and-sand base plus a couple of companions),
+and all three candidates were lone coral bushes on transparency. Measured, the new sprite's bottom tenth of columns
+was **30% filled against 65–88%** for the five it would stand next to. Meanwhile its palette (40 distinct RGB, the
+cap held), its density (1.39) and its edge frequency (67–72% against 67–81%) were all *in range* — which is exactly
+why it took a line-up to catch. The cause was the shared prompt template: `背景纯色…没有任何其他物体` is right for a
+creature and exactly wrong for an obstacle whose variants are scenes. `composition` is now a spec field with that as
+its default, and **the gallery prints a strip of the existing siblings at game size next to each asset's
+candidates**, because a candidate shown alone has nothing to be compared against.
+
+**Two earlier conclusions from that same run, both partly wrong, both worth keeping as method.** Looking at the
+candidates I said they "look like a shrunken photograph"; the numbers said otherwise (palette capped at 40, edge
+frequency inside the shipped range) and I said the subject was merely too busy. Also wrong — the density was never
+the problem. The lesson is the order of the two checks: **measure first, then look at the line-up**; a visual
+impression of "this looks wrong" is worth acting on, but not worth *naming a cause* for until something has been
+counted.
+
+**Aspect is asked for in WORDS.** `size: "1K"` is a class, not a dimension — measured on this run, a `1K` request
+came back **1312x880** with no aspect in the prompt, and **1024x1024** once `正方形构图（1:1）` was in it. The spec's
+`aspect` field existed and was read by nothing until `ASPECT_WORDS` was written.
+
+**Wikimedia rate-limits this egress hard.** The Commons API returns `403 Too Many Reqs` and `upload.wikimedia.org`
+returns `429` after a handful of requests; downloads need retries with 20–60 s backoff and will silently give up.
+Filenames come from the category page via `WebFetch`; the file itself is at
+`upload.wikimedia.org/wikipedia/commons/<md5[0]>/<md5[0:2]>/<name>`, where the md5 is of the underscored filename.
+
+**`pnpm` is not on PATH, and `DSH_PYTHON` has to be passed down.** `shutil.which('pnpm')` returns `None` and
+`subprocess.run(['pnpm', …])` raises `FileNotFoundError` — a confusing way to learn that the tool which created
+`node_modules/` is unreachable from Python. `corepack pnpm …` is the route that works. And `pnpm atlas` fails with
+"No Python with Pillow found. Tried: python3, python, py" **even though `python -c "import PIL"` works from the
+same shell** — `scripts/pack-atlas.mjs`'s own probe does not find it, and the `DSH_PYTHON` its own error message
+names is what fixes it. `run_tool` sets both, so `asset_flow.py` never hits either. (`pnpm atlas:check` reported
+`current: 1 page(s), 77 pictures, 288.7 KB` once `DSH_PYTHON` was set.)
+
+## The substrate
+ 
 The pipeline that produced every picture in `src/assets/`: transparency, pixelation onto the game's grid,
 anchor alignment, packing, and a check that decodes the result back to pixels. It is subject-agnostic —
 nothing in it knows whether it is drawing a crab or a bullet.

@@ -1,7 +1,12 @@
 """Install ONE picture into `src/assets/` at the project's pixel density.
 
-Usage:  python scripts/import-picture.py picture.png --name 珊瑚 --drawn 111
-        python scripts/import-picture.py picture.png --name 珊瑚 --grid 79
+Usage:  python scripts/import-picture.py picture.png --name 珊瑚 --grid 79
+        python scripts/import-picture.py picture.png --name 珊瑚 --grid 75 --out-dir .scratch/asset-pipeline/x/candidates
+
+`--out-dir` is what lets the asset pipeline SHOW you the picture before it ships it: pointing it at the batch's own
+candidate directory pixelates the picture exactly as the real import would, and the file that lands in
+`src/assets/` later is that same file copied -- not a second pixelation that might disagree with the one you
+approved. It defaults to `src/assets`, so every existing caller is unaffected.
 
 WHY THIS EXISTS, next to `import-sheet.py`. That one imports a creature that ANIMATES: it finds the frames, aligns
 them all on the head, and shares one palette across them. None of that applies to a picture that is just a picture
@@ -64,6 +69,11 @@ def main():
     parser.add_argument("--grid", type=int, default=None, help="pixel grid, if you would rather state it")
     parser.add_argument("--colours", type=int, default=COLOURS)
     parser.add_argument("--margin", type=int, default=MARGIN_TEXELS, help="padding in texels")
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help=f"where to write the picture (default: {ASSETS}); the asset pipeline points it at its candidate dir",
+    )
     arguments = parser.parse_args()
 
     if arguments.grid is None and arguments.drawn is None:
@@ -91,7 +101,8 @@ def main():
     canvas = Image.new("RGBA", (piece.width + pad * 2, piece.height + pad * 2), (0, 0, 0, 0))
     canvas.alpha_composite(piece, (pad, pad))
 
-    destination = ASSETS / f"{arguments.name}.png"
+    destination = Path(arguments.out_dir or ASSETS) / f"{arguments.name}.png"
+    destination.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(destination, optimize=True)
 
     opaque = np.array(canvas).reshape(-1, 4)
@@ -103,7 +114,10 @@ def main():
         f"  drawn {drawn:.0f}px wide ({drawn / canvas.width:.2f} screen px per texel), "
         f"{opaque_colours} opaque colours of a {arguments.colours} palette, decoded {decoded / 1024:.1f} KB"
     )
-    print("now run:  node scripts/pack-atlas.mjs   (and `pnpm dev`/refresh to see it)")
+    if arguments.out_dir:
+        print("this is a candidate, not an import -- nothing in src/assets/ changed, so no pack is needed yet")
+    else:
+        print("now run:  node scripts/pack-atlas.mjs   (and `pnpm dev`/refresh to see it)")
 
 
 if __name__ == "__main__":

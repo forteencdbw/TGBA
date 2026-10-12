@@ -2,6 +2,13 @@
 
 Usage:  python scripts/import-sheet.py <sheet.png> [--name 金枪鱼-游动] [--grid 66] [--cols 2] [--rows 2]
         python scripts/import-sheet.py <frames-dir> --cols 4 --rows 1     # one PNG per frame, laid out into a strip
+        python scripts/import-sheet.py <frames-dir> --cols 4 --rows 1 --out-dir .scratch/asset-pipeline/x/sprites
+
+`--out-dir` is what lets the asset pipeline SHOW you the animation, as a GIF, before it ships it: pointing it at
+the batch's own sprite directory runs the real pixelation and the real head alignment, so the GIF you approve is
+made from the bytes that will be copied into `src/assets/` -- not from a second, separately-derived pixelation
+that could disagree with the one you looked at. It defaults to `src/assets`, so every existing caller is
+unaffected.
 
 WHY THIS EXISTS: the sheet you draw is the single source of truth for the frames, so the import must be re-runnable
 without editing anything. Every number it needs is measured from the picture or read from the config; the only things
@@ -152,6 +159,11 @@ def main():
     parser.add_argument("--cols", type=int, default=2, help="frames per row, only used to sort into reading order")
     parser.add_argument("--rows", type=int, default=2, help="rows in the sheet, only used to sort into reading order")
     parser.add_argument("--colours", type=int, default=COLOURS)
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help=f"where to write the frames (default: {ASSETS}); the asset pipeline points it at its sprite dir",
+    )
     args = parser.parse_args()
 
     source, described, laid_out = read_input(args.sheet)
@@ -266,9 +278,11 @@ def main():
     print(f"after alignment -- nose x: {[b[0] for b in final_boxes]}   head centre y: {[round(c, 1) for c in final_centres]}")
 
     written = []
+    out_dir = Path(args.out_dir or ASSETS)
+    out_dir.mkdir(parents=True, exist_ok=True)
     print()
     for index, piece in enumerate(aligned, start=1):
-        target = ASSETS / f"{args.name}-{index}.png"
+        target = out_dir / f"{args.name}-{index}.png"
         piece.save(target, optimize=True)
         written.append(target)
         print(f"  {target.name:24s} {piece.width}x{piece.height}  {os.path.getsize(target) / 1024:5.1f} KB")
@@ -278,7 +292,10 @@ def main():
         f"\n{len(aligned)} frames, {size[0]}x{size[1]} each, drawn {drawn:.0f}px wide "
         f"({drawn / size[0]:.2f} screen px per texel), decoded {decoded / 1024:.1f} KB"
     )
-    print("now run:  node scripts/pack-atlas.mjs   (and `pnpm dev`/refresh to see it)")
+    if args.out_dir:
+        print(f"written under {out_dir} -- a candidate set, not an import, so nothing needs packing yet")
+    else:
+        print("now run:  node scripts/pack-atlas.mjs   (and `pnpm dev`/refresh to see it)")
     return 0
 
 
