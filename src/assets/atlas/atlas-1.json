@@ -84,12 +84,40 @@
       },
       "trimmed": false
     },
+    "失控鱼雷.png": {
+      "frame": {
+        "h": 11,
+        "w": 42,
+        "x": 340,
+        "y": 2
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 11,
+        "w": 42
+      },
+      "trimmed": false
+    },
+    "封路木箱.png": {
+      "frame": {
+        "h": 38,
+        "w": 68,
+        "x": 290,
+        "y": 177
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 38,
+        "w": 68
+      },
+      "trimmed": false
+    },
     "射水鱼.png": {
       "frame": {
         "h": 21,
         "w": 40,
         "x": 340,
-        "y": 2
+        "y": 17
       },
       "rotated": false,
       "sourceSize": {
@@ -103,7 +131,7 @@
         "h": 21,
         "w": 41,
         "x": 384,
-        "y": 2
+        "y": 17
       },
       "rotated": false,
       "sourceSize": {
@@ -117,7 +145,7 @@
         "h": 21,
         "w": 41,
         "x": 429,
-        "y": 2
+        "y": 17
       },
       "rotated": false,
       "sourceSize": {
@@ -130,7 +158,7 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 290,
+        "x": 362,
         "y": 177
       },
       "rotated": false,
@@ -144,7 +172,7 @@
       "frame": {
         "h": 21,
         "w": 41,
-        "x": 335,
+        "x": 407,
         "y": 177
       },
       "rotated": false,
@@ -158,8 +186,8 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 340,
-        "y": 27
+        "x": 452,
+        "y": 177
       },
       "rotated": false,
       "sourceSize": {
@@ -172,8 +200,8 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 385,
-        "y": 27
+        "x": 290,
+        "y": 219
       },
       "rotated": false,
       "sourceSize": {
@@ -186,8 +214,8 @@
       "frame": {
         "h": 14,
         "w": 41,
-        "x": 430,
-        "y": 27
+        "x": 335,
+        "y": 219
       },
       "rotated": false,
       "sourceSize": {
@@ -201,7 +229,7 @@
         "h": 14,
         "w": 41,
         "x": 380,
-        "y": 177
+        "y": 219
       },
       "rotated": false,
       "sourceSize": {
@@ -215,7 +243,7 @@
         "h": 21,
         "w": 41,
         "x": 290,
-        "y": 202
+        "y": 237
       },
       "rotated": false,
       "sourceSize": {
@@ -229,7 +257,7 @@
         "h": 21,
         "w": 41,
         "x": 335,
-        "y": 202
+        "y": 237
       },
       "rotated": false,
       "sourceSize": {
@@ -243,7 +271,7 @@
         "h": 21,
         "w": 41,
         "x": 380,
-        "y": 202
+        "y": 237
       },
       "rotated": false,
       "sourceSize": {
@@ -257,7 +285,7 @@
         "h": 21,
         "w": 41,
         "x": 425,
-        "y": 202
+        "y": 237
       },
       "rotated": false,
       "sourceSize": {
@@ -271,7 +299,7 @@
         "h": 22,
         "w": 41,
         "x": 290,
-        "y": 227
+        "y": 262
       },
       "rotated": false,
       "sourceSize": {
@@ -285,7 +313,7 @@
         "h": 22,
         "w": 41,
         "x": 335,
-        "y": 227
+        "y": 262
       },
       "rotated": false,
       "sourceSize": {
@@ -299,7 +327,7 @@
         "h": 22,
         "w": 41,
         "x": 380,
-        "y": 227
+        "y": 262
       },
       "rotated": false,
       "sourceSize": {
@@ -313,7 +341,7 @@
         "h": 22,
         "w": 41,
         "x": 425,
-        "y": 227
+        "y": 262
       },
       "rotated": false,
       "sourceSize": {
@@ -392,12 +420,26 @@
       },
       "trimmed": false
     },
+    "木箱.png": {
+      "frame": {
+        "h": 68,
+        "w": 62,
+        "x": 2,
+        "y": 408
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 68,
+        "w": 62
+      },
+      "trimmed": false
+    },
     "水母-待机-1.png": {
       "frame": {
         "h": 77,
         "w": 52,
         "x": 2,
-        "y": 408
+        "y": 480
       },
       "rotated": false,
       "sourceSize": {
@@ -411,7 +453,7 @@
         "h": 77,
         "w": 52,
         "x": 58,
-        "y": 408
+        "y": 480
       },
       "rotated": false,
       "sourceSize": {
@@ -425,7 +467,7 @@
         "h": 77,
         "w": 52,
         "x": 114,
-        "y": 408
+        "y": 480
       },
       "rotated": false,
       "sourceSize": {
@@ -439,7 +481,7 @@
         "h": 77,
         "w": 52,
         "x": 170,
-        "y": 408
+        "y": 480
       },
       "rotated": false,
       "sourceSize": {
@@ -452,7 +494,7 @@
       "frame": {
         "h": 51,
         "w": 52,
-        "x": 226,
+        "x": 68,
         "y": 408
       },
       "rotated": false,
@@ -466,7 +508,7 @@
       "frame": {
         "h": 48,
         "w": 51,
-        "x": 282,
+        "x": 124,
         "y": 408
       },
       "rotated": false,
@@ -480,8 +522,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 2,
-        "y": 489
+        "x": 226,
+        "y": 480
       },
       "rotated": false,
       "sourceSize": {
@@ -494,8 +536,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 72,
-        "y": 489
+        "x": 296,
+        "y": 480
       },
       "rotated": false,
       "sourceSize": {
@@ -508,8 +550,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 142,
-        "y": 489
+        "x": 366,
+        "y": 480
       },
       "rotated": false,
       "sourceSize": {
@@ -522,8 +564,8 @@
       "frame": {
         "h": 50,
         "w": 66,
-        "x": 212,
-        "y": 489
+        "x": 436,
+        "y": 480
       },
       "rotated": false,
       "sourceSize": {
@@ -532,12 +574,26 @@
       },
       "trimmed": false
     },
+    "渔网.png": {
+      "frame": {
+        "h": 58,
+        "w": 71,
+        "x": 2,
+        "y": 561
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 58,
+        "w": 71
+      },
+      "trimmed": false
+    },
     "灯笼鱼-冲锋.png": {
       "frame": {
         "h": 80,
         "w": 80,
         "x": 2,
-        "y": 543
+        "y": 623
       },
       "rotated": false,
       "sourceSize": {
@@ -551,7 +607,7 @@
         "h": 80,
         "w": 80,
         "x": 86,
-        "y": 543
+        "y": 623
       },
       "rotated": false,
       "sourceSize": {
@@ -560,12 +616,68 @@
       },
       "trimmed": false
     },
+    "炸弹鱼-move-1.png": {
+      "frame": {
+        "h": 36,
+        "w": 39,
+        "x": 57,
+        "y": 364
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 36,
+        "w": 39
+      },
+      "trimmed": false
+    },
+    "炸弹鱼-move-2.png": {
+      "frame": {
+        "h": 36,
+        "w": 39,
+        "x": 100,
+        "y": 364
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 36,
+        "w": 39
+      },
+      "trimmed": false
+    },
+    "炸弹鱼-move-3.png": {
+      "frame": {
+        "h": 36,
+        "w": 39,
+        "x": 143,
+        "y": 364
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 36,
+        "w": 39
+      },
+      "trimmed": false
+    },
+    "炸弹鱼-move-4.png": {
+      "frame": {
+        "h": 36,
+        "w": 39,
+        "x": 186,
+        "y": 364
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 36,
+        "w": 39
+      },
+      "trimmed": false
+    },
     "玩家子弹.png": {
       "frame": {
         "h": 12,
         "w": 12,
-        "x": 475,
-        "y": 27
+        "x": 497,
+        "y": 177
       },
       "rotated": false,
       "sourceSize": {
@@ -578,7 +690,7 @@
       "frame": {
         "h": 36,
         "w": 36,
-        "x": 57,
+        "x": 229,
         "y": 364
       },
       "rotated": false,
@@ -593,7 +705,7 @@
         "h": 87,
         "w": 87,
         "x": 2,
-        "y": 627
+        "y": 707
       },
       "rotated": false,
       "sourceSize": {
@@ -607,7 +719,7 @@
         "h": 75,
         "w": 78,
         "x": 170,
-        "y": 543
+        "y": 623
       },
       "rotated": false,
       "sourceSize": {
@@ -621,7 +733,7 @@
         "h": 71,
         "w": 67,
         "x": 252,
-        "y": 543
+        "y": 623
       },
       "rotated": false,
       "sourceSize": {
@@ -635,7 +747,7 @@
         "h": 66,
         "w": 90,
         "x": 323,
-        "y": 543
+        "y": 623
       },
       "rotated": false,
       "sourceSize": {
@@ -648,8 +760,8 @@
       "frame": {
         "h": 58,
         "w": 84,
-        "x": 417,
-        "y": 543
+        "x": 77,
+        "y": 561
       },
       "rotated": false,
       "sourceSize": {
@@ -662,8 +774,8 @@
       "frame": {
         "h": 65,
         "w": 77,
-        "x": 93,
-        "y": 627
+        "x": 417,
+        "y": 623
       },
       "rotated": false,
       "sourceSize": {
@@ -676,8 +788,8 @@
       "frame": {
         "h": 71,
         "w": 83,
-        "x": 2,
-        "y": 718
+        "x": 93,
+        "y": 707
       },
       "rotated": false,
       "sourceSize": {
@@ -686,12 +798,68 @@
       },
       "trimmed": false
     },
+    "电击水母-move-1.png": {
+      "frame": {
+        "h": 56,
+        "w": 48,
+        "x": 462,
+        "y": 290
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 56,
+        "w": 48
+      },
+      "trimmed": false
+    },
+    "电击水母-move-2.png": {
+      "frame": {
+        "h": 56,
+        "w": 48,
+        "x": 165,
+        "y": 561
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 56,
+        "w": 48
+      },
+      "trimmed": false
+    },
+    "电击水母-move-3.png": {
+      "frame": {
+        "h": 56,
+        "w": 48,
+        "x": 217,
+        "y": 561
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 56,
+        "w": 48
+      },
+      "trimmed": false
+    },
+    "电击水母-move-4.png": {
+      "frame": {
+        "h": 56,
+        "w": 48,
+        "x": 269,
+        "y": 561
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 56,
+        "w": 48
+      },
+      "trimmed": false
+    },
     "电鳗-放电.png": {
       "frame": {
         "h": 53,
         "w": 78,
-        "x": 174,
-        "y": 627
+        "x": 321,
+        "y": 561
       },
       "rotated": false,
       "sourceSize": {
@@ -704,8 +872,8 @@
       "frame": {
         "h": 66,
         "w": 78,
-        "x": 89,
-        "y": 718
+        "x": 180,
+        "y": 707
       },
       "rotated": false,
       "sourceSize": {
@@ -718,8 +886,8 @@
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 171,
-        "y": 718
+        "x": 262,
+        "y": 707
       },
       "rotated": false,
       "sourceSize": {
@@ -732,8 +900,8 @@
       "frame": {
         "h": 56,
         "w": 56,
-        "x": 231,
-        "y": 718
+        "x": 322,
+        "y": 707
       },
       "rotated": false,
       "sourceSize": {
@@ -742,12 +910,26 @@
       },
       "trimmed": false
     },
+    "矿物颗粒.png": {
+      "frame": {
+        "h": 18,
+        "w": 18,
+        "x": 474,
+        "y": 17
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 18,
+        "w": 18
+      },
+      "trimmed": false
+    },
     "章鱼-游动-1.png": {
       "frame": {
         "h": 79,
         "w": 79,
         "x": 2,
-        "y": 793
+        "y": 798
       },
       "rotated": false,
       "sourceSize": {
@@ -761,7 +943,7 @@
         "h": 79,
         "w": 79,
         "x": 85,
-        "y": 793
+        "y": 798
       },
       "rotated": false,
       "sourceSize": {
@@ -775,7 +957,7 @@
         "h": 79,
         "w": 79,
         "x": 168,
-        "y": 793
+        "y": 798
       },
       "rotated": false,
       "sourceSize": {
@@ -789,7 +971,7 @@
         "h": 79,
         "w": 79,
         "x": 251,
-        "y": 793
+        "y": 798
       },
       "rotated": false,
       "sourceSize": {
@@ -803,7 +985,7 @@
         "h": 78,
         "w": 48,
         "x": 334,
-        "y": 793
+        "y": 798
       },
       "rotated": false,
       "sourceSize": {
@@ -817,7 +999,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 876
+        "y": 881
       },
       "rotated": false,
       "sourceSize": {
@@ -831,7 +1013,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 876
+        "y": 881
       },
       "rotated": false,
       "sourceSize": {
@@ -845,7 +1027,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 1072
+        "y": 1077
       },
       "rotated": false,
       "sourceSize": {
@@ -859,7 +1041,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 1072
+        "y": 1077
       },
       "rotated": false,
       "sourceSize": {
@@ -873,7 +1055,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 1268
+        "y": 1273
       },
       "rotated": false,
       "sourceSize": {
@@ -887,7 +1069,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 1268
+        "y": 1273
       },
       "rotated": false,
       "sourceSize": {
@@ -901,7 +1083,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 1493
+        "y": 1498
       },
       "rotated": false,
       "sourceSize": {
@@ -915,7 +1097,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 1493
+        "y": 1498
       },
       "rotated": false,
       "sourceSize": {
@@ -929,7 +1111,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 1718
+        "y": 1723
       },
       "rotated": false,
       "sourceSize": {
@@ -943,7 +1125,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 1718
+        "y": 1723
       },
       "rotated": false,
       "sourceSize": {
@@ -957,7 +1139,7 @@
         "h": 221,
         "w": 192,
         "x": 2,
-        "y": 1943
+        "y": 1948
       },
       "rotated": false,
       "sourceSize": {
@@ -971,7 +1153,7 @@
         "h": 221,
         "w": 192,
         "x": 198,
-        "y": 1943
+        "y": 1948
       },
       "rotated": false,
       "sourceSize": {
@@ -985,7 +1167,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 2168
+        "y": 2173
       },
       "rotated": false,
       "sourceSize": {
@@ -999,7 +1181,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 2168
+        "y": 2173
       },
       "rotated": false,
       "sourceSize": {
@@ -1013,7 +1195,7 @@
         "h": 192,
         "w": 192,
         "x": 2,
-        "y": 2364
+        "y": 2369
       },
       "rotated": false,
       "sourceSize": {
@@ -1027,7 +1209,7 @@
         "h": 192,
         "w": 192,
         "x": 198,
-        "y": 2364
+        "y": 2369
       },
       "rotated": false,
       "sourceSize": {
@@ -1036,11 +1218,67 @@
       },
       "trimmed": false
     },
+    "螃蟹-move-1.png": {
+      "frame": {
+        "h": 20,
+        "w": 34,
+        "x": 470,
+        "y": 237
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 20,
+        "w": 34
+      },
+      "trimmed": false
+    },
+    "螃蟹-move-2.png": {
+      "frame": {
+        "h": 20,
+        "w": 34,
+        "x": 470,
+        "y": 262
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 20,
+        "w": 34
+      },
+      "trimmed": false
+    },
+    "螃蟹-move-3.png": {
+      "frame": {
+        "h": 20,
+        "w": 34,
+        "x": 226,
+        "y": 534
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 20,
+        "w": 34
+      },
+      "trimmed": false
+    },
+    "螃蟹-move-4.png": {
+      "frame": {
+        "h": 20,
+        "w": 34,
+        "x": 264,
+        "y": 534
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 20,
+        "w": 34
+      },
+      "trimmed": false
+    },
     "金枪鱼-游动-1.png": {
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 337,
+        "x": 179,
         "y": 408
       },
       "rotated": false,
@@ -1054,7 +1292,7 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 411,
+        "x": 253,
         "y": 408
       },
       "rotated": false,
@@ -1068,8 +1306,8 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 282,
-        "y": 489
+        "x": 327,
+        "y": 408
       },
       "rotated": false,
       "sourceSize": {
@@ -1082,8 +1320,8 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 356,
-        "y": 489
+        "x": 401,
+        "y": 408
       },
       "rotated": false,
       "sourceSize": {
@@ -1095,7 +1333,7 @@
   },
   "meta": {
     "app": "pack-atlas.py",
-    "decodedBytes": 5160960,
+    "decodedBytes": 5251072,
     "encoding": "lossless WebP",
     "encodingNote": "pixel exact",
     "format": "RGBA8888",
@@ -1103,8 +1341,8 @@
     "page": 1,
     "scale": "1",
     "size": {
-      "h": 2560,
-      "w": 504
+      "h": 2564,
+      "w": 512
     },
     "sources": {
       "冲锋拖尾.png": {
@@ -1130,6 +1368,14 @@
       "大白鲨-游动-4.png": {
         "bytes": 7150,
         "sha256": "fd5b8fdf2814f9f6140cdfe58a0b7e5a53397ed4e13be92abce7c364812a81e1"
+      },
+      "失控鱼雷.png": {
+        "bytes": 672,
+        "sha256": "b9edecc81bb274d0e1a8e132294d2fccc0bfde958024eec9cb57c052708a7450"
+      },
+      "封路木箱.png": {
+        "bytes": 2242,
+        "sha256": "f77a90dc607b24437ec575e08e60a3a05d19b8ec50cc481d4e955adb834da516"
       },
       "射水鱼.png": {
         "bytes": 1259,
@@ -1219,6 +1465,10 @@
         "bytes": 2729,
         "sha256": "a4c12db2a92f4d190622866c083c829ddf92361d81c700d1598feaeef072e04b"
       },
+      "木箱.png": {
+        "bytes": 5976,
+        "sha256": "85529c14446c2679eb434cb734ee2188efb938d3c92958da1903ac5258c73cea"
+      },
       "水母-待机-1.png": {
         "bytes": 5416,
         "sha256": "35b430545cd8bd91bc18d8f1e83707ff6ff7e44eef3b070fdccef21250c2bd77"
@@ -1259,6 +1509,10 @@
         "bytes": 3617,
         "sha256": "ad02702fce60f7acc4baa46d68f68c1c4655ef48e3b9caa8ea74b159acc2c249"
       },
+      "渔网.png": {
+        "bytes": 11449,
+        "sha256": "66eda62d2997ea9ac13713e59479c6b6c84906a51a0f590d8fe500d79d6f27f7"
+      },
       "灯笼鱼-冲锋.png": {
         "bytes": 4820,
         "sha256": "16b124cf0963bd5c0d81ee5b5ae739803318a5a3e7ce606d4f544c7b41501f9f"
@@ -1266,6 +1520,22 @@
       "灯笼鱼-移动.png": {
         "bytes": 4641,
         "sha256": "3520a31ccfd2c8a879e1e487da7252a905ac01df3c522c0c921cf5b8393c56f7"
+      },
+      "炸弹鱼-move-1.png": {
+        "bytes": 1691,
+        "sha256": "61b7dfe0490426398dc5c2b345a30dd385ca8579f0110c47135a7a2ade639acc"
+      },
+      "炸弹鱼-move-2.png": {
+        "bytes": 1521,
+        "sha256": "f42787da0e7ab40a4593fc4c2d149f68b8216df2cb47a636555a86182bb465cb"
+      },
+      "炸弹鱼-move-3.png": {
+        "bytes": 1500,
+        "sha256": "dc281e397f51c09d59fa03a1f94b14599f3da94212d9a192ae6db3355b10a393"
+      },
+      "炸弹鱼-move-4.png": {
+        "bytes": 1395,
+        "sha256": "4ea6956d45586668279fe3783eca7444f6191bd7361579e0aae2486f5ff5b6f1"
       },
       "玩家子弹.png": {
         "bytes": 317,
@@ -1303,6 +1573,22 @@
         "bytes": 11377,
         "sha256": "116e542855d0b0dc26b9c30e8ad885879acb4f2c0a32ed6ab16b834c526a6a1f"
       },
+      "电击水母-move-1.png": {
+        "bytes": 5479,
+        "sha256": "584969b1ffeadbf5905478495697aa697acf823307cf369fb533f9f75e301396"
+      },
+      "电击水母-move-2.png": {
+        "bytes": 5330,
+        "sha256": "d1cbd5bea66f7bbf1df86ebda9550064c9d89eb7eaa41da39e480eb94f3de0bc"
+      },
+      "电击水母-move-3.png": {
+        "bytes": 5016,
+        "sha256": "9551ffab0728d6e1bbe49a4512962508cd0fd6c0f2c882bf62ead904dc17db12"
+      },
+      "电击水母-move-4.png": {
+        "bytes": 5059,
+        "sha256": "c1e1f78467caffcb63985cf8e35cb225cd69251c92f278baa8a0e3beb373c803"
+      },
       "电鳗-放电.png": {
         "bytes": 5767,
         "sha256": "5e52e9cfb24f1f7ffa017e9ba4c15fcef6a41da64c06449d6fb26b77ade8f860"
@@ -1318,6 +1604,10 @@
       "盲虾.png": {
         "bytes": 2381,
         "sha256": "1b58ca5c485936a93eb82068e698fb3584bf7f08111ddf69ecd480d488416fd6"
+      },
+      "矿物颗粒.png": {
+        "bytes": 725,
+        "sha256": "8db5b6168bbb67a57ad32462e747ed735165b124075c618fb62ccf1006907caf"
       },
       "章鱼-游动-1.png": {
         "bytes": 9396,
@@ -1403,6 +1693,22 @@
         "bytes": 13729,
         "sha256": "0fc2ad3d2c24e9dd6fd297f12821c2df37dae2a8e6cf4fcc6ce97eda5b0bf6a8"
       },
+      "螃蟹-move-1.png": {
+        "bytes": 1736,
+        "sha256": "c5cbbf3adb96c9d53eb22f82438fe99a4a0a2ad315b5eed3c928ac24321676db"
+      },
+      "螃蟹-move-2.png": {
+        "bytes": 1750,
+        "sha256": "af1107665909b26602278e81b11354d9272745d2b2e7d06462f96d0354eaf3da"
+      },
+      "螃蟹-move-3.png": {
+        "bytes": 1734,
+        "sha256": "cfb31dc8eaf686279db4e8088abfa93d12b8f3d6272894bc7aeef4a548a166be"
+      },
+      "螃蟹-move-4.png": {
+        "bytes": 1707,
+        "sha256": "77ea773c4806a4589cd664a66ff0efa55761b265e1ac6c99d976ce73f4e481fa"
+      },
       "金枪鱼-游动-1.png": {
         "bytes": 3092,
         "sha256": "35b861eb10fd44f0a67e6ff1c159d98f5d26438eb655c46edad7c2f581b179b0"
@@ -1420,7 +1726,7 @@
         "sha256": "c5f17cde9ff9364db5b4a0643a51c80e01c7fde4ab2d6c84a7b8f0cf1c118627"
       }
     },
-    "textureBytes": 300000,
+    "textureBytes": 334256,
     "version": "1.0"
   }
 }

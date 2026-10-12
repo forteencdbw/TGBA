@@ -411,6 +411,8 @@ def command_new(arguments):
                 ("aspect", entry.get("aspect") or existing["aspect"]),
                 ("candidateCount", int(entry.get("candidates") or existing["candidateCount"])),
                 ("alpha", float(entry.get("alpha") or existing.get("alpha") or 1.0)),
+                ("swayDegrees", float(entry.get("swayDegrees") or existing.get("swayDegrees") or 0.0)),
+                ("swaySeconds", float(entry.get("swaySeconds") or existing.get("swaySeconds") or 6.0)),
                 ("originalDir", entry.get("originalDir")),
                 ("photo", entry.get("photo") or existing.get("photo")),
             ):
@@ -444,6 +446,8 @@ def command_new(arguments):
             "aspect": entry.get("aspect") or "1:1",
             "candidateCount": int(entry.get("candidates") or DEFAULT_CANDIDATES),
             "alpha": float(entry.get("alpha") or 1.0),
+            "swayDegrees": float(entry.get("swayDegrees") or 0.0),
+            "swaySeconds": float(entry.get("swaySeconds") or 6.0),
             "prompt": entry.get("prompt") or "",
             "composition": entry.get("composition"),
             "originalDir": entry.get("originalDir"),
@@ -1062,6 +1066,103 @@ def frame_set_name(asset, state="move"):
     return f"{asset['name']}-{state}" if asset["table"] == "hazards" else asset["name"]
 
 
+def normalise_frames(paths, out_dir, threshold=ALPHA_FLOOR):
+    """
+    Scale every frame so they all have the same CONTENT WIDTH, then crop them to one shared box.
+
+    WHY THIS IS NOT OPTIONAL. `import-sheet.py` scales each frame to the same grid width, which is right when the
+    frames share a canvas and wrong when the MODEL drew the creature wider in some of them. Measured on the crab:
+    content widths came out 35, 32, 35, 32 -- a two-frame pulse that reads as the creature swelling and shrinking
+    at 4 fps, which is not what a leg motion is supposed to say. It was visible before it was measured; the number
+    only said how big it was.
+
+    It is the same judgement `asset_pipeline.py sheet --scale content-width` makes, for the same reason, and it is
+    safe here for the same reason too: a size difference between two RENDERS is a render inconsistency, not an
+    intended expand/contract. A creature whose motion really is a size change would be flattened by this -- and no
+    kind in this game has that motion.
+
+    Scaling happens about each frame's own content-box centre, so nothing slides. Then the union box is taken again
+    from the SCALED frames, because scaling changed what the union is.
+    """
+    images, boxes = [], []
+    for path in paths:
+        image = Image.open(path).convert("RGBA")
+        images.append(image)
+        alpha = np.array(image)[:, :, 3] > threshold
+        if not alpha.any():
+            fail(f"{path} has no opaque pixels at all")
+        ys, xs = np.where(alpha)
+        boxes.append((int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1))
+
+    widths = [box[2] - box[0] for box in boxes]
+    target = sorted(widths)[len(widths) // 2]
+    spread = max(widths) - min(widths)
+
+    scaled = []
+    for image, box, width in zip(images, boxes, widths):
+        factor = target / width
+        if abs(factor - 1.0) < 0.005:
+            scaled.append(image)
+            continue
+        size = (max(1, round(image.width * factor)), max(1, round(image.height * factor)))
+        resized = image.resize(size, Image.LANCZOS)
+        scaled.append(resized)
+
+    common = union_box_of(scaled, threshold)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for path in out_dir.glob("*.png"):
+        path.unlink()
+    for path, image in zip(paths, scaled):
+        image.crop(common).save(out_dir / path.name, optimize=True)
+    return target, spread, common
+
+
+def union_box_of(images, threshold=ALPHA_FLOOR):
+    """The box containing every image's content. See `union_box` for why one box and not one each."""
+    boxes = []
+    for image in images:
+        alpha = np.array(image)[:, :, 3] > threshold
+        ys, xs = np.where(alpha)
+        boxes.append((int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1))
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes),
+            max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+
+def _render_frames(asset, directory, raw_frames, arguments):
+    """
+    Pixelate the cropped frames, record what came out, and measure it.
+
+    Shared by the generate path and `--reuse`, end to end, because the two differ only in whether the frames were
+    just rendered or were already sitting on disk -- and the numbers this writes into the batch record (the sprite
+    names, the frame rate, the boiling) have to be the same either way or `import` wires a set that does not exist.
+    """
+    python = python_exe()
+    cropped_dir = directory / "frames-cropped"
+    run_tool([
+        python, ROOT / "scripts" / "import-sheet.py", cropped_dir,
+        "--name", frame_set_name(asset), "--cols", len(raw_frames), "--rows", 1,
+        "--grid", arguments.grid or asset["grid"], "--colours", asset["colours"],
+        "--out-dir", directory / "sprites",
+    ])
+
+    sprites = sorted((directory / "sprites").glob(f"{frame_set_name(asset)}-*.png"),
+                     key=lambda p: int(p.stem.rsplit("-", 1)[1]))
+    asset["frames"] = [str(p.relative_to(directory)) for p in raw_frames]
+    asset["sprites"] = [str(p.relative_to(directory)) for p in sprites]
+    # Kept on the record, not just used to build the GIF: `import` declares the `animations.<name>` row from it, and
+    # a frame rate that only lived in the GIF call would make the config default to 8 behind the player's back. Read
+    # HERE rather than in `command_gif` -- the first version of this line said `fps` and the variable only existed in
+    # the OTHER function, so every frame set generated fine and then the run died before the batch was written: the
+    # pictures on disk and no record that they existed.
+    # `getattr` because `--fps` belongs to `gif`, not to `idle`, and this function serves both: reading the
+    # attribute directly works from one caller and raises AttributeError from the other, AFTER the frames were
+    # rendered and before the batch was written.
+    asset["fps"] = float(getattr(arguments, "fps", None) or (asset.get("idle") or {}).get("fps") or 8)
+    asset["boil"] = boil_report([Image.open(p) for p in sprites])
+    say("")
+    print_boil(asset["boil"])
+
+
 def command_idle(arguments):
     """
     Turn the selected candidate into an idle animation, two ways, with the choice made deliberately.
@@ -1104,11 +1205,24 @@ def command_idle(arguments):
         frames = int(arguments.frames or (asset.get("idle") or {}).get("frames") or 4)
         if frames < 2:
             fail("an animation needs at least 2 frames")
-        say(f"\n  {asset['name']}: route `frames`, {frames} frames "
-            f"(frame 1 is the candidate itself, {frames - 1} to generate)")
-
         frames_dir = directory / "frames"
         frames_dir.mkdir(parents=True, exist_ok=True)
+
+        # `--reuse` re-does the PIXELATION from frames that are already on disk. The frames are the expensive half
+        # and they do not change when the thing being tuned is the crop, the normalisation or the grid.
+        existing = sorted(p for p in frames_dir.glob("f*.png") if p.stem[1:].isdigit())
+        if arguments.reuse and existing:
+            say(f"\n  {asset['name']}: reusing {len(existing)} frame(s) already in {frames_dir.name}/")
+            raw_frames = existing
+            target, spread, box = normalise_frames(raw_frames, directory / "frames-cropped")
+            say(f"    cropped {len(raw_frames)} frame(s) to {box[2] - box[0]}x{box[3] - box[1]}")
+            if spread > 1:
+                say(f"    content widths varied by {spread}px and were normalised to {target}px")
+            _render_frames(asset, directory, raw_frames, arguments)
+            continue
+
+        say(f"\n  {asset['name']}: route `frames`, {frames} frames "
+            f"(frame 1 is the candidate itself, {frames - 1} to generate)")
         source = directory / asset["selected"]["raw"]
         shutil.copy2(source, frames_dir / "f1.png")
         say(f"    f1.png  <- {asset['selected']['raw']} (not generated: this is the pose you approved)")
@@ -1149,34 +1263,18 @@ def command_idle(arguments):
 
         raw_frames = sorted(frames_dir.glob("f*.png"), key=lambda p: int(p.stem[1:]))
         raw_frames = [p for p in raw_frames if p.stem[1:].isdigit()]
-        box = union_box(raw_frames)
         cropped_dir = directory / "frames-cropped"
-        cropped_dir.mkdir(parents=True, exist_ok=True)
-        for path in cropped_dir.glob("*.png"):
-            path.unlink()
-        for path in raw_frames:
-            Image.open(path).convert("RGBA").crop(box).save(cropped_dir / path.name, optimize=True)
-        say(f"    cropped {len(raw_frames)} frame(s) to the union box {box} "
-            f"({box[2] - box[0]}x{box[3] - box[1]}) -- one canvas, so the body cannot change size between frames")
 
-        run_tool([
-            python, ROOT / "scripts" / "import-sheet.py", cropped_dir,
-            "--name", frame_set_name(asset), "--cols", len(raw_frames), "--rows", 1,
-            "--grid", arguments.grid or asset["grid"], "--colours", asset["colours"],
-            "--out-dir", directory / "sprites",
-        ])
+        # Normalise content width, THEN crop to the union of what that produced. See `normalise_frames`: the model
+        # draws the same creature at slightly different sizes frame to frame, and left alone that becomes a pulse.
+        target, spread, box = normalise_frames(raw_frames, cropped_dir)
+        say(f"    cropped {len(raw_frames)} frame(s) to {box[2] - box[0]}x{box[3] - box[1]} "
+            f"-- one canvas, so the body cannot change size between frames")
+        if spread > 1:
+            say(f"    content widths varied by {spread}px and were normalised to {target}px "
+                f"(without this the creature pulses at the frame rate)")
 
-        sprites = sorted((directory / "sprites").glob(f"{asset['name']}-*.png"),
-                         key=lambda p: int(p.stem.rsplit("-", 1)[1]))
-        asset["frames"] = [str(p.relative_to(directory)) for p in raw_frames]
-        asset["sprites"] = [str(p.relative_to(directory)) for p in sprites]
-        # Kept on the record, not just used to build the GIF: `import` declares the `animations.<name>` row from it,
-        # and a frame rate that only lived in the GIF call would make the config default to 8 behind the player's
-        # back. See `wire_hazard`.
-        asset["fps"] = fps
-        asset["boil"] = boil_report([Image.open(p) for p in sprites])
-        say("")
-        print_boil(asset["boil"])
+        _render_frames(asset, directory, raw_frames, arguments)
 
     write_batch(data["batch"], data)
     # Route-aware, because the two routes end in different places: `sway` has no frames, so pointing at `gif`
@@ -1214,7 +1312,7 @@ def command_gif(arguments):
         images = [Image.open(path).convert("RGBA") for path in sprites]
         width = images[0].width
         factor = max(1, -(-GIF_MIN_WIDTH // width))  # ceil
-        scaled = []
+        boards = []
         for image in images:
             big = image.resize((image.width * factor, image.height * factor), Image.NEAREST)
             # Run the checkerboard under the sprite rather than pasting it on top: `alpha_composite` keeps the
@@ -1226,7 +1324,19 @@ def command_gif(arguments):
                         board.paste((205, 212, 222, 255), (x, y, min(x + GIF_CHECKER, big.width),
                                                           min(y + GIF_CHECKER, big.height)))
             board.alpha_composite(big)
-            scaled.append(board.convert("P", palette=Image.ADAPTIVE, colors=255))
+            # RGB first: the checkerboard is opaque, so nothing is lost, and quantising an RGBA frame makes PIL
+            # carry the alpha INTO the palette instead of leaving it out of it.
+            boards.append(board.convert("RGB"))
+
+        # ONE palette for the set, taken from the first frame.
+        #
+        # Per-frame quantisation is what the first version did (`convert("P", ADAPTIVE)` on each frame) and it
+        # fails at save time with "invalid palette size": PIL's GIF writer puts the first frame's palette on the
+        # background image and the frames no longer agree about it. Sharing one palette is also the rule the rest
+        # of this project follows -- two frames of one creature must not pick two different blues.
+        palette = boards[0].quantize(colors=255)
+        frames = [board.quantize(palette=palette, dither=Image.Dither.NONE) for board in boards]
+        scaled = frames
 
         target = directory / f"{asset['name']}-idle.gif"
         scaled[0].save(
@@ -1407,17 +1517,22 @@ def wire_variant(text, table, kind, image, scale):
     return insert_before_close(text, close_at, entry), image
 
 
-def wire_obstacle(text, kind, image, scale, alpha=1.0):
+def wire_obstacle(text, kind, image, scale, alpha=1.0, sway_degrees=0.0, sway_seconds=6.0):
     """
     Point `obstacles.art.<kind>` at a picture, CREATING the row when the kind has none.
 
     Returned to this after the coral, which already had a `coral` row with six variants: appending to an existing
     array and creating a row from nothing are different edits, and `crate`, `wall` and `net` have no row at all --
-    they were drawn by code, so there was nothing to append to. Doing only the first is the kind of gap that shows
-    up as "the picture is installed and the game ignores it", with no error anywhere.
+    they were drawn by code, so there was nothing to append to.
 
-    `alpha` is a row-level field, not a per-variant one -- a net that is translucent is translucent, it is not a
-    property of one of its faces.
+    **ALL FOUR FIELDS, ALWAYS**, and that is the lesson this function cost. The boot check in `mechanisms.ts` requires
+    every row to carry `variants` AND `alpha` AND `swayDegrees` AND `swaySeconds`, and the first version of this wrote
+    only the variants: the game refused to start with "config/mechanics.json5 is invalid: obstacles.art is …". That
+    is the config's equivalent of `tsc` -- a piece of data has no compiler, so the CHECK is the compiler, and a row
+    written to satisfy a parser is not a row written to satisfy the game. Read the check, not the neighbouring row.
+
+    `swayDegrees` of 0 is legal and means rigid, which is what a crate and a barrier want; a net is soft and gets
+    something in the range `tube`'s own comment describes.
     """
     obstacles_at = object_open(text, "obstacles")
     if obstacles_at < 0:
@@ -1436,8 +1551,6 @@ def wire_obstacle(text, kind, image, scale, alpha=1.0):
 
     indent = member_indent(text, art_close)
     inner = f"{indent}  "
-    alpha_line = "" if abs(alpha - 1.0) < 1e-9 else f'{inner}"alpha": {alpha:g},\n'
-    # Re-find `art`'s close after each insert: the first one moves it.
     text = insert_before_close(
         text,
         art_close,
@@ -1446,7 +1559,9 @@ def wire_obstacle(text, kind, image, scale, alpha=1.0):
         f'{inner}"variants": [\n'
         f'{inner}  {{ "image": "{image}", "scale": {scale:g} }}\n'
         f'{inner}],\n'
-        f"{alpha_line}"
+        f'{inner}"alpha": {alpha:g},\n'
+        f'{inner}"swayDegrees": {sway_degrees:g},\n'
+        f'{inner}"swaySeconds": {sway_seconds:g}\n'
         f'{indent}}}\n',
     )
     return text, image
@@ -1558,7 +1673,10 @@ def command_import(arguments):
 
         if asset["table"] == "obstacles":
             updated, added = wire_obstacle(
-                text, asset["kind"], asset["name"], scale, float(asset.get("alpha") or 1.0)
+                text, asset["kind"], asset["name"], scale,
+                float(asset.get("alpha") or 1.0),
+                float(asset.get("swayDegrees") or 0.0),
+                float(asset.get("swaySeconds") or 6.0),
             )
             described = f'obstacles.art.{asset["kind"]} -> "{added}" (scale {scale:g})'
         else:
@@ -1711,6 +1829,8 @@ def main():
     idle.add_argument("--frames", type=int, help="frame count (default: the spec's, else 4)")
     idle.add_argument("--grid", type=int)
     idle.add_argument("--model")
+    idle.add_argument("--reuse", action="store_true",
+                      help="re-pixelate the frames already on disk instead of generating them again")
     idle.add_argument("--dry-run", action="store_true")
     idle.set_defaults(handler=command_idle)
 

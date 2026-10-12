@@ -61,6 +61,52 @@ node .claude\skills\game-asset\scripts\gallery-driver.mjs <batch>/gallery.html <
 & $run flow status --batch <batch>        # where it got to
 ```
 
+### What `import` wires, and the three shapes it has to know
+
+`import` edits `config/mechanics.json5` as TEXT — it is JSON5 full of the comments that make it worth reading, so
+re-serialising it would throw all of that away — and the three things it has to write are three different edits:
+
+| what | where | note |
+|---|---|---|
+| a face for an obstacle that already has a row | `obstacles.art.<kind>.variants` | append one `{ image, scale }` (the coral's shape) |
+| a WHOLE row for an obstacle that has none | `obstacles.art.<kind>` | `crate`, `wall` and `net` were drawn by code, so there was nothing to append to |
+| a creature | `hazardArt.<kind>.move` (+ `animations.<name>`) | `move` may name a still OR an animation; an animation needs its own row declared |
+
+**All three fail silently**, which is why they are worth a table. The picture installs, the atlas packs, typecheck
+passes, and the game draws the code version because a name does not match or a row does not exist. The brace
+matching, the comment/string skipping, and the separating comma that the last member before a closing bracket does
+not have are `container_close` / `insert_before_close`, written once and shared. `object_open` anchors to a KEY AT
+THE START OF A LINE, because this config explains itself in comments and `"animations"` is exactly the word such a
+comment would use — a plain `find` would happily return the position of that mention and brace-match from the wrong
+place.
+
+**THE BOOT CHECK IS THE CONFIG'S COMPILER, and a row written to satisfy the parser is not a row written to satisfy
+the game.** `obstacles.art.<kind>` requires `variants` AND `alpha` AND `swayDegrees` AND `swaySeconds`
+(`mechanisms.ts` checks it at boot). `wire_obstacle`'s first version wrote only the variants — it parsed, it
+typechecked, the atlas packed, and then the game refused to start with
+`config/mechanics.json5 is invalid: obstacles.art is …`. Data has no compiler, so the CHECK is the compiler: read the
+check, not the neighbouring row. (A second, cosmetic half of the same edit: emitting `],` with nothing after it in an
+object is a legal JSON5 trailing comma AND looks like a mistake — the alpha line owns that comma.)
+
+**Frame names are load-bearing in the same silent way.** `idle` writes `<asset>-move-1..N` for a creature and the
+animation it declares asks for `<asset>-move-{n}`; the atlas looks a frame up BY FILE NAME, so a mismatch is a
+picture the game never finds with nothing failing anywhere. Both derive from `frame_set_name()` so they cannot
+disagree.
+
+**Normalise the frames' content width before pixelating them.** `import-sheet.py` scales every frame to the same
+grid width, which is right when the frames share a canvas and wrong when the MODEL drew the creature wider in some
+of them. Measured on the crab: content widths came out 35, 32, 35, 32 — a two-frame pulse reading as the creature
+swelling and shrinking at the frame rate, which is not what a leg motion says. It was VISIBLE before it was
+measured and the number only said how big it was. Normalising drops the crab's frame-to-frame difference from 23.7
+to 8.2 — most of what looked like boiling was the size pulse. `normalise_frames` scales about each frame's own
+content centre, then takes the union box again from the SCALED frames.
+
+**Boiling and stillness are the two ways generated frame sets fail, and they need different fixes.** Of three
+creatures: the bomb fish measured 2.4–3.7/255 (four frames of a uniform dark-red ball come out near-identical — an
+"animation" that does not animate), the crab 7.7–33.3 (legs and claws repaint every frame), the jellyfish ~16
+(tentacles ripple, which reads as motion). Measure all PAIRS, not frame 1 against the rest: one crab pair was 7.7
+while another was 33.3, and averaging over pairs starting at frame 1 hides which transition the eye will catch.
+
 ### The three numbers, and the check that keeps them honest
 
 Every picture in TGBA is drawn at **1.4 screen pixels per texel**, so:
@@ -144,6 +190,19 @@ once per candidate, and worth nothing when the output is 1K. `prepare_reference`
 first. **The order is the trick**: `grant` writes an 8x8 block of alpha-0 as the permission signal Ark needs, and
 resampling afterwards would blend that edge and leave the corner at alpha 3 instead of 0.
 
+**FIVE telegraphs live in `draw*` bodies that a picture replaces, not four.** The crab's launch arc and its sand
+puffs, the bomb fish's arming ring, the zapper's discharge ring (whose radius IS the hitbox radius, so losing it
+does not lose a flourish — it makes the picture a lie), the net's tear (a real gap in the mesh grid, which the
+obstacle art branch can only tint darker, and which then reads as "this is a wall and the game is broken"), and the
+TORPEDO's turn. Each is a named painter now, called from its own `draw*` at the point it always was — the z-orders
+differ and two of them go under the body — and from `paintTelegraph` in the art branch, last, over the sprite.
+
+The torpedo is the one worth reading twice, because the plan for it changed. It was going to be a SECOND PICTURE on
+the `charge` slot plus a pose rule, which would have needed the pipeline to learn "one asset, two candidate sets" —
+and the refactor that extracted the first four made the better answer obvious: a state a picture can only express by
+swapping the whole picture is a state that goes stale the moment the body art changes, and the red light is drawn at
+a fixed offset in the body's own proportions, so where it sits does not depend on where the artist put the nose.
+
 **COMPOSITION is the axis to check first, and no metric measures it.** The first real coral was pixelated, put in a
 gallery, picked, and imported — and only then did the line-up against its neighbours show the actual mistake: every
 coral already in `src/assets/` is a little SCENE (a coral plus its rock-and-sand base plus a couple of companions),
@@ -154,6 +213,12 @@ why it took a line-up to catch. The cause was the shared prompt template: `背�
 creature and exactly wrong for an obstacle whose variants are scenes. `composition` is now a spec field with that as
 its default, and **the gallery prints a strip of the existing siblings at game size next to each asset's
 candidates**, because a candidate shown alone has nothing to be compared against.
+
+**And the OPPOSITE of that lesson has a case too.** `crate`, `wall` and `net` are man-made squares that fill a
+`2r x 2r` box with no base at all — the code versions draw them flush to the square, so their art says
+`没有底座、没有沙石、没有背景场景`. Matching the neighbours means matching what the neighbours ARE, and for these
+three that is a bare object, not a vignette. The composition for each was written from what its `draw*` actually
+draws, not from the coral.
 
 **Two earlier conclusions from that same run, both partly wrong, both worth keeping as method.** Looking at the
 candidates I said they "look like a shrunken photograph"; the numbers said otherwise (palette capped at 40, edge

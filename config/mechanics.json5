@@ -1316,6 +1316,27 @@
       "count": 4,
       "framesPerSecond": 5,
       "maxSeconds": 2
+    },
+    // 螃蟹-move：一个资产一套动画，import 生成的。
+    "螃蟹-move": {
+      "frames": "螃蟹-move-{n}",
+      "count": 4,
+      "framesPerSecond": 8,
+      "maxSeconds": 2
+    },
+    // 炸弹鱼-move：一个资产一套动画，import 生成的。
+    "炸弹鱼-move": {
+      "frames": "炸弹鱼-move-{n}",
+      "count": 4,
+      "framesPerSecond": 8,
+      "maxSeconds": 2
+    },
+    // 电击水母-move：一个资产一套动画，import 生成的。
+    "电击水母-move": {
+      "frames": "电击水母-move-{n}",
+      "count": 4,
+      "framesPerSecond": 8,
+      "maxSeconds": 2
     }
   },
 
@@ -1574,7 +1595,17 @@
       // 图里第一条腕的朝向（游戏坐标，y 向上）。从原图的剪影量出来是 20°。海星是五等分的，所以哪条算"第一条"
       // 无所谓——换一条就正好差一整格，落在同一颗星的另一条腕上。这个数只负责把图自己的朝向对到齐射的 0 度。
       "volleyBaseRadians": 0.3491
-    }
+    },
+    // mineral：矿物颗粒。scale 是按"画出来多大"反推的，和旁边那些一样。
+    "mineral": { "move": "矿物颗粒", "scale": 1.7, "alpha": 1 },
+    // torpedo：失控鱼雷。scale 是按"画出来多大"反推的，和旁边那些一样。
+    "torpedo": { "move": "失控鱼雷", "scale": 2, "alpha": 1 },
+    // crab：螃蟹。scale 是按"画出来多大"反推的，和旁边那些一样。
+    "crab": { "move": "螃蟹-move", "scale": 1.5, "alpha": 1 },
+    // bombfish：炸弹鱼。scale 是按"画出来多大"反推的，和旁边那些一样。
+    "bombfish": { "move": "炸弹鱼-move", "scale": 1.5, "alpha": 1 },
+    // zapper：电击水母。scale 是按"画出来多大"反推的，和旁边那些一样。
+    "zapper": { "move": "电击水母-move", "scale": 1.5, "alpha": 1 }
   },
 
   "hazards": {
@@ -2744,6 +2775,33 @@
         // 管虫摆得明显得多：它是软管子，而且第一关里它是一整排（barrier），摆起来才不像栅栏。
         "swayDegrees": 6,
         "swaySeconds": 3.2
+      },
+      // crate：木箱。scale 是按"画出来多大"反推的，和 coral 那行一样。
+      "crate": {
+        "variants": [
+          { "image": "木箱", "scale": 1.4 }
+        ],
+        "alpha": 1,
+        "swayDegrees": 1.5,
+        "swaySeconds": 5
+      },
+      // wall：封路木箱。scale 是按"画出来多大"反推的，和 coral 那行一样。
+      "wall": {
+        "variants": [
+          { "image": "封路木箱", "scale": 1.15 }
+        ],
+        "alpha": 1,
+        "swayDegrees": 0,
+        "swaySeconds": 6
+      },
+      // net：渔网。scale 是按"画出来多大"反推的，和 coral 那行一样。
+      "net": {
+        "variants": [
+          { "image": "渔网", "scale": 1.05 }
+        ],
+        "alpha": 0.8,
+        "swayDegrees": 5,
+        "swaySeconds": 4
       }
     }
   },
