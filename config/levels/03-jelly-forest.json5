@@ -63,6 +63,12 @@
     { at: 620, kind: 'fish', count: 4, arrange: 'spread', span: 30, from: 'left', depth: 0.6 },
     { at: 660, kind: 'shrimp', count: 3, arrange: 'spread', span: 30, x: 0.6, from: 'right', depth: 0.5 },
     { at: 720, kind: 'zapper', count: 3, arrange: 'spread', span: 40, x: 0.5 },
+    // **海胆**：一个会朝你射尖刺的硬壳，15 点血、要打十几发。它在这里干的活和障碍物一样——不是追杀，
+    // 是"必须先看见、再决定绕开还是打"的固定威胁。所以放在中段路开始变挤的地方：前面的水母教你"别碰"、
+    // 海星教你"读方向"，从这里开始教"选哪边绕"。它转得很慢（`hazardArt.urchin.spin`，每一只初相不同），
+    // 刺球转起来才不像一张静止的图。
+    { at: 700, kind: 'urchin', x: 0.28 },
+    { at: 860, kind: 'urchin', count: 2, arrange: 'spread', span: 40, x: 0.55 },
     { at: 830, kind: 'zapper', count: 5, arrange: 'line' },
     { at: 880, kind: 'jelly', count: 4, arrange: 'spread', span: 50, x: 0.5 },
 

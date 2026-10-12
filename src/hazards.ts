@@ -3192,8 +3192,26 @@ function poseOnWholeCharge(h: Hazard, art: HazardArtEntry, _telegraphSeconds: nu
     : { state: move, elapsed: h.phase };
 }
 
+/**
+ * The puffer: the deflated picture belongs to its COUNTER, not to a wind-up.
+ *
+ * Every other kind with a second picture has it because it is about to do something -- the angler's jaws, the crab's
+ * launch. The puffer's second state means the opposite: it has just answered and CANNOT answer again, so shooting it
+ * is free, and `counterRest > 0` is that window. `drawPuffer` draws it as a smaller, dimmer ball with the spikes cut
+ * to stubs; the picture says the same thing by being a smaller, dimmer puffer, and `pixelate_aligned` is what keeps
+ * "smaller" meaning smaller rather than being flattened by the grid.
+ *
+ * The clock is 0 rather than the creature's phase: a still has no clock, and pinning frame 1 is what "this state is
+ * held while the counter cools" means if it ever becomes an animation.
+ */
+function poseOnCounterRest(h: Hazard, art: HazardArtEntry, _telegraphSeconds: number, move: string): HazardArtPose {
+  return h.counterRest > 0 && art.charge
+    ? { state: art.charge, elapsed: 0 }
+    : { state: move, elapsed: h.phase };
+}
+
 /** Which creatures do not use the default rule. */
-const POSE_RULES: Partial<Record<HazardKind, PoseRule>> = { angler: poseOnWholeCharge };
+const POSE_RULES: Partial<Record<HazardKind, PoseRule>> = { angler: poseOnWholeCharge, puffer: poseOnCounterRest };
 
 /**
  * The picture one creature shows this frame, and what clock it reads.
