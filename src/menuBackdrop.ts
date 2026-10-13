@@ -75,6 +75,31 @@ const SWIMMERS: readonly HazardKind[] = [
 ];
 
 /**
+ * Two creatures that do not swim: they CRAWL.
+ *
+ * A starfish and an urchin are seabed animals, and in the water they are the two whose art is a lump that already
+ * sits on the floor. So they are the two that keep to it: they arrive in the bottom of the screen, travel at a
+ * fraction of a swimmer's speed, never turn, and never drift off the height they were born at -- with the drift every
+ * other creature has, a crawler would be off the bottom of the screen within seconds of arriving.
+ *
+ * That combination makes them the one thing here that stays a long time: a slow crawl with no turn means the slowest
+ * of them takes over a minute to cross. It is bounded by the same cap as everything else, but it is the reason
+ * `crawlerSpeedScale` is not lower than it is.
+ */
+const CRAWLERS: readonly HazardKind[] = ['urchin', 'starfish'];
+
+/**
+ * WHICH CREATURES DO WHICH.
+ *
+ * Three rules about the ANIMAL rather than about the numbers, so they live here instead of in the config -- the same
+ * place, and for the same reason, as `shoal = kind === 'fish'` in `spawnWave`: "only small fish dart, and only small
+ * fish do it as a shoal" is a fact about small fish and not a dial, and a config key for it would be an invitation to
+ * make it untrue.
+ */
+const darts = (kind: HazardKind): boolean => kind === 'fish';
+const turns = (kind: HazardKind): boolean => !CRAWLERS.includes(kind);
+
+/**
  * A group of creatures that arrived together AND travel as one.
  *
  * ---------------------------------------------------------------------------------------------
@@ -288,22 +313,36 @@ export class MenuBackdrop {
         school.burstLeft = 0;
         continue;
       }
+      /**
+       * THE ROLLS ARE TAKEN FOR EVERY SCHOOL, INCLUDING ONE THAT CANNOT USE THEM.
+       *
+       * A pause, because that reads like waste: a crawler never darts and never turns, so rolling for it decides
+       * nothing at all. It is deliberate waste. The two rolls happen in a fixed order for every school, which is what
+       * lets `scripts/probe-menu-backdrop.mjs` script the dice and know which value lands on which decision. A rule
+       * that skipped a roll for one kind would silently re-point every later value in that script at a different
+       * decision, and a probe that quietly measures the wrong thing is worse than one that fails to compile.
+       */
+      const kind = g.members[0]!.kind;
+      const dart = Math.random();
+      const turn = Math.random();
       school.burstLeft = Math.max(0, school.burstLeft - dt);
       /**
        * A BURST IS A CHANCE PER FRAME rather than a countdown, which is what makes "on average every
        * `burstEverySeconds`" true at any frame rate instead of only at the one it was tuned on.
        */
-      if (school.burstLeft <= 0 && Math.random() < dt / Math.max(0.01, cfg.burstEverySeconds)) {
+      if (darts(kind) && school.burstLeft <= 0 && dart < dt / Math.max(0.01, cfg.burstEverySeconds)) {
         school.burstLeft = cfg.burstSeconds;
       }
       /**
-       * And the turn, the one rule with a PLACE as well as a rate.
+       * And the turn, the one rule with a PLACE as well as a rate -- and the one thing here that every creature does
+       * except the crawlers, so its rate is per-animal: small fish are the lively ones and turn twice as often.
        *
        * `vx` and `vy` both flip, because a creature that turned around turns around: reversing only the horizontal
        * part would leave it crabbing along at its old height, which is a sideways walk and not a fish.
        */
       const centre = g.sum / g.members.length;
-      if (centre > low && centre < high && Math.random() < dt / Math.max(0.01, cfg.turnEverySeconds)) {
+      const every = kind === 'fish' ? cfg.fishTurnEverySeconds : cfg.turnEverySeconds;
+      if (turns(kind) && centre > low && centre < high && turn < dt / Math.max(0.01, every)) {
         for (const m of g.members) {
           const mv = this.velocity.get(m.id);
           if (!mv) continue;
@@ -430,9 +469,19 @@ export class MenuBackdrop {
      * a lone whale does.
      */
     const shared = shoal && count > 1 ? newSchool() : null;
+    /** Whether this arrival crawls rather than swims -- see `CRAWLERS`. */
+    const crawls = CRAWLERS.includes(kind);
     const fromLeft = Math.random() < 0.5;
     const dir = fromLeft ? 1 : -1;
-    const speed = cfg.speedMin + Math.random() * (cfg.speedMax - cfg.speedMin);
+    const speed =
+      (cfg.speedMin + Math.random() * (cfg.speedMax - cfg.speedMin)) * (crawls ? cfg.crawlerSpeedScale : 1);
+    /**
+     * The height the wave arrives at, as a point in the water.
+     *
+     * For a crawler this is rolled and then NOT USED -- its members pick their own points on the seabed below. The
+     * roll is still taken so that how many rolls this method makes does not depend on what arrived, the same courtesy
+     * the two decision rolls in `update` pay.
+     */
     const y = this.height * (0.14 + Math.random() * 0.72);
     for (let i = 0; i < count; i++) {
       /**
@@ -443,7 +492,17 @@ export class MenuBackdrop {
        * jitter below -- gives the same loose shoal without the whole formation having to exist off screen.
        */
       const x = fromLeft ? -this.width * 0.06 - i * this.width * 0.026 : this.width * 1.06 + i * this.width * 0.026;
-      const h = this.swimmers.spawnAt(kind, x, y + (Math.random() - 0.5) * this.height * 0.08, {
+      /**
+       * And the height THIS member arrives at.
+       *
+       * A crawler's whole life is spent in the bottom of the screen, so it picks a point IN its band rather than
+       * being spread around the wave's -- which is what makes "the bottom third" true of the widest member of a batch
+       * and not only of its middle, and spreads a herd ALONG the seabed instead of around one line.
+       */
+      const arrival = crawls
+        ? Math.random() * this.height * cfg.crawlerBandTop
+        : y + (Math.random() - 0.5) * this.height * 0.08;
+      const h = this.swimmers.spawnAt(kind, x, arrival, {
         deterministic: true,
         variety: Math.floor(Math.random() * 8),
       });
@@ -465,7 +524,14 @@ export class MenuBackdrop {
       // A little speed variation per member, so a school opens up as it crosses rather than travelling as a block.
       this.velocity.set(h.id, {
         vx: speed * (0.86 + Math.random() * 0.28) * dir,
-        vy: (Math.random() - 0.5) * cfg.driftRatio * speed,
+        /**
+         * A crawler keeps the height it arrived at.
+         *
+         * The drift factor is 0 for it rather than the roll being skipped, so the roll count here stays independent
+         * of the kind. What it buys is the whole point of a crawler: with the drift every other creature has, one
+         * born near the bottom of its band would be off the bottom of the screen within seconds.
+         */
+        vy: (Math.random() - 0.5) * (crawls ? 0 : cfg.driftRatio) * speed,
         school: shared ?? newSchool(),
       });
       h.heading = dir;

@@ -1479,6 +1479,7 @@ export interface Mechanisms {
       speedMax: number;
       driftRatio: number;
       turnEverySeconds: number;
+      fishTurnEverySeconds: number;
       turnBand: number;
       burstScale: number;
       burstSeconds: number;
@@ -1492,6 +1493,8 @@ export interface Mechanisms {
       fishSchoolMin: number;
       fishSchoolMax: number;
       fishChance: number;
+      crawlerSpeedScale: number;
+      crawlerBandTop: number;
       backCoralCount: number;
       backCoralHalfWidth: number;
       backCoralBottom: number;
@@ -2836,6 +2839,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['speedMax', 'screen widths per second'],
     ['driftRatio', 'a fraction of the horizontal speed'],
     ['turnEverySeconds', 'seconds'],
+    ['fishTurnEverySeconds', 'seconds'],
     ['turnBand', 'a fraction of the screen width'],
     ['burstScale', 'a speed multiple'],
     ['burstSeconds', 'seconds'],
@@ -2849,6 +2853,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['fishSchoolMin', 'a count of creatures'],
     ['fishSchoolMax', 'a count of creatures'],
     ['fishChance', 'a probability'],
+    ['crawlerSpeedScale', 'a speed multiple'],
+    ['crawlerBandTop', 'a fraction of the screen height'],
     ['backCoralCount', 'a count of corals'],
     ['backCoralHalfWidth', 'a fraction of the screen width'],
     ['backCoralBottom', 'a fraction of the screen height; negative is below the edge'],

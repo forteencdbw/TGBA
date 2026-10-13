@@ -56,7 +56,9 @@ try {
   check('a non-fish batch is 2..3', [cfg.schoolMin, cfg.schoolMax], [2, 3]);
   check('a fish shoal is 8..10', [cfg.fishSchoolMin, cfg.fishSchoolMax], [8, 10]);
   check('the drift is half the horizontal speed', cfg.driftRatio, 0.5);
-  check('the turn band leaves a channel at each side', [cfg.turnBand, cfg.turnEverySeconds], [0.6, 6]);
+  check('the turn band leaves a channel at each side', cfg.turnBand, 0.6);
+  check('small fish are the lively ones', cfg.fishTurnEverySeconds < cfg.turnEverySeconds, true);
+  check('the two that crawl', [cfg.crawlerSpeedScale, cfg.crawlerBandTop], [0.4, 0.33]);
   check('a burst', [cfg.burstScale, cfg.burstSeconds, cfg.burstEverySeconds], [2.5, 1.2, 8]);
 
   /** Hand the rules a script instead of dice. Values beyond the list are all `NO`. */
@@ -153,6 +155,29 @@ try {
   }
 
   // ---------------------------------------------------------------------------------------------
+  // Two rates, and one of them is small fish
+  // ---------------------------------------------------------------------------------------------
+  console.log('\n--- how often a turn comes round ---');
+  {
+    /**
+     * A roll BETWEEN the two thresholds, derived from the config rather than typed in, so this survives a retune --
+     * as long as the two rates differ, which is the rule under test. A fish's threshold is `dt / 6` and a shark's is
+     * `dt / 12`, so a roll of `dt / 8` is a yes to one and a no to the other.
+     */
+    const between = (DT / cfg.turnEverySeconds + DT / cfg.fishTurnEverySeconds) / 2;
+    const turnFor = (kind) => {
+      const cast = [{ kind, x: W * 0.5, y: H * 0.5, vx: 0.05, vy: 0, school: { burstLeft: 0 } }];
+      const bd = build([...cast, ...filler(cfg.minAlive - 1)]);
+      const restore = dice([NO, between]); // no dart, then this turn roll
+      bd.update(DT);
+      restore();
+      return Math.sign(bd.velocity.get(cast[0].h.id).vx);
+    };
+    check('a small fish takes it', turnFor('fish'), -1);
+    check('a shark does not', turnFor('shark'), 1);
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // A burst moves the body faster, and beats the tail faster with it
   // ---------------------------------------------------------------------------------------------
   console.log('\n--- a burst ---');
@@ -187,6 +212,32 @@ try {
   }
 
   // ---------------------------------------------------------------------------------------------
+  // Only small fish dart, and it is the animal that decides
+  // ---------------------------------------------------------------------------------------------
+  console.log('\n--- who darts ---');
+  {
+    const fishSchool = { burstLeft: 0 };
+    const sharkSchool = { burstLeft: 0 };
+    const cast = [
+      { kind: 'fish', x: W * 0.5, y: H * 0.5, vx: 0.05, vy: 0, school: fishSchool },
+      { kind: 'shark', x: W * 0.5, y: H * 0.5, vx: 0.05, vy: 0, school: sharkSchool },
+    ];
+    const bd = build([...cast, ...filler(cfg.minAlive - 2)]);
+    const before = cast.map((c) => c.h.x);
+    // Every roll says yes: the first two belong to the fish (dart, then turn) and the next two to the shark.
+    const restore = dice([0, 0, 0, 0]);
+    bd.update(DT);
+    restore();
+
+    check('a small fish darts', fishSchool.burstLeft, cfg.burstSeconds);
+    check('a shark never does', sharkSchool.burstLeft, 0);
+    // Both turned -- the difference measured here is the SPEED, so the burst is the only thing left that could
+    // explain it.
+    near('and it crossed at the multiplier', Math.abs(cast[0].h.x - before[0]) / (0.05 * DT * W), cfg.burstScale);
+    near('while the shark crossed at its own speed', Math.abs(cast[1].h.x - before[1]) / (0.05 * DT * W), 1);
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // Leaving is not a decision
   // ---------------------------------------------------------------------------------------------
   console.log('\n--- a departing creature ---');
@@ -204,6 +255,67 @@ try {
     check('it does not turn, it leaves', Math.sign(bd.velocity.get(h.id).vx), 1);
     // `fleeScreensPerSecond` is a fraction of the screen HEIGHT, which is the unit the water uses for a departure.
     near('and it leaves at the departure speed', (h.x - before) / (mech.hazards.fleeScreensPerSecond * H * DT), 1);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The two that crawl
+  // ---------------------------------------------------------------------------------------------
+  console.log('\n--- the two that crawl ---');
+  {
+    /**
+     * What the spawner hands a crawler, against what it hands a fish.
+     *
+     * The rolls are, in order: is it a fish, (only if not) which one, how many, which side, how fast, and the WAVE's
+     * height -- then, per member, that member's own height. `0.23` picks the urchin out of `SWIMMERS`.
+     *
+     * A crawler ignores the wave's height and uses its own, so the two are given deliberately DIFFERENT values: had
+     * they been the same, a test reading the wrong roll would have passed anyway.
+     */
+    const WAVE_Y = 0.9; // near the surface, where a swimmer would be
+    const MEMBER_Y = 0.25; // a quarter of the way up a crawler's band
+    const arrive = (isFish, yRoll) => {
+      const bd = new MenuBackdrop();
+      bd.layout(W, H);
+      const restore = dice(isFish ? [0, NO, NO, NO, yRoll, 0.5] : [0.9, 0.23, NO, NO, NO, NO, yRoll]);
+      bd.spawnWave();
+      restore();
+      const h = bd.swimmers.hazards[0];
+      return { kind: h.kind, y: h.y, v: bd.velocity.get(h.id) };
+    };
+    const fish = arrive(true, WAVE_Y);
+    const urchin = arrive(false, MEMBER_Y);
+    check('the roll picked an urchin', urchin.kind, 'urchin');
+    near('a fish arrives where its wave said', fish.y / H, 0.14 + WAVE_Y * 0.72);
+    near('an urchin arrives at its own point in the band', urchin.y / H, MEMBER_Y * cfg.crawlerBandTop);
+    near('and crawls at the slow multiple', Math.abs(urchin.v.vx) / Math.abs(fish.v.vx), cfg.crawlerSpeedScale);
+    check('with no drift at all', urchin.v.vy, 0);
+    check('where a fish has one', fish.v.vy !== 0, true);
+
+    /**
+     * And in the water they take no decisions.
+     *
+     * Both sit in the middle of the screen, so the turn band would allow a turn for either of them: the only thing
+     * stopping the urchin is the animal it is -- which is what the fish beside it, under the same dice, is here to
+     * show.
+     */
+    const crawlerSchool = { burstLeft: 0 };
+    const fishSchool = { burstLeft: 0 };
+    const cast = [
+      { kind: 'urchin', x: W * 0.5, y: H * 0.2, vx: 0.05, vy: 0, school: crawlerSchool },
+      { kind: 'fish', x: W * 0.5, y: H * 0.5, vx: 0.05, vy: 0, school: fishSchool },
+    ];
+    const bd = build([...cast, ...filler(cfg.minAlive - 2)]);
+    const y0 = cast[0].h.y;
+    const restore = dice([0, 0, 0, 0]); // every roll says yes, for the first frame of sixty
+    for (let i = 0; i < 60; i++) bd.update(DT);
+    restore();
+
+    check('an urchin never darts', crawlerSchool.burstLeft, 0);
+    check('and never turns', Math.sign(bd.velocity.get(cast[0].h.id).vx), 1);
+    near('and never leaves its height', cast[0].h.y, y0);
+    // The same sixty frames and the same dice, and the fish beside it did all three.
+    check('while the fish beside it darted', fishSchool.burstLeft > 0, true);
+    check('and turned', Math.sign(bd.velocity.get(cast[1].h.id).vx), -1);
   }
 
   // ---------------------------------------------------------------------------------------------
