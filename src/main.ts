@@ -64,6 +64,19 @@ import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius } from
 /** The three ways a bubble can be born (design round 5). Effects land in D4; here it is flavour. */
 const SEEDS = ['鱼屁泡', '汽水泡', '深海淤泥泡'] as const;
 
+/**
+ * The phases that are the main menu, or a page opened from it.
+ *
+ * They are one group because they share one thing: the menu's backdrop. A page opened from the menu covers the screen
+ * rather than replacing it, so the water behind it goes on running -- closing the page finds the fish where they swam
+ * to, rather than a fresh shoal arriving. That is the whole of "a second-level page leaves the background alone".
+ *
+ * A NEW PAGE OPENED FROM THE MENU BELONGS IN THIS LIST and needs nothing else. `exitCodex` is the shape to copy, and
+ * the shape is: set the phase back to `menu` and call NOTHING -- in particular not `refillBackdrop`, which exists for
+ * the one case where the water has really been emptied.
+ */
+const MENU_PAGES: readonly Phase[] = ['menu', 'codex'];
+
 const INTRO_SECONDS = 1.6;
 /**
  * Where the bubble comes from, and where it settles, as fractions of the visible window.
@@ -2660,8 +2673,14 @@ class Game {
     this.summary.hide();
     this.settings.setOpen(false);
     this.run.phase = 'menu';
-    // The backdrop was left finished by the last exit; a finished one draws nothing.
-    this.menu.enterMenu();
+    /**
+     * The water the run walked out of has to be put back.
+     *
+     * Pressing 开始 did not HIDE the backdrop, it EMPTIED it -- every creature turned and swam off, and the layer
+     * faded to nothing. So a menu shown without this is a menu over an empty sea. This is the one caller of
+     * `refillBackdrop`; a page opened from the menu needs nothing put back, because it never emptied anything.
+     */
+    this.menu.refillBackdrop();
     this.touch.releaseAll();
     /**
      * Stop the ambience explicitly.
@@ -2784,11 +2803,16 @@ class Game {
       });
   }
 
-  /** Leave the codex, back to the menu. */
+  /**
+   * Leave the codex, back to the menu.
+   *
+   * AND CALL NOTHING. This is the shape `MENU_PAGES` asks a new page to copy: the phase is what shows the menu -- the
+   * frame loop owns `visible` -- and the backdrop has been running for the whole time the page was up, so there is
+   * nothing to put back. Calling `refillBackdrop` here is the bug this used to have: coming back grew a brand new
+   * shoal instead of finding the fish where they had got to.
+   */
   private exitCodex(): void {
     this.run.phase = 'menu';
-    this.menu.root.visible = true;
-    this.menu.enterMenu();
   }
 
 private updateBoss(): void {
@@ -3141,6 +3165,8 @@ private updateBoss(): void {
      */
     const fullScreenPage = this.run.phase === 'menu' || this.run.phase === 'codex' || this.run.phase === 'loading';
     const inMenu = this.run.phase === 'menu';
+    /** Whether the menu's water is the world behind what is on screen -- see `MENU_PAGES`. */
+    const menuPage = MENU_PAGES.includes(this.run.phase);
     this.hud.root.visible = !fullScreenPage;
     this.scene.root.visible = !fullScreenPage;
     // The water controls hide on those pages and behind the settings panel and the mutation pick. The touch layer
@@ -3254,7 +3280,13 @@ private updateBoss(): void {
     // the run is behind, so it needs no clearing: there is nothing in flight that outlives it.
     this.levelup.root.visible = this.run.phase === 'levelup';
     this.menu.root.visible = inMenu;
+    /**
+     * The menu IS the page: it decides and it draws. A page opened from it does neither -- the codex schedules its own
+     * redraw on a tab press, a page turn and a resize -- but the water behind it goes on living, which is the one
+     * thing `updateBackdrop` is for.
+     */
     if (inMenu) this.menu.update(dt);
+    else if (menuPage) this.menu.updateBackdrop(dt);
     // The codex draws nothing per frame: a tab press, a page turn and a resize each schedule their own redraw.
     this.codex.root.visible = this.run.phase === 'codex';
     /**

@@ -1478,6 +1478,11 @@ export interface Mechanisms {
       speedMin: number;
       speedMax: number;
       driftRatio: number;
+      turnEverySeconds: number;
+      turnBand: number;
+      burstScale: number;
+      burstSeconds: number;
+      burstEverySeconds: number;
       creatureScale: number;
       creatureAlpha: number;
       schoolChance: number;
@@ -2830,6 +2835,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['speedMin', 'screen widths per second'],
     ['speedMax', 'screen widths per second'],
     ['driftRatio', 'a fraction of the horizontal speed'],
+    ['turnEverySeconds', 'seconds'],
+    ['turnBand', 'a fraction of the screen width'],
+    ['burstScale', 'a speed multiple'],
+    ['burstSeconds', 'seconds'],
+    ['burstEverySeconds', 'seconds'],
     ['creatureScale', 'a size multiple'],
     ['creatureAlpha', 'an opacity'],
     ['schoolChance', 'a probability'],

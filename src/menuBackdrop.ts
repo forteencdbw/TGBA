@@ -41,6 +41,7 @@ import { ObstacleField, paintObstacles } from './obstacles';
  * step function, and `HazardField.update` is what drives it. None of that is running here, so the speed of each
  * swimmer is kept in a map beside it rather than invented as a field on `Hazard` -- the painters do not read a
  * velocity, and a field only this module understands would be one more thing a future reader has to find out about.
+ * The same map carries the creature's `School`, and for the same reason.
  */
 
 /**
@@ -73,6 +74,35 @@ const SWIMMERS: readonly HazardKind[] = [
   'starfish',
 ];
 
+/**
+ * A group of creatures that arrived together AND travel as one.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * EVERY CREATURE HAS ONE, AND ONLY SMALL FISH EVER SHARE IT
+ * ---------------------------------------------------------------------------------------------
+ * A lone whale, a lone sardine and a two-crab team are each "a group" with one member, so nothing below ever asks how
+ * many members a school has -- which is what makes "a shoal of sardines darts as one" and "a whale darts on its own"
+ * the same line of code instead of two.
+ *
+ * What the WORLD says is narrower, and the narrow part is the point: the only animals in this water that behave as a
+ * group are small fish. A team of three anglerfish drifting apart is not a missing feature -- it is the answer.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THE DECISIONS LIVE HERE AND NOT ON A CREATURE
+ * ---------------------------------------------------------------------------------------------
+ * Both of a school's decisions are the SCHOOL's, and a roll taken inside the move loop would be taken once per
+ * creature: a shoal of ten would dart and turn ten times as often as a whale, and the shoal would come apart at the
+ * turn's own edge instead of wheeling as a body. So each school rolls ONCE per frame, and turning reaches every
+ * member at once.
+ */
+interface School {
+  /** Seconds left of a burst of speed; 0 while swimming normally. */
+  burstLeft: number;
+}
+
+/** A school with one member in it -- what everything that is not a fish shoal gets. See `School` above. */
+const newSchool = (): School => ({ burstLeft: 0 });
+
 export class MenuBackdrop {
   readonly root = new Container();
   /**
@@ -91,8 +121,8 @@ export class MenuBackdrop {
   private readonly swimmers = new HazardField();
   private readonly backBed = new ObstacleField();
   private readonly frontBed = new ObstacleField();
-  /** Speed per swimmer, keyed by hazard id. See the note at the top of the file. */
-  private readonly velocity = new Map<number, { vx: number; vy: number }>();
+  /** Speed and school per swimmer, keyed by hazard id. See the notes at the top of the file. */
+  private readonly velocity = new Map<number, { vx: number; vy: number; school: School }>();
 
   private width = 0;
   private height = 0;
@@ -227,6 +257,64 @@ export class MenuBackdrop {
     }
 
     /**
+     * THE SCHOOLS DECIDE FIRST, AND EACH ONE DECIDES ONCE.
+     *
+     * Two passes rather than one because both of a school's decisions belong to the GROUP: taken inside the move loop
+     * below they would be taken once per creature, and a shoal of ten would dart and turn ten times as often as a
+     * whale. Grouping first is also what gives "the middle of the screen" something to mean for a shoal -- see
+     * `turnBand`: it measures the group's CENTRE, so a shoal wheels as a body rather than coming apart at the band.
+     */
+    const groups = new Map<School, { members: Hazard[]; sum: number }>();
+    for (const h of this.swimmers.hazards) {
+      const v = this.velocity.get(h.id);
+      if (!v) continue;
+      const g = groups.get(v.school);
+      if (g) {
+        g.members.push(h);
+        g.sum += h.x;
+      } else {
+        groups.set(v.school, { members: [h], sum: h.x });
+      }
+    }
+    const low = (this.width * (1 - cfg.turnBand)) / 2;
+    const high = this.width - low;
+    for (const [school, g] of groups) {
+      /**
+       * Leaving is not a decision, and this is where a departing school stops making them. Every member of a school
+       * flees together -- `beginExit` sets them in one pass -- so one look at the first member settles it for the
+       * group, and a burst left running would be a burst nobody asked a leaving creature for.
+       */
+      if (g.members[0]!.flee) {
+        school.burstLeft = 0;
+        continue;
+      }
+      school.burstLeft = Math.max(0, school.burstLeft - dt);
+      /**
+       * A BURST IS A CHANCE PER FRAME rather than a countdown, which is what makes "on average every
+       * `burstEverySeconds`" true at any frame rate instead of only at the one it was tuned on.
+       */
+      if (school.burstLeft <= 0 && Math.random() < dt / Math.max(0.01, cfg.burstEverySeconds)) {
+        school.burstLeft = cfg.burstSeconds;
+      }
+      /**
+       * And the turn, the one rule with a PLACE as well as a rate.
+       *
+       * `vx` and `vy` both flip, because a creature that turned around turns around: reversing only the horizontal
+       * part would leave it crabbing along at its old height, which is a sideways walk and not a fish.
+       */
+      const centre = g.sum / g.members.length;
+      if (centre > low && centre < high && Math.random() < dt / Math.max(0.01, cfg.turnEverySeconds)) {
+        for (const m of g.members) {
+          const mv = this.velocity.get(m.id);
+          if (!mv) continue;
+          mv.vx = -mv.vx;
+          mv.vy = -mv.vy;
+          this.faceTravel(m, mv.vx >= 0 ? 1 : -1);
+        }
+      }
+    }
+
+    /**
      * HOW FAR OFF SCREEN A CREATURE MAY BE BEFORE IT IS DROPPED.
      *
      * It has to cover where a school is BORN, not just where one creature is. Members are laid out along the
@@ -242,12 +330,19 @@ export class MenuBackdrop {
         this.swimmers.hazards.splice(i, 1);
         continue;
       }
+      /**
+       * How hard this creature is swimming right now, applied to the DISPLACEMENT rather than to `vx`/`vy`.
+       *
+       * That is the whole of "a burst and a turn do not interfere": the turn owns the direction, the burst owns the
+       * rate, and a creature that turns halfway through a burst simply carries on bursting the other way.
+       */
+      const boost = v.school.burstLeft > 0 ? cfg.burstScale : 1;
       if (h.flee) {
         const step = this.height * mech.hazards.fleeScreensPerSecond * dt;
         h.x += h.flee === 'right' ? step : -step;
       } else {
-        h.x += v.vx * dt * this.width;
-        h.y += v.vy * dt * this.height;
+        h.x += v.vx * boost * dt * this.width;
+        h.y += v.vy * boost * dt * this.height;
       }
       /**
        * THE ANIMATION CLOCK, and it is `phase`.
@@ -255,8 +350,12 @@ export class MenuBackdrop {
        * In the water this is advanced by `HazardField.advanceKind` -- one line, for every kind -- and it is what
        * `hazardArtPose` hands the animation as its elapsed time. Nothing here runs the field's update, so without this
        * every decorative fish holds frame one for its whole crossing: a backdrop of statues.
+       *
+       * It runs at the burst's own rate, so a swimming-hard creature also beats its tail faster. The SAME number does
+       * both, deliberately: "how hard it is swimming" is one fact about the creature and not two, and a burst that
+       * moved the body faster while the tail beat at its old speed is a picture being dragged rather than a fish.
        */
-      h.phase += dt;
+      h.phase += dt * boost;
       /**
        * `heading` is the creature's own fact about which way it is going.
        *
@@ -294,7 +393,12 @@ export class MenuBackdrop {
     paintObstacles(this.frontGfx, this.frontBed, this.width);
   }
 
-  /** One creature, or a small school of one kind, entering from a random side at a random height. */
+  /**
+   * One arrival: a single creature, or a batch of one kind, entering from a random side at a random height.
+   *
+   * A BATCH IS NOT A GROUP. Whether these creatures go on to behave as one is decided by a single line below -- see
+   * the note on `shared` -- and the answer is "only if they are small fish".
+   */
   private spawnWave(): void {
     const cfg = mech.menu.backdrop;
     /**
@@ -318,6 +422,14 @@ export class MenuBackdrop {
     const lo = shoal ? cfg.fishSchoolMin : cfg.schoolMin;
     const hi = shoal ? cfg.fishSchoolMax : cfg.schoolMax;
     const count = Math.random() < chance ? Math.max(1, Math.round(lo + Math.random() * (hi - lo))) : 1;
+    /**
+     * ONE SHARED SCHOOL FOR A SHOAL, AND ONE EACH FOR EVERYTHING ELSE.
+     *
+     * This line is the whole of "only small fish travel as a group". A batch of two or three of anything else is an
+     * arrival and nothing more -- each of those gets its own school, so they turn and dart one at a time, exactly as
+     * a lone whale does.
+     */
+    const shared = shoal && count > 1 ? newSchool() : null;
     const fromLeft = Math.random() < 0.5;
     const dir = fromLeft ? 1 : -1;
     const speed = cfg.speedMin + Math.random() * (cfg.speedMax - cfg.speedMin);
@@ -354,6 +466,7 @@ export class MenuBackdrop {
       this.velocity.set(h.id, {
         vx: speed * (0.86 + Math.random() * 0.28) * dir,
         vy: (Math.random() - 0.5) * cfg.driftRatio * speed,
+        school: shared ?? newSchool(),
       });
       h.heading = dir;
       this.faceTravel(h, dir);

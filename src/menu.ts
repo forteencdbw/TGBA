@@ -358,12 +358,35 @@ export class MainMenu {
   }
 
   /**
-   * Put the backdrop back to its living state. Called whenever the menu is shown again, because the last exit left it
-   * finished and a finished backdrop draws nothing.
+   * Refill the water after a RUN emptied it.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * NOT "ENTER THE MENU", WHICH IS WHY IT WAS RENAMED
+   * ---------------------------------------------------------------------------------------------
+   * It used to be called `enterMenu`, and that name is precisely what a page opened FROM the menu calls on its way
+   * back -- which is how returning from the bestiary came to throw the water away and grow a fresh shoal instead of
+   * finding the fish where they had swum to. The menu is shown and hidden by the PHASE; the one thing this does is
+   * put back what a run takes with it.
+   *
+   * So there is exactly one caller, `exitToMenu`, and it should stay the only one. Pressing 开始 does not hide the
+   * backdrop, it EMPTIES it -- every creature turns and swims off (`beginExit`), and a finished backdrop draws
+   * nothing. A page opened from the menu does no such thing, so coming back from one needs nothing put back.
    */
-  enterMenu(): void {
+  refillBackdrop(): void {
     this.backdrop.reset();
     this.exitReported = false;
+  }
+
+  /**
+   * Advance the water without drawing the menu.
+   *
+   * The menu is HIDDEN while a page opened from it is up -- the codex covers the screen -- but its backdrop is not
+   * PAUSED: the fish keep swimming the whole time, so closing the page finds the water where it got to rather than a
+   * fresh shoal arriving. That is what makes a page feel like one you looked at and closed instead of one that
+   * replaced the world, and it is the same reason `refillBackdrop` is not called on the way back.
+   */
+  updateBackdrop(dt: number): void {
+    this.backdrop.update(dt);
   }
 
   /**
@@ -381,7 +404,7 @@ export class MainMenu {
 
   update(dt: number): void {
     this.time += dt;
-    this.backdrop.update(dt);
+    this.updateBackdrop(dt);
     if (!this.exitReported && this.backdrop.finished) {
       this.exitReported = true;
       this.onStart();
