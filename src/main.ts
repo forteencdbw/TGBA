@@ -1501,7 +1501,12 @@ class Game {
    */
   private drawCracks(strength: number, colour: number): void {
     const cfg = mech.hud.brokenScreen;
-    const reach = Math.min(this.canvasSize.width, this.canvasSize.height) * cfg.reachRatio * (0.35 + 0.65 * strength);
+    /**
+     * Reaching in from the LANE's walls, so how far a crack travels is a property of that corridor rather than of
+     * the window it happens to be centred in. On a phone the two are the same width, which is exactly why measuring
+     * against the canvas looked right until a window wider than the lane showed cracks over the open water.
+     */
+    const reach = this.camera.viewport.laneWidthPx * cfg.reachRatio * (0.35 + 0.65 * strength);
     const count = Math.round(cfg.crackCountNear + (cfg.crackCountDeep - cfg.crackCountNear) * strength);
     const alpha = cfg.alphaNear + (cfg.alphaDeep - cfg.alphaNear) * strength;
 
@@ -1522,36 +1527,32 @@ class Game {
     this.brokenCrack.stroke({ color: colour, alpha, width: cfg.width });
   }
 
-  /** Lay out `count` cracks along the border, appending each to `g` as a polyline. */
+  /** Lay out `count` cracks along the LANE's two walls, appending each to `g` as a polyline. */
   private crackPolylines(g: Graphics, reach: number, count: number, rng: () => number): void {
     const cfg = mech.hud.brokenScreen;
-    const { width: screenW, height: screenH } = this.canvasSize;
+    const viewport = this.camera.viewport;
+    const laneLeft = viewport.left;
+    const laneRight = viewport.left + viewport.laneWidthPx;
+    const screenH = this.canvasSize.height;
     for (let i = 0; i < count; i++) {
       /**
-       * A side first, then a point along it -- rather than a uniform point on the border.
+       * A WALL of the lane, then a point along it -- and there are two walls rather than four edges.
        *
-       * Uniform would put most cracks on the LONGEST edge (on a wide window, the top), because that edge is where
-       * most of the border is. Picking the side first gives all four an equal share, which is what "the screen is
-       * cracking" looks like.
+       * Two, not four: the water has no top or bottom in this game, it scrolls forever, so "the top edge of the
+       * screen" is a viewport artefact rather than a surface. A crack growing down from it would be drawn on
+       * nothing.
+       *
+       * The LANE's walls rather than the canvas', because on a window wider than the lane there is open water on
+       * either side -- the background fills it -- and a crack out there is a crack in something the bubble cannot
+       * touch. The lane is the only thing it can touch, so it is the only thing that can be about to break.
+       *
+       * The wall is picked first and the point along it second, so the two sides get an equal share rather than
+       * whatever a uniform sample of the border would give them.
        */
-      const side = Math.floor(rng() * 4);
-      let x = 0;
-      let y = 0;
-      let angle = 0;
-      if (side === 0) {
-        x = rng() * screenW;
-        angle = Math.PI / 2;
-      } else if (side === 1) {
-        x = screenW;
-        y = rng() * screenH;
-        angle = Math.PI;
-      } else if (side === 2) {
-        x = rng() * screenW;
-        y = screenH;
-        angle = -Math.PI / 2;
-      } else {
-        y = rng() * screenH;
-      }
+      const fromLeft = rng() < 0.5;
+      const x = fromLeft ? laneLeft : laneRight;
+      const y = rng() * screenH;
+      const angle = fromLeft ? 0 : Math.PI;
 
       const end = this.oneCrack(g, x, y, angle, reach, cfg.segmentsPerCrack, rng);
       // The branch leaves from where the main crack STOPPED, which is what makes it read as a split rather than as
