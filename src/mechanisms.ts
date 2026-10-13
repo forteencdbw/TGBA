@@ -722,7 +722,22 @@ export interface Mechanisms {
     bosses: Record<string, BossDossier>;
     /** LEVEL 1's signature: the black smoker's lethal column. */
     vent: {
-      radiusRatio: number;
+      /** The rock standing inside the lane against a wall. Always lethal, whether or not the plume is up. */
+      baseRadiusRatio: number;
+      /** Half-width of the equal-width capsule the plume's hitbox is; the drawing is the same band. */
+      jetHalfWidthRatio: number;
+      /**
+       * How far the plume reaches, as a multiple of the lane width, PER AIM.
+       *
+       * Three keys rather than one because the two requirements cannot both be met by a single number: `flat` has to
+       * reach past the far wall to span the lane, and a diagonal's horizontal reach is `length / sqrt(2)`, so
+       * spanning would need it to be longer still -- which would close the lane for the diagonals too. See the config.
+       */
+      jetLengthRatio: { up: number; flat: number; down: number };
+      /** The angle `up`/`down` make with the horizontal, in radians. 45 degrees by default. */
+      diagonalRadians: number;
+      /** Seconds of quiet after the vent appears before its cycle starts. A level may override it per vent. */
+      startDelaySeconds: number;
       periodSeconds: number;
       activeSeconds: number;
       warnSeconds: number;
@@ -2364,7 +2379,15 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   },
   { path: 'collectables.wobbleMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.wobbleMin') as number), describe: 'at least wobbleMin' },
   { path: 'hazards.radius', check: (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && Object.values(v as Record<string, unknown>).every((n) => typeof n === 'number' && n > 0.001 && n <= 0.5), describe: 'an object of kind -> radius fraction between 0.001 and 0.5' },
-  { path: 'hazards.vent.radiusRatio', check: anyNumber, describe: 'a fraction of the lane width' },
+  { path: 'hazards.vent.baseRadiusRatio', check: anyNumber, describe: 'a fraction of the lane width' },
+  { path: 'hazards.vent.jetHalfWidthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
+  // Three rows rather than one, because `jetLengthRatio` is an object rather than a number -- the coverage check wants
+  // every leaf named, and each aim is its own leaf.
+  { path: 'hazards.vent.jetLengthRatio.up', check: anyNumber, describe: 'a multiple of the lane width' },
+  { path: 'hazards.vent.jetLengthRatio.flat', check: anyNumber, describe: 'a multiple of the lane width' },
+  { path: 'hazards.vent.jetLengthRatio.down', check: anyNumber, describe: 'a multiple of the lane width' },
+  { path: 'hazards.vent.diagonalRadians', check: anyNumber, describe: 'radians' },
+  { path: 'hazards.vent.startDelaySeconds', check: anyNumber, describe: 'seconds' },
   { path: 'hazards.vent.periodSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'hazards.vent.activeSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'hazards.vent.warnSeconds', check: anyNumber, describe: 'seconds' },

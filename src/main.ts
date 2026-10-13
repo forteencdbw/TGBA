@@ -1250,7 +1250,7 @@ class Game {
    */
   debugSpawnHazardOnPlayer(kind: HazardKind): void {
     const laneWidth = this.camera.viewport.laneWidthMeters;
-    const hazard = this.run.hazards.spawnForTest(kind, this.run.player.x * laneWidth, this.run.player.y);
+    const hazard = this.run.hazards.spawnForTest(kind, this.run.player.x * laneWidth, this.run.player.y, laneWidth);
     /**
      * Already armed with its telegraph spent, so a test exercises the LAUNCH rather than the arming. The arming
      * itself is asserted by watching a naturally spawned crab.

@@ -1,5 +1,5 @@
 import JSON5 from 'json5';
-import { BOSS_KINDS, isBossKind, type HazardKind } from './hazards';
+import { BOSS_KINDS, isBossKind, type HazardKind, type VentAim, type VentSide } from './hazards';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
 import { rowGapIsPassable, type ObstacleKind } from './obstacles';
 
@@ -181,6 +181,18 @@ export interface LevelEntry {
    * entering at eye level is a surprise, one entering at the top of the screen is a warning.
    */
   depth?: number;
+  /**
+   * Vents only, and REQUIRED for one: which wall the rock is mounted on.
+   *
+   * There is no `x` for a vent, and that is the point. A vent used to be placed anywhere across the lane, so the file
+   * could say "vent in the middle" and the game would dutifully put one there; naming a WALL instead means the
+   * position is derived and the illegal case has nowhere to be written. The loader refuses a vent without it.
+   */
+  side?: VentSide;
+  /** Vents only: which way the plume points relative to its own wall. Absent means `up`. */
+  aim?: VentAim;
+  /** Vents only: seconds of quiet after it appears, overriding `hazards.vent.startDelaySeconds` for this one. */
+  startDelaySeconds?: number;
 }
 
 /**
@@ -273,6 +285,16 @@ export interface SpawnBlock {
   from: EntrySide;
   enterSpeed: number;
   depth: number;
+  /**
+   * Vents, and only vents -- the loader refuses these on anything else and refuses a vent without `side`.
+   *
+   * Optional here rather than required because `SpawnBlock` is also what the level AUTHORING helpers in this file
+   * produce, and those are used for every kind. The rule that matters ("a vent names a wall") is enforced in
+   * `readBlock`, where the file is read, rather than by the type of a block that may be any kind at all.
+   */
+  side?: VentSide;
+  aim?: VentAim;
+  startDelaySeconds?: number;
 }
 
 export interface Level {
@@ -554,6 +576,15 @@ const isScenery = (kind: string): boolean => (OBSTACLE_KINDS as readonly string[
 
 const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom'];
 
+/**
+ * The walls a vent may be mounted on, and the ways its plume may point.
+ *
+ * Runtime lists for the same reason `SIDES` is one: the loader only has strings to compare, and the TYPE half alone
+ * would let a typo through to a fallback.
+ */
+const VENT_SIDES: readonly string[] = ['left', 'right'];
+const VENT_AIMS: readonly string[] = ['up', 'flat', 'down'];
+
 /** The keys a block may use. Anything else is an error rather than a silent no-op -- see `readBlock`. */
 /**
  * Seconds between one member of a spline string setting off and the next, when a block does not say.
@@ -583,6 +614,10 @@ const BLOCK_KEYS: readonly string[] = [
   'from',
   'enterSpeed',
   'depth',
+  // Vents, and only vents: see the `side`/`aim` checks in `readBlock`.
+  'side',
+  'aim',
+  'startDelaySeconds',
 ];
 
 const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'palette', 'paths', 'backdrop', 'backdrops', 'spawns'];
@@ -674,6 +709,31 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
   if (arrange === 'barrier' && !isScenery(kind)) {
     fail(where, `arranges a "${kind}" as a barrier, but only obstacles can be arranged into a row with a gap.`);
   }
+  /**
+   * The vent rules, in both directions.
+   *
+   * A vent MUST name a wall and must not name a position, and nothing else may name a wall at all. Both directions are
+   * checked because a half-applied rule is worse than none: `side` on a fish would be a key that silently does
+   * nothing, and a vent without one would fall back to a wall the author never chose -- and the first vent in the
+   * campaign is the one that has to be right.
+   */
+  const isVent = kind === 'vent';
+  if (isVent && node['side'] === undefined) {
+    fail(
+      where,
+      'is a "vent" with no "side", but every vent is mounted on a wall. Add side: "left" or side: "right" -- a vent ' +
+        'in the middle of the lane is not a thing this level format can say.',
+    );
+  }
+  if (isVent && from !== 'top') {
+    fail(where, `is a "vent" arriving from the ${from}, but a vent is terrain: it is where it is, and nothing carries it in.`);
+  }
+  if (!isVent) {
+    const stray = ['side', 'aim', 'startDelaySeconds'].filter((k) => node[k] !== undefined);
+    if (stray.length) fail(where, `gives a "${kind}" the vent-only key(s) ${stray.join(', ')}, which would do nothing.`);
+  }
+  const side = isVent ? (pick(node, 'side', where, 'left', VENT_SIDES) as VentSide) : undefined;
+  const aim = node['aim'] === undefined ? undefined : (pick(node, 'aim', where, 'up', VENT_AIMS) as VentAim);
 
   return {
     at,
@@ -701,6 +761,14 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
     ...(typeof node['path'] === 'string' ? { path: node['path'] } : {}),
     pathSpacingSeconds: optNum(node, 'pathSpacingSeconds', where, DEFAULT_PATH_SPACING_SECONDS, 0.02, 10),
     // (a school key used to live here; schools are splines now)
+
+    // The vent's own three, absent for everything else. `side` is only ever set for a vent because the checks above
+    // refuse it anywhere else, so a consumer that sees it can rely on the kind -- see `placeEntry`.
+    ...(side === undefined ? {} : { side }),
+    ...(aim === undefined ? {} : { aim }),
+    ...(isVent && node['startDelaySeconds'] !== undefined
+      ? { startDelaySeconds: optNum(node, 'startDelaySeconds', where, mech.hazards.vent.startDelaySeconds, 0, 600) }
+      : {}),
 
     // that silently disappears between the file and the water. (That is exactly how path failed the first time.)
   };
@@ -735,13 +803,31 @@ function expandBlock(block: SpawnBlock, variety = 0): LevelEntry[] {
   const side: Pick<LevelEntry, 'from' | 'enterSpeed' | 'depth'> =
     block.from === 'top' ? {} : { from: block.from, enterSpeed: block.enterSpeed, depth: block.depth };
   /**
+   * A VENT's own keys, carried onto every entry the block makes.
+   *
+   * Spread here for the same reason `side` is: the entries below are built by the `place.*` helpers, which know about
+   * POSITIONS, so anything a block says about WHAT this is rather than WHERE it is has to be carried separately.
+   *
+   * This is not bookkeeping -- without it the keys reach the block reader and stop there. The vents then fall back to
+   * their defaults, and a level file that plainly says `side: 'right'` quietly produces a left-hand one, which reads
+   * as a rendering bug rather than as a dropped field.
+   */
+  const vent: Pick<LevelEntry, 'side' | 'aim' | 'startDelaySeconds'> =
+    block.side === undefined
+      ? {}
+      : {
+          side: block.side,
+          ...(block.aim === undefined ? {} : { aim: block.aim }),
+          ...(block.startDelaySeconds === undefined ? {} : { startDelaySeconds: block.startDelaySeconds }),
+        };
+  /**
    * EVERY CREATURE THE BLOCK PLACES GETS THE SAME `variety`.
    *
    * A block is a school: `{ kind: 'fish', count: 6 }` is six fish that arrived together, and a shoal drawn half
    * sardine and half perch is two shoals pretending to be one. A string on a spline is one school for the same
    * reason, and it arrives here as one block.
    */
-  const tag = (entries: LevelEntry[]): LevelEntry[] => entries.map((e) => ({ ...e, ...side, variety }));
+  const tag = (entries: LevelEntry[]): LevelEntry[] => entries.map((e) => ({ ...e, ...side, ...vent, variety }));
 
   /**
    * A block on a PATH is a STRING: `count` creatures, spread along the curve by their own index.

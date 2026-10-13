@@ -112,6 +112,52 @@ try {
     check('right · left outside the lane', arriving, LANE + off);
   }
 
+  /**
+   * A VENT is placed from its WALL, and its plume's direction comes from the same fact.
+   *
+   * Three things have to hold at once, and the third is the one that would rot silently: the rock's position must be
+   * derived from `side` (so an authored `x` cannot move it into the middle of the lane), the direction must point
+   * AWAY from that wall (or a right-hand vent fires into the rock), and the length must be the one for that AIM
+   * rather than a single shared number.
+   */
+  {
+    const base = mech.hazards.vent.baseRadiusRatio * LANE;
+    for (const side of ['left', 'right']) {
+      const { w } = place({ kind: 'vent', side, aim: 'up' }, 700);
+      const h = w.hazards.hazards[0];
+      const wantX = side === 'left' ? base : LANE - base;
+      check(`vent ${side} · 贴在自己那面墙上`, [Number(h.x.toFixed(3)), Number(h.vent.aimX.toFixed(3)) > 0], [Number(wantX.toFixed(3)), side === 'left']);
+      check(`vent ${side} · 朝向朝泳道里（不是墙里）`, [h.vent.aimX > 0, h.vent.aimY > 0], [side === 'left', true]);
+    }
+    // 一个写了 `x` 的火山：x 不参与，位置仍然由 side 决定。
+    const withX = place({ kind: 'vent', side: 'left', aim: 'flat', x: 0.9 }, 700).w.hazards.hazards[0];
+    check('vent · 关卡写的 x 不参与（位置仍由 side 决定）', Number(withX.x.toFixed(3)), Number(base.toFixed(3)));
+    // 长度按朝向取，共用一个值的话横向就横贯不了。
+    const aims = ['up', 'flat', 'down'].map((aim) => place({ kind: 'vent', side: 'left', aim }, 700).w.hazards.hazards[0].vent.lengthRatio);
+    check('vent · 长度按朝向取', aims, [mech.hazards.vent.jetLengthRatio.up, mech.hazards.vent.jetLengthRatio.flat, mech.hazards.vent.jetLengthRatio.down]);
+    check('vent · 横向确实横贯整条泳道', mech.hazards.vent.jetLengthRatio.flat >= 1, true);
+  }
+
+  /**
+   * And the level file actually uses those keys.
+   *
+   * The loader is what makes "a vent in the middle of the lane" unrepresentable, so this drives the REAL first level
+   * through `placeEntry` rather than a hand-written entry: a `side` that never reached the water would pass every
+   * check above and still leave the campaign's first vent wherever the default put it.
+   */
+  {
+    const vents = LEVEL.entries.filter((e) => e.kind === 'vent');
+    check('第一关 · 火山都在墙上', vents.every((e) => e.side === 'left' || e.side === 'right'), true);
+    check('第一关 · 火山都没写 x 的位置依赖', vents.every((e) => e.side !== undefined), true);
+    const aims = vents.map((e) => e.aim);
+    for (const aim of ['up', 'flat', 'down']) {
+      check(`第一关 · 三种朝向都出现过：${aim}`, aims.includes(aim), true);
+    }
+    const placed = vents.map((e) => place(e, 700).w.hazards.hazards[0]);
+    const base = mech.hazards.vent.baseRadiusRatio * LANE;
+    check('第一关 · 每一个都落在墙上（没有落在泳道中间的）', placed.every((h) => Math.abs(h.x - base) < 1e-6 || Math.abs(h.x - (LANE - base)) < 1e-6), true);
+  }
+
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`);
 } finally {
   await server.close();

@@ -294,6 +294,84 @@ export interface HazardEffect {
 }
 
 /**
+ * Which wall a vent is mounted on.
+ *
+ * Every vent is on one, and there is no third option: the point of the redesign is that a vent can never be in the
+ * middle of the lane, so "which side" is not a position but an identity. A level names the side and the position
+ * follows, which is what makes an illegal vent unrepresentable rather than merely discouraged.
+ */
+export type VentSide = 'left' | 'right';
+
+/**
+ * Which way a vent's plume points, measured AWAY FROM ITS OWN WALL.
+ *
+ * Relative rather than absolute so the same word means the same thing on both sides: "up" on the left wall is up and
+ * to the right, "up" on the right wall is up and to the left, and in both cases it is "up, and out into the lane".
+ * An absolute reading would have the right-hand vents firing into the rock.
+ */
+export type VentAim = 'up' | 'flat' | 'down';
+
+/**
+ * A vent's own state: where its plume points, how far it reaches, and how long it stays quiet first.
+ *
+ * Grouped rather than spread across four more fields on `Hazard`, so "is this a vent" is one null check and the four
+ * numbers that only ever make sense together travel together.
+ */
+export interface VentState {
+  /**
+   * Unit direction of the plume, in world x/y.
+   *
+   * It doubles as the answer to "which wall": it points AWAY from the wall by construction, so the drawing and the
+   * hitbox get the side from the same vector they get the angle from, and cannot disagree about it.
+   */
+  aimX: number;
+  aimY: number;
+  /** Plume reach as a multiple of the lane width, resolved from the per-aim table at spawn. */
+  lengthRatio: number;
+  /** Seconds of quiet after appearing. `Hazard.phase` does not advance until this is spent. */
+  startDelaySeconds: number;
+}
+
+/** The direction a plume points, given the wall it is on and the aim the level asked for. */
+function ventDirection(side: VentSide, aim: VentAim): { x: number; y: number } {
+  const cfg = mech.hazards.vent;
+  // +1 for a vent on the left wall: "into the lane" is to the right.
+  const into = side === 'left' ? 1 : -1;
+  if (aim === 'flat') return { x: into, y: 0 };
+  const c = Math.cos(cfg.diagonalRadians);
+  const s = Math.sin(cfg.diagonalRadians);
+  return { x: into * c, y: aim === 'up' ? s : -s };
+}
+
+/**
+ * Where a vent's rock sits: tangent to the wall it named, on the INSIDE.
+ *
+ * Exported because the position is derived from the side everywhere a vent is placed -- the level loader and the
+ * random spawner both call this rather than doing the arithmetic themselves, so "how far in from the wall" has one
+ * definition and a vent cannot end up half-buried in the rock.
+ */
+export function ventX(side: VentSide, laneWidth: number): number {
+  const r = mech.hazards.vent.baseRadiusRatio * laneWidth;
+  return side === 'left' ? r : laneWidth - r;
+}
+
+/** A vent's geometry, resolved once when it is placed. */
+function ventStateFor(opts: SpawnOptions): VentState {
+  const cfg = mech.hazards.vent;
+  // `side` is required by the level schema; the fallback only ever applies to a probe or the dormant random spawner,
+  // and it is a wall rather than the middle for the same reason the schema exists.
+  const side = opts.side ?? 'left';
+  const aim = opts.aim ?? 'up';
+  const dir = ventDirection(side, aim);
+  return {
+    aimX: dir.x,
+    aimY: dir.y,
+    lengthRatio: cfg.jetLengthRatio[aim],
+    startDelaySeconds: opts.startDelaySeconds ?? cfg.startDelaySeconds,
+  };
+}
+
+/**
  * One hazard instance.
  *
  * `x` is in world metres across the lane (NOT a fraction, unlike the player) because hazards are
@@ -360,6 +438,18 @@ export interface Hazard {
   fed: number;
   /** Fish: seconds left before it can eat again, so a split is not instantaneous. */
   digest: number;
+  /**
+   * Vents: which way the plume points, how far it reaches, how long it stays quiet first -- or null for every other
+   * kind.
+   *
+   * The vent is the one kind whose reach is not a circle, so it is the one kind that needs geometry of its own rather
+   * than a single `radiusFraction`. Kept as one nullable object rather than four more loose fields because the four
+   * numbers are meaningless separately: an aim with no length, or a length with no aim, draws nothing useful.
+   *
+   * A vent's `fed` is its seconds-since-spawn for the `startDelaySeconds` countdown, in the same spirit as the mineral
+   * grit -- the vent has no other use for the field.
+   */
+  vent: VentState | null;
   /**
    * A LUNGE in progress, or null.
    *
@@ -771,7 +861,7 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   'boss-shark': bossTuning('boss-shark'),
   'boss-netshark': bossTuning('boss-netshark'),
   'boss-eye': bossTuning('boss-eye'),
-  vent: { radius: mech.hazards.vent.radiusRatio, colour: mech.hazards.vent.plumeColour, spin: 0 },
+  vent: { radius: mech.hazards.vent.baseRadiusRatio, colour: mech.hazards.vent.plumeColour, spin: 0 },
   mineral: { radius: 0.018, colour: 0xffb066, spin: 2.4 },
   shrimp: { radius: 0.033, colour: 0xffd9d0, spin: 0 },
   angler: { radius: 0.045, colour: 0x2f4a63, spin: 0 },
@@ -959,6 +1049,15 @@ export interface SpawnOptions {
    * purpose is that a group entered in one frame does not act in one frame.
    */
   deterministic?: boolean;
+  /**
+   * Vents only: which wall it is mounted on. A level always names one; see `VentSide` for why there is no default
+   * that would put it in the middle.
+   */
+  side?: VentSide;
+  /** Vents only: which way the plume points relative to its own wall. Absent means `up`. */
+  aim?: VentAim;
+  /** Vents only: seconds of quiet after appearing. Absent means the config's `startDelaySeconds`. */
+  startDelaySeconds?: number;
 }
 
 /**
@@ -1179,8 +1278,46 @@ function stepVent(_field: HazardField, h: Hazard, dt: number, _ctx: HazardContex
    * the hitbox cannot disagree.
    */
   const cfg = mech.hazards.vent;
+  /**
+   * The start delay runs BEFORE the cycle, and `phase` is held at 0 while it does.
+   *
+   * Holding it at 0 rather than advancing it is what puts the first eruption at the END of the delay instead of
+   * somewhere inside the first cycle -- and it is why `spawnAt` skips the random phase head start for a vent: a
+   * delay that promised "quiet for N seconds" would be a lie if a coin flip could put an eruption inside it.
+   */
+  if (h.vent && h.fed < h.vent.startDelaySeconds) {
+    h.fed += dt;
+    return;
+  }
   h.phase = (h.phase + dt) % Math.max(0.2, cfg.periodSeconds);
   return;
+}
+
+/**
+ * Whether this vent's plume is up right now.
+ *
+ * THE single answer to "is it dangerous", asked by the contact test and by the painter alike. They already shared
+ * `phase`; now that a delay can hold the cycle off, a second reading of the same state is exactly how the picture
+ * and the hitbox would come apart.
+ */
+function ventErupting(h: Hazard): boolean {
+  if (!h.vent) return false;
+  if (h.fed < h.vent.startDelaySeconds) return false;
+  return h.phase < mech.hazards.vent.activeSeconds;
+}
+
+/**
+ * Whether this vent is within `warnSeconds` of erupting, so the painter can brighten the plume early.
+ *
+ * True for the tail of the START DELAY as well as the tail of every quiet stretch after it: the first eruption is
+ * telegraphed exactly like the rest, which is what "quiet for N seconds, and then the ordinary cycle" has to mean if
+ * the first one is not to be a surprise -- and it is the first one a player ever sees.
+ */
+function ventWarning(h: Hazard): boolean {
+  const cfg = mech.hazards.vent;
+  if (!h.vent) return false;
+  if (h.fed < h.vent.startDelaySeconds) return h.vent.startDelaySeconds - h.fed <= cfg.warnSeconds;
+  return h.phase > cfg.periodSeconds - cfg.warnSeconds;
 }
 function stepMineral(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
   /**
@@ -1532,13 +1669,21 @@ function contactRain(_field: HazardField, h: Hazard, ctx: HazardContext, effects
 
 function contactVent(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
   /**
-   * The plume: lethal while it is erupting, harmless while it is quiet.
+   * Two ways to get hurt, and they are not the same rule.
    *
-   * The gate is the same `phase` the painter reads, so the picture IS the hitbox -- there is no second timer
-   * that could drift out of step with what the player can see.
+   *   - The ROCK is always solid. It is terrain you can swim into, so it hurts whether the plume is up or not --
+   *     which is what stops "hug the wall and wait out the eruption" from being a free answer.
+   *   - The PLUME only hurts while it is erupting, and it is the part the player dodges.
+   *
+   * Which one is doing the touching is re-derived here from the same shapes the proximity test used, so this cannot
+   * disagree with what the player is standing in. `ventErupting` is the single answer to "is the jet up", shared
+   * with the painter: the picture IS the hitbox, and there is no second timer that could drift out of step with it.
    */
-  const vent = mech.hazards.vent;
-  if (h.phase >= vent.activeSeconds || ctx.invulnerable) return;
+  if (ctx.invulnerable) return;
+  const playerR = ctx.laneWidth * ctx.playerRadiusFraction;
+  const base = ctx.laneWidth * h.radiusFraction;
+  const onRock = Math.hypot(h.x - ctx.playerX, h.y - ctx.playerY) <= playerR + base;
+  if (!onRock && !ventErupting(h)) return;
   effects.push({ kind: 'vent', damage: contactDamageOf('vent'), broke: false });
   return;
 }
@@ -1605,6 +1750,48 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   puffer: contactPlain,
   starfish: contactPlain,
   vent: contactVent,
+};
+
+/** Shortest distance from a point to a segment. A capsule is exactly "within `r` of a segment". */
+function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  // A zero-length segment is a point, which is the ordinary circle case -- and `jetLengthRatio: 0` is a legal config.
+  if (lengthSq <= 0) return Math.hypot(px - ax, py - ay);
+  const t = Math.min(1, Math.max(0, ((px - ax) * dx + (py - ay) * dy) / lengthSq));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/**
+ * Whether the player is inside a vent: the rock, or the plume while it is up.
+ *
+ * TWO SHAPES, because a black smoker is two things. The ROCK is the ordinary circle every hazard has. The PLUME is a
+ * CAPSULE -- a segment with the plume's half-width -- and it is the reason for all of this: the painter used to draw
+ * a column 1.5 lane widths tall over a hitbox 0.085 wide, so the picture was eleven times the thing that could
+ * actually hurt you, and the level's whole lesson ("move out of the column") was being taught by a drawing that lied.
+ * Both shapes come from the same numbers the painter reads, so what is drawn is what is tested.
+ */
+function ventTouchesPlayer(h: Hazard, ctx: HazardContext): boolean {
+  const playerR = ctx.laneWidth * ctx.playerRadiusFraction;
+  const base = ctx.laneWidth * h.radiusFraction;
+  if (Math.hypot(h.x - ctx.playerX, h.y - ctx.playerY) <= playerR + base) return true;
+  if (!h.vent || !ventErupting(h)) return false;
+  const length = ctx.laneWidth * h.vent.lengthRatio;
+  const tipX = h.x + h.vent.aimX * length;
+  const tipY = h.y + h.vent.aimY * length;
+  const halfWidth = ctx.laneWidth * mech.hazards.vent.jetHalfWidthRatio;
+  return distanceToSegment(ctx.playerX, ctx.playerY, h.x, h.y, tipX, tipY) <= playerR + halfWidth;
+}
+
+/**
+ * The kinds whose reach is not a circle, if any.
+ *
+ * Everything else is "inside a circle of `radiusFraction`", which the contact loop does inline. A vent is the only
+ * exception so far, and the reason it is one is that a jet has a DIRECTION -- a circle has nothing to point.
+ */
+const CONTACT_SHAPES: Partial<Record<HazardKind, (h: Hazard, ctx: HazardContext) => boolean>> = {
+  vent: ventTouchesPlayer,
 };
 
 /**
@@ -1692,7 +1879,21 @@ export class HazardField {
    * eaten together. A burst test that spawned four creatures and moved them apart reported that the wave had cleared
    * nothing, because the frame before it the player had swallowed one and the field had removed all four.
    */
-  spawnForTest(kind: HazardKind, x: number, y: number): Hazard {
+  /**
+   * A VENT cannot be dropped "on the player", because it is not free-standing.
+   *
+   * It goes on the wall the player is nearer to, aimed up, so the hook still puts the thing beside them -- which is
+   * what a debug spawn is for. `laneWidth` is passed only so this can be derived; every other kind ignores it. Without
+   * this the one hook meant for looking at a hazard closely would be the one place that could still produce a vent in
+   * the middle of the lane.
+   */
+  spawnForTest(kind: HazardKind, x: number, y: number, laneWidth = 0): Hazard {
+    if (kind === 'vent' && laneWidth > 0) {
+      const side: VentSide = x < laneWidth / 2 ? 'left' : 'right';
+      const hazard = this.spawnAt(kind, ventX(side, laneWidth), y, { deterministic: true, side });
+      this.hazards.push(hazard);
+      return hazard;
+    }
     const hazard = this.spawnAt(kind, x, y, { deterministic: true });
     this.hazards.push(hazard);
     return hazard;
@@ -2069,7 +2270,14 @@ export class HazardField {
       const dx = h.x - ctx.playerX;
       const dy = h.y - ctx.playerY;
       const reach = playerR + r;
-      const touching = dx * dx + dy * dy <= reach * reach;
+      /**
+       * A circle for everything except the kinds in `CONTACT_SHAPES`, which is a vent and its directional jet.
+       *
+       * The circle stays inline rather than moving into the table because it is what nearly every kind does, and a
+       * lookup for the common case would be a table of twenty-five identical entries.
+       */
+      const shape = CONTACT_SHAPES[h.kind];
+      const touching = shape ? shape(h, ctx) : dx * dx + dy * dy <= reach * reach;
 
       if (!touching) {
         if (h.kind === 'trash' && h.gripping) {
@@ -2423,13 +2631,22 @@ export class HazardField {
      */
     const health = opts.health ?? hazardHealth(kind);
     const headStart = opts.deterministic ? 0 : 1;
+    const vent = kind === 'vent' ? ventStateFor(opts) : null;
     return {
       id: this.newHazardId(),
       kind,
       x,
       y,
       radiusFraction,
-      phase: opts.deterministic ? 0 : Math.random() * Math.PI * 2,
+      /**
+       * A vent's cycle starts at ZERO, unlike everything else.
+       *
+       * The random head start exists so a group does not act in one frame, which a vent has no use for: its own
+       * `startDelaySeconds` is the scheduling knob, and it is a promise about TIME ("quiet for N seconds"), so a
+       * random offset on top of it would make the promise false. A level that wants two vents out of step gives them
+       * different delays, which is a decision it can see rather than a coin flip it cannot.
+       */
+      phase: kind === 'vent' ? 0 : opts.deterministic ? 0 : Math.random() * Math.PI * 2,
       seed: opts.deterministic ? 0 : Math.random() * 1000,
       heading: 0,
       variety: opts.variety ?? 0,
@@ -2454,6 +2671,7 @@ export class HazardField {
       discharge: 0,
       dischargeRest: 0,
       foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
+      vent,
       // A random head start, so a group does not lunge in unison. Zero for a probe, where "did it lunge" must not be a
       // coin flip.
       chargeRest: headStart * Math.random() * (mech.charges.chargers[kind]?.cooldownSeconds ?? 0),
@@ -2484,6 +2702,17 @@ export class HazardField {
     // A random look, because a lone spawn has no school to agree with: there is nothing here for it to match, so
     // variety is the whole point. A level's blocks do the opposite and hand down ONE number for the whole block.
     const variety = Math.floor(Math.random() * 8);
+    /**
+     * A vent is mounted on a wall here as everywhere else.
+     *
+     * This pass is dormant (`autoSpawn` is false) and kept for a future endless mode, which is exactly the situation
+     * where a vent in the middle of the lane would go unnoticed until it was the only thing on screen.
+     */
+    if (kind === 'vent') {
+      const side: VentSide = Math.random() < 0.5 ? 'left' : 'right';
+      const aim: VentAim = (['up', 'flat', 'down'] as const)[Math.floor(Math.random() * 3)] ?? 'up';
+      return this.spawnAt(kind, ventX(side, ctx.laneWidth), ctx.max + 20 + Math.random() * 40, { variety, side, aim });
+    }
     return this.spawnAt(kind, margin + Math.random() * Math.max(0.01, ctx.laneWidth - margin * 2), ctx.max + 20 + Math.random() * 40, { variety });
   }
 
@@ -3772,51 +4001,60 @@ function drawStarfish(g: Graphics, h: Hazard, r: number, _laneWidth: number, _el
 
 function drawVent(g: Graphics, h: Hazard, r: number, laneWidth: number, _elapsed: number): void {
   /**
-   * A black smoker: a rock chimney with a plume, and the plume is the hazard.
+   * A black smoker: a rock against the wall, and a jet of hot water out of it.
    *
-   * The reading order is deliberate. The CHIMNEY is always drawn (it is terrain, and terrain does not flicker).
-   * The PLUME is drawn only while it is erupting, in a colour that brightens through the warning, so "is it
-   * dangerous right now" is answered by whether the column is there at all -- the one question the player has to
-   * be able to answer at a glance, since getting it wrong is death.
+   * The reading order is the one the old vertical column used, and it is still the whole fairness argument: the ROCK
+   * is always drawn (it is terrain, and terrain does not flicker), and the JET is drawn only while it is erupting or
+   * about to, brightening through the warning. "Is it dangerous right now" is answered by whether the jet is there
+   * at all -- the one question the player has to be able to answer at a glance, since getting it wrong is death.
+   *
+   * THE JET IS AN EQUAL-WIDTH BAND, and that is a rule rather than a look: it is drawn from the same length and the
+   * same half-width the hitbox is built from, so the band the player sees is exactly the band that hurts. The old
+   * drawing was a cone that widened as it rose, over a hitbox that was a circle at the base -- a picture eleven times
+   * the size of the thing that could kill you, teaching a lesson the collision did not back up.
    */
   const cfg = mech.hazards.vent;
-  const erupting = h.phase < cfg.activeSeconds;
-  const warning = h.phase > cfg.periodSeconds - cfg.warnSeconds;
-  // The chimney: a dark cone standing on the seabed.
-  g.moveTo(h.x - r, h.y)
-    .lineTo(h.x - r * 0.35, h.y + r * 2.2)
-    .lineTo(h.x + r * 0.35, h.y + r * 2.2)
-    .lineTo(h.x + r, h.y)
-    .closePath()
-    .fill({ color: cfg.plumeColour, alpha: 1 });
-  const top = h.y + r * 2.2;
-  const height = laneWidth * 1.5;
+  if (!h.vent) return;
+  const erupting = ventErupting(h);
+  const warning = ventWarning(h);
+  const halfWidth = laneWidth * cfg.jetHalfWidthRatio;
+  const length = laneWidth * h.vent.lengthRatio;
+  const tipX = h.x + h.vent.aimX * length;
+  const tipY = h.y + h.vent.aimY * length;
+  // The perpendicular, so the band can be built as four corners rather than as a rotated rectangle.
+  const px = -h.vent.aimY * halfWidth;
+  const py = h.vent.aimX * halfWidth;
+  // The rock: half-buried in the wall it is mounted on, which is what makes its position readable without a marker.
+  // Always solid, so it is always drawn.
+  g.circle(h.x, h.y, r).fill({ color: cfg.plumeColour, alpha: 1 });
   if (erupting || warning) {
     const heat = erupting ? 1 : 0.35;
-    // Smoke, widening as it rises, so the column reads as a column rather than as a bar.
-    g.moveTo(h.x - r * 0.4, top)
-      .lineTo(h.x - r * 1.25, top + height)
-      .lineTo(h.x + r * 1.25, top + height)
-      .lineTo(h.x + r * 0.4, top)
+    g.moveTo(h.x + px, h.y + py)
+      .lineTo(tipX + px, tipY + py)
+      .lineTo(tipX - px, tipY - py)
+      .lineTo(h.x - px, h.y - py)
       .closePath()
-      .fill({ color: cfg.plumeColour, alpha: 0.5 * heat });
-    g.moveTo(h.x - r * 0.25, top)
-      .lineTo(h.x - r * 0.9, top + height)
-      .lineTo(h.x + r * 0.9, top + height)
-      .lineTo(h.x + r * 0.25, top)
+      .fill({ color: cfg.plumeColour, alpha: 0.55 * heat });
+    // A round cap at the far end, so the jet reads as a jet rather than as a bar that stops.
+    g.circle(tipX, tipY, halfWidth).fill({ color: cfg.plumeColour, alpha: 0.55 * heat });
+    // A narrower hot core, so the band has a middle instead of being one flat stripe.
+    g.moveTo(h.x + px * 0.55, h.y + py * 0.55)
+      .lineTo(tipX + px * 0.55, tipY + py * 0.55)
+      .lineTo(tipX - px * 0.55, tipY - py * 0.55)
+      .lineTo(h.x - px * 0.55, h.y - py * 0.55)
       .closePath()
       .fill({ color: cfg.glowColour, alpha: 0.35 * heat });
   }
   /**
-   * The dangerous WIDTH, drawn as two edges while the plume is up.
+   * The dangerous WIDTH, drawn as two edges along the band while the jet is up.
    *
-   * This is the line the player actually steers by: the smoke is decoration, and a lethal hitbox that is only
-   * implied by decoration is the one kind of unfair this level cannot afford.
+   * This is the line the player actually steers by: the glow is decoration, and a lethal hitbox that is only implied
+   * by decoration is the one kind of unfair this level cannot afford.
    */
   if (erupting) {
-    for (const side of [-1, 1]) {
-      g.moveTo(h.x + side * r, top)
-        .lineTo(h.x + side * r * 1.25, top + height)
+    for (const side of [1, -1]) {
+      g.moveTo(h.x + px * side, h.y + py * side)
+        .lineTo(tipX + px * side, tipY + py * side)
         .stroke({ color: cfg.edgeColour, alpha: cfg.edgeAlpha, width: Math.max(1, r * 0.12) });
     }
   }

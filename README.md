@@ -209,11 +209,20 @@ levels/03-jelly-forest.json5 (level "jelly-forest"): paths.weave.points[0].y sho
 { at: 900, span: 18, count: 2, kind: 'fish', arrange: 'spread', x: 0.5, from: 'bottom' },
 // 被水从右边冲进来的木箱，漂到泳道 0.72 处停下
 { at: 1010, kind: 'crate', x: 0.72, from: 'right', enterSpeed: 26 },
+// 热液喷口：**没有 `x`**，位置由 `side` 推出来（贴着那面墙），朝向相对它自己那面墙
+{ at: 760, kind: 'vent', side: 'left', aim: 'flat' },
 ```
+
+**火山（`vent`）的三个专属键**：`side`（`left` / `right`，**必填**）、`aim`（`up` / `flat` / `down`，
+斜向上 / 横向 / 斜向下，默认 `up`）、`startDelaySeconds`（出现后先安静多少秒，默认取
+`hazards.vent.startDelaySeconds`）。细节见下面"加载器会拒绝的东西"和机制配置里 `hazards.vent` 那一段。
 
 **加载器会拒绝的东西**（每条都会说出是哪一关、第几块、哪一项）：拼错的键名（否则那一项会被静默忽略，
 看起来像游戏坏了）、从侧面进来的收集物、从下方进来的布景、把生物排成 `barrier`、
-`at`/`kind` 缺失、以及**没有缺口的障碍横排**（那会让"要不要变瘦"不再是选择题）。
+`at`/`kind` 缺失、**没有缺口的障碍横排**（那会让"要不要变瘦"不再是选择题）、
+**火山没写 `side`**（火山只能是挂在墙上的，格式上没有地方写"火山在泳道中间"）、
+**火山写了 `from`**（它是地形，是它就在那儿，没有东西把它冲进来）、
+以及**给非火山写了 `side`/`aim`/`startDelaySeconds`**（那是三个会静默失效的键）。
 写错 `count` 之类的数字**不会静默**——但只查它是不是个数，不查它是不是个"合理"的数：见上面机制配置一节
 的"数值的大小不查"。
 

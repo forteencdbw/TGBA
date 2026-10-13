@@ -1,5 +1,5 @@
 import { EntityField } from './entities';
-import { HazardField, type Hazard, type HazardKind, type SpawnOptions } from './hazards';
+import { HazardField, ventX, type Hazard, type HazardKind, type SpawnOptions } from './hazards';
 import { isObstacleKind, ObstacleField } from './obstacles';
 import { mech } from './mechanisms';
 import { LEVEL, type EntrySide, type LevelEntry } from './levels';
@@ -75,6 +75,16 @@ export function placeEntry(
   } else if (side === 'bottom') {
     spawnY = view.min - laneWidth * mech.spawning.bottomMarginRatio;
   }
+  /**
+   * A VENT'S position comes from the wall it named, never from `entry.x`.
+   *
+   * This is the one place the "vents are on a wall" rule is enforced in space, and it is applied AFTER the entry
+   * block above so that nothing a level writes about arrival can move it into the middle. The loader refuses a vent
+   * with no `side`, and refuses one with `from`, so by the time this runs the derivation is the only thing that
+   * could have decided the position.
+   */
+  const ventSide = entry.kind === 'vent' ? (entry.side ?? 'left') : null;
+  if (ventSide) spawnX = ventX(ventSide, laneWidth);
   const entering = side === 'top' ? null : { from: side, speed: entry.enterSpeed ?? mech.spawning.enterSpeedMps };
 
   const record: SpawnRecord = {
@@ -138,6 +148,12 @@ export function placeEntry(
   if (path) opts.path = path;
   // The block's look, carried to the creature that has to draw it. Undefined for anything that is not a hazard.
   if (entry.variety !== undefined) opts.variety = entry.variety;
+  // A vent's geometry, carried the same way: the wall decides the plume's direction as well as its position.
+  if (ventSide) {
+    opts.side = ventSide;
+    if (entry.aim !== undefined) opts.aim = entry.aim;
+    if (entry.startDelaySeconds !== undefined) opts.startDelaySeconds = entry.startDelaySeconds;
+  }
   /**
    * Clamped into the lane ONLY when it is not arriving.
    *
