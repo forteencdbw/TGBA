@@ -20,7 +20,7 @@ import { defaultBubbleType, hasVerb, ROUTES } from './bubbleTypes';
 import { sayBanner, sayResults, sayScore, saySkillSlot, saySound, saySplash } from './runEvents';
 import { LevelUpUi } from './levelup';
 import { applyMutationPassives, rollMutationChoices, type Mutation } from './mutations';
-import { bubbleLook, bubbleShake, bubbleSwell } from './bubbleLook';
+import { bubbleLook, bubbleShake, bubbleStateColor, bubbleSwell } from './bubbleLook';
 import { gainRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName } from './rage';
 import { mech } from './mechanisms';
 import { suctionRadiusFraction } from './suction';
@@ -159,6 +159,22 @@ class Game {
    */
   private readonly flash = new Graphics();
 
+  /**
+   * The screen cracks, while the bubble is nearly broken: two screen-space layers UNDER the HUD.
+   *
+   * Two objects rather than one drawn twice, because a Pixi `Graphics` accumulates the paths it is given and a
+   * second `stroke` on the same object would re-stroke the first pass's lines. Keeping the glow and the line in
+   * separate layers makes each pass its own set of polylines, which is what it means.
+   */
+  private readonly brokenGlow = new Graphics();
+  private readonly brokenCrack = new Graphics();
+  /** The strength the cracks were last drawn at, so a frame that did not move it does not rebuild them. */
+  private shownBrokenStrength = -1;
+  /** The colour they were last drawn in: a route's hue moves with the stage and the rage, not only with health. */
+  private shownBrokenColour = -1;
+  /** This danger zone's shape seed. Re-rolled every time the bubble enters it, so no two scares look alike. */
+  private brokenScreenSeed = 1;
+
   /** Collectables and decoration. Collectables now come from the level's timeline, not from a density. */
 
   /**
@@ -291,9 +307,13 @@ class Game {
     // The flash sits directly over the water but UNDER the HUD, so the depth readout stays legible
     // through it -- the player should still be able to see where they got to during the white-out.
     this.flash.visible = false;
+    // The cracks likewise, and for a related reason: they are a warning, and a warning shown while nothing is
+    // wrong is not a warning. `updateBrokenScreen` turns them on for exactly as long as the bubble is in danger.
+    this.brokenGlow.visible = false;
+    this.brokenCrack.visible = false;
     // The score popups sit over the water and under the flash and the HUD: they belong to the event they mark, not
     // to the interface, but they are readouts and nothing the player steers by may be drawn over them.
-    this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.grazePopups.root, this.callouts.root, this.flash, this.hud.root, this.touch.root);
+    this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.grazePopups.root, this.callouts.root, this.brokenGlow, this.brokenCrack, this.flash, this.hud.root, this.touch.root);
 
     this.finishBanner.anchor.set(0.5);
     this.finishBanner.alpha = 0;
@@ -1418,6 +1438,159 @@ class Game {
     // The flash covers the canvas in SCREEN space, so it must be rebuilt whenever the canvas changes.
     this.flash.clear();
     this.flash.rect(0, 0, screenW, screenH).fill({ color: 0xffffff, alpha: 1 });
+  }
+
+  /**
+   * The screen cracks, for as long as the bubble is nearly broken.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THIS IS DRAWN RATHER THAN LOADED
+   * ---------------------------------------------------------------------------------------------
+   * Same reason the water, the parallax, the specks and the HUD are: this is a shape that follows the BORDER, and
+   * the border's length is the screen's, which runs from a 390x844 phone to a 1920x1080 desktop. The art pipeline's
+   * pictures are fixed-density by design -- one pixel size across the whole game -- so a crack bitmap would have to
+   * stretch between those two, which is the one thing that rule forbids. Vector lines are sharp at every size, and
+   * a crack is a line.
+   *
+   * The COLOUR is the bubble's own (`bubbleStateColor`) rather than a fixed warning hue: a boiling bubble's screen
+   * goes red with its rage and a growing one goes gold with its stage, so the cracks are the colour of the thing
+   * they are about. That is also why the colour is part of the redraw guard -- it moves when the STAGE does, which
+   * is not when the health does.
+   *
+   * @param hidden a full-screen page is up, and a page is not a bubble that is about to break.
+   */
+  private updateBrokenScreen(hidden: boolean): void {
+    const cfg = mech.hud.brokenScreen;
+    const view = this.run.healthView;
+    const fraction = view.max > 0 ? view.current / view.max : 1;
+    const strength = hidden ? 0 : Math.min(1, Math.max(0, (cfg.threshold - fraction) / cfg.threshold));
+
+    if (strength <= 0) {
+      // Draw nothing and remember nothing, so the next entry into the danger zone is a NEW scare with its own
+      // shape -- and so the guard below reads "was not in danger" rather than "was in danger at zero strength".
+      if (this.shownBrokenStrength !== 0) {
+        this.shownBrokenStrength = 0;
+        this.shownBrokenColour = -1;
+        this.brokenGlow.clear();
+        this.brokenCrack.clear();
+        this.brokenGlow.visible = false;
+        this.brokenCrack.visible = false;
+      }
+      return;
+    }
+
+    const colour = bubbleStateColor(this.run.bubbleType, this.run.stage.stage, this.run.rage.rage);
+    /**
+     * Rebuilt only when the picture would actually differ, and the step is in STRENGTH rather than in health: the
+     * crack count, how far they reach and how opaque they are all move with the strength, so a steady bubble
+     * rebuilds nothing and a moving one rebuilds once per two percent of health -- a handful of times per fight
+     * rather than sixty times a second, which matters because every rebuild is a few dozen polylines.
+     */
+    if (Math.abs(strength - this.shownBrokenStrength) < 0.02 && colour === this.shownBrokenColour) return;
+    if (this.shownBrokenStrength <= 0) {
+      this.brokenScreenSeed = cfg.seed !== 0 ? cfg.seed : ((Math.random() * 0x7fffffff) | 0) + 1;
+    }
+    this.shownBrokenStrength = strength;
+    this.shownBrokenColour = colour;
+    this.drawCracks(strength, colour);
+  }
+
+  /**
+   * The cracks themselves: the same polylines stroked twice -- wide and faint for the glow of a wound, then thin
+   * and bright for the line. One stroke reads as a line someone drew on the screen; two read as damage.
+   */
+  private drawCracks(strength: number, colour: number): void {
+    const cfg = mech.hud.brokenScreen;
+    const reach = Math.min(this.canvasSize.width, this.canvasSize.height) * cfg.reachRatio * (0.35 + 0.65 * strength);
+    const count = Math.round(cfg.crackCountNear + (cfg.crackCountDeep - cfg.crackCountNear) * strength);
+    const alpha = cfg.alphaNear + (cfg.alphaDeep - cfg.alphaNear) * strength;
+
+    this.brokenGlow.clear();
+    this.brokenCrack.clear();
+    this.brokenGlow.visible = true;
+    this.brokenCrack.visible = true;
+
+    /**
+     * A fresh stream per pass, both from the SAME seed, so the two passes draw the same cracks.
+     *
+     * Sharing one stream would not: the glow pass would consume it and the line pass would start wherever that
+     * left off, giving a bright line that does not sit inside its own glow.
+     */
+    this.crackPolylines(this.brokenGlow, reach, count, mulberry32(this.brokenScreenSeed));
+    this.brokenGlow.stroke({ color: colour, alpha: alpha * cfg.glowAlphaRatio, width: cfg.width * cfg.glowWidthRatio });
+    this.crackPolylines(this.brokenCrack, reach, count, mulberry32(this.brokenScreenSeed));
+    this.brokenCrack.stroke({ color: colour, alpha, width: cfg.width });
+  }
+
+  /** Lay out `count` cracks along the border, appending each to `g` as a polyline. */
+  private crackPolylines(g: Graphics, reach: number, count: number, rng: () => number): void {
+    const cfg = mech.hud.brokenScreen;
+    const { width: screenW, height: screenH } = this.canvasSize;
+    for (let i = 0; i < count; i++) {
+      /**
+       * A side first, then a point along it -- rather than a uniform point on the border.
+       *
+       * Uniform would put most cracks on the LONGEST edge (on a wide window, the top), because that edge is where
+       * most of the border is. Picking the side first gives all four an equal share, which is what "the screen is
+       * cracking" looks like.
+       */
+      const side = Math.floor(rng() * 4);
+      let x = 0;
+      let y = 0;
+      let angle = 0;
+      if (side === 0) {
+        x = rng() * screenW;
+        angle = Math.PI / 2;
+      } else if (side === 1) {
+        x = screenW;
+        y = rng() * screenH;
+        angle = Math.PI;
+      } else if (side === 2) {
+        x = rng() * screenW;
+        y = screenH;
+        angle = -Math.PI / 2;
+      } else {
+        y = rng() * screenH;
+      }
+
+      const end = this.oneCrack(g, x, y, angle, reach, cfg.segmentsPerCrack, rng);
+      // The branch leaves from where the main crack STOPPED, which is what makes it read as a split rather than as
+      // a second crack that happens to start nearby.
+      if (rng() < cfg.branchChance) {
+        const branch = reach * cfg.branchLengthRatio;
+        // A branch leaves at a sharper angle than the main line wanders by, which is what makes it read as a split
+        // rather than as the crack simply continuing.
+        this.oneCrack(g, end.x, end.y, end.angle + (rng() - 0.5) * cfg.segmentTurn * 2, branch, Math.max(1, cfg.segmentsPerCrack - 1), rng);
+      }
+    }
+  }
+
+  /** One polyline that walks `segments` steps from a border point, wandering as it goes. Returns where it ended. */
+  private oneCrack(
+    g: Graphics,
+    x: number,
+    y: number,
+    angle: number,
+    length: number,
+    segments: number,
+    rng: () => number,
+  ): { x: number; y: number; angle: number } {
+    const cfg = mech.hud.brokenScreen;
+    const step = length / Math.max(1, segments);
+    g.moveTo(x, y);
+    let cx = x;
+    let cy = y;
+    let heading = angle;
+    for (let s = 0; s < segments; s++) {
+      // A small turn per segment, so the line wanders without folding back on itself. The turn is what decides
+      // whether the result reads as a crack or as a drawn zigzag -- see the config's note.
+      heading += (rng() - 0.5) * cfg.segmentTurn;
+      const len = step * (1 + (rng() - 0.5) * 2 * cfg.segmentJitter);
+      cx += Math.cos(heading) * len;
+      cy += Math.sin(heading) * len;
+      g.lineTo(cx, cy);
+    }
+    return { x: cx, y: cy, angle: heading };
   }
 
   private frame(deltaSeconds: number): void {
@@ -2783,6 +2956,11 @@ private updateBoss(): void {
     // decides for itself whether the skill button is drawn; this only decides whether the layer exists at all.
     this.touch.root.visible = !fullScreenPage && !this.settings.isOpen && this.run.phase !== 'levelup';
     this.flash.visible = this.flash.visible && !fullScreenPage;
+    /**
+     * The cracks, under the same blanket as the flash -- and under their own: a full-screen page is not a bubble
+     * that is about to break. See `updateBrokenScreen`.
+     */
+    this.updateBrokenScreen(fullScreenPage);
 
     if (!fullScreenPage) {
       // The numbers floating where the points were earned. Cleared rather than frozen while a page is up: a popup
@@ -3956,4 +4134,23 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+/**
+ * A tiny deterministic PRNG, for the screen cracks.
+ *
+ * Deterministic rather than `Math.random`, and that is the whole reason the shape has a seed: the two stroke passes
+ * have to draw the SAME polylines (one for the glow, one for the line), and "generate the shape, then generate it
+ * again identically" is the only way to get two passes out of one function. It is also what makes a config `seed`
+ * worth having: with a fixed one, two screenshots at the same health are comparable.
+ */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 

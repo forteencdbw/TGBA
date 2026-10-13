@@ -341,6 +341,38 @@ export interface Mechanisms {
       labelGap: number;
     };
     /**
+     * The screen cracks, while the bubble is nearly broken.
+     *
+     * Drawn, not sourced: every non-creature thing in this game is Graphics (the water, the parallax, the specks,
+     * the HUD), and cracks are a shape that follows the border -- a fixed-density bitmap would have to stretch
+     * between a phone and a desktop, which is exactly what the art pipeline's one-density rule forbids.
+     *
+     * The colour is NOT here: the cracks take the current route's `hudColor`, so they are the same colour as the
+     * bubble they are about.
+     */
+    brokenScreen: {
+      /** The health fraction below which cracks appear. The same number as `healthBar.lowThreshold`. */
+      threshold: number;
+      /** How far inward a crack may reach, as a fraction of the SHORTER screen side. */
+      reachRatio: number;
+      /** How many cracks at the threshold, and how many when health is gone. Interpolated by strength. */
+      crackCountNear: number;
+      crackCountDeep: number;
+      branchChance: number;
+      branchLengthRatio: number;
+      /** Polyline points per crack, how much each segment's length may vary, and how far it may turn (radians). */
+      segmentsPerCrack: number;
+      segmentJitter: number;
+      segmentTurn: number;
+      width: number;
+      glowWidthRatio: number;
+      glowAlphaRatio: number;
+      alphaNear: number;
+      alphaDeep: number;
+      /** 0 re-rolls the shape every time the bubble enters the danger zone; anything else fixes it. */
+      seed: number;
+    };
+    /**
      * The results card: the lines shown when a run ends.
      *
      * `widthRatio` is the reason this is in the config at all. The card used to be sized by the WORLD zoom alone,
@@ -1990,6 +2022,21 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hud.healthBar.labelSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
   { path: 'hud.healthBar.labelColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hud.healthBar.labelGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
+  { path: 'hud.brokenScreen.threshold', check: (v) => typeof v === 'number' && v > 0.02 && v <= 0.6, describe: 'a health proportion above 0.02 and at most 0.6' },
+  { path: 'hud.brokenScreen.reachRatio', check: (v) => typeof v === 'number' && v > 0.01 && v <= 0.6, describe: 'a fraction of the short screen side above 0.01 and at most 0.6' },
+  { path: 'hud.brokenScreen.crackCountNear', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'a crack count between 0 and 60' },
+  { path: 'hud.brokenScreen.crackCountDeep', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'a crack count between 0 and 60' },
+  { path: 'hud.brokenScreen.branchChance', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a probability between 0 and 1' },
+  { path: 'hud.brokenScreen.branchLengthRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 1.5, describe: 'a length ratio above 0 and at most 1.5' },
+  { path: 'hud.brokenScreen.segmentsPerCrack', check: (v) => typeof v === 'number' && v >= 1 && v <= 12, describe: 'a segment count between 1 and 12' },
+  { path: 'hud.brokenScreen.segmentJitter', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a proportion between 0 and 1' },
+  { path: 'hud.brokenScreen.segmentTurn', check: (v) => typeof v === 'number' && v >= 0 && v <= 2.5, describe: 'radians between 0 and 2.5' },
+  { path: 'hud.brokenScreen.width', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 20, describe: 'design pixels between 0.5 and 20' },
+  { path: 'hud.brokenScreen.glowWidthRatio', check: (v) => typeof v === 'number' && v >= 1 && v <= 8, describe: 'a width multiple between 1 and 8' },
+  { path: 'hud.brokenScreen.glowAlphaRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity proportion between 0 and 1' },
+  { path: 'hud.brokenScreen.alphaNear', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.brokenScreen.alphaDeep', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.brokenScreen.seed', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more (0 means re-roll each time)' },
   { path: 'hud.bossBar.y', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
   { path: 'hud.bossBar.widthRatio', check: (v) => typeof v === 'number' && v > 0.1 && v <= 1, describe: 'a fraction of the lane width above 0.1 and at most 1' },
   { path: 'hud.bossBar.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },
