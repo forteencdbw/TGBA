@@ -370,6 +370,22 @@ export interface Mechanisms {
       alphaDeep: number;
       /** 0 re-rolls the shape every time the bubble enters the danger zone; anything else fixes it. */
       seed: number;
+      /**
+       * The four screen-edge gradients: a second layer beside the cracks, and they say different things.
+       *
+       * The cracks say WHERE something broke (the lane's walls, in the bubble's own colours). This says THE WHOLE
+       * PICTURE IS CLOSING IN: one band per screen edge, fading toward the centre, pulsing at a fixed rate. It is
+       * a fixed blue on purpose -- two voices saying the same sentence cancel each other out.
+       */
+      vignette: {
+        colour: number;
+        alpha: number;
+        /** How far each edge reaches in, as a fraction of THAT edge's own axis length. */
+        reachRatio: number;
+        /** Pulses per second, and how deep the pulse goes (0 = steady, 1 = fully off at the trough). */
+        pulseHz: number;
+        pulseDepth: number;
+      };
     };
     /**
      * The results card: the lines shown when a run ends.
@@ -2067,6 +2083,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hud.brokenScreen.alphaNear', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'hud.brokenScreen.alphaDeep', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'hud.brokenScreen.seed', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more (0 means re-roll each time)' },
+  { path: 'hud.brokenScreen.vignette.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.brokenScreen.vignette.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.brokenScreen.vignette.reachRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 0.6, describe: 'a fraction of an edge above 0 and at most 0.6' },
+  { path: 'hud.brokenScreen.vignette.pulseHz', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'pulses per second between 0 and 20 (0 is steady)' },
+  { path: 'hud.brokenScreen.vignette.pulseDepth', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a proportion between 0 and 1' },
   { path: 'hud.bossBar.y', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
   { path: 'hud.bossBar.widthRatio', check: (v) => typeof v === 'number' && v > 0.1 && v <= 1, describe: 'a fraction of the lane width above 0.1 and at most 1' },
   { path: 'hud.bossBar.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },

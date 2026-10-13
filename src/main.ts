@@ -1,4 +1,4 @@
-import { Application, Graphics } from 'pixi.js';
+import { Application, FillGradient, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
 import { LEVEL, LEVELS, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
@@ -168,6 +168,15 @@ class Game {
    */
   private readonly brokenGlow = new Graphics();
   private readonly brokenCrack = new Graphics();
+  /**
+   * The four screen-edge gradients, UNDER the cracks.
+   *
+   * Its own object rather than a fourth pass on the crack layers, because it is ANIMATED: the pulse moves every
+   * frame while the cracks only rebuild when the strength moves, and one Graphics cannot be both.
+   */
+  private readonly brokenVignette = new Graphics();
+  /** The strength the bands were last BUILT at. The pulse never rebuilds them, it only moves the layer's alpha. */
+  private shownVignetteStrength = -1;
   /** The strength the cracks were last drawn at, so a frame that did not move it does not rebuild them. */
   private shownBrokenStrength = -1;
   /** The colour they were last drawn in: a route's hue moves with the stage and the rage, not only with health. */
@@ -311,9 +320,10 @@ class Game {
     // wrong is not a warning. `updateBrokenScreen` turns them on for exactly as long as the bubble is in danger.
     this.brokenGlow.visible = false;
     this.brokenCrack.visible = false;
+    this.brokenVignette.visible = false;
     // The score popups sit over the water and under the flash and the HUD: they belong to the event they mark, not
     // to the interface, but they are readouts and nothing the player steers by may be drawn over them.
-    this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.grazePopups.root, this.callouts.root, this.brokenGlow, this.brokenCrack, this.flash, this.hud.root, this.touch.root);
+    this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.grazePopups.root, this.callouts.root, this.brokenVignette, this.brokenGlow, this.brokenCrack, this.flash, this.hud.root, this.touch.root);
 
     this.finishBanner.anchor.set(0.5);
     this.finishBanner.alpha = 0;
@@ -1458,25 +1468,21 @@ class Game {
    *
    * @param hidden a full-screen page is up, and a page is not a bubble that is about to break.
    */
-  private updateBrokenScreen(hidden: boolean): void {
+  private updateBrokenScreen(hidden: boolean, elapsed: number): void {
     const cfg = mech.hud.brokenScreen;
     const view = this.run.healthView;
     const fraction = view.max > 0 ? view.current / view.max : 1;
     const strength = hidden ? 0 : Math.min(1, Math.max(0, (cfg.threshold - fraction) / cfg.threshold));
 
-    if (strength <= 0) {
-      // Draw nothing and remember nothing, so the next entry into the danger zone is a NEW scare with its own
-      // shape -- and so the guard below reads "was not in danger" rather than "was in danger at zero strength".
-      if (this.shownBrokenStrength !== 0) {
-        this.shownBrokenStrength = 0;
-        this.shownBrokenColour = -1;
-        this.brokenGlow.clear();
-        this.brokenCrack.clear();
-        this.brokenGlow.visible = false;
-        this.brokenCrack.visible = false;
-      }
-      return;
-    }
+    /**
+     * The edge glow, which is a DIFFERENT KINDS of thing from the cracks and is handled before the cracks' guard.
+     *
+     * It is animated: the bands are rebuilt only when the strength moves, but the pulse changes every frame, so it
+     * sets the layer's alpha and returns nothing. That is also why it comes first -- the crack code below returns
+     * early when nothing about the cracks changed, and an early return must not cost the pulse a frame.
+     */
+    this.updateBrokenVignette(strength, elapsed);
+    if (strength <= 0) return;
 
     const colour = bubbleStateColor(this.run.bubbleType, this.run.stage.stage, this.run.rage.rage);
     /**
@@ -1492,6 +1498,83 @@ class Game {
     this.shownBrokenStrength = strength;
     this.shownBrokenColour = colour;
     this.drawCracks(strength, colour);
+  }
+
+  /**
+   * The screen-edge gradients: one band per edge, solid at the border and fading toward the centre, pulsing.
+   *
+   * Four bands rather than one big rect with a radial fill, because the SHAPE the design asks for is "the picture
+   * is closing in from every side", and a linear band per edge gives each side its own ramp into the middle. A
+   * single radial gradient would pool in the middle instead, which reads as a spotlight rather than a squeeze.
+   *
+   * @param strength 0 turns it off; the bands are rebuilt when this MOVES, and only the alpha moves otherwise.
+   */
+  private updateBrokenVignette(strength: number, elapsed: number): void {
+    const cfg = mech.hud.brokenScreen.vignette;
+    if (strength <= 0) {
+      if (this.shownVignetteStrength !== 0) {
+        this.shownVignetteStrength = 0;
+        this.brokenVignette.clear();
+        this.brokenVignette.visible = false;
+      }
+      return;
+    }
+
+    if (Math.abs(strength - this.shownVignetteStrength) > 0.01) {
+      this.shownVignetteStrength = strength;
+      this.buildBrokenVignette();
+    }
+    this.brokenVignette.visible = true;
+    /**
+     * The pulse: a sine between `1 - pulseDepth` and 1, so the bands never quite reach zero.
+     *
+     * `pulseDepth` is the one number here with a design argument against its extreme: a band that disappears for
+     * part of every cycle is read as "the danger passed" for those frames, and that is the one thing a warning
+     * must not say. See the config.
+     */
+    const wave = 0.5 + 0.5 * Math.sin(elapsed * Math.PI * 2 * cfg.pulseHz);
+    this.brokenVignette.alpha = cfg.alpha * strength * (1 - cfg.pulseDepth * wave);
+  }
+
+  /** Lay out the four bands. Geometry only: how bright they are is the pulse's business. */
+  private buildBrokenVignette(): void {
+    const cfg = mech.hud.brokenScreen.vignette;
+    const g = this.brokenVignette;
+    const { width: w, height: h } = this.canvasSize;
+    g.clear();
+
+    const bandX = w * cfg.reachRatio;
+    const bandY = h * cfg.reachRatio;
+    const solid = rgba(cfg.colour, 1);
+    const clear = rgba(cfg.colour, 0);
+
+    /**
+     * One band, from `from` inward.
+     *
+     * `textureSpace: 'local'` is what lets a gradient be made per band: without it the ramp is measured against the
+     * whole canvas, and every band would show the same slice of one long gradient rather than its own.
+     */
+    const band = (x: number, y: number, bw: number, bh: number, from: 'top' | 'bottom' | 'left' | 'right'): void => {
+      const vertical = from === 'top' || from === 'bottom';
+      const flipped = from === 'bottom' || from === 'right';
+      g.rect(x, y, bw, bh).fill({
+        fill: new FillGradient({
+          start: vertical ? { x: 0, y: flipped ? 1 : 0 } : { x: flipped ? 1 : 0, y: 0 },
+          end: vertical ? { x: 0, y: flipped ? 0 : 1 } : { x: flipped ? 0 : 1, y: 0 },
+          colorStops: [
+            { offset: 0, color: solid },
+            { offset: 1, color: clear },
+          ],
+          textureSpace: 'local',
+        }),
+        alpha: 1,
+      });
+    };
+
+    band(0, 0, w, bandY, 'top');
+    band(0, h - bandY, w, bandY, 'bottom');
+    band(0, 0, bandX, h, 'left');
+    band(w - bandX, 0, bandX, h, 'right');
   }
 
   /**
@@ -2962,7 +3045,7 @@ private updateBoss(): void {
      * The cracks, under the same blanket as the flash -- and under their own: a full-screen page is not a bubble
      * that is about to break. See `updateBrokenScreen`.
      */
-    this.updateBrokenScreen(fullScreenPage);
+    this.updateBrokenScreen(fullScreenPage, this.run.elapsed);
 
     if (!fullScreenPage) {
       // The numbers floating where the points were earned. Cleared rather than frozen while a page is up: a popup
@@ -4144,6 +4227,17 @@ async function boot(): Promise<void> {
 }
 
 void boot();
+
+/**
+ * `rgba()` for a gradient stop.
+ *
+ * `toCss` in `background.ts` returns an opaque `#rrggbb` and cannot say "this end is invisible", which is exactly
+ * what a fade needs. Written here rather than added to that file because the two have different jobs: that one
+ * names a colour, this one names a colour AT AN OPACITY.
+ */
+function rgba(colour: number, alpha: number): string {
+  return `rgba(${(colour >> 16) & 255},${(colour >> 8) & 255},${colour & 255},${alpha})`;
+}
 
 /**
  * A tiny deterministic PRNG, for the screen cracks.
