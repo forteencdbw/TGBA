@@ -88,9 +88,8 @@ export function diagnosticsOf(g: GameSnapshot): {
       installed: boolean;
       /** The ladder, in file order, with the save's state against each one. */
       ladder: { id: string; name: string; locked: boolean; selected: boolean }[];
-      /** The save: which levels are cleared, and which is selected. */
+      /** The save: which levels are cleared. There is no stored selection -- see `src/progress.ts`. */
       cleared: string[];
-      selected: string;
       secondsPerScreen: number[];
     };
     playerVx: number;
@@ -329,7 +328,6 @@ export function diagnosticsOf(g: GameSnapshot): {
         ladder: g.progress.entries(),
         /** The save itself, so a test can assert what was written rather than only what is drawn. */
         cleared: [...g.progress.cleared],
-        selected: g.progress.selected,
         /**
          * Seconds per screenful, in order from the seabed up.
          *

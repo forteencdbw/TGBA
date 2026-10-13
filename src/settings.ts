@@ -50,9 +50,17 @@ export class SettingsUi {
   /** The accessibility section's heading and its toggle. */
   private readonly accessLabel: Text;
   private readonly flashButton: Button;
-  /** The cheat section's heading, and the toggle itself. */
+  /** The cheat section's heading, and the toggles themselves. */
   private readonly cheatLabel: Text;
   private readonly cheatButton: Button;
+  /**
+   * The debug toggle, in the cheat section.
+   *
+   * It is a cheat by behaviour rather than by name -- it unlocks every level and draws information the game otherwise
+   * keeps hidden -- but it is not one by INTENT, so it has its own row and its own label rather than being folded into
+   * the infinite-health switch.
+   */
+  private readonly debugButton: Button;
   private readonly sliderTrack = new Graphics();
   private readonly sliderFill = new Graphics();
   private readonly sliderKnob = new Graphics();
@@ -94,6 +102,13 @@ export class SettingsUi {
    * sparks, the damage numbers and a heavy hit's ring all stay, because those are how the player knows they connected.
    */
   onReducedFlash: (on: boolean) => void = () => {};
+  /**
+   * The debug switch: the hitbox overlay, and free level selection.
+   *
+   * Defaults to ON and is NOT persisted, like every other switch here -- see the note on the cheat toggle, which is
+   * the same argument. Signalled the same way as its neighbours so the game owns the state and this panel only asks.
+   */
+  onDebugHitboxes: (on: boolean) => void = () => {};
   /** Called when exit-to-menu is pressed. */
   onExit: () => void = () => {};
 
@@ -103,8 +118,10 @@ export class SettingsUi {
   private slider = { x: 0, y: 0, w: 0, h: 0 };
   /** 0..1, the value the slider currently shows. */
   private volume = 0.8;
-  /** Whether the cheat is on. Kept here so the panel can draw its own state. */
+  /** Whether the cheat is on. Kept here so the panel can draw its own state, and not persisted. */
   private infiniteHealth = false;
+  /** Whether the debug overlay is on. Defaults ON, and resets to that on every load. */
+  private debugHitboxes = true;
   /** Whether the reduced-flash setting is on, likewise. */
   private reducedFlash = false;
   /** The pointer dragging the slider, or null. */
@@ -146,6 +163,8 @@ export class SettingsUi {
      */
     this.cheatLabel = mkText('作弊 / CHEATS', 0xffb46b, 13);
     this.cheatButton = this.mkButton('无限血量：关', () => this.setInfiniteHealth(!this.infiniteHealth));
+    // Already on at construction, so the label starts in the ON form -- `redraw` keeps it in step from here.
+    this.debugButton = this.mkButton('调试模式：开', () => this.setDebugHitboxes(!this.debugHitboxes));
 
     this.restartButton = this.mkButton('重开本关', () => this.onRestart());
     this.exitButton = this.mkButton('退出到主菜单', () => this.onExit());
@@ -172,6 +191,8 @@ export class SettingsUi {
       this.flashButton.label,
       this.cheatButton.bg,
       this.cheatButton.label,
+      this.debugButton.bg,
+      this.debugButton.label,
       this.restartButton.bg,
       this.restartButton.label,
       this.exitButton.bg,
@@ -201,7 +222,7 @@ export class SettingsUi {
 
   /** All buttons, so the pointer handlers can walk them without repeating the list three times. */
   private buttons(): Button[] {
-    return [this.closeButton, this.flashButton, this.cheatButton, this.restartButton, this.exitButton, this.saveButton, this.cancelButton];
+    return [this.closeButton, this.flashButton, this.cheatButton, this.debugButton, this.restartButton, this.exitButton, this.saveButton, this.cancelButton];
   }
 
   private onPressOf(button: Button): () => void {
@@ -238,6 +259,25 @@ export class SettingsUi {
     this.cheatButton.label.style.fill = on ? 0xffd479 : 0xeaf9ff;
     this.redraw();
     if (notify) this.onInfiniteHealth(on);
+  }
+
+  /**
+   * Turn the debug overlay on or off, and with it free level selection.
+   *
+   * The same shape as `setInfiniteHealth`, and for the same reason: one place that sets the state, redraws and tells
+   * the game, so the button and a probe cannot take different paths.
+   */
+  setDebugHitboxes(on: boolean, notify = true): void {
+    this.debugHitboxes = on;
+    this.debugButton.label.text = on ? '调试模式：开' : '调试模式：关';
+    this.debugButton.label.style.fill = on ? 0xffd479 : 0xeaf9ff;
+    this.redraw();
+    if (notify) this.onDebugHitboxes(on);
+  }
+
+  /** Whether the debug overlay is on, as the panel shows it. */
+  get debugHitboxesOn(): boolean {
+    return this.debugHitboxes;
   }
 
   /** Whether the cheat is on, as the panel shows it. */
@@ -293,11 +333,11 @@ export class SettingsUi {
     // Panel: most of the lane's width, centred, with a comfortable margin from the edges.
     const w = Math.min(viewport.laneWidthPx * 0.86, 420 * s);
     /**
-     * Tall enough for the rows below and no taller, and the 470 is a CAP rather than a size: the row stack ends at 384
-     * design pixels, so a panel of 470 gives the bottom row its margin on a tall window while a short one still gets a
-     * panel that fits on the screen at all.
+     * Tall enough for the rows below and no taller, and the 522 is a CAP rather than a size: the row stack ends at
+     * 446 design pixels (restart and exit moved down one row when the debug toggle arrived), so a panel of 522 gives
+     * the bottom row its margin on a tall window while a short one still gets a panel that fits on the screen at all.
      */
-    const h = Math.min(viewport.height * 0.66, 470 * s);
+    const h = Math.min(viewport.height * 0.66, 522 * s);
     this.panelRect = {
       x: (viewport.width - w) / 2,
       y: (viewport.height - h) / 2,
@@ -368,8 +408,11 @@ export class SettingsUi {
     this.cheatLabel.x = this.panelRect.x + 24 * s;
     this.cheatLabel.y = this.panelRect.y + ROW.cheatsLabel * s;
     this.place(this.cheatButton, rowX, this.panelRect.y + ROW.cheatsRow * s, rowW, rowH, s);
-    this.place(this.restartButton, rowX, this.panelRect.y + ROW.cheatsRow * s + rowH + ROW.rowGap * s, rowW, rowH, s);
-    this.place(this.exitButton, rowX, this.panelRect.y + ROW.cheatsRow * s + (rowH + ROW.rowGap * s) * 2, rowW, rowH, s);
+    // The debug toggle takes the row under the cheat, and everything below it moves down one -- restart, exit, and
+    // the panel's own height, which is what gives the bottom row its margin.
+    this.place(this.debugButton, rowX, this.panelRect.y + ROW.cheatsRow * s + rowH + ROW.rowGap * s, rowW, rowH, s);
+    this.place(this.restartButton, rowX, this.panelRect.y + ROW.cheatsRow * s + (rowH + ROW.rowGap * s) * 2, rowW, rowH, s);
+    this.place(this.exitButton, rowX, this.panelRect.y + ROW.cheatsRow * s + (rowH + ROW.rowGap * s) * 3, rowW, rowH, s);
 
     const gap = 12 * s;
     const halfW = (rowW - gap) / 2;
@@ -436,6 +479,19 @@ export class SettingsUi {
           .roundRect(b.x, b.y, b.w, b.h, 10 * s)
           .fill({ color: this.infiniteHealth ? 0x4a3418 : 0x16293f, alpha: 0.95 })
           .stroke({ color: this.infiniteHealth ? 0xffb46b : 0x5fa8cc, alpha: 0.8, width: 1.2 * s });
+        continue;
+      }
+      /**
+       * The debug toggle wears the cheat's amber too, because to the game it IS one -- but it is ON by default, so a
+       * panel at rest shows a lit switch. That is the honest picture: this build has the overlay running until
+       * somebody turns it off.
+       */
+      if (b === this.debugButton) {
+        b.bg.clear();
+        b.bg
+          .roundRect(b.x, b.y, b.w, b.h, 10 * s)
+          .fill({ color: this.debugHitboxes ? 0x4a3418 : 0x16293f, alpha: 0.95 })
+          .stroke({ color: this.debugHitboxes ? 0xffb46b : 0x5fa8cc, alpha: 0.8, width: 1.2 * s });
         continue;
       }
       /**

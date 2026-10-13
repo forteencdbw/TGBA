@@ -2,23 +2,24 @@ import { expect, test } from '@playwright/test';
 import { boot, startFromMenu, waitForPhase } from './helpers';
 
 /**
- * Level selection and progression.
+ * The level ladder, which is a DEBUG affordance.
  *
  * ---------------------------------------------------------------------------------------------
  * WHAT THIS FILE EXISTS TO PROVE
  * ---------------------------------------------------------------------------------------------
- * Three claims, and the middle one is the reason there is a save file at all:
+ * The ladder is on the menu because `debug` is on by default, and the claims are the ones that would rot silently:
  *
- *   1. The menu offers the levels the GAME has, in order, and the first one is playable from a fresh save.
- *   2. A locked level cannot be played, and cannot be played by TAPPING it -- the pill does not arm, so a press
- *      produces nothing rather than a run that silently starts on the wrong water.
- *   3. Reaching the surface of a level unlocks the next one, and the unlock survives a reload.
+ *   1. The menu offers the levels the GAME has, in order, and the row is a plain jump-to list -- no locks, because a
+ *      locked pill on a tool whose whole purpose is "look at level six" would be the one thing in the way.
+ *   2. Picking one really moves the run to it, with its own length, pacing and content.
+ *   3. Reaching the surface still RECORDS the clear and still wires up the unlock rule, even though nothing on screen
+ *      says so any more -- and the save survives a reload.
  *
  * The last one is measured through `localStorage` rather than through the menu: the menu could be redrawn from
  * anything, and a reload is the only way to tell "remembered" from "happened to still be in memory".
  */
-test.describe('level select and progress', () => {
-  test('the menu offers the levels the file has, in order, with only the first open', async ({ page }) => {
+test.describe('level ladder and progress', () => {
+  test('the menu offers every level the file has, in order, and none of them locked', async ({ page }) => {
     await boot(page);
 
     /**
@@ -39,7 +40,7 @@ test.describe('level select and progress', () => {
         __GB: {
           game: {
             menuRef: { geometry: { levels: { id: string; label: string; locked: boolean; selected: boolean }[]; levelNote: string } };
-            diagnostics: { level: { ladder: { id: string; locked: boolean; selected: boolean }[]; cleared: string[] } };
+            diagnostics: { level: { id: string; ladder: { id: string; locked: boolean; selected: boolean }[]; cleared: string[] } };
           };
         };
       }).__GB.game;
@@ -50,49 +51,55 @@ test.describe('level select and progress', () => {
     expect(seen.row.map((l) => l.label), 'with the file\'s names').toEqual(file.levels.map((l) => l.name));
     expect(file.levels.length, 'and there is more than one, or there would be nothing to select').toBeGreaterThan(1);
 
-    // A fresh save: nothing cleared, the first level open and selected, everything after it locked.
+    /**
+     * EVERY pill is this build's default state, not the save's.
+     *
+     * `debug` is on by default, so the ladder shows every level as reachable whatever the save says -- and the save is
+     * a fresh one here anyway. The unlock rule has not stopped existing; it has stopped gating the row, which is the
+     * claim this assertion is about.
+     */
     expect(seen.diag.cleared, 'a fresh save has cleared nothing').toEqual([]);
-    expect(seen.row[0]!.locked, 'the first level is always playable').toBe(false);
-    expect(seen.diag.ladder[0]!.selected, 'and it is the one selected').toBe(true);
-    for (const later of seen.row.slice(1)) {
-      expect(later.locked, `${later.id} must start locked`).toBe(true);
+    for (const level of seen.row) {
+      expect(level.locked, `${level.id} must be selectable with debug on`).toBe(false);
     }
-    // And the menu SAYS why, rather than showing a dim pill with no explanation.
-    expect(seen.note, 'the note under the row says what unlocks the locked one').toContain(file.levels[0]!.name);
+    // The filled pill is where the game IS, which with no stored selection is the file's `start`.
+    expect(seen.diag.ladder.find((l) => l.selected)?.id, 'the current level is the one drawn as selected').toBe(file.start);
+    // And the note under the row is empty: it exists to explain a lock, and there are none.
+    expect(seen.note, 'no lock, no explanation to write').toBe('');
   });
 
-  test('tapping a locked level does nothing, and does not start a run on it', async ({ page }) => {
+  test('tapping any level moves the game to it', async ({ page }) => {
     await boot(page);
 
     const result = await page.evaluate(async () => {
       const g = (window as unknown as {
         __GB: {
           game: {
-            menuRef: { geometry: { levels: { id: string; locked: boolean; selected: boolean; rect: { x: number; y: number; w: number; h: number } }[] } };
+            menuRef: { geometry: { levels: { id: string; selected: boolean; rect: { x: number; y: number; w: number; h: number } }[] } };
             handlePointerDown: (id: number, x: number, y: number) => void;
             handlePointerUp: (id: number) => void;
-            diagnostics: { phase: string; level: { id: string; selected: string } };
+            diagnostics: { phase: string; level: { id: string } };
           };
         };
       }).__GB.game;
-      const locked = g.menuRef.geometry.levels.find((l) => l.locked)!;
-      const before = { id: g.diagnostics.level.id, selected: g.diagnostics.level.selected, phase: g.diagnostics.phase };
+      // The LAST one, which under the old rule was the one that took a whole playthrough to reach.
+      const last = g.menuRef.geometry.levels[g.menuRef.geometry.levels.length - 1]!;
+      const before = { id: g.diagnostics.level.id, phase: g.diagnostics.phase };
       // Through the same pointer path a finger takes.
-      g.handlePointerDown(71, locked.rect.x + locked.rect.w / 2, locked.rect.y + locked.rect.h / 2);
+      g.handlePointerDown(71, last.rect.x + last.rect.w / 2, last.rect.y + last.rect.h / 2);
       g.handlePointerUp(71);
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       return {
-        lockedId: locked.id,
+        lastId: last.id,
         before,
-        after: { id: g.diagnostics.level.id, selected: g.diagnostics.level.selected, phase: g.diagnostics.phase },
-        row: g.menuRef.geometry.levels.map((l) => ({ id: l.id, locked: l.locked, selected: l.selected })),
+        after: { id: g.diagnostics.level.id, phase: g.diagnostics.phase },
+        row: g.menuRef.geometry.levels.map((l) => ({ id: l.id, selected: l.selected })),
       };
     });
 
-    expect(result.after.selected, 'a locked level cannot become the selection').toBe(result.before.selected);
-    expect(result.after.id, 'and the game is still pointed at the level it was').toBe(result.before.id);
-    expect(result.after.phase, 'and no run started').toBe(result.before.phase);
-    expect(result.row.find((l) => l.id === result.lockedId)!.selected, 'and it is not drawn as selected').toBe(false);
+    expect(result.after.id, 'the game moved to the level that was tapped').toBe(result.lastId);
+    expect(result.after.phase, 'and no run started from the menu').toBe(result.before.phase);
+    expect(result.row.find((l) => l.id === result.lastId)!.selected, 'and it is the one drawn as selected').toBe(true);
   });
 
   test('the selected level is the one that gets played, with its own length and content', async ({ page }) => {
@@ -109,29 +116,21 @@ test.describe('level select and progress', () => {
       const g = (window as unknown as {
         __GB: {
           game: {
-            debugProgress: () => { ladder: { id: string }[] };
-            debugClearLevel: (id: string) => string | null;
             debugSelectLevel: (id: string) => boolean;
             debugStartRunWithRoute: (id: string) => string | null;
             diagnostics: { level: { id: string; scrollLength: number; scrollSpeed: number; entriesTotal: number; blocks: number } };
           };
         };
       }).__GB.game;
-      /**
-       * Unlock it the way a player would have to: by clearing the level BEFORE it.
-       *
-       * Not by clearing itself, which is what the first version did -- and which does not unlock anything, because the
-       * rule is "clear the previous level", not "clear the level you want".
-       */
-      const first = g.debugProgress().ladder[0]!.id;
-      g.debugClearLevel(first);
+      // No unlock step any more: with debug on the second level is reachable from the first frame of a fresh save,
+      // which is the point of the ladder.
       const selected = g.debugSelectLevel(id);
       g.debugStartRunWithRoute('devour');
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       return { selected, level: g.diagnostics.level };
     }, second.id);
 
-    expect(result.selected, 'the unlocked level can be selected').toBe(true);
+    expect(result.selected, 'the level can be selected').toBe(true);
     expect(result.level.id, 'and it is the level the run happens in').toBe(second.id);
     expect(result.level.scrollLength, 'with its own length').toBe(second.scrollLength);
     expect(result.level.scrollSpeed, 'its own pacing').toBe(second.scrollSpeed);
@@ -185,7 +184,6 @@ test.describe('level select and progress', () => {
         phase: g.game.diagnostics.phase,
         cleared: [...g.game.diagnostics.level.cleared],
         ladder: g.game.diagnostics.level.ladder.map((l) => ({ id: l.id, locked: l.locked })),
-        banner: (window as unknown as { __GB: { game: { runBannerTextForTest?: string } } }).__GB.game.runBannerTextForTest ?? '',
       };
     });
 
@@ -268,7 +266,7 @@ test.describe('level select and progress', () => {
       const g = (window as unknown as {
         __GB: {
           game: {
-            debugProgress: () => { cleared: string[]; selected: string; ladder: { id: string; locked: boolean }[] };
+            debugProgress: () => { cleared: string[]; ladder: { id: string; locked: boolean; selected: boolean }[] };
             debugClearLevel: (id: string) => string | null;
             debugSelectLevel: (id: string) => boolean;
             debugResetProgress: () => void;
@@ -283,16 +281,27 @@ test.describe('level select and progress', () => {
 
       const stored = localStorage.getItem('tgba.progress.v1');
       g.debugResetProgress();
-      return { progressed, stored, after: g.debugProgress(), first };
+      return { progressed, stored, after: g.debugProgress(), first, second: second.id };
     });
 
     expect(result.progressed.cleared, 'progress accumulates').toContain(result.first);
-    expect(result.progressed.selected, 'and the selection moves with it').not.toBe(result.first);
+    expect(
+      result.progressed.ladder.find((l) => l.selected)?.id,
+      'and the run is pointed at the level that was picked',
+    ).toBe(result.second);
     // The save is where a reader would look for it, and it is JSON.
     expect(result.stored, 'the save is written to the documented key').toContain(result.first);
-    expect(JSON.parse(result.stored!).selected, 'and it holds the selection').toBe(result.progressed.selected);
+    /**
+     * AND IT HOLDS THE CLEARS ONLY. `selected` was dropped from the save -- the ladder is a debug affordance, and a run
+     * always begins at the file's `start` -- so a stale field reappearing here would mean the write had gone back to a
+     * shape nothing reads.
+     */
+    expect(Object.keys(JSON.parse(result.stored!)), 'and holds nothing but the clears').toEqual(['cleared']);
     expect(result.after.cleared, 'reset forgets everything').toEqual([]);
-    expect(result.after.selected, 'and goes back to the level the file names as start').toBe(result.first);
-    expect(result.after.ladder.filter((l) => !l.locked).length, 'leaving one level open').toBe(1);
+    expect(
+      result.after.ladder.find((l) => l.selected)?.id,
+      'and goes back to the level the file names as start',
+    ).toBe(result.first);
+    expect(result.after.ladder.filter((l) => !l.locked).length, 'leaving one level unlocked by the rule').toBe(1);
   });
 });

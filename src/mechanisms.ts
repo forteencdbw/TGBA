@@ -1716,6 +1716,26 @@ export interface Mechanisms {
     silt: { startVolume: number; defense: number };
     'fish-fart': { radiusMeters: number; cooldownSeconds: number; baitCount: number };
   };
+  /**
+   * The debug hitbox overlay: its line style and its colours, and nothing else.
+   *
+   * Visual numbers rather than mechanics, and they live here for the reason every other visual number does -- see
+   * AGENTS.md. The two dash figures are here because a dashed circle is a different SHAPE from a solid one, and the
+   * shape is what carries the meaning: solid is "this hurts", dashed is "this pays for a near miss".
+   */
+  debug: {
+    width: number;
+    alpha: number;
+    dashLength: number;
+    dashGap: number;
+    creatureColour: number;
+    environmentColour: number;
+    obstacleColour: number;
+    playerBulletColour: number;
+    enemyBulletColour: number;
+    playerColour: number;
+    grazeColour: number;
+  };
 }
 
 /** One level's music, as the config writes it. See `src/music.ts` for what each field does to the sound. */
@@ -3013,6 +3033,30 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'talents.fish-fart.radiusMeters', check: anyNumber, describe: 'metres' },
   { path: 'talents.fish-fart.cooldownSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'talents.fish-fart.baitCount', check: wholeNumber, describe: 'a whole number of bait bubbles' },
+
+  /**
+   * The debug overlay. Every key is either a length or a colour, so the table is two loops rather than eleven rows --
+   * and `debug` is the one section whose keys are all the same kind, which is what makes that safe to do.
+   */
+  ...[
+    ['width', 'design pixels'],
+    ['alpha', 'an opacity'],
+    ['dashLength', 'design pixels'],
+    ['dashGap', 'design pixels'],
+  ].map(([key, describe]) => ({ path: `debug.${key}`, check: anyNumber, describe: describe as string })),
+  ...[
+    'creatureColour',
+    'environmentColour',
+    'obstacleColour',
+    'playerBulletColour',
+    'enemyBulletColour',
+    'playerColour',
+    'grazeColour',
+  ].map((key) => ({
+    path: `debug.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
+  })),
 ];
 
 /**

@@ -1,7 +1,7 @@
-import { LEVELS, START_LEVEL_ID, levelIndex, selectLevel } from './levels';
+import { LEVEL, LEVELS, START_LEVEL_ID, levelIndex, selectLevel } from './levels';
 
 /**
- * Progress: which levels have been cleared, and which one is selected.
+ * Progress: which levels have been cleared.
  *
  * ---------------------------------------------------------------------------------------------
  * THE FIRST THING IN THIS PROJECT THAT OUTLIVES A PAGE LOAD
@@ -25,28 +25,23 @@ import { LEVELS, START_LEVEL_ID, levelIndex, selectLevel } from './levels';
  * WHAT IS STORED
  * ---------------------------------------------------------------------------------------------
  *   cleared   level ids the player has reached the surface of
- *   selected  the level the menu is pointing at
+ *
+ * `selected` used to be here, and it is gone: the level ladder is a debug affordance now, and a run always begins at
+ * the level the file names as `start`. Nothing needed to remember a choice that could not be made.
  *
  * Deliberately NOT stored: the best climb, the bubble type, the volume. Those are per-run or already in the config,
  * and a progress file that grows new fields every milestone is one that needs migrating every milestone.
  */
 export interface Progress {
   cleared: string[];
-  selected: string;
 }
 
 /** The storage key. Versioned; see the note above about what bumping it means. */
 export const PROGRESS_KEY = 'tgba.progress.v1';
 
-/**
- * Where a fresh player starts: the level the FILE names as `start`.
- *
- * `START_LEVEL_ID` and not the currently selected level, which is the bug the reset case caught: reading the live
- * `LEVEL` meant "reset" landed on whatever the player had selected, so clearing your progress left you where you were
- * instead of at the beginning.
- */
+/** Where a fresh player starts, and where every run starts: the level the FILE names as `start`. */
 function freshProgress(): Progress {
-  return { cleared: [], selected: START_LEVEL_ID };
+  return { cleared: [] };
 }
 
 /**
@@ -72,8 +67,7 @@ export function loadProgress(): Progress {
     const cleared = Array.isArray(parsed.cleared)
       ? parsed.cleared.filter((id): id is string => typeof id === 'string' && known.has(id))
       : [];
-    const selected = typeof parsed.selected === 'string' && known.has(parsed.selected) ? parsed.selected : fresh.selected;
-    return { cleared, selected };
+    return { cleared };
   } catch {
     return fresh;
   }
@@ -115,13 +109,14 @@ export class Progression {
 
   constructor() {
     this.state = loadProgress();
-    // The selected level is applied at construction rather than by the caller, so there is no window in which the
-    // menu shows one level and the run would use another.
-    selectLevel(this.state.selected);
-  }
-
-  get selected(): string {
-    return this.state.selected;
+    /**
+     * The run begins where the FILE says it begins, and nowhere else.
+     *
+     * Applied at construction rather than by the caller so there is no window in which the menu and the run disagree
+     * about which level is loaded. It is the file's `start` and not a remembered choice: a run always starts at the
+     * first level, and the debug ladder can move `LEVEL` afterwards without any of that being persisted.
+     */
+    selectLevel(START_LEVEL_ID);
   }
 
   get cleared(): readonly string[] {
@@ -134,26 +129,26 @@ export class Progression {
       id: level.id,
       name: level.name,
       locked: !isUnlocked(index, this.state),
-      selected: level.id === this.state.selected,
+      /**
+       * The FILLED pill is the level the game is ON, read from the live `LEVEL` rather than from the save.
+       *
+       * There is no stored selection to compare against any more, and this is the more useful answer anyway: the row
+       * is a jump-to menu, so the only thing it can honestly highlight is where the player currently is -- including
+       * after a jump that the save knows nothing about.
+       */
+      selected: level.id === LEVEL.id,
     }));
   }
 
-  /** Whether a level may be selected. */
-  canPlay(id: string): boolean {
-    const index = levelIndex(id);
-    return index >= 0 && isUnlocked(index, this.state);
-  }
-
   /**
-   * Select a level.
+   * Point the run at a level.
    *
-   * @return false when it does not exist or is locked, so the caller can say so rather than silently doing nothing.
+   * No lock check and nothing written to `LEVEL`'s save entry: the only caller is the debug ladder, which shows every
+   * level as selectable on purpose. An id that does not exist is still refused, so a typo cannot move the run.
    */
   select(id: string): boolean {
-    if (!this.canPlay(id)) return false;
-    this.state = { ...this.state, selected: id };
+    if (levelIndex(id) < 0) return false;
     selectLevel(id);
-    saveProgress(this.state);
     this.onChange();
     return true;
   }
@@ -179,7 +174,7 @@ export class Progression {
   /** Forget everything, and go back to the level the file names as `start`. */
   reset(): void {
     this.state = freshProgress();
-    selectLevel(this.state.selected);
+    selectLevel(START_LEVEL_ID);
     saveProgress(this.state);
     this.onChange();
   }

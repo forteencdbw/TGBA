@@ -209,12 +209,23 @@ export class MainMenu {
      * above it moves up by the same amount. The only thing that gives is the title's own margin, which is why it is
      * clamped rather than allowed off the top of the canvas.
      */
+    /**
+     * AN EMPTY LIST IS NO ROW AT ALL, and the arithmetic has to say so.
+     *
+     * The row reserves its own vertical band, and everything above it is placed upward from the tagline -- so a row
+     * that exists structurally but has nothing in it does not disappear, it leaves the title and the subtitle floating
+     * with a gap where the pills were. The game hands an empty list when the level ladder is off (`debug` decides),
+     * which makes this the difference between "that feature is not here" and "that feature is broken".
+     */
+    const rowShown = this.levels.length > 0;
     const perRow = Math.max(1, Math.min(this.levels.length, Math.floor(1 / Math.max(0.05, cfg.levelMinWidthRatio))));
-    const rows = Math.max(1, Math.ceil(this.levels.length / perRow));
-    const noteLineH = cfg.levelTextSize * s;
+    const rows = rowShown ? Math.max(1, Math.ceil(this.levels.length / perRow)) : 0;
+    const noteLineH = rowShown ? cfg.levelTextSize * s : 0;
     const noteY = this.tagline.y - (cfg.taglineSize * s) / 2 - cfg.levelRowGap * s * 2 - noteLineH;
-    const gridHeight = rows * levelH + (rows - 1) * cfg.levelRowGap * s;
-    let levelTop = noteY - cfg.levelRowGap * s - gridHeight;
+    const gridHeight = rows * levelH + Math.max(0, rows - 1) * cfg.levelRowGap * s;
+    let levelTop = rowShown
+      ? noteY - cfg.levelRowGap * s - gridHeight
+      : this.tagline.y - (cfg.taglineSize * s) / 2 - cfg.levelRowGap * s;
 
     this.subtitle.scale.set(s);
     this.subtitle.anchor.set(0.5, 0.5);

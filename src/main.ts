@@ -1,8 +1,9 @@
 import { Application, FillGradient, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
 import { tuning } from './config';
-import { LEVEL, LEVELS, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
+import { LEVEL, LEVELS, START_LEVEL_ID, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
 import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, isBossKind, LURE_PROBE, paintHazards, setReducedFlash, warmAnimations, type HazardKind } from './hazards';
+import { paintHitboxes, setDebugHitboxes, isDebugHitboxes } from './hitboxes';
 import { paintBullets, radiusOf } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { diagnosticsOf } from './diagnostics';
@@ -122,6 +123,14 @@ class Game {
 
   /** Everything drawn in world metres: collectables, the bubble, and its trailing micro-bubbles. */
   private readonly pickups = new Graphics();
+  /**
+   * The debug hitbox overlay, on its own layer ABOVE everything in the water.
+   *
+   * Above, because its whole job is to be compared against the art underneath it: a hitbox line hidden by the creature
+   * it belongs to would show the player nothing. It is under the HUD and the damage numbers -- those are readouts, and
+   * a readout the overlay can cover is a readout that stops working exactly when the numbers get busy.
+   */
+  private readonly hitboxOverlay = new Graphics();
   /**
    * Creatures that are LEAVING, on their own layer so the whole pass can be dimmed at once.
    *
@@ -310,6 +319,8 @@ class Game {
     this.run.nominalSeconds = nominalScrollSeconds(LEVEL);
 
     this.scene.world.addChild(this.pickups, this.leaving, this.burstWave, this.bubble, this.particles);
+    // Last in the world container, so the overlay is over every creature, round and pick-up in it.
+    this.scene.world.addChild(this.hitboxOverlay);
     // Over the water and under the HUD: a spark is part of the scene, not a readout.
     this.scene.world.addChild(this.hitParticles.graphics);
     this.scene.world.addChild(this.chargeTrail.root);
@@ -364,6 +375,15 @@ class Game {
     this.settings.onReducedFlash = (on) => {
       setReducedFlash(on);
     };
+    /**
+     * The debug switch, which is two things because the game reads it in two places: the overlay's module flag, and the
+     * level ladder on the menu (see `refreshLevelMenu`). The flag lives in `src/hitboxes.ts` beside the drawing it
+     * controls, which is the same arrangement `setReducedFlash` uses.
+     */
+    this.settings.onDebugHitboxes = (on) => {
+      setDebugHitboxes(on);
+      this.refreshLevelMenu();
+    };
     this.settings.onExit = () => this.exitToMenu();
     /**
      * Starting a run now goes through the loader.
@@ -384,19 +404,28 @@ class Game {
      * note back on screen.
      */
     this.menu.onPickLevel = (levelId) => {
-      if (this.run.progress.select(levelId)) {
-        this.refreshLevelMenu();
-        // The type selector's start button begins a NEW run on whatever is selected, so a level change while a run is
-        // on screen is only meaningful at the menu. Picking one there is the only path, and this is it.
-      } else {
-        this.menu.setLevelNote('这一关还没解锁', false);
-      }
+      /**
+       * The row is the debug ladder, so every pill on it is reachable and `select` can only refuse an id that does not
+       * exist. There is no "not unlocked yet" note any more: the ladder does not draw locks, and a note explaining one
+       * would be the menu describing a state nobody can see.
+       */
+      this.run.progress.select(levelId);
+      this.refreshLevelMenu();
     };
     this.codex.onBack = () => this.exitCodex();
     /**
      * The menu is handed nothing to draw but levels -- there is no character select any more. `refreshLevelMenu`
      * is the one call that decides what the row shows.
      */
+    /**
+     * The debug default, pushed from the panel into the drawing module.
+     *
+     * The panel is where the default is WRITTEN (its switch starts at ON) and the module flag is what the drawing reads,
+     * so this is the one line that keeps the two from being two copies of the same decision. It runs before the first
+     * `refreshLevelMenu`, because that call is what decides whether the level ladder is on the menu at all.
+     */
+    setDebugHitboxes(this.settings.debugHitboxesOn);
+
     /**
      * The levels, from the progress store rather than from `LEVELS`.
      *
@@ -994,8 +1023,8 @@ class Game {
    * Three things, because they are what a test needs and nothing more: read it, set it, and forget it. Setting goes
    * through the SAME `select` the menu uses, so a spec cannot put the game into a state the menu could not.
    */
-  debugProgress(): { cleared: string[]; selected: string; ladder: { id: string; name: string; locked: boolean; selected: boolean }[] } {
-    return { cleared: [...this.run.progress.cleared], selected: this.run.progress.selected, ladder: this.run.progress.entries() };
+  debugProgress(): { cleared: string[]; ladder: { id: string; name: string; locked: boolean; selected: boolean }[] } {
+    return { cleared: [...this.run.progress.cleared], ladder: this.run.progress.entries() };
   }
 
   /** Test hook: pretend a level was cleared, exactly as reaching its surface does. */
@@ -2619,10 +2648,9 @@ class Game {
      * being PLAYED, and the automatic handoff at the end of a level moves it (see `enterLevel`); the menu's pointer is
      * the save's own `selected`, and only a press on a pill moves that. `enterFromMenu` starts a run on `LEVEL`, so
      * leaving the menu with the game pointed at the other level is the contradiction the player saw. Re-applying the
-     * pointer here -- the same call `Progression` makes for the same reason at construction -- is what keeps "start"
-     * meaning "the level on screen", however far the last run had travelled.
+     * file's `start` here is what keeps "start" meaning "the level on screen", however far the last run had travelled.
      */
-    selectLevel(this.run.progress.selected);
+    selectLevel(START_LEVEL_ID);
     /**
      * The summary panel goes with the run.
      *
@@ -2662,22 +2690,30 @@ class Game {
 
   /** Leave the menu and begin a run, as the chosen bubble. */
   /**
-   * Put the level ladder on the menu: the pills, the selection, and the note under them.
+   * Put the level ladder on the menu -- or take it off it.
    *
-   * One function because the three have to agree. The note says what the row cannot: why a level is locked ("通关 X
-   * 之后解锁") or that one has just opened, and the two cases are mutually exclusive -- an unlock message that was left
-   * on screen while the row showed a locked level would be a menu contradicting itself.
+   * ---------------------------------------------------------------------------------------------
+   * THE LADDER IS A DEBUG AFFORDANCE NOW
+   * ---------------------------------------------------------------------------------------------
+   * With `debug` off there is no row at all. A run always starts at level 1 and walks forward by clearing one, so
+   * choosing a level was never a way to PLAY -- it was a way to look at a later level from here, which is a thing the
+   * person building the game wants and a player does not. Off, the panel is a plain start button.
+   *
+   * With it on every level is selectable, `locked` and all: the unlock rule is still computed and still written to the
+   * save, it just has no say in what can be clicked while the tool is up. The row deliberately does NOT mark which
+   * levels are cleared -- see the note in `src/menu.ts` -- because a row that is only ever a jump-to menu does not need
+   * to double as a progress display.
+   *
+   * The note under the row goes with it: it exists to explain a lock, and there are no locks.
    */
   private refreshLevelMenu(): void {
-    this.menu.setLevels(this.run.progress.entries());
-    const locked = this.run.progress.entries().find((l) => l.locked);
-    if (locked) {
-      const index = levelIndex(locked.id);
-      const previous = LEVELS[index - 1];
-      this.menu.setLevelNote(previous ? `通关「${previous.name}」后解锁「${locked.name}」` : '', false);
-    } else {
+    if (!isDebugHitboxes()) {
+      this.menu.setLevels([]);
       this.menu.setLevelNote('');
+      return;
     }
+    this.menu.setLevels(this.run.progress.entries().map((l) => ({ ...l, locked: false })));
+    this.menu.setLevelNote('');
   }
 
   /**
@@ -2842,16 +2878,18 @@ private updateBoss(): void {
      * looking at is an unlock nobody notices.
      */
     const clearText = `击败了 ${LEVEL.boss.name}  ·  吸收 ${this.run.stats.absorbed}  ·  最大体积 ${this.run.stats.maxVolume.toFixed(1)}×  ·  ${this.run.elapsed.toFixed(1)}s`;
-    const unlocked = this.run.progress.clear(LEVEL.id);
-    if (unlocked) {
-      const opened = LEVELS.find((l) => l.id === unlocked);
-      // ONE message, composed once: the unlock is part of the same moment, and appending it to the label on screen
-      // would be a read-modify-write of a display object from inside a rule.
-      this.banner(`${clearText}\n新关卡解锁：${opened?.name ?? unlocked}`);
-      this.refreshLevelMenu();
-    } else {
-      this.banner(clearText);
-    }
+    /**
+     * The clear is still RECORDED, and the level it opened is still computed -- but the run no longer ANNOUNCES it.
+     *
+     * `progress.clear` writes the save and returns the id of the level this opened. That return used to name it in the
+     * banner, on the argument that an unlock showing up only as a pill changing colour on a menu the player is not
+     * looking at is an unlock nobody notices. The ladder is a debug affordance now, so there is no pill and nothing to
+     * point at: the message would promise a choice that does not exist. The save is kept whole regardless, so the day
+     * the ladder comes back the data it needs is still being written.
+     */
+    this.run.progress.clear(LEVEL.id);
+    this.refreshLevelMenu();
+    this.banner(clearText);
     /**
      * And then the run WALKS ON.
      *
@@ -3373,6 +3411,37 @@ private updateBoss(): void {
      * lethal is visible before it lands.
      */
     paintEnemyBullets(g, this.run.enemyBullets, laneWidth);
+
+    /**
+     * The debug hitbox overlay, last of everything in the water.
+     *
+     * It reads the same fields the collision reads -- see `src/hitboxes.ts` -- so it is drawn here, after the water is
+     * complete, and it is the layer that goes over the top of it. `visible` rather than a skipped call, because the
+     * layer is added once and a `clear()` that does not run still leaves the last frame's lines on screen.
+     */
+    this.hitboxOverlay.clear();
+    this.hitboxOverlay.visible = isDebugHitboxes();
+    if (this.hitboxOverlay.visible && this.run.phase !== 'menu') {
+      paintHitboxes(this.hitboxOverlay, {
+        hazards: this.run.hazards,
+        obstacles: this.run.obstacles,
+        bullets: this.run.bullets,
+        enemyBullets: this.run.enemyBullets,
+        playerX: this.run.player.x * laneWidth,
+        playerY: this.run.player.y,
+        /**
+         * The bubble's own radius, NOT the slam/overload widening.
+         *
+         * Those two bonuses reach the OBSTACLE contact (`resolveContacts`) and the drawing, but not the hazard or
+         * enemy-round tests -- so during a charge the bubble is painted wider than it collides with a fish. That is a
+         * discrepancy worth knowing about rather than one for this overlay to paper over: it draws the radius the
+         * lethal tests use, which is also the one the player reads as "how big am I".
+         */
+        playerRadius: laneWidth * stageRadiusFraction(this.run.stage.stage, this.run.player.volume),
+        laneWidth,
+        bulletRadiusMultiplier: this.run.bulletRadiusMultiplier,
+      });
+    }
 
     // The decoy bait bubble, while it lasts. Drawn like a bright collectable, because that is what it
     // is imitating -- the fish are supposed to fall for it.
