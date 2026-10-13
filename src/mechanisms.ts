@@ -371,16 +371,19 @@ export interface Mechanisms {
       /** 0 re-rolls the shape every time the bubble enters the danger zone; anything else fixes it. */
       seed: number;
       /**
-       * The four screen-edge gradients: a second layer beside the cracks, and they say different things.
+       * The four edge gradients: a second layer beside the cracks, and they say different things.
        *
-       * The cracks say WHERE something broke (the lane's walls, in the bubble's own colours). This says THE WHOLE
-       * PICTURE IS CLOSING IN: one band per screen edge, fading toward the centre, pulsing at a fixed rate. It is
-       * a fixed blue on purpose -- two voices saying the same sentence cancel each other out.
+       * The cracks say WHERE something broke (the lane's walls, in the bubble's own colours). This says THE PICTURE
+       * IS CLOSING IN: one band per side, fading toward the centre, pulsing at a fixed rate. A fixed blue on
+       * purpose -- two voices saying the same sentence cancel each other out.
+       *
+       * Also measured against the LANE, like the cracks: the two vertical bands sit on its walls and the two
+       * horizontal ones span its width. See `buildBrokenVignette`.
        */
       vignette: {
         colour: number;
         alpha: number;
-        /** How far each edge reaches in, as a fraction of THAT edge's own axis length. */
+        /** How far each side reaches in: a fraction of the LANE's width for the sides, of the screen's height for top and bottom. */
         reachRatio: number;
         /** Pulses per second, and how deep the pulse goes (0 = steady, 1 = fully off at the trough). */
         pulseHz: number;

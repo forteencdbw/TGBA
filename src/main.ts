@@ -1540,10 +1540,23 @@ class Game {
   private buildBrokenVignette(): void {
     const cfg = mech.hud.brokenScreen.vignette;
     const g = this.brokenVignette;
-    const { width: w, height: h } = this.canvasSize;
+    const { height: h } = this.canvasSize;
     g.clear();
 
-    const bandX = w * cfg.reachRatio;
+    /**
+     * Measured against the LANE, like the cracks beside it.
+     *
+     * The open water either side of the lane is water the bubble cannot reach, so a warning painted there is a
+     * warning about nothing -- the same mistake the boss bar, the progress chart and the cracks each made in turn.
+     * The lane is the only thing that can be about to break, so the squeeze arrives at ITS walls.
+     *
+     * Vertically there is no such bound: the water scrolls forever, so top and bottom stay at the screen's edges,
+     * and only the horizontal extent is clipped to the lane.
+     */
+    const viewport = this.camera.viewport;
+    const laneLeft = viewport.left;
+    const laneWidth = viewport.laneWidthPx;
+    const bandX = laneWidth * cfg.reachRatio;
     const bandY = h * cfg.reachRatio;
     const solid = rgba(cfg.colour, 1);
     const clear = rgba(cfg.colour, 0);
@@ -1571,10 +1584,11 @@ class Game {
       });
     };
 
-    band(0, 0, w, bandY, 'top');
-    band(0, h - bandY, w, bandY, 'bottom');
-    band(0, 0, bandX, h, 'left');
-    band(w - bandX, 0, bandX, h, 'right');
+    // Top and bottom span the lane; left and right sit ON its walls.
+    band(laneLeft, 0, laneWidth, bandY, 'top');
+    band(laneLeft, h - bandY, laneWidth, bandY, 'bottom');
+    band(laneLeft, 0, bandX, h, 'left');
+    band(laneLeft + laneWidth - bandX, 0, bandX, h, 'right');
   }
 
   /**
