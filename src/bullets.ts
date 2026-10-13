@@ -78,6 +78,56 @@ export function radiusOf(b: Bullet, laneWidth: number, multiplier: number): numb
   return (cfg.radiusRatio + cfg.radiusGrowthPerSecond * b.age) * multiplier * laneWidth;
 }
 
+/**
+ * How much bigger this round is than the one that left the muzzle: 1 at birth, above 1 once it has swollen.
+ *
+ * The radius MULTIPLIER cancels -- it scales `radiusRatio` and the growth alike -- so this measures TIME IN FLIGHT
+ * and nothing else. That is deliberate and it is the whole reason 「越大伤害越高」 is a RANGE card rather than a
+ * second copy of 「大弹丸」: stacking size does not make this number grow, only keeping the round in the water does.
+ *
+ * Returns 1 when there is nothing to divide by: a config with `radiusRatio` at 0 has no launch size to compare
+ * against, and the honest answer there is "it did not grow" rather than an infinity that turns into infinite damage.
+ */
+function growthOf(b: Bullet): number {
+  const cfg = mech.bullets;
+  if (!(cfg.radiusRatio > 0)) return 1;
+  return (cfg.radiusRatio + cfg.radiusGrowthPerSecond * b.age) / cfg.radiusRatio;
+}
+
+/**
+ * A card must never make a run hit softer, and it must never make it hit for less than NOTHING.
+ *
+ * Applied to both halves of each bonus -- the RATE and the quantity that rate is paid against -- because the config
+ * is no longer range-checked, so `sizeDamagePerPick: -1` and `radiusGrowthPerSecond: -0.2` are both legal files. They
+ * are bad tuning, but the failure has to be "this card does nothing" rather than "this card heals the fish". A
+ * negative damage reaching the creature would be read as damage, subtracted, and make it healthier.
+ */
+const aboveZero = (n: number): number => (n > 0 ? n : 0);
+
+/**
+ * What this round takes off if it lands right now.
+ *
+ * The two cards multiply, and each reads a different thing:
+ *
+ *   - `sizeDamageRate` reads THIS ROUND's growth (`growthOf`), so it pays for flight time -- the round that is
+ *     still in the water is the round that hits hardest.
+ *   - `speedDamageRate` reads the RUN's stacked speed bonus, so it pays for the 「弹速」 cards themselves rather
+ *     than for how fast any particular round happens to be going.
+ *
+ * They are separate for a reason worth keeping: if BOTH read flight time they would be satisfied by the same
+ * build, and the choice between them would collapse into "take both, always". Reading different things is what
+ * makes a long-range build and a speed build two builds.
+ *
+ * With both rates at 0 -- the default, and every run that never takes either card -- each bracket is 1 and this
+ * returns exactly `ctx.damage`, so a round's damage is a constant again and the gun is unchanged for a player who
+ * never picks either card up.
+ */
+function damageOf(b: Bullet, ctx: BulletContext): number {
+  const size = aboveZero(ctx.sizeDamageRate) * aboveZero(growthOf(b) - 1);
+  const speed = aboveZero(ctx.speedDamageRate) * aboveZero(ctx.speedMultiplier - 1);
+  return ctx.damage * (1 + size) * (1 + speed);
+}
+
 export interface BulletContext {
   /** Visible world y range, so a round that leaves it is recycled rather than kept for ever. */
   min: number;
@@ -116,6 +166,15 @@ export interface BulletContext {
    * the RUN, not about the weapon in general.
    */
   damage: number;
+  /**
+   * The two 「伤害跟着子弹状态走」 cards, as rates rather than as resolved multipliers -- because neither one
+   * resolves to a single number for the run. `sizeDamageRate` is multiplied by each ROUND's own growth, which
+   * changes over its flight; `speedDamageRate` by the run's speed bonus. See `damageOf`.
+   *
+   * Both are 0 for a run that has taken neither card, which is what makes them cost nothing when unused.
+   */
+  sizeDamageRate: number;
+  speedDamageRate: number;
   /**
    * The barrage route's three dials, handed in for the same reason `damage` is: they are the RUN's picks, not
    * properties of a round. Each defaults to 1 and only 弹幕路线 cards move it -- speed and radius and range are
@@ -234,12 +293,17 @@ export class BulletField {
           if (dx * dx + dy * dy > reach * reach) continue;
           // The hit is applied through the hazard field, which owns what it means to be driven off -- and where the
           // round was, so the recoil is along the line of the shot rather than along a fixed axis.
-          const outcome = ctx.hazards.hit(h, ctx.damage, { x: b.x, y: b.y });
+          //
+          // Damage is asked for HERE rather than read off the context, because it depends on the round: by the time a
+          // slow one arrives it has swollen, and 「越大伤害越高」 pays for exactly that. The same number goes to the
+          // floating digit, so what the player reads over the creature is what came off it.
+          const damage = damageOf(b, ctx);
+          const outcome = ctx.hazards.hit(h, damage, { x: b.x, y: b.y });
           this.hits++;
           landed++;
           // Reported at the CREATURE, not at the round: the round is a few pixels wide and has already been removed by
           // the time the caller draws anything, while the creature is the thing the number is about.
-          struck.push({ x: h.x, y: h.y, amount: ctx.damage });
+          struck.push({ x: h.x, y: h.y, amount: damage });
           if (outcome === 'fled') {
             drivenOff++;
             // Kind and radius travel with the position: the caller's risk pricing (贴脸 / 拆弹) needs

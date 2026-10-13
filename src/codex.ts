@@ -542,8 +542,8 @@ const ROUTE_PROSE: Record<RouteId, { glyph: CodexGlyph; notes: readonly string[]
     glyph: 'stages',
     notes: [
       '选它的那一刻：枪管 +1 立刻到账。没有新按钮——这条路线的动词就是基础气泡已有的那把枪，只是更深。',
-      '专属卡：弹速、大弹丸（判定和画面同一个数）、射程。它们只在这条路线的池里出现。',
-      '通用枪卡（枪管/射速/伤害）人人可抽：枪是每个形态的基础武器，这条路线赢在把它堆得更狠。',
+      '专属卡：大弹丸（判定和画面同一个数）、射程。它们只在这条路线的池里出现。',
+      '通用枪卡（枪管/射速/伤害/弹速/越大伤害越高/越快伤害越高）人人可抽：枪是每个形态的基础武器，这条路线赢在把它堆得更狠。弹速原本是这条路线的专属卡，为了让「越快伤害越高」在每条路上都有意义而放开了。',
     ],
   },
 };
@@ -574,8 +574,8 @@ function routeFacts(route: Route): readonly CodexFact[] {
   } else {
     facts.push(
       { label: '立刻到账', value: `枪管 +1（上限 ${mech.bullets.maxStreams} 排）` },
-      { label: '专属卡', value: `弹速 +${Math.round(pool.bulletSpeedPerPick * 100)}% · 大弹丸 +${Math.round(pool.bulletRadiusPerPick * 100)}% · 射程 +${Math.round(pool.bulletRangePerPick * 100)}%` },
-      { label: '通用枪卡', value: '枪管 / 射速 / 伤害：所有形态都能抽到' },
+      { label: '专属卡', value: `大弹丸 +${Math.round(pool.bulletRadiusPerPick * 100)}% · 射程 +${Math.round(pool.bulletRangePerPick * 100)}%` },
+      { label: '通用枪卡', value: `枪管 / 射速 / 伤害 / 弹速 +${Math.round(pool.bulletSpeedPerPick * 100)}% / 越大伤害越高 / 越快伤害越高：所有形态都能抽到` },
     );
   }
   return facts;

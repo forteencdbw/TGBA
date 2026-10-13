@@ -573,6 +573,13 @@ export interface Mechanisms {
       bulletSpeedPerPick: number;
       bulletRadiusPerPick: number;
       bulletRangePerPick: number;
+      /**
+       * The two cards that make a round's damage depend on the round's own state. See the config for the two
+       * formulas; the reason there are two rates rather than one is that they read different things -- one the
+       * round's growth in flight, the other the run's stacked speed bonus.
+       */
+      sizeDamagePerPick: number;
+      speedDamagePerPick: number;
     };
     /** The gauge under the resource line. The same knobs the rage gauge has. */
     gauge: {
@@ -2078,6 +2085,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     'bulletSpeedPerPick',
     'bulletRadiusPerPick',
     'bulletRangePerPick',
+    'sizeDamagePerPick',
+    'speedDamagePerPick',
   ].map((key) => ({
     path: `mutation.pool.${key}`,
     check: anyNumber,

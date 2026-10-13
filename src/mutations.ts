@@ -246,7 +246,11 @@ const POOL: readonly Mutation[] = [
     id: 'bulletSpeed',
     name: '弹速 +25%',
     blurb: '小泡泡飞得更快，可叠加',
-    routes: 'barrage',
+    // ALL ROUTES, and it used to be barrage-only. 「越快伤害越高」 prices a round off the SPEED BONUS, so a card
+    // that only the barrage route could stack would make that one card worthless to the other two -- a slot in the
+    // three-choice panel that reads "+0%" whatever you do. The barrage route still owns the gun; this is the one of
+    // its three that another route has a reason to want.
+    routes: 'all',
     available: () => true,
     apply: (run) => {
       run.mutations.bulletSpeed = (run.mutations.bulletSpeed ?? 0) + 1;
@@ -270,6 +274,26 @@ const POOL: readonly Mutation[] = [
     available: () => true,
     apply: (run) => {
       run.mutations.bulletRange = (run.mutations.bulletRange ?? 0) + 1;
+    },
+  },
+  {
+    id: 'sizeDamage',
+    name: '越大伤害越高',
+    blurb: '子弹胀大多少就多打多少，可叠加——要飞得久才吃得到',
+    routes: 'all',
+    available: () => true,
+    apply: (run) => {
+      run.mutations.sizeDamage = (run.mutations.sizeDamage ?? 0) + 1;
+    },
+  },
+  {
+    id: 'speedDamage',
+    name: '越快伤害越高',
+    blurb: '「弹速」的加成直接变成伤害，可叠加——和它配套拿',
+    routes: 'all',
+    available: () => true,
+    apply: (run) => {
+      run.mutations.speedDamage = (run.mutations.speedDamage ?? 0) + 1;
     },
   },
   ...SKILLS.map((skill) => ({
@@ -362,6 +386,10 @@ export function applyMutationPassives(run: Run): void {
   run.bulletSpeedMultiplier = 1 + pool.bulletSpeedPerPick * count('bulletSpeed');
   run.bulletRadiusMultiplier = 1 + pool.bulletRadiusPerPick * count('bulletRadius');
   run.bulletLifeMultiplier = 1 + pool.bulletRangePerPick * count('bulletRange');
+  // The two state-driven cards are RATES, not multipliers, because neither collapses into one number for the run:
+  // the size one is applied to each round's own growth at the moment it lands (see `damageOf`).
+  run.bulletSizeDamageRate = pool.sizeDamagePerPick * count('sizeDamage');
+  run.bulletSpeedDamageRate = pool.speedDamagePerPick * count('speedDamage');
   run.player.steerScale = run.talentEffects.steerMultiplier * (1 + pool.steerPerPick) ** count('steer');
   run.player.ascentBonus = run.talentEffects.ascentMultiplier * (1 + pool.ascentPerPick) ** count('ascent');
   /**

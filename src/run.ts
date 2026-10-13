@@ -269,6 +269,17 @@ export class Run {
   bulletRadiusMultiplier = 1;
   /** Bullet life multiplier from stacked 弹幕路线 · 射程 picks, which is the gun's range. */
   bulletLifeMultiplier = 1;
+  /**
+   * The two 「伤害跟着子弹状态走」 cards, as RATES rather than multipliers.
+   *
+   * Neither resolves to one number for the run, which is why they are not multipliers like the three above:
+   * `bulletSizeDamageRate` is multiplied by each round's own growth (a round gets harder-hitting as it swells), and
+   * `bulletSpeedDamageRate` by the speed bonus above. See `damageOf` in `src/bullets.ts`.
+   *
+   * Both stay 0 until a card is picked, so the gun behaves for a run that ignores them.
+   */
+  bulletSizeDamageRate = 0;
+  bulletSpeedDamageRate = 0;
   /** Burst radius multiplier from stacked 沸腾路线 · 爆破半径 picks. */
   burstRadiusMultiplier = 1;
   /** Rage decay multiplier from stacked 沸腾路线 · 余温 picks: below 1 means the heat lingers. */
@@ -472,6 +483,14 @@ export class Run {
       speedMultiplier: this.bulletSpeedMultiplier,
       radiusMultiplier: this.bulletRadiusMultiplier,
       lifeMultiplier: this.bulletLifeMultiplier,
+      /**
+       * The two state-driven damage cards, handed in as the RATES the round will apply to its own state.
+       *
+       * Rates rather than resolved multipliers for the same reason `damage` is handed in rather than read: the gun's
+       * module owns the formula, and the run owns which cards it has taken.
+       */
+      sizeDamageRate: this.bulletSizeDamageRate,
+      speedDamageRate: this.bulletSpeedDamageRate,
       hazards: this.hazards,
       obstacles: this.obstacles,
     });
