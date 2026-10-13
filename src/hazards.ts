@@ -2271,13 +2271,22 @@ export class HazardField {
       const dy = h.y - ctx.playerY;
       const reach = playerR + r;
       /**
-       * A circle for everything except the kinds in `CONTACT_SHAPES`, which is a vent and its directional jet.
+       * THE SHAPE THE CREATURE IS.
        *
-       * The circle stays inline rather than moving into the table because it is what nearly every kind does, and a
-       * lookup for the common case would be a table of twenty-five identical entries.
+       * Three cases, in this order, and the order is the whole rule:
+       *
+       *   1. `CONTACT_SHAPES` -- a vent, whose rock-plus-jet is not a box either.
+       *   2. `hazardBoxFractions` -- a creature WITH art, whose hitbox is the box its picture occupies.
+       *   3. the circle of `radiusFraction` -- a creature with no art, which is the shape the drawing falls back to
+       *      as well. A square would be easier to write and would be a different game (it covers its corners).
        */
       const shape = CONTACT_SHAPES[h.kind];
-      const touching = shape ? shape(h, ctx) : dx * dx + dy * dy <= reach * reach;
+      const box = shape ? null : hazardBoxFractions(h.kind, h.variety);
+      const touching = shape
+        ? shape(h, ctx)
+        : box
+          ? boxDistance(ctx.playerX, ctx.playerY, h.x, h.y, box.halfW * ctx.laneWidth, box.halfH * ctx.laneWidth) <= playerR
+          : dx * dx + dy * dy <= reach * reach;
 
       if (!touching) {
         if (h.kind === 'trash' && h.gripping) {
@@ -2320,8 +2329,21 @@ export class HazardField {
           !h.charge.hitPlayer &&
           h.charge.elapsed >= chargeWindow(h.kind).telegraphSeconds
         ) {
+          /**
+           * THE GRAZE BAND, which is the contact shape pushed out by the config's multiplier.
+           *
+           * `extra` reproduces the old circle exactly along the axes: `playerR + r + extra` is `(playerR + r) * mult`,
+           * the number the ring has always been. What changes is the shape -- a box widened by the same amount is
+           * generous at the corners, which is right for a creature that IS a box there.
+           *
+           * A creature with no art keeps the circle, for the same reason `touching` above does.
+           */
+          const extra = reach * (mech.graze.radiusMultiplier - 1);
           const grazeReach = reach * mech.graze.radiusMultiplier;
-          if (dx * dx + dy * dy <= grazeReach * grazeReach) {
+          const inBand = box
+            ? boxDistance(ctx.playerX, ctx.playerY, h.x, h.y, box.halfW * ctx.laneWidth + extra, box.halfH * ctx.laneWidth + extra) <= playerR
+            : dx * dx + dy * dy <= grazeReach * grazeReach;
+          if (inBand) {
             const dir = chargeDirection(h.charge, chargeWindow(h.kind));
             if (dir.x * (ctx.playerX - h.x) + dir.y * (ctx.playerY - h.y) <= 0) {
               h.charge.grazed = true;
@@ -3405,6 +3427,65 @@ export function warmAnimations(): Promise<void[]> {
  * `elapsed` is seconds in the state, which is the animation's clock: the frame index is computed by `animationFrameAt`, so
  * how long a death takes and which frame it is on are one answer rather than two.
  */
+/**
+ * How big a creature IS, as the box its picture occupies.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY A BOX AND NOT A CIRCLE
+ * ---------------------------------------------------------------------------------------------
+ * Every creature used to be a circle of `radiusFraction`, and against the art that was a lie in one direction: the
+ * sprite is drawn at `2r × scale` wide, so a tuna -- scale 2.5 -- was a picture 2.5x as wide as the thing that could
+ * touch you. A player reading the fish was reading something 2.5x the size of its own hitbox.
+ *
+ * A circle cannot fix that, because a fish is not round. The box can: it is the shape the picture actually occupies,
+ * derived from the SAME three numbers the drawing uses -- `radiusFraction`, the row's `scale`, and the texture's own
+ * aspect. So "what you see is what can hit you" holds by construction rather than by a config number that someone has
+ * to keep in step with a PNG.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THE ASPECT COMES FROM THE TEXTURE AND NOT FROM THE CONFIG
+ * ---------------------------------------------------------------------------------------------
+ * A number in `config/mechanics.json5` would be a second copy of a fact the PNG already holds, and the copy is the one
+ * that survives a re-export. Reading the texture cannot drift from the picture, and it has a natural answer for the
+ * case the art has not loaded: `null`, which the callers turn into the CIRCLE this used to be.
+ *
+ * Frame ONE is used, and every frame of an animation agreeing on a size is an invariant, not a hope --
+ * `scripts/probe-atlas.mjs` asserts it for every animation in the config. Without that, a hitbox would change shape
+ * as a creature swam.
+ *
+ * @returns half-extents in LANE FRACTIONS, or null when there is no art. Null means "use the circle": a square is not
+ *   a circle, so the fallback has to be the shape the DRAWING falls back to (a dot of radius `radiusFraction`), or the
+ *   two would disagree exactly when something has gone wrong.
+ */
+export function hazardBoxFractions(kind: HazardKind, variety: number): { halfW: number; halfH: number } | null {
+  const art = mech.hazardArt[kind];
+  if (!art) return null;
+  const variants = art.variants;
+  const variant = variants && variants.length > 0 ? variants[((variety % variants.length) + variants.length) % variants.length] : undefined;
+  const move = variant?.move ?? art.move ?? '';
+  if (!move) return null;
+
+  const animation = mech.animations[move];
+  const texture = animation ? (animationTextures(move)?.[0] ?? null) : assetTextureNow(move);
+  if (!texture || !(texture.width > 0) || !(texture.height > 0)) return null;
+
+  const halfW = KIND_TUNING[kind].radius * (variant?.scale ?? art.scale ?? 1);
+  return { halfW, halfH: halfW * (texture.height / texture.width) };
+}
+
+/**
+ * How far a point is from an axis-aligned box: 0 inside it, and the honest distance outside.
+ *
+ * The exact answer rather than the cheap one. Inflating the box by `reach` -- the usual shortcut -- cuts the corners,
+ * and the corners are where a long thin creature is least like a circle: for a tuna at the player's radius the error
+ * is about a tenth of the reach, which is the difference between a near miss and a hit.
+ */
+export function boxDistance(px: number, py: number, x: number, y: number, halfW: number, halfH: number): number {
+  const dx = Math.max(0, Math.abs(px - x) - halfW);
+  const dy = Math.max(0, Math.abs(py - y) - halfH);
+  return Math.hypot(dx, dy);
+}
+
 function hazardArtState(name: string, elapsed: number): Texture | null {
   const animation = mech.animations[name];
   if (animation) {

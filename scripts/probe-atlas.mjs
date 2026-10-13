@@ -175,6 +175,65 @@ for (const line of warnings) {
   if (line.includes('[assets]')) failures.push('warning from assets.ts: ' + line);
 }
 
+// ---------------------------------------------------------------------------------------------
+// THE RECTANGLE HITBOX'S INPUTS.
+//
+// Every creature with art is hit as the box its picture occupies: `radiusFraction x scale` wide, and that times the
+// texture's own aspect tall (`hazardBoxFractions` in src/hazards.ts). This probe is the only place that can check the
+// two things that rule rests on, because it is the only place that knows every FRAME's size.
+//
+//   - the frames of ONE animation must agree, or the hitbox would change shape as a creature swam;
+//   - every kind with art must produce a real box, and every kind WITHOUT art must be one of the six that have none
+//     (a kind that silently lost its art row would fall back to the old circle and nobody would see why).
+// ---------------------------------------------------------------------------------------------
+{
+  const animations = mech.animations ?? {};
+  let checked = 0;
+  for (const [name, animation] of Object.entries(animations)) {
+    const names = Array.isArray(animation.frames)
+      ? animation.frames
+      : Array.from({ length: animation.count ?? 1 }, (_, i) => String(animation.frames).replace('{n}', String(i + 1)));
+    const sizes = new Set(names.map((n) => {
+      const f = framesByBareName.get(String(n).replace(/\.[^.]+$/, ''));
+      return f ? `${f.width}x${f.height}` : 'missing';
+    }));
+    if (sizes.size > 1) {
+      failures.push(`animation "${name}" has frames of different sizes (${[...sizes].join(', ')}) -- a box hitbox built from frame one would change shape mid-swim`);
+      continue;
+    }
+    checked++;
+  }
+  console.log(`\nanimations with a single frame size: ${checked}/${Object.keys(animations).length}`);
+
+  const NO_ART = new Set(['trash', 'rot', 'oil', 'vent', 'foam', 'rain']);
+  const rows = [];
+  for (const [kind, art] of Object.entries(mech.hazardArt ?? {})) {
+    const radius = mech.hazards?.radius?.[kind];
+    if (radius === undefined) continue; // a boss: its size is a dossier, checked where the dossier is
+    for (const row of art.variants ?? [art]) {
+      const move = row.move ?? art.move;
+      if (!move) { failures.push(`hazardArt.${kind} has no picture to build a hitbox from`); continue; }
+      const animation = animations[move];
+      const first = animation
+        ? String(animation.frames).replace('{n}', '1')
+        : move;
+      const frame = framesByBareName.get(String(first).replace(/\.[^.]+$/, ''));
+      if (!frame) { failures.push(`hazardArt.${kind}: "${first}" is not in the atlas`); continue; }
+      const halfW = radius * (row.scale ?? art.scale ?? 1);
+      const halfH = halfW * (frame.height / frame.width);
+      if (!(halfW > 0) || !(halfH > 0)) failures.push(`hazardArt.${kind}: the hitbox box came out ${halfW}x${halfH}`);
+      rows.push([kind, halfW * 2, halfH * 2]);
+    }
+  }
+  console.log('\nthe box each creature is hit as (lane widths, w x h):');
+  for (const [kind, w, h] of rows.sort((a, b) => b[1] - a[1])) {
+    console.log('  ' + kind.padEnd(14) + w.toFixed(3) + ' x ' + h.toFixed(3));
+  }
+  const missing = Object.keys(mech.hazards?.radius ?? {}).filter((k) => !(mech.hazardArt ?? {})[k]);
+  const unexpected = missing.filter((k) => !NO_ART.has(k));
+  if (unexpected.length) failures.push(`kind(s) with no art row, so no box hitbox: ${unexpected.join(', ')}`);
+}
+
 console.log(
   `\n${manifests.length} page(s), ${framesByBareName.size} picture(s), ${sources.length} on disk, ` +
     `${resolved}/${wanted.length} config art name(s) resolved`,
@@ -184,4 +243,4 @@ if (failures.length) {
   for (const line of failures) console.log('  ' + line);
   process.exit(1);
 }
-console.log('OK: every frame parses to its own size, and every configured name resolves');
+console.log('OK: every frame parses to its own size, every configured name resolves, and every hitbox box is buildable');

@@ -2,7 +2,7 @@ import { Graphics } from 'pixi.js';
 import { mech } from './config';
 import { radiusOf, type BulletField } from './bullets';
 import type { EnemyBulletField } from './enemyBullets';
-import { chargeWindow, type Hazard, type HazardField, type HazardKind } from './hazards';
+import { chargeWindow, hazardBoxFractions, type Hazard, type HazardField, type HazardKind } from './hazards';
 import type { ObstacleField } from './obstacles';
 
 /**
@@ -83,6 +83,25 @@ function outlineCircle(g: Graphics, x: number, y: number, r: number): void {
   g.circle(x, y, r);
 }
 
+/** Trace an axis-aligned box's outline. The shape a creature with art is hit as. */
+function outlineBox(g: Graphics, x: number, y: number, halfW: number, halfH: number): void {
+  if (!(halfW > 0) || !(halfH > 0)) return;
+  g.rect(x - halfW, y - halfH, halfW * 2, halfH * 2);
+}
+
+/**
+ * ONE creature's collision shape, which is whichever one the collision itself will use.
+ *
+ * Asking the same function the contact test asks is not a convenience -- it is the only way the line and the rule can
+ * be guaranteed to be the same thing. A creature with art is a box; one without is the circle the drawing falls back
+ * to; a vent is neither and has its own case.
+ */
+function outlineHazard(g: Graphics, h: Hazard, laneWidth: number): void {
+  const box = hazardBoxFractions(h.kind, h.variety);
+  if (box) outlineBox(g, h.x, h.y, box.halfW * laneWidth, box.halfH * laneWidth);
+  else outlineCircle(g, h.x, h.y, laneWidth * h.radiusFraction);
+}
+
 /**
  * Trace a circle as a ring of dashes.
  *
@@ -136,12 +155,24 @@ export function paintHitboxes(g: Graphics, s: HitboxScene): void {
   // --- creatures, and the environment, which share a field -----------------------------------------------
   for (const h of s.hazards.hazards) {
     if (ENVIRONMENT_KINDS.includes(h.kind)) continue;
-    outlineCircle(g, h.x, h.y, s.laneWidth * h.radiusFraction);
+    outlineHazard(g, h, s.laneWidth);
   }
   stroke(cfg.creatureColour);
 
   for (const h of s.hazards.hazards) {
     if (!ENVIRONMENT_KINDS.includes(h.kind)) continue;
+    /**
+     * The environment is drawn with the same helper as the creatures, because the SHAPE does not follow the colour.
+     *
+     * The two-colour split is about what a thing IS -- terrain and weather versus something alive -- and the box is
+     * about what its picture occupies. `mineral` is grit with a picture, so its collision is a (near-square) box even
+     * though it is painted in the environment's colour, and an overlay that rounded it off would be the one thing this
+     * module exists not to do.
+     */
+    if (!h.vent) {
+      outlineHazard(g, h, s.laneWidth);
+      continue;
+    }
     outlineCircle(g, h.x, h.y, s.laneWidth * h.radiusFraction);
     if (!h.vent) continue;
     /*
@@ -182,7 +213,14 @@ export function paintHitboxes(g: Graphics, s: HitboxScene): void {
   for (const h of s.hazards.hazards) {
     if (!grazeLive(h)) continue;
     const reach = s.playerRadius + s.laneWidth * h.radiusFraction;
-    dashedCircle(g, h.x, h.y, reach * mech.graze.radiusMultiplier, cfg.dashLength, cfg.dashGap);
+    const extra = reach * (mech.graze.radiusMultiplier - 1);
+    const box = hazardBoxFractions(h.kind, h.variety);
+    if (box) {
+      // The box pushed out by the same `extra` the collision pushes it out by, so the dashed band is the band.
+      outlineBox(g, h.x, h.y, box.halfW * s.laneWidth + extra, box.halfH * s.laneWidth + extra);
+    } else {
+      dashedCircle(g, h.x, h.y, reach * mech.graze.radiusMultiplier, cfg.dashLength, cfg.dashGap);
+    }
   }
   for (const b of s.enemyBullets.bullets) {
     if (b.grazed) continue;

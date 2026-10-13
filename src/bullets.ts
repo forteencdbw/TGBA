@@ -1,6 +1,6 @@
 import { Graphics } from 'pixi.js';
 import { mech } from './config';
-import type { HazardField } from './hazards';
+import { boxDistance, hazardBoxFractions, type HazardField } from './hazards';
 import type { ObstacleField } from './obstacles';
 
 /**
@@ -295,7 +295,18 @@ export class BulletField {
           const reach = radius + ctx.laneWidth * h.radiusFraction;
           const dx = h.x - b.x;
           const dy = h.y - b.y;
-          if (dx * dx + dy * dy > reach * reach) continue;
+          /**
+           * THE SAME SHAPE THE CONTACT TEST USES, asked of the same function.
+           *
+           * A round lands on a creature the way the bubble does -- against the box its picture occupies -- because a
+           * gun that used a different hitbox from the one that kills you would be two games, and the one the player
+           * can see would be the wrong one. See `hazardBoxFractions`.
+           */
+          const box = hazardBoxFractions(h.kind, h.variety);
+          const inReach = box
+            ? boxDistance(b.x, b.y, h.x, h.y, box.halfW * ctx.laneWidth, box.halfH * ctx.laneWidth) <= radius
+            : dx * dx + dy * dy <= reach * reach;
+          if (!inReach) continue;
           // The hit is applied through the hazard field, which owns what it means to be driven off -- and where the
           // round was, so the recoil is along the line of the shot rather than along a fixed axis.
           //
