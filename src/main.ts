@@ -1482,7 +1482,28 @@ class Game {
      * early when nothing about the cracks changed, and an early return must not cost the pulse a frame.
      */
     this.updateBrokenVignette(strength, elapsed);
-    if (strength <= 0) return;
+
+    if (strength <= 0) {
+      /**
+       * Nothing on screen, and NOTHING REMEMBERED -- so the next entry into the danger zone is a new scare with its
+       * own shape, and so the guard below reads "was not in danger" rather than "was in danger at zero strength".
+       *
+       * THE CLEARING IS NOT THE SAME THING AS THE GUARD, and this branch exists for it. Cracks are polylines that
+       * stay exactly where they were drawn until something erases them, so leaving them alone is not "drawing
+       * nothing" -- it is keeping the last frame's cracks. A run that ended at full strength would carry its death
+       * throes into the next bubble. (It did: a refactor folded this block into a bare `return`, and the cracks
+       * outlived the bubble they were about.)
+       */
+      if (this.shownBrokenStrength !== 0) {
+        this.shownBrokenStrength = 0;
+        this.shownBrokenColour = -1;
+        this.brokenGlow.clear();
+        this.brokenCrack.clear();
+        this.brokenGlow.visible = false;
+        this.brokenCrack.visible = false;
+      }
+      return;
+    }
 
     const colour = bubbleStateColor(this.run.bubbleType, this.run.stage.stage, this.run.rage.rage);
     /**
