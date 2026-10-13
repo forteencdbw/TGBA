@@ -30,10 +30,46 @@ export interface Bullet {
   /** World position, in the same units hazards use: metres across the lane, metres up. */
   x: number;
   y: number;
-  /** Upward speed in m/s. Rounds travel with the water, so this is what they gain on it. */
-  vy: number;
-  /** Seconds in flight, for the range and for the fade. */
+  /**
+   * Seconds in flight. The only state a round has beyond where it is.
+   *
+   * It decides everything else about the round: how fast it is going, how big it is, and when it expires. That is
+   * deliberate -- speed and radius used to be fields set at birth, and a round cannot both remember its own speed
+   * and be accelerating.
+   */
   age: number;
+}
+
+/**
+ * How fast this round is travelling right now, in metres per second.
+ *
+ * A function of its AGE rather than a stored number, so there is nothing to keep in step: it leaves the muzzle at
+ * `speedStartPerSecond`, gains `accelerationPerSecond`, and stops gaining at `speedMaxPerSecond`.
+ *
+ * `multiplier` scales all THREE of those at once, which is what "弹速 +25%" means for a curve: everything about it
+ * is faster, rather than the same curve reached sooner. One number, because a card that moved only part of the
+ * shape would be a different card with a different name.
+ */
+function speedOf(b: Bullet, laneWidth: number, multiplier: number): number {
+  const cfg = mech.bullets;
+  const start = cfg.speedStartPerSecond * multiplier;
+  const top = cfg.speedMaxPerSecond * multiplier;
+  return Math.min(top, start + cfg.accelerationPerSecond * multiplier * b.age) * laneWidth;
+}
+
+/**
+ * How big this round is right now, in metres.
+ *
+ * Grows with AGE and nothing else -- not with distance travelled, not with speed. That is the whole mechanic: a
+ * slow round is in the water longer and therefore gets bigger, and a fast one is gone before it has swollen. The
+ * same function feeds the hitbox and the drawing, so a round is exactly as big as it looks.
+ *
+ * There is no ceiling here on purpose. See the config: the only real limit is `lifeSeconds`, and a second one would
+ * mean the range card stopped paying at some point.
+ */
+function radiusOf(b: Bullet, laneWidth: number, multiplier: number): number {
+  const cfg = mech.bullets;
+  return (cfg.radiusRatio + cfg.radiusGrowthPerSecond * b.age) * multiplier * laneWidth;
 }
 
 export interface BulletContext {
@@ -156,12 +192,20 @@ export class BulletField {
       this.cooldown = 0;
     }
 
-    const radius = ctx.laneWidth * cfg.radiusRatio * ctx.radiusMultiplier;
     const life = cfg.lifeSeconds * ctx.lifeMultiplier;
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i]!;
+      /**
+       * AGE FIRST, then move by the speed that age implies.
+       *
+       * The order matters for one frame's worth of accuracy and for a subtler reason: a round born this frame has
+       * age 0, so it moves at exactly the launch speed rather than at the speed it will have after one step.
+       */
       b.age += dt;
-      b.y += b.vy * dt;
+      b.y += speedOf(b, ctx.laneWidth, ctx.speedMultiplier) * dt;
+      // Recomputed per round per frame: the hitbox and the drawing read the same value, so a round that has grown
+      // is a round that hits from further away, which is the mechanic rather than a side effect.
+      const radius = radiusOf(b, ctx.laneWidth, ctx.radiusMultiplier);
 
       /**
        * Scenery first, then creatures.
@@ -211,18 +255,19 @@ export class BulletField {
   }
 
   private spawn(ctx: BulletContext): void {
-    const cfg = mech.bullets;
     /**
      * One round per muzzle, every tick.
      *
      * Simultaneous rather than alternating: an upgrade that fired the same number of rounds from two places would be
      * a WIDER gun, and this is meant to be a stronger one. The caller decides how many muzzles there are.
+     *
+     * A round is born with nothing but a position and an age of zero: its speed and its size are both functions of
+     * that age (`speedOf`, `radiusOf`), so there is no launch state to get wrong here.
      */
     for (const muzzle of ctx.muzzles) {
       this.bullets.push({
         x: muzzle.x,
         y: muzzle.y,
-        vy: ctx.laneWidth * cfg.speedPerSecond * ctx.speedMultiplier,
         age: 0,
       });
       this.fired++;
@@ -239,9 +284,12 @@ export class BulletField {
  */
 export function paintBullets(g: Graphics, field: BulletField, laneWidth: number, radiusMultiplier = 1, lifeMultiplier = 1): void {
   const cfg = mech.bullets;
-  const r = laneWidth * cfg.radiusRatio * radiusMultiplier;
+  const life = cfg.lifeSeconds * lifeMultiplier;
   for (const b of field.bullets) {
-    const fade = Math.max(0.18, 1 - b.age / (cfg.lifeSeconds * lifeMultiplier));
+    // Per round, because the round is still growing: the size on screen and the size that collides come from the
+    // same function, so a bullet that looks fat is a bullet that hits from further away.
+    const r = radiusOf(b, laneWidth, radiusMultiplier);
+    const fade = Math.max(0.18, 1 - b.age / life);
     g.circle(b.x, b.y, r).fill({ color: cfg.colour, alpha: cfg.alpha * fade });
     g.circle(b.x, b.y, r).stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha * fade, width: Math.max(1, r * 0.45) });
   }

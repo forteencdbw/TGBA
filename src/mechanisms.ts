@@ -971,9 +971,25 @@ export interface Mechanisms {
      * the whole weapon is switched off.
      */
     rateTiers: number[];
-    /** Speed as a fraction of the lane width per second, on top of the level's own scroll. */
-    speedPerSecond: number;
+    /**
+     * The speed curve, in lane widths (and lane widths per second squared): a round leaves at `speedStartPerSecond`
+     * and accelerates until it reaches `speedMaxPerSecond`, on top of the level's own scroll.
+     *
+     * Three numbers rather than one because the SHAPE is the mechanic: what a round can do depends on how long it
+     * spends in the water, and that is the area under this curve. See `src/bullets.ts`.
+     */
+    speedStartPerSecond: number;
+    accelerationPerSecond: number;
+    speedMaxPerSecond: number;
+    /** The radius a round is BORN with, as a fraction of the lane width. */
     radiusRatio: number;
+    /**
+     * How much the radius grows per second in flight -- the whole reason a slow round becomes a big one.
+     *
+     * A function of AGE alone, not of speed: speed only matters through how long the round survives. There is no
+     * ceiling, because the only real limit is `lifeSeconds` and a second one would cap the range card.
+     */
+    radiusGrowthPerSecond: number;
     /** Hit points off a creature per hit, against `hazards.health`. */
     damage: number;
     /** Seconds in flight before a round disappears, which is also its range. */
@@ -2440,8 +2456,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'bullets.imageTint', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'bullets.imageScale', check: (v) => typeof v === 'number' && v > 0.1 && v <= 4, describe: 'a multiplier above 0.1 and at most 4' },
   { path: 'bullets.rateTiers', check: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 8 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 30), describe: 'a non-empty list of up to 8 rounds-per-second values between 0 and 30; the FIRST is what a run starts at' },
-  { path: 'bullets.speedPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 8, describe: 'lane widths per second, above 0 and at most 8' },
+  { path: 'bullets.speedStartPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 8, describe: 'lane widths per second, above 0 and at most 8' },
+  { path: 'bullets.accelerationPerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'lane widths per second squared between 0 and 20' },
+  { path: 'bullets.speedMaxPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 12, describe: 'lane widths per second, above 0 and at most 12' },
   { path: 'bullets.radiusRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.1, describe: 'a fraction of the lane width, above 0.001 and at most 0.1' },
+  { path: 'bullets.radiusGrowthPerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.1, describe: 'a fraction of the lane width per second, between 0 and 0.1' },
   { path: 'bullets.upgradeSpreadRatio', check: (v) => typeof v === 'number' && v > 0.005 && v < 0.3, describe: 'a fraction of the lane width above 0.005 and below 0.3' },
   { path: 'bullets.maxStreams', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 8, describe: 'a whole number of gun rows between 1 and 8' },
   { path: 'bullets.damage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number of hit points above 0' },
