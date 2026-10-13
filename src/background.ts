@@ -645,6 +645,8 @@ export class Hud {
   private progressChart: { total: number; cleared: number; current: number } | null = null;
   /** What the bar currently shows, so a per-frame call does not redraw a bar that has not moved. */
   private shownBossFraction = -1;
+  /** The bar's width in the last frame it was drawn at: a resize moves the lane out from under a bar that has not moved. */
+  private shownBossBarWidth = -1;
   /** What the label currently shows, so a per-frame update does not rebuild a string that has not changed. */
   private shownScore = -1;
   /**
@@ -654,7 +656,7 @@ export class Hud {
    * `designScale`.
    */
   private hudScale = 1;
-  /** The canvas width in CSS pixels, remembered for the boss bar (which is centred on the screen). */
+  /** The canvas width in CSS pixels, remembered for the progress chart (which is pinned to the right edge). */
   private canvasWidth = 0;
   /** The lane's width and centre in canvas pixels, remembered from layout for the resource gauge. */
   private laneWidthPx = 0;
@@ -807,11 +809,18 @@ export class Hud {
     this.scoreLabel.x = viewport.left + mech.hud.score.x * s;
     this.scoreLabel.y = mech.hud.score.y * s;
 
-    // The boss bar is centred on the CANVAS rather than on the lane: it is a headline about the fight, not a marker in
-    // the water, and the lane can be much narrower than the screen.
+    /**
+     * The boss bar is centred on the LANE, like the two gauges above it.
+     *
+     * It used to be centred on the CANVAS, on the reading that a headline about the fight is not a marker in the
+     * water. That reading holds on a phone, where the lane IS the canvas -- and fails on a desktop window, where
+     * `computeViewport` caps the lane at 900px and centres it in a canvas that can be three times as wide. Sizing
+     * the bar against the canvas there makes it both wider than the lane and offset from it, so it hangs out over
+     * the open water on both sides: the one piece of HUD furniture that did not line up with the play area.
+     */
     this.canvasWidth = viewport.width;
     this.bossName.scale.set(s);
-    this.bossName.x = viewport.width / 2;
+    this.bossName.x = this.laneCentreX;
     this.bossName.y = mech.hud.bossBar.y * s - mech.hud.bossBar.nameOffset * s;
 
 }
@@ -834,17 +843,26 @@ export class Hud {
     this.bossName.visible = boss !== null;
     if (!boss) {
       this.shownBossFraction = -1;
+      this.shownBossBarWidth = -1;
       this.bossBar.clear();
     } else {
       const cfg = mech.hud.bossBar;
       const s = this.hudScale;
       if (this.bossName.text !== boss.name) this.bossName.text = boss.name;
       const fraction = Math.max(0, Math.min(1, boss.fraction));
-      if (fraction !== this.shownBossFraction) {
+      // Sized and centred against the LANE, so the bar lines up with the gauges below it and cannot reach past the
+      // play area's walls on a window wider than the lane. See the note in `layout`.
+      const width = this.laneWidthPx * cfg.widthRatio;
+      /**
+       * Redrawn on a new fraction OR a new width: the geometry comes from the lane, and a window resize moves the
+       * lane out from under a bar whose fraction has not budged -- so a guard on the fraction alone would leave it
+       * at the old screen's size.
+       */
+      if (fraction !== this.shownBossFraction || width !== this.shownBossBarWidth) {
         this.shownBossFraction = fraction;
-        const width = this.canvasWidth * cfg.widthRatio;
+        this.shownBossBarWidth = width;
         const height = cfg.height * s;
-        const x = (this.canvasWidth - width) / 2;
+        const x = this.laneCentreX - width / 2;
         const y = cfg.y * s;
         const g = this.bossBar;
         g.clear();

@@ -286,9 +286,10 @@ export interface Mechanisms {
    * different places would be a config that can put a label off the lane.
    */
   hud: {
-    /** The boss health bar across the top, shown only while a boss is alive. */
+    /** The boss health bar across the top, shown only while a boss is alive. `widthRatio` is a fraction of the LANE. */
     bossBar: {
       y: number;
+      /** How much of the lane's width the bar spans. Measured against the lane, like the gauges below it. */
       widthRatio: number;
       height: number;
       nameSize: number;
@@ -1946,7 +1947,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hud.score.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hud.score.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'hud.bossBar.y', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
-  { path: 'hud.bossBar.widthRatio', check: (v) => typeof v === 'number' && v > 0.1 && v <= 1, describe: 'a fraction of the canvas width above 0.1 and at most 1' },
+  { path: 'hud.bossBar.widthRatio', check: (v) => typeof v === 'number' && v > 0.1 && v <= 1, describe: 'a fraction of the lane width above 0.1 and at most 1' },
   { path: 'hud.bossBar.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },
   { path: 'hud.bossBar.nameSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
   { path: 'hud.bossBar.nameOffset', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
