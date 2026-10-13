@@ -1679,19 +1679,39 @@ class Game {
       const y = rng() * screenH;
       const angle = fromLeft ? 0 : Math.PI;
 
-      const end = this.oneCrack(g, x, y, angle, reach, cfg.segmentsPerCrack, rng);
-      // The branch leaves from where the main crack STOPPED, which is what makes it read as a split rather than as
-      // a second crack that happens to start nearby.
+      const main = this.oneCrack(g, x, y, angle, reach, cfg.segmentsPerCrack, rng);
+      /**
+       * The branch leaves from PART WAY ALONG the main crack, not from its tip.
+       *
+       * From the tip, the two share a point and the whole thing reads as one line that frayed at the end -- a fork
+       * whose root is buried in its parent's brightest pixel. Real cracks split somewhere along their length, and a
+       * fork with visible parent on BOTH sides of the joint is the thing that reads as a split.
+       */
       if (rng() < cfg.branchChance) {
+        const at = main[Math.max(1, Math.min(main.length - 1, Math.round((main.length - 1) * cfg.branchAtRatio)))]!;
         const branch = reach * cfg.branchLengthRatio;
-        // A branch leaves at a sharper angle than the main line wanders by, which is what makes it read as a split
-        // rather than as the crack simply continuing.
-        this.oneCrack(g, end.x, end.y, end.angle + (rng() - 0.5) * cfg.segmentTurn * 2, branch, Math.max(1, cfg.segmentsPerCrack - 1), rng);
+        /**
+         * WHICH WAY, at random. HOW FAR, not: the magnitude is 75%..100% of the maximum.
+         *
+         * A uniform angle would put one branch in five within about eleven degrees of its parent, and those read as
+         * the crack getting thicker rather than as a split -- which is the exact failure this is here to fix. Paying
+         * for legibility with a little naturalness is the right trade at this scale: the cracks are 2.2px wide on a
+         * phone and the player is looking at them for a fifth of a second.
+         */
+        const side = rng() < 0.5 ? -1 : 1;
+        const spread = side * cfg.branchAngleRadians * (0.75 + 0.25 * rng());
+        this.oneCrack(g, at.x, at.y, at.heading + spread, branch, Math.max(1, cfg.segmentsPerCrack - 1), rng);
       }
     }
   }
 
-  /** One polyline that walks `segments` steps from a border point, wandering as it goes. Returns where it ended. */
+  /**
+   * One polyline that walks `segments` steps from a border point, wandering as it goes.
+   *
+   * Returns the path it walked -- EVERY point, with the heading it was travelling at -- rather than only where it
+   * stopped. The caller needs a point in the MIDDLE of it to hang a branch off, and a heading at that point to angle
+   * the branch away from: the tip was all the old signature could offer, which is why forks used to grow out of it.
+   */
   private oneCrack(
     g: Graphics,
     x: number,
@@ -1700,9 +1720,10 @@ class Game {
     length: number,
     segments: number,
     rng: () => number,
-  ): { x: number; y: number; angle: number } {
+  ): { x: number; y: number; heading: number }[] {
     const cfg = mech.hud.brokenScreen;
     const step = length / Math.max(1, segments);
+    const path: { x: number; y: number; heading: number }[] = [{ x, y, heading: angle }];
     g.moveTo(x, y);
     let cx = x;
     let cy = y;
@@ -1715,8 +1736,9 @@ class Game {
       cx += Math.cos(heading) * len;
       cy += Math.sin(heading) * len;
       g.lineTo(cx, cy);
+      path.push({ x: cx, y: cy, heading });
     }
-    return { x: cx, y: cy, angle: heading };
+    return path;
   }
 
   private frame(deltaSeconds: number): void {

@@ -369,7 +369,11 @@ export interface Mechanisms {
       crackCountNear: number;
       crackCountDeep: number;
       branchChance: number;
+      /** How far along the main crack a branch leaves from, 0 at the wall and 1 at the tip. */
+      branchAtRatio: number;
       branchLengthRatio: number;
+      /** The WIDEST a branch may open, in radians. The magnitude is randomised between 75% and 100% of it. */
+      branchAngleRadians: number;
       /** Polyline points per crack, how much each segment's length may vary, and how far it may turn (radians). */
       segmentsPerCrack: number;
       segmentJitter: number;
@@ -2172,7 +2176,9 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hud.brokenScreen.crackCountNear', check: anyNumber, describe: 'a crack count' },
   { path: 'hud.brokenScreen.crackCountDeep', check: anyNumber, describe: 'a crack count' },
   { path: 'hud.brokenScreen.branchChance', check: anyNumber, describe: 'a probability' },
+  { path: 'hud.brokenScreen.branchAtRatio', check: anyNumber, describe: 'a fraction along the main crack' },
   { path: 'hud.brokenScreen.branchLengthRatio', check: anyNumber, describe: 'a length ratio' },
+  { path: 'hud.brokenScreen.branchAngleRadians', check: anyNumber, describe: 'radians' },
   { path: 'hud.brokenScreen.segmentsPerCrack', check: anyNumber, describe: 'a segment count' },
   { path: 'hud.brokenScreen.segmentJitter', check: anyNumber, describe: 'a proportion' },
   { path: 'hud.brokenScreen.segmentTurn', check: anyNumber, describe: 'radians' },
