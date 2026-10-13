@@ -593,7 +593,7 @@ function baseFacts(): readonly CodexFact[] {
     { label: '吞噬', value: '没有：碰到敌人不会被吞掉，而是挨打——吃是路线的事' },
     { label: '颜色', value: `随成长阶段：${mech.stages.appearance.map((a) => a.name).join(' → ')}` },
     { label: '成长', value: `吸收 ${mech.stages.absorbToStage2} / ${mech.stages.absorbToStage3} 颗晋升 · 速度 ${mech.stages.speedMultiplier.map((m) => `×${num(m)}`).join(' → ')}` },
-    { label: '开局体积', value: num(mech.volume.start, 1) },
+    { label: '体积', value: `由血量档位决定（${mech.volume.healthBands.map((b) => b.volume).join(' / ')}）` },
     { label: '上限', value: num(mech.volume.max, 1) },
     { label: '一次受击', value: '扣血见每种敌人的伤害表，防御直接减' },
     { label: '无敌时间', value: `${num(mech.hazards.invulnerableSeconds, 1)}s` },

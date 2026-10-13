@@ -32,7 +32,7 @@ import { sayBlast, sayCallout, sayGraze } from './runEvents';
 import { findSkill } from './skills';
 import { recordAbsorb, stageName, stageRadiusFraction } from './stages';
 import { fartBaitCount, fartPushFor } from './talents';
-import { bubbleVolumeFromRadius, growByAbsorbing } from './volume';
+import { bubbleVolumeFromRadius, volumeForHealthRatio } from './volume';
 import type { Phase } from './snapshot';
 import { sayBanner, sayDamage, sayScore, saySkillSlot, saySound, type RunEvent } from './runEvents';
 import type { SoundEvent } from './audio';
@@ -148,6 +148,14 @@ export class Run {
       // The route's promise, on the spot: a wider gun before the panel has even closed.
       this.gunStreams = Math.min(mech.bullets.maxStreams, this.gunStreams + 1);
     }
+    /**
+     * A route that grows takes its size from its health NOW, not at the next level boundary.
+     *
+     * This is one of the two moments `applyHealthBand` exists for, and it is the one the player will notice: the
+     * whole point of picking devour is that the bubble becomes a different animal, and arriving at that as a
+     * still-tiny bubble that only grows next level would make the pick feel like a promissory note.
+     */
+    this.applyHealthBand();
     return this.route;
   }
   /**
@@ -327,9 +335,37 @@ export class Run {
    * from the same bar whichever route is running. The 「血上限」 count is read here rather than remembered, which is
    * what lets a carried mutation survive the level transition the way every other passive does.
    */
-  resetHealth(): void {
+  /**
+   * @param carry true when this is the next level of a run in progress, rather than the start of a fresh one.
+   */
+  resetHealth(carry = false): void {
     this.healthMax = healthMaxFor(this.mutations['maxHp'] ?? 0);
-    this.health = this.healthMax;
+    /**
+     * HEALTH CARRIES ACROSS LEVELS, and that is what makes the size bands mean anything.
+     *
+     * If every level began at full, `applyHealthBand` would hand out the top band every time and "size comes from
+     * your health" would be a sentence with no consequence. Carrying it is also what gives defence, the health
+     * ceiling and the repair card a context -- they are answers to "should I go in with 40%".
+     *
+     * A ceiling that GREW (a 「血上限」 pick) does not top the current pool up: the card buys room, not blood.
+     */
+    this.health = carry ? Math.min(this.health, this.healthMax) : this.healthMax;
+  }
+
+  /**
+   * Re-derive a growing route's volume from its health: the second half of "size is a readout of health".
+   *
+   * Called at exactly two moments -- the start of a level, and the pick of the route that makes the bubble grow --
+   * and nowhere else. Between those, a hit changes the health bar and nothing about the hitbox: a bubble that
+   * shrank mid-fight would invalidate the "how close can I get" judgement the player made a moment ago, and that
+   * judgement is the entire skill of eating something dangerous.
+   *
+   * A non-growing route keeps whatever size it has: its volume is set by its talent and never moves.
+   */
+  applyHealthBand(): void {
+    if (!this.bubbleType.growsByAbsorbing) return;
+    const ratio = this.healthMax > 0 ? this.health / this.healthMax : 1;
+    this.player.volume = volumeForHealthRatio(ratio);
   }
 
   /**
@@ -952,12 +988,14 @@ this.sound('slow');
         }
       }
       if (e.eaten) {
-        this.player.volume = growByAbsorbing(this.player.volume, massFromEating(e.kind));
+        // Health, like every other meal: size comes from the bands now, so what a swallow is worth has to be the
+        // currency the bands read. See the absorb branch for the same swap.
+        this.health = Math.min(this.healthMax, this.health + massFromEating(e.kind) * mech.volume.healthPerVolume);
         this.stats.absorbed++;
-        // The reversal pays: it is the game's signature act and the one that costs the most (the bubble gets bigger
-        // and slower for it), so a score that ignored it would price the safe play above the interesting one. The
-        // number appears at the BUBBLE, which is where the creature was when it was swallowed -- a contact is a
-        // touching distance, so the difference is a radius.
+        // The reversal pays: it is the game's signature act and the one that costs the most (a bigger creature is
+        // worth more health but took more risk to touch), so a score that ignored it would price the safe play above
+        // the interesting one. The number appears at the BUBBLE, which is where the creature was when it was
+        // swallowed -- a contact is a touching distance, so the difference is a radius.
         this.scorePopup(this.player.x * laneWidth, this.player.y, this.score.award('eaten'));
         this.xp.gain('eaten');
         this.invulnerable = Math.max(this.invulnerable, mech.consumption.eatInvulnerableSeconds + this.eatInvulnBonusSeconds);
@@ -1159,14 +1197,20 @@ this.sound('slow');
          */
         const grows = this.bubbleType.growsByAbsorbing;
         if (grows) {
-          this.player.volume = growByAbsorbing(this.player.volume, b.volume);
+          /**
+           * EATING BUYS HEALTH NOW, not size.
+           *
+           * Size comes from the health bands (`applyHealthBand`), chosen once per level, so the currency a bubble
+           * collects has to be the one that feeds them. A big bubble is worth more per mouthful -- the value is its
+           * volume -- which is what keeps "chase the big ones" true after the swap.
+           */
+          this.health = Math.min(this.healthMax, this.health + b.volume * mech.volume.healthPerVolume);
           /**
            * Count toward the next growth stage, and react if that promoted the bubble.
            *
-           * The promotion is the caller's to handle: `recordAbsorb` only knows the numbers. Growing is the moment
-           * the player becomes slower, so it gets a brief invulnerability and a cue -- without the grace period,
-           * getting bigger would immediately mean taking a hit, which reads as the game punishing the player for
-           * doing well.
+           * The promotion is the caller's to handle: `recordAbsorb` only knows the numbers. The stage still moves
+           * SIZE (its radius multiplier) and speed, so the same grace period applies -- without it, growing would
+           * immediately mean taking a hit, which reads as the game punishing the player for doing well.
            */
           if (recordAbsorb(this.stage)) {
             this.player.stageSpeedMultiplier = this.stage.speedMultiplier;

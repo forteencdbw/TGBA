@@ -17,11 +17,27 @@
 // What is NOT here any more: `hitCost`, `hitsSurvived` and `shrinkFromHit`. All three existed to convert between
 // volume and hit points, and nothing converts between them now.
 
+import { mech } from './mechanisms';
 import { tuning } from './config';
 
-/** Volume after absorbing a bubble whose own volume is `bubbleVolume`. */
-export function growByAbsorbing(volume: number, bubbleVolume: number): number {
-  return Math.min(tuning.volumeMax, volume + bubbleVolume * tuning.absorbEfficiency);
+/**
+ * The volume a growing route's bubble should be, for a given health fraction.
+ *
+ * Four BANDS rather than a continuous mapping, and the band is chosen at two moments only -- the start of a level,
+ * and the pick that makes the bubble a growing one -- rather than whenever health moves. The reason is the same in
+ * both cases: a hitbox that changed size mid-fight would invalidate the "how close can I get" judgement the player
+ * made a moment ago, and that judgement is the whole skill. See the config for why the bottom band is 2, not 5.
+ *
+ * A ratio below every band's floor gets the first band, which is why the loop starts there rather than at zero: the
+ * table is the source of truth for what "nearly dead" means, and a hardcoded fallback could drift from it.
+ */
+export function volumeForHealthRatio(ratio: number): number {
+  const bands = mech.volume.healthBands;
+  let volume = bands[0]?.volume ?? mech.volume.max;
+  for (const band of bands) {
+    if (ratio >= band.minRatio) volume = band.volume;
+  }
+  return volume;
 }
 
 /**

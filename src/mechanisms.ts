@@ -418,10 +418,17 @@ export interface Mechanisms {
   };
   stages: StageConfig;
   volume: {
-    start: number;
     max: number;
-    absorbEfficiency: number;
     laneRatio: number;
+    /**
+     * The health-fraction bands that decide a GROWING route's volume, low to high.
+     *
+     * Re-evaluated at two moments only -- the start of a level, and the pick of the route itself -- because a
+     * hitbox that shrinks mid-fight invalidates the "how close can I get" judgement the player just made.
+     */
+    healthBands: { minRatio: number; volume: number }[];
+    /** Hit points restored per point of a bubble's volume, for the route that eats its health back. */
+    healthPerVolume: number;
   };
   /**
    * The hit points of a route that does NOT grow.
@@ -2096,9 +2103,14 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: (v) => Array.isArray(v) && v.length >= 2 && v.every((s) => s !== null && typeof s === 'object'),
     describe: 'an array of at least two stage objects',
   },
-  { path: 'volume.start', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'volume.max', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
-  { path: 'volume.absorbEfficiency', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
+  /**
+   * The band table, checked as an array of objects because a half-written row is the failure mode that matters:
+   * a band missing `volume` would read as `undefined` and put the bubble at NaN radius, which is a bubble nobody
+   * can see or hit.
+   */
+  { path: 'volume.healthBands', check: (v) => Array.isArray(v) && v.length >= 1 && v.every((b) => b !== null && typeof b === 'object' && typeof (b as { minRatio: unknown }).minRatio === 'number' && typeof (b as { volume: unknown }).volume === 'number'), describe: 'an array of { minRatio, volume } bands, lowest first' },
+  { path: 'volume.healthPerVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'hit points per volume point between 0 and 200' },
   { path: 'volume.laneRatio', check: (v) => typeof v === 'number' && v > 0 && v < 0.5, describe: 'a small number above 0' },
   { path: 'health.start', check: (v) => typeof v === 'number' && v >= 1 && v <= 2000, describe: 'hit points between 1 and 2000' },
   { path: 'health.minDamageRatio', check: (v) => typeof v === 'number' && v > 0 && v < 1, describe: 'a fraction of the damage above 0 and below 1' },

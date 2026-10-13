@@ -98,12 +98,6 @@ export const tuning = {
   set volumeMax(v: number) {
     mech.volume.max = v;
   },
-  get absorbEfficiency() {
-    return mech.volume.absorbEfficiency;
-  },
-  set absorbEfficiency(v: number) {
-    mech.volume.absorbEfficiency = v;
-  },
   get bubbleLaneRatio() {
     return mech.volume.laneRatio;
   },

@@ -51,7 +51,7 @@ import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
 import { calibrateLateral, type LateralAuthority } from './lateral';
 import { TouchControls } from './touch';
-import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius, growByAbsorbing } from './volume';
+import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius } from './volume';
 
 /**
  * Depths where the emergence events fire (design round 4). On D1 they only prove the depth scale
@@ -2398,7 +2398,9 @@ class Game {
      * 「血上限」 picks, and filling before that would fill to last level's ceiling. The growing route has nothing
      * to do here -- `player.reset()` already put its volume back, and its health IS that volume.
      */
-    this.run.resetHealth();
+    this.run.resetHealth(carryScore);
+    // 关开始时再定一次体积：血量是跨关继承的，所以这一关的气泡可能比上一关小。
+    this.run.applyHealthBand();
     this.talentLabel = this.run.talentEffects.talent.name;
   }
 
@@ -3904,9 +3906,12 @@ private updateBoss(): void {
    * @return the volume actually gained, so a test can assert the round trip against the same number.
    */
   debugSwallowForTest(kind: HazardKind): number {
-    const before = this.run.player.volume;
-    this.run.player.volume = growByAbsorbing(this.run.player.volume, massFromEating(kind));
-    const gained = this.run.player.volume - before;
+    const before = this.run.health;
+    this.run.health = Math.min(
+      this.run.healthMax,
+      this.run.health + massFromEating(kind) * mech.volume.healthPerVolume,
+    );
+    const gained = this.run.health - before;
     this.run.stats.absorbed++;
     /**
      * The score is awarded here too, because this hook stands in for the collision path above and has to leave the run
