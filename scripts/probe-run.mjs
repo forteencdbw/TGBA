@@ -58,10 +58,18 @@ try {
     const r = new Run();
     r.phase = 'playing';
     r.field.bubbles.push(bubble(r.player.x * LANE, r.player.y, 0.02));
-    const before = r.player.volume;
+    const absorbedBefore = r.stats.absorbed;
     const eventsBefore = r.events.length;
     r.resolveContacts(1 / 120, world(r));
-    check('contacts · the bubble was eaten', [r.field.bubbles.length, r.player.volume > before], [0, true]);
+    /**
+     * THE LEDGER MOVED, BUT NOT THE VOLUME -- and that is not a detail of this probe, it is the whole reward model.
+     *
+     * `volume` used to BE the growing bubble's health, so eating one grew the bar. Health and size are separate now
+     * (`src/health.ts`), and the base bubble does not grow by absorbing at all: for it, the same mouthful pays in
+     * POINTS. Only the devour route's form turns food into health, and this probe runs the default type, so the thing
+     * to assert is the counter that every form shares.
+     */
+    check('contacts · the bubble was eaten', [r.field.bubbles.length, r.stats.absorbed > absorbedBefore], [0, true]);
     check('contacts · and the run said so', r.events.length > eventsBefore, true);
   }
 
@@ -70,12 +78,28 @@ try {
   {
     const r = new Run();
     r.phase = 'playing';
-    const before = r.player.volume;
-    r.takeHit();
-    check('takeHit · it hurt and it made the player untouchable', [r.player.volume < before, r.invulnerable > 0], [true, true]);
-    for (let i = 0; i < 40 && r.phase === 'playing'; i++) {
+    /**
+     * A fresh `Run` has NO HEALTH POOL until a level starts, so `resetHealth` has to run before a hit can cost
+     * anything -- `healthMax` is 0 otherwise and every hit lands on a bubble that was already at zero.
+     *
+     * That is the real entry point rather than a hand-set number: it is where the 「血上限」 picks are folded in, and a
+     * probe that assigned `healthMax` itself would be testing its own arithmetic instead of the game's.
+     */
+    r.resetHealth();
+    const before = r.health;
+    /**
+     * Damage is a NUMBER now, and it is the caller's -- see `takeHit(damage, defense)`.
+     *
+     * It used to be a bare `takeHit()` that applied whatever the config said. Passing it in is what let damage become
+     * per-creature (`hazards.contactDamage`), so a probe has to name a price rather than assume one. The price used
+     * here is deliberately a fraction of the starting pool, so the burst loop below needs several hits.
+     */
+    const bite = mech.hazards.contactDamage.fish;
+    r.takeHit(bite);
+    check('takeHit · it hurt and it made the player untouchable', [r.health < before, r.invulnerable > 0], [true, true]);
+    for (let i = 0; i < 400 && r.phase === 'playing'; i++) {
       r.invulnerable = 0;
-      r.takeHit();
+      r.takeHit(bite);
     }
     check('takeHit · enough of them and the run bursts the bubble itself', r.phase, 'burst');
   }
@@ -109,7 +133,13 @@ try {
   // --- the derived answers travel with it rather than being asked of the game
   {
     const r = new Run();
-    check('derived · tier bonus', typeof r.tierBonus, 'number');
+    /**
+     * `eatTierBonus`, not `tierBonus`: the devour route's 大胃口 picks buy eating one tier ABOVE what the volume says,
+     * and the number lives beside the other mutation-derived bonuses. It is read by `canEat` rather than by a rule of
+     * its own -- `canEatHazard(kind, volume, eatTierBonus)` in `src/consumption.ts` is the single place the ladder and
+     * the bonus are combined.
+     */
+    check('derived · tier bonus', typeof r.eatTierBonus, 'number');
     check('derived · burst radius', typeof r.burstRadiusRatio(), 'number');
     check('derived · overload state', typeof r.overloaded, 'boolean');
     check('derived · suction, asked WITH the input', typeof r.suctionUp(input()), 'boolean');

@@ -212,8 +212,13 @@ export class BulletField {
    * The return value is what the CALLER needs to react to this frame, and it is split by kind rather than summed for
    * the same reason `HazardField` reports effects instead of applying them: a sound wants to know that something
    * connected, a floating number wants to know WHERE, and a score wants to know that a creature was finished rather
-   * than merely hit. A round stopped by scenery is in `hits` and in none of the others -- a crate does not bleed, and
-   * it is not worth points.
+   * than merely hit.
+   *
+   * `hits` counts CREATURES only -- a round a crate stopped is in none of these, deliberately: scenery does not bleed
+   * and it is not worth points, so the hit sound would be the gun claiming a connection it did not make. (It IS in
+   * this field's own lifetime counter, `BulletField.hits`, which counts both, because that one exists to answer "did
+   * the gun do anything at all".) The comment here used to say a stopped round was in `hits`, which is the opposite
+   * of what the field returns, and it cost a probe a wrong assertion before it was caught.
    *
    * `struck` is the per-hit detail that `hits` cannot carry: WHERE each round landed on a creature and how much it took
    * off. Scenery hits are deliberately not in it -- this is the list a damage number is drawn from, and a crate does not

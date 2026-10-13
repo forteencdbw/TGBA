@@ -36,21 +36,17 @@ try {
   const STEP = 1 / 120;
 
   /**
-   * Fire one round with a chosen AGE straight into a fish, and report what came off it.
+   * A bare scene: the two fields a round can meet, and nothing alive.
    *
-   * Age is set rather than waited for, because a probe that has to fly a round across the screen for two seconds is a
-   * probe whose failure could be the speed curve instead of the formula.
+   * Factored out of `damageAtAge` so the scenery checks below -- which are about a round being STOPPED rather than
+   * about how hard it lands -- can build the same world without a fish in it. The context is the same object the game
+   * hands over, filled in from the config rather than from any one test.
    */
-  const damageAtAge = (age, over = {}) => {
+  const scene = (over = {}) => {
     const hazards = new HazardField();
     const obstacles = new ObstacleField();
     const field = new BulletField();
-    const fish = hazards.spawnAt('fish', LANE / 2, 300, { deterministic: true });
-    fish.maxHealth = 100000; // it must not flee mid-test
-    hazards.hazards.push(fish);
-    // Just below the fish, so one step puts it in reach whatever the radius is.
-    field.bullets.push({ x: fish.x, y: fish.y - 0.001, age });
-    const out = field.update(STEP, {
+    const ctx = {
       min: 0,
       max: 800,
       laneWidth: LANE,
@@ -66,8 +62,30 @@ try {
       hazards,
       obstacles,
       ...over,
-    });
-    return out.struck[0]?.amount ?? null;
+    };
+    return { hazards, obstacles, field, ctx };
+  };
+
+  /** A fish with enough health to survive the test, at a chosen spot. */
+  const fishAt = (s, x, y) => {
+    const fish = s.hazards.spawnAt('fish', x, y, { deterministic: true });
+    fish.maxHealth = 100000; // it must not flee mid-test
+    s.hazards.hazards.push(fish);
+    return fish;
+  };
+
+  /**
+   * Fire one round with a chosen AGE straight into a fish, and report what came off it.
+   *
+   * Age is set rather than waited for, because a probe that has to fly a round across the screen for two seconds is a
+   * probe whose failure could be the speed curve instead of the formula.
+   */
+  const damageAtAge = (age, over = {}) => {
+    const s = scene(over);
+    const fish = fishAt(s, LANE / 2, 300);
+    // Just below the fish, so one step puts it in reach whatever the radius is.
+    s.field.bullets.push({ x: fish.x, y: fish.y - 0.001, age });
+    return s.field.update(STEP, s.ctx).struck[0]?.amount ?? null;
   };
 
   const cfg = mech.bullets;
@@ -134,6 +152,52 @@ try {
   {
     check('负重率 · 不是惩罚', round(damageAtAge(cfg.lifeSeconds, { sizeDamageRate: -1 })), BASE_DAMAGE);
     check('负弹速倍率 · 不是惩罚', round(damageAtAge(1, { speedDamageRate: 1, speedMultiplier: 0.5 })), BASE_DAMAGE);
+  }
+
+  /**
+   * Scenery stops a round, and the creature behind it is safe.
+   *
+   * PORTED from `probe-projectiles.mjs`, which tested the spit system -- ammunition made of creatures the player had
+   * swallowed. That whole verb was removed, so the file went with it; these two rules did NOT stop being true, they
+   * just belong to the PLAYER's gun now. Nothing else in the suite covers them: `obstacles.blocks` and the check in
+   * `BulletField.update` are the only things keeping a crate from being decoration, and a crate you can see in front
+   * of a fish has to stop what you shoot at it.
+   */
+  {
+    // The crate is stopped by... the round; the round does not damage it, because bullets are not ordnance.
+    {
+      const s = scene();
+      s.obstacles.spawn('crate', LANE / 2, 300);
+      s.field.bullets.push({ x: LANE / 2, y: 300 - 0.001, age: 0 });
+      const out = s.field.update(STEP, s.ctx);
+      check('木箱 · 挡住了这一发', [s.field.bullets.length, s.field.hits], [0, 1]);
+      // And it is counted as a hit on SCENERY, not on a creature: a crate does not bleed and is not worth points, so
+      // neither the returned `hits` (which drives the hit sound and the score) nor `struck` (which drives the floating
+      // damage number) may include it.
+      check('木箱 · 不算打中生物（不出伤害数字、不响命中音）', [out.hits, out.struck.length], [0, 0]);
+    }
+
+    // ... so a creature standing behind the crate is not shot through it.
+    {
+      const s = scene();
+      s.obstacles.spawn('crate', LANE / 2, 300);
+      const fish = fishAt(s, LANE / 2, 300);
+      const before = s.hazards.hazards.length;
+      s.field.bullets.push({ x: LANE / 2, y: 300 - 0.001, age: 0 });
+      const out = s.field.update(STEP, s.ctx);
+      check('木箱 · 后面的鱼没被打到', [out.struck.length, fish.maxHealth], [0, 100000]);
+      check('木箱 · 鱼还在场', s.hazards.hazards.length, before);
+    }
+
+    // Without the crate the same shot DOES land, so the test above is about the crate and not about the aim.
+    {
+      const s = scene();
+      const fish = fishAt(s, LANE / 2, 300);
+      s.field.bullets.push({ x: LANE / 2, y: 300 - 0.001, age: 0 });
+      const out = s.field.update(STEP, s.ctx);
+      check('（对照）没有木箱时这一发会打中', [out.struck.length, out.hits], [1, 1]);
+      check('（对照）而且鱼掉血了', fish.maxHealth - fish.health > 0, true);
+    }
   }
 } finally {
   await server.close();
