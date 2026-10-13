@@ -535,13 +535,6 @@ export interface HudState {
    * not a boss bar at zero health.
    */
   boss: { name: string; fraction: number } | null;
-  /**
-   * The run's progress chart: one pip per level, filled as the run clears them.
-   *
-   * Null off a run, which is what the menu and the codex want: this is a chart about a RUN, and there is none happening
-   * on those screens.
-   */
-  progress: { total: number; cleared: number; current: number } | null;
   /** Which birth type this run rolled. */
   seed: string;
   /** This run's talent, for the line under the seed. Null or empty shows nothing. */
@@ -639,10 +632,6 @@ export class Hud {
    */
   private readonly bossName: Text;
   private readonly bossBar = new Graphics();
-  /** The run's progress chart: a pip per level, plus the gauge layer that draws them. */
-  private readonly progressGauge = new Graphics();
-  private readonly progressLabel: Text;
-  private progressChart: { total: number; cleared: number; current: number } | null = null;
   /** What the bar currently shows, so a per-frame call does not redraw a bar that has not moved. */
   private shownBossFraction = -1;
   /** The bar's width in the last frame it was drawn at: a resize moves the lane out from under a bar that has not moved. */
@@ -656,8 +645,6 @@ export class Hud {
    * `designScale`.
    */
   private hudScale = 1;
-  /** The canvas width in CSS pixels, remembered for the progress chart (which is pinned to the right edge). */
-  private canvasWidth = 0;
   /** The lane's width and centre in canvas pixels, remembered from layout for the resource gauge. */
   private laneWidthPx = 0;
   private laneCentreX = 0;
@@ -713,9 +700,6 @@ export class Hud {
      */
     this.scoreLabel = makeLabel('', mech.hud.score.colour, mech.hud.score.size);
     this.bossName = makeLabel('', mech.hud.bossBar.nameColour, mech.hud.bossBar.nameSize);
-    this.progressLabel = makeLabel('', mech.hud.progressChart.labelColour, mech.hud.progressChart.labelSize);
-    this.progressGauge.visible = false;
-    this.progressLabel.visible = false;
     this.bossName.anchor.set(0.5, 1);
     this.bossName.visible = false;
     this.bossBar.visible = false;
@@ -730,8 +714,6 @@ export class Hud {
       this.scoreLabel,
       this.bossBar,
       this.bossName,
-      this.progressGauge,
-      this.progressLabel,
       this.debug,
     );
 
@@ -818,7 +800,6 @@ export class Hud {
      * the bar against the canvas there makes it both wider than the lane and offset from it, so it hangs out over
      * the open water on both sides: the one piece of HUD furniture that did not line up with the play area.
      */
-    this.canvasWidth = viewport.width;
     this.bossName.scale.set(s);
     this.bossName.x = this.laneCentreX;
     this.bossName.y = mech.hud.bossBar.y * s - mech.hud.bossBar.nameOffset * s;
@@ -826,7 +807,7 @@ export class Hud {
 }
 
   /**
-   * The run's score, the boss fight, the progress chart, and the two run labels: all of them read from `state`.
+   * The run's score, the boss fight, and the two run labels: all of them read from `state`.
    *
    * The score and the boss BAR are the only things here that are redrawn rather than re-laid-out, and both are guarded
    * on their own last value: this is a phone, and rebuilding a string or a rounded rect sixty times a second for a
@@ -875,68 +856,14 @@ export class Hud {
       }
     }
 
-    const chart = state.progress;
-    this.progressGauge.visible = chart !== null;
-    this.progressLabel.visible = chart !== null;
-    const moved =
-      chart !== null &&
-      (this.progressChart === null ||
-        this.progressChart.total !== chart.total ||
-        this.progressChart.cleared !== chart.cleared ||
-        this.progressChart.current !== chart.current);
-    const appearedOrLeft = (chart === null) !== (this.progressChart === null);
-    if (moved || appearedOrLeft) {
-      this.progressChart = chart;
-      this.redrawProgress();
-    }
-
     this.seedLabel = state.seed;
     this.talentLabel = state.talent ?? '';
     this.skillLabel = state.skill ? `${state.skill.name} ×${state.skill.uses}` : '';
   }
 
-  /** Where the pips go and what they look like: only `layout` knows the canvas. */
-  private redrawProgress(): void {
-    const g = this.progressGauge;
-    g.clear();
-    const chart = this.progressChart;
-    if (!chart) return;
-    const cfg = mech.hud.progressChart;
-    const s = this.hudScale;
-    const r = cfg.pipRadius * s;
-    const step = r * 2 + cfg.pipGap * s;
-    const y = cfg.y * s;
-    const x0 = this.canvasWidth - cfg.rightInset * s - (chart.total - 1) * step;
-    for (let i = 0; i < chart.total; i++) {
-      const x = x0 + i * step;
-      const done = i < chart.cleared;
-      const here = i === chart.current;
-      g.circle(x, y, r).fill({
-        color: done ? cfg.doneColour : cfg.pendingColour,
-        alpha: done ? cfg.doneAlpha : cfg.pendingAlpha,
-      });
-      if (here) {
-        // The current level gets a ring rather than a different fill: "where I am" and "what I have done" are two
-        // facts, and one pip cannot carry both with one channel.
-        g.circle(x, y, r * 1.7).stroke({ color: cfg.currentColour, alpha: cfg.currentAlpha, width: Math.max(1, r * 0.4) });
-      }
-    }
-    this.progressLabel.scale.set(s);
-    this.progressLabel.anchor.set(1, 0.5);
-    this.progressLabel.x = this.canvasWidth - cfg.rightInset * s;
-    this.progressLabel.y = y + r * 2.6;
-    this.progressLabel.text = `总进度 ${chart.cleared}/${chart.total}`;
-    this.progressLabel.style.fill = cfg.labelColour;
-  }
-
   /** Test hooks: the boss bar as the player sees it. Absence is information, so both are read. */
   get bossBarVisible(): boolean {
     return this.bossBar.visible;
-  }
-
-  /** Test hook: the progress chart as the player reads it. */
-  get progressText(): string {
-    return this.progressLabel.visible ? this.progressLabel.text : '(hidden)';
   }
 
   get bossBarName(): string {

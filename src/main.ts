@@ -1135,8 +1135,6 @@ class Game {
    */
   private talentLabel = '';
   private bossView: { name: string; fraction: number } | null = null;
-  /** The run's progress chart, or null off a run. Read by the HUD, written where the run's progress changes. */
-  private progressView: { total: number; cleared: number; current: number } | null = null;
   /** The bait bubble a decoy left behind, so it can be drawn and then expire. */
   /** How many skills have been used this run, for the results card. */
   /** When the fish-fart talent can fire again, and how many times it has. */
@@ -1891,14 +1889,6 @@ class Game {
      */
     this.music.update(dt);
     this.updateBoss();
-    /**
-     * The chart is redrawn from the run's own numbers every frame rather than being pushed on change.
-     *
-     * It is six circles and one string: rebuilding it is cheaper than the bookkeeping a change-detector would need, and
-     * it cannot fall out of step with the run -- which for a chart whose whole job is "where am I" is the property that
-     * matters.
-     */
-    this.progressView = { total: LEVELS.length, cleared: this.run.levelsClearedInRun, current: levelIndex(LEVEL.id) };
     this.run.updateConductiveCharge(dt, viewport.laneWidthMeters);
 
     /**
@@ -2108,10 +2098,13 @@ class Game {
      * one of those would be a level that is silent depending on how the player got there.
      */
     this.startLevelMusic();
-    // The chart follows the run, not the save: see `levelsClearedInRun`. `startRun` without a carry is a fresh run, so
-    // the chart goes back to zero with it; the transition path sets the count itself before calling in.
+    /**
+     * The cleared count follows the RUN rather than the save.
+     *
+     * `startRun` without a carry is a fresh run, so it starts from this level; the transition path sets the count itself
+     * before calling in. It is the results card's number now that the corner chart is gone.
+     */
     if (!carryScore) this.run.levelsClearedInRun = levelIndex(LEVEL.id);
-    this.progressView = this.run.runComplete ? null : { total: LEVELS.length, cleared: this.run.levelsClearedInRun, current: levelIndex(LEVEL.id) };
     this.run.bossSpawned = false;
     /**
      * A fresh run has no level queued to walk into.
@@ -2780,7 +2773,6 @@ private updateBoss(): void {
       this.hud.update({
         score: this.run.score.value,
         boss: this.bossView,
-        progress: this.progressView,
         seed: this.seedLabel,
         talent: this.talentLabel,
         skill: this.run.skill ? { name: this.run.skill.name, uses: this.run.skill.uses } : null,
