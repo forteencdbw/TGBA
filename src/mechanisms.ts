@@ -1467,6 +1467,34 @@ export interface Mechanisms {
     levelLockedTextColour: number;
     levelNoteColour: number;
     levelUnlockColour: number;
+    /**
+     * The animated menu backdrop: decorative creatures swimming, and a coral bed in two layers.
+     *
+     * Every length is a fraction of the SCREEN (width for the speeds, height for how low the coral sits), so the whole
+     * thing keeps its proportions when the window changes -- which for a menu means keeping its composure on a phone
+     * and on a 1920-wide desktop.
+     */
+    backdrop: {
+      minAlive: number;
+      maxAlive: number;
+      spawnGapSeconds: number;
+      speedMin: number;
+      speedMax: number;
+      driftRatio: number;
+      creatureScale: number;
+      creatureAlpha: number;
+      schoolChance: number;
+      schoolMin: number;
+      schoolMax: number;
+      backCoralCount: number;
+      backCoralHalfWidth: number;
+      backCoralBottom: number;
+      frontCoralCount: number;
+      frontCoralHalfWidth: number;
+      frontCoralBottom: number;
+      exitSeconds: number;
+      fadeSeconds: number;
+    };
   };
   /**
    * Obstacles: what is in the water that is neither food nor threat, but scenery you have to answer.
@@ -2787,6 +2815,34 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'menu.levelNoteSize', check: anyNumber, describe: 'a number' },
   { path: 'menu.levelMinWidthRatio', check: anyNumber, describe: 'a fraction of the menu width' },
   { path: 'menu.levelMaxWidthRatio', check: anyNumber, describe: 'a fraction' },
+  /**
+   * The menu backdrop's numbers, in one block.
+   *
+   * A loop rather than seventeen rows: they are one feature, every one of them is a plain length or rate, and the
+   * whole block lives or dies together -- which is what makes a list here safe where the per-kind tables elsewhere are
+   * not.
+   */
+  ...[
+    ['minAlive', 'a count of creatures'],
+    ['maxAlive', 'a count of creatures'],
+    ['spawnGapSeconds', 'seconds'],
+    ['speedMin', 'screen widths per second'],
+    ['speedMax', 'screen widths per second'],
+    ['driftRatio', 'a fraction of the horizontal speed'],
+    ['creatureScale', 'a size multiple'],
+    ['creatureAlpha', 'an opacity'],
+    ['schoolChance', 'a probability'],
+    ['schoolMin', 'a count of creatures'],
+    ['schoolMax', 'a count of creatures'],
+    ['backCoralCount', 'a count of corals'],
+    ['backCoralHalfWidth', 'a fraction of the screen width'],
+    ['backCoralBottom', 'a fraction of the screen height; negative is below the edge'],
+    ['frontCoralCount', 'a count of corals'],
+    ['frontCoralHalfWidth', 'a fraction of the screen width'],
+    ['frontCoralBottom', 'a fraction of the screen height; negative is below the edge'],
+    ['exitSeconds', 'seconds'],
+    ['fadeSeconds', 'seconds'],
+  ].map(([key, describe]) => ({ path: `menu.backdrop.${key}`, check: anyNumber, describe: describe as string })),
   ...[
     'levelSelectedFill',
     'levelSelectedStroke',

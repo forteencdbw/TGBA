@@ -2660,6 +2660,8 @@ class Game {
     this.summary.hide();
     this.settings.setOpen(false);
     this.run.phase = 'menu';
+    // The backdrop was left finished by the last exit; a finished one draws nothing.
+    this.menu.enterMenu();
     this.touch.releaseAll();
     /**
      * Stop the ambience explicitly.
@@ -2786,6 +2788,7 @@ class Game {
   private exitCodex(): void {
     this.run.phase = 'menu';
     this.menu.root.visible = true;
+    this.menu.enterMenu();
   }
 
 private updateBoss(): void {

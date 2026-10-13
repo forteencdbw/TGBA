@@ -4,6 +4,7 @@ import { BASE_TYPE } from './bubbleTypes';
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
 import { buildLabel } from './version';
+import { MenuBackdrop } from './menuBackdrop';
 
 /**
  * One level as the menu needs it: what to draw, and whether it can be played.
@@ -40,7 +41,7 @@ export class MainMenu {
    * Declaring a `Graphics` field after the constructor and calling `this.…clear()` inside it is what produced
    * "used before being assigned" here: the declaration is hoisted for typing but the initialiser is not.
    */
-  private readonly backdrop = mkGraphics();
+  private readonly screen = mkGraphics();
   private readonly primary = mkGraphics();
   private readonly secondary = mkGraphics();
   private readonly title = mk('冒泡大作战', 0xeaf9ff, 34);
@@ -76,7 +77,12 @@ export class MainMenu {
    */
   private readonly versionLine = mk('', 0x5b7f9c, 11);
 
-  /** Called when the player asks to play. The run starts as the base bubble; see `src/bubbleTypes.ts`. */
+  /**
+   * Called when the run may actually begin, which is NOT when the button is pressed.
+   *
+   * The backdrop leaves first and the callbacks arrive afterwards, so this fires once the water is clear. The delay is
+   * the point of it: see `beginExit`.
+   */
   onStart: () => void = () => {};
   /** Called when the player asks for the codex. */
   onCodex: () => void = () => {};
@@ -119,10 +125,20 @@ export class MainMenu {
   private time = 0;
   /** Scale from the last real layout, so `update` can redraw without a viewport. */
   private scale = 1;
+  /**
+   * The animated backdrop: creatures swimming, and a coral bed in two layers.
+   *
+   * The menu owns it rather than the game, and that is deliberate -- it is a decoration of THIS screen, it exists only
+   * while this screen does, and nothing it does can reach the water a run will start in. What it is not is a second
+   * way of drawing a creature: see `src/menuBackdrop.ts`.
+   */
+  private readonly backdrop = new MenuBackdrop();
+  /** Whether `onBackdropExit` has already been fired for the exit now running. */
+  private exitReported = false;
 
   constructor() {
     this.root.eventMode = 'none';
-    for (const child of [this.backdrop, this.primary, this.secondary, this.levelRow, this.primaryLabel, this.secondaryLabel]) {
+    for (const child of [this.screen, this.primary, this.secondary, this.levelRow, this.primaryLabel, this.secondaryLabel]) {
       child.eventMode = 'none';
     }
 
@@ -135,7 +151,10 @@ export class MainMenu {
      * Everything that should be visible belongs after `backdrop`, so nothing can end up behind the opaque screen.
      */
     this.root.addChild(
-      this.backdrop,
+      // The opaque screen first, then the water's contents, then the interface. The backdrop's own root is a
+      // container of three layers (coral, swimmers, coral), so it IS the water as far as the menu is concerned.
+      this.screen,
+      this.backdrop.root,
       this.title,
       this.subtitle,
       this.levelRow,
@@ -155,6 +174,14 @@ export class MainMenu {
     const cfg = mech.menu;
     const s = designScale(viewport.width, viewport.height);
     this.scale = s;
+    /**
+     * The backdrop is laid out in SCREEN pixels, not against the lane.
+     *
+     * A lane exists to bound where the bubble may go; a reef has no such bound, and the water behind the menu is the
+     * whole window. So the painters are handed the screen width as their lane and every length in `menu.backdrop` is
+     * a fraction of the screen.
+     */
+    this.backdrop.layout(viewport.width, viewport.height);
     const laneLeft = viewport.left;
     const laneWidth = viewport.laneWidthPx;
     const cx = laneLeft + laneWidth / 2;
@@ -166,10 +193,10 @@ export class MainMenu {
     this.secondaryLabel.style.fill = cfg.secondaryTextColour;
     this.secondaryLabel.style.fontSize = cfg.secondaryTextSize;
 
-    this.backdrop.clear();
+    this.screen.clear();
     // Opaque, so the menu is its own screen rather than an overlay on a paused level. Drawn over the whole
     // canvas rather than just the lane: the menu is not part of the water.
-    this.backdrop.rect(0, 0, viewport.width, viewport.height).fill({ color: 0x030a17, alpha: 1 });
+    this.screen.rect(0, 0, viewport.width, viewport.height).fill({ color: 0x030a17, alpha: 1 });
 
     const w = Math.min(laneWidth * cfg.buttonWidthRatio, cfg.buttonMaxWidth * s);
     const h = cfg.buttonHeight * s;
@@ -320,9 +347,46 @@ export class MainMenu {
     }
   }
 
+  /**
+   * Whether the backdrop is on its way out, so a second press on 开始游戏 does nothing.
+   *
+   * Reported rather than swallowed silently: a button that keeps accepting presses while the screen is already leaving
+   * is a button that will start two runs the day the handover gets slower.
+   */
+  get exiting(): boolean {
+    return this.backdrop.exiting;
+  }
+
+  /**
+   * Put the backdrop back to its living state. Called whenever the menu is shown again, because the last exit left it
+   * finished and a finished backdrop draws nothing.
+   */
+  enterMenu(): void {
+    this.backdrop.reset();
+    this.exitReported = false;
+  }
+
+  /**
+   * Send the backdrop away, and let `onStart` follow it.
+   *
+   * The turn is real -- every creature heads for the nearest edge -- and the wait is capped by the config, because
+   * waiting for the LAST one would mean waiting for whichever arrived most recently. Whatever has not left when the
+   * clock runs out stops being drawn, which the fade covers.
+   */
+  private beginExit(): void {
+    if (this.backdrop.exiting) return;
+    this.exitReported = false;
+    this.backdrop.beginExit();
+  }
+
   update(dt: number): void {
     this.time += dt;
-    // A slow pulse on the primary button, so the menu does not look frozen. Cosmetic, and the only animation here.
+    this.backdrop.update(dt);
+    if (!this.exitReported && this.backdrop.finished) {
+      this.exitReported = true;
+      this.onStart();
+    }
+    // A slow pulse on the primary button, so the menu does not look frozen.
     this.draw(this.scale);
   }
 
@@ -465,7 +529,7 @@ export class MainMenu {
     const fire = this.pressed;
     this.pressed = null;
     if (fire === 'start' && this.inRect(this.primaryRect, x, y)) {
-      this.onStart();
+      this.beginExit();
       return true;
     }
     if (fire === 'codex' && this.inRect(this.secondaryRect, x, y)) {
