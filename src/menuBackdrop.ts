@@ -172,10 +172,18 @@ export class MenuBackdrop {
     if (this.exiting) return;
     this.exitLeft = Math.max(0.01, mech.menu.backdrop.exitSeconds);
     for (const h of this.swimmers.hazards) {
-      const speed = Math.abs(this.velocity.get(h.id)?.vx ?? 0.1) || 0.1;
-      const dir = h.x < this.width / 2 ? 1 : -1;
-      this.velocity.set(h.id, { vx: speed * dir, vy: 0 });
-      this.faceTravel(h, dir);
+      /**
+       * THE SAME DEPARTURE A DEFEATED CREATURE MAKES.
+       *
+       * `h.flee` is the game's own leaving state, and setting it here buys three things at once: the motion below
+       * (a fixed `fleeScreensPerSecond` screen-heights per second, which is the "gone in about a second" the water
+       * uses), the painted dimming (`fleeAlpha`), and -- the reason it is worth reusing rather than reimplementing --
+       * the FACING, because the painter already has a rule for "turn the way you are leaving". That rule is why
+       * `facingRest` is released here: it was pinned to stop a swimming fish flipping around, and a departing one is
+       * supposed to flip.
+       */
+      h.flee = h.x < this.width / 2 ? 'right' : 'left';
+      h.facingRest = 0;
     }
   }
 
@@ -218,7 +226,15 @@ export class MenuBackdrop {
       this.spawnWave();
     }
 
-    const margin = this.width * 0.15;
+    /**
+     * HOW FAR OFF SCREEN A CREATURE MAY BE BEFORE IT IS DROPPED.
+     *
+     * It has to cover where a school is BORN, not just where one creature is. Members are laid out along the
+     * direction of travel, so a ten-fish shoal starts spread over a quarter of a screen -- and a margin tighter than
+     * that deleted the back half of every school on the spawn frame. The symptom was a shoal that only ever arrived
+     * three fish long, which looked exactly like a school size that was not being read.
+     */
+    const margin = this.width * 0.34;
     for (let i = this.swimmers.hazards.length - 1; i >= 0; i--) {
       const h = this.swimmers.hazards[i]!;
       const v = this.velocity.get(h.id);
@@ -226,8 +242,13 @@ export class MenuBackdrop {
         this.swimmers.hazards.splice(i, 1);
         continue;
       }
-      h.x += v.vx * dt * this.width;
-      h.y += v.vy * dt * this.height;
+      if (h.flee) {
+        const step = this.height * mech.hazards.fleeScreensPerSecond * dt;
+        h.x += h.flee === 'right' ? step : -step;
+      } else {
+        h.x += v.vx * dt * this.width;
+        h.y += v.vy * dt * this.height;
+      }
       /**
        * THE ANIMATION CLOCK, and it is `phase`.
        *
@@ -236,9 +257,14 @@ export class MenuBackdrop {
        * every decorative fish holds frame one for its whole crossing: a backdrop of statues.
        */
       h.phase += dt;
-      // `heading` is the creature's own fact about which way it is going, and the painter reads it for anything that
-      // does not look at a player -- so it has to follow the travel, not the exit direction.
-      h.heading = v.vx >= 0 ? 1 : -1;
+      /**
+       * `heading` is the creature's own fact about which way it is going.
+       *
+       * A departing creature reads its direction from `flee`, because the velocity map still holds the speed it was
+       * travelling at before it turned -- the painter takes the exit side over `heading` for the picture, but leaving
+       * a stale direction on the creature would be a fact that is simply wrong to anyone who reads it next.
+       */
+      h.heading = h.flee ? (h.flee === 'right' ? 1 : -1) : v.vx >= 0 ? 1 : -1;
       if (h.x < -margin || h.x > this.width + margin || h.y < -this.height * 0.25 || h.y > this.height * 1.25) {
         this.velocity.delete(h.id);
         this.swimmers.hazards.splice(i, 1);
@@ -257,20 +283,54 @@ export class MenuBackdrop {
      * what `facingRest` is for.
      */
     paintHazards(this.swimGfx, this.swimmers, this.width, this.elapsed, () => false, 'in-play', Number.NaN);
+    /**
+     * And the departures, in their own pass.
+     *
+     * The painter splits a creature into exactly one of two passes -- `in-play` or `leaving` -- so a creature with
+     * `flee` set is skipped by the call above and would simply not be drawn. That split is what lets the water dim the
+     * whole leaving group at once, and it is why reusing the game's exit means asking for both passes.
+     */
+    paintHazards(this.swimGfx, this.swimmers, this.width, this.elapsed, () => false, 'leaving', Number.NaN);
     paintObstacles(this.frontGfx, this.frontBed, this.width);
   }
 
   /** One creature, or a small school of one kind, entering from a random side at a random height. */
   private spawnWave(): void {
     const cfg = mech.menu.backdrop;
-    const count = Math.random() < cfg.schoolChance ? Math.round(cfg.schoolMin + Math.random() * (cfg.schoolMax - cfg.schoolMin)) : 1;
-    const kind = SWIMMERS[Math.floor(Math.random() * SWIMMERS.length)] ?? 'fish';
+    /**
+     * WHICH KIND, weighted towards the small fish.
+     *
+     * Uniform over nineteen kinds is not what the water looks like: a level is overwhelmingly small fish, and the
+     * sharks and whales are the exceptions that make the water dangerous. Picking uniformly made the commonest
+     * creature in the game the rarest thing in the menu -- and it made the shoal rule above nearly invisible, because
+     * a rule about how fish arrive means nothing if fish almost never arrive.
+     */
+    const kind = Math.random() < cfg.fishChance ? 'fish' : (SWIMMERS[Math.floor(Math.random() * SWIMMERS.length)] ?? 'fish');
+    /**
+     * Small fish school, big things do not, and that is a rule about the animal rather than about the kind index.
+     *
+     * `fish` gets its own numbers because a shoal of sardines is what small fish DO -- the default chance of 0.18
+     * would make the commonest creature in the game the rarest thing to see a group of, and nine sharks travelling
+     * together is a different claim about the world than nine sardines.
+     */
+    const shoal = kind === 'fish';
+    const chance = shoal ? cfg.fishSchoolChance : cfg.schoolChance;
+    const lo = shoal ? cfg.fishSchoolMin : cfg.schoolMin;
+    const hi = shoal ? cfg.fishSchoolMax : cfg.schoolMax;
+    const count = Math.random() < chance ? Math.max(1, Math.round(lo + Math.random() * (hi - lo))) : 1;
     const fromLeft = Math.random() < 0.5;
     const dir = fromLeft ? 1 : -1;
     const speed = cfg.speedMin + Math.random() * (cfg.speedMax - cfg.speedMin);
     const y = this.height * (0.14 + Math.random() * 0.72);
     for (let i = 0; i < count; i++) {
-      const x = fromLeft ? -this.width * 0.08 - i * this.width * 0.06 : this.width * 1.08 + i * this.width * 0.06;
+      /**
+       * Packed just off the edge, then allowed to spread by their own speeds.
+       *
+       * The spread is `i * spacing` from the edge, and it has to stay inside the cull margin above or the tail of the
+       * school is deleted before it is ever seen. Letting the members drift apart as they cross -- see the speed
+       * jitter below -- gives the same loose shoal without the whole formation having to exist off screen.
+       */
+      const x = fromLeft ? -this.width * 0.06 - i * this.width * 0.026 : this.width * 1.06 + i * this.width * 0.026;
       const h = this.swimmers.spawnAt(kind, x, y + (Math.random() - 0.5) * this.height * 0.08, {
         deterministic: true,
         variety: Math.floor(Math.random() * 8),
@@ -290,7 +350,11 @@ export class MenuBackdrop {
        * beating their tails on the same frame is the one thing that makes a school look assembled rather than alive.
        */
       h.phase = Math.random() * 8;
-      this.velocity.set(h.id, { vx: speed * dir, vy: (Math.random() - 0.5) * cfg.driftRatio * speed });
+      // A little speed variation per member, so a school opens up as it crosses rather than travelling as a block.
+      this.velocity.set(h.id, {
+        vx: speed * (0.86 + Math.random() * 0.28) * dir,
+        vy: (Math.random() - 0.5) * cfg.driftRatio * speed,
+      });
       h.heading = dir;
       this.faceTravel(h, dir);
       this.swimmers.hazards.push(h);

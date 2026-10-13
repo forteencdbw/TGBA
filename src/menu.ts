@@ -429,23 +429,25 @@ export class MainMenu {
       if (!level) continue;
       const r = cfg.buttonRadius * s;
       /**
-       * Three states, and no lock icon.
+       * TWO states, and no lock icon: selected is filled, everything else is outlined.
        *
-       * Selected is FILLED, unlockable is outlined, locked is darker with a dim stroke. A padlock would have to be
-       * drawn on the canvas by hand for a state that the colour and the note below already carry.
+       * There used to be a third -- locked, drawn darker with a dim stroke -- and it went when the ladder became a
+       * debug affordance that shows every level as reachable. `MenuLevel.locked` is still computed and still reported,
+       * because the unlock RULE is still real and still written to the save; there is just nothing on this row that
+       * could be locked, so a state for it would be a branch nothing can reach.
        */
-      const fill = level.selected ? cfg.levelSelectedFill : level.locked ? cfg.levelLockedFill : cfg.levelIdleFill;
-      const stroke = level.selected ? cfg.levelSelectedStroke : level.locked ? cfg.levelLockedStroke : cfg.levelIdleStroke;
+      const fill = level.selected ? cfg.levelSelectedFill : cfg.levelIdleFill;
+      const stroke = level.selected ? cfg.levelSelectedStroke : cfg.levelIdleStroke;
       this.levelRow
         .roundRect(rect.x, rect.y, rect.w, rect.h, r)
-        .fill({ color: fill, alpha: level.locked ? 0.6 : 0.95 })
+        .fill({ color: fill, alpha: 0.95 })
         .stroke({ color: stroke, alpha: level.selected ? 1 : 0.7, width: Math.max(1, 1.2 * s) });
     }
 
     for (const [i, label] of this.levelLabels.entries()) {
       const level = this.levels[i];
       if (!level) continue;
-      const want = level.selected ? cfg.levelSelectedTextColour : level.locked ? cfg.levelLockedTextColour : cfg.levelIdleTextColour;
+      const want = level.selected ? cfg.levelSelectedTextColour : cfg.levelIdleTextColour;
       if (label.style.fill !== want) label.style.fill = want;
     }
   }

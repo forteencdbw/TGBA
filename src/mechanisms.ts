@@ -1462,9 +1462,6 @@ export interface Mechanisms {
     levelIdleFill: number;
     levelIdleStroke: number;
     levelIdleTextColour: number;
-    levelLockedFill: number;
-    levelLockedStroke: number;
-    levelLockedTextColour: number;
     levelNoteColour: number;
     levelUnlockColour: number;
     /**
@@ -1486,6 +1483,10 @@ export interface Mechanisms {
       schoolChance: number;
       schoolMin: number;
       schoolMax: number;
+      fishSchoolChance: number;
+      fishSchoolMin: number;
+      fishSchoolMax: number;
+      fishChance: number;
       backCoralCount: number;
       backCoralHalfWidth: number;
       backCoralBottom: number;
@@ -2834,6 +2835,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['schoolChance', 'a probability'],
     ['schoolMin', 'a count of creatures'],
     ['schoolMax', 'a count of creatures'],
+    ['fishSchoolChance', 'a probability'],
+    ['fishSchoolMin', 'a count of creatures'],
+    ['fishSchoolMax', 'a count of creatures'],
+    ['fishChance', 'a probability'],
     ['backCoralCount', 'a count of corals'],
     ['backCoralHalfWidth', 'a fraction of the screen width'],
     ['backCoralBottom', 'a fraction of the screen height; negative is below the edge'],
@@ -2850,9 +2855,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     'levelIdleFill',
     'levelIdleStroke',
     'levelIdleTextColour',
-    'levelLockedFill',
-    'levelLockedStroke',
-    'levelLockedTextColour',
     'levelNoteColour',
     'levelUnlockColour',
   ].map((key) => ({
