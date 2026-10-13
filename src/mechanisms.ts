@@ -64,9 +64,7 @@ export interface RageLook {
   innerAlpha: number;
   rimAlpha: number;
   rimWidthRatio: number;
-  glowOuterAlpha: number;
   glowInnerAlpha: number;
-  glowOuterRadiusRatio: number;
   glowInnerRadiusRatio: number;
   innerRing: boolean;
   innerRingAlpha: number;
@@ -85,11 +83,16 @@ export interface StageAppearance {
   rim: number;
   rimAlpha: number;
   rimWidthRatio: number;
-  /** The glow. Wants to be bright rather than saturated: it sits over the interior and sets its brightness. */
+  /**
+   * The glow: one disc, no outer ring.
+   *
+   * There used to be two -- 1.55R and 1.18R -- and the outer one is gone because it is bigger than the collision
+   * radius the bubble actually has. A player who reads its edge as their own boundary misjudges every graze they
+   * attempt, and the fix for a wrong boundary is to remove it, not to shrink or dim it. The inner ring's 18%
+   * overhang reads as a highlight in dark water rather than as a silhouette, so it stays.
+   */
   glow: number;
-  glowOuterAlpha: number;
   glowInnerAlpha: number;
-  glowOuterRadiusRatio: number;
   glowInnerRadiusRatio: number;
   /** A second thin ring inside the rim, from stage 2. A SHAPE cue, for telling warm hues apart. */
   innerRing: boolean;
@@ -310,6 +313,34 @@ export interface Mechanisms {
       alpha: number;
     };
     /**
+     * The player's own health bar: the bottom-left corner, a fixed-length track plus a `3/5` label.
+     *
+     * Fixed LENGTH rather than fixed scale, because the two routes' health scales differ by ten times (a
+     * non-growing route holds a flat 5, a growing one reaches 50). The track carries the proportion and the label
+     * carries the absolute number, so "how much have I lost" and "how much is left" each get one channel.
+     */
+    healthBar: {
+      /** From the lane's left edge, and from the canvas' bottom edge, in design pixels. */
+      x: number;
+      y: number;
+      /** The track's length as a fraction of the lane, and its height in design pixels. */
+      widthRatio: number;
+      height: number;
+      trackColour: number;
+      trackAlpha: number;
+      fillColour: number;
+      fillAlpha: number;
+      /** The fill swaps to this below `lowThreshold`, so "nearly out" is readable without reading the number. */
+      lowColour: number;
+      lowThreshold: number;
+      borderColour: number;
+      borderAlpha: number;
+      /** The `3/5` label: size, colour, and its gap from the track's right end. */
+      labelSize: number;
+      labelColour: number;
+      labelGap: number;
+    };
+    /**
      * The results card: the lines shown when a run ends.
      *
      * `widthRatio` is the reason this is in the config at all. The card used to be sized by the WORLD zoom alone,
@@ -362,6 +393,21 @@ export interface Mechanisms {
     absorbEfficiency: number;
     laneRatio: number;
   };
+  /**
+   * The hit points of a route that does NOT grow.
+   *
+   * A second health economy, and it exists for exactly the routes whose bubble never changes size: a bubble that
+   * stays the same size cannot express "I am nearly dead" through its size, so the number needs its own home. The
+   * growth routes keep `volume` as their health, where it belongs. See `config/mechanics.json5`.
+   */
+  health: {
+    /** Starting maximum, in points. One point is one hit. */
+    start: number;
+    /** What one 「修复血条」 pick restores. */
+    healPerPick: number;
+    /** What one 「血上限」 pick adds to the maximum. */
+    maxPerPick: number;
+  };
   movement: {
     keyboardCrossingSeconds: number;
     verticalSpeedScale: number;
@@ -394,6 +440,20 @@ export interface Mechanisms {
     slowSeconds: number;
     /** How long the ease back to full speed takes after that. */
     recoverSeconds: number;
+    /**
+     * The flash on the bubble's own edge, on the frame the graze lands.
+     *
+     * The third piece of the same feedback and the only one that lives ON the player: the word in the water says
+     * what happened, the slow motion says look at it, and this says it was YOU that nearly got hit. Deliberately a
+     * flash and not a standing circle -- a graze range drawn on screen would turn dodging into reading a gauge.
+     */
+    playerFlash: {
+      seconds: number;
+      colour: number;
+      alpha: number;
+      /** Stroke width, as a fraction of the bubble's radius. */
+      widthRatio: number;
+    };
   };
   /** The "擦边！！" text, in the water where the near-miss happened. See `graze` beside it. */
   grazePopups: PopupStyle;
@@ -436,7 +496,6 @@ export interface Mechanisms {
       steerPerPick: number;
       ascentPerPick: number;
       armorPerPick: number;
-      healVolume: number;
       invulnSecondsPerPick: number;
       ragePerPick: number;
       suctionPerPick: number;
@@ -1765,7 +1824,7 @@ const APPEARANCE_RULES: { key: string; what: string; ok: (v: unknown) => boolean
       (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 0xffffff) ||
       (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)),
   })),
-  ...(['innerAlpha', 'rimAlpha', 'glowOuterAlpha', 'glowInnerAlpha', 'innerRingAlpha', 'sheenAlpha', 'specularAlpha'] as const).map(
+  ...(['innerAlpha', 'rimAlpha', 'glowInnerAlpha', 'innerRingAlpha', 'sheenAlpha', 'specularAlpha'] as const).map(
     (key) => ({
       key,
       what: 'opacity between 0 and 1',
@@ -1777,7 +1836,7 @@ const APPEARANCE_RULES: { key: string; what: string; ok: (v: unknown) => boolean
     what: 'stroke width as a fraction of the radius, between 0.01 and 0.5',
     ok: (v: unknown) => typeof v === 'number' && v >= 0.01 && v <= 0.5,
   })),
-  ...(['glowOuterRadiusRatio', 'glowInnerRadiusRatio'] as const).map((key) => ({
+  ...(['glowInnerRadiusRatio'] as const).map((key) => ({
     key,
     what: 'radius as a multiple of the bubble radius, at least 1',
     ok: (v: unknown) => typeof v === 'number' && v >= 1 && v <= 4,
@@ -1856,6 +1915,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'graze.slowFactor', check: (v) => typeof v === 'number' && v > 0.05 && v <= 1, describe: 'a timescale above 0.05 and at most 1 (1 is no slow at all)' },
   { path: 'graze.slowSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'seconds between 0 and 3' },
   { path: 'graze.recoverSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'seconds between 0 and 3' },
+  { path: 'graze.playerFlash.seconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'seconds between 0 and 2' },
+  { path: 'graze.playerFlash.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'graze.playerFlash.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'graze.playerFlash.widthRatio', check: (v) => typeof v === 'number' && v > 0 && v <= 0.6, describe: 'a stroke width ratio above 0 and at most 0.6' },
   ...popupRules('grazePopups'),
   { path: 'mutation.autoPerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 50, describe: 'mutation points per second between 0 and 50' },
   ...['drivenOff', 'eaten', 'graze', 'bulletGraze', 'pointBlank', 'defuse', 'boss'].map((event) => ({
@@ -1873,7 +1936,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     'steerPerPick',
     'ascentPerPick',
     'armorPerPick',
-    'healVolume',
     'invulnSecondsPerPick',
     'ragePerPick',
     'suctionPerPick',
@@ -1913,6 +1975,21 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hud.score.size', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
   { path: 'hud.score.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hud.score.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.healthBar.x', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
+  { path: 'hud.healthBar.y', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
+  { path: 'hud.healthBar.widthRatio', check: (v) => typeof v === 'number' && v > 0.1 && v <= 1, describe: 'a fraction of the lane width above 0.1 and at most 1' },
+  { path: 'hud.healthBar.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },
+  { path: 'hud.healthBar.trackColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.healthBar.trackAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.healthBar.fillColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.healthBar.fillAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.healthBar.lowColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.healthBar.lowThreshold', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a proportion between 0 and 1' },
+  { path: 'hud.healthBar.borderColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.healthBar.borderAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
+  { path: 'hud.healthBar.labelSize', check: (v) => typeof v === 'number' && v >= 8 && v <= 60, describe: 'a font size between 8 and 60' },
+  { path: 'hud.healthBar.labelColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hud.healthBar.labelGap', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'design pixels between 0 and 200' },
   { path: 'hud.bossBar.y', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'design pixels between 0 and 400' },
   { path: 'hud.bossBar.widthRatio', check: (v) => typeof v === 'number' && v > 0.1 && v <= 1, describe: 'a fraction of the lane width above 0.1 and at most 1' },
   { path: 'hud.bossBar.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },
@@ -1954,6 +2031,9 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'volume.hitCost', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'volume.absorbEfficiency', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'volume.laneRatio', check: (v) => typeof v === 'number' && v > 0 && v < 0.5, describe: 'a small number above 0' },
+  { path: 'health.start', check: (v) => typeof v === 'number' && v >= 1 && v <= 200, describe: 'a hit count between 1 and 200' },
+  { path: 'health.healPerPick', check: (v) => typeof v === 'number' && v > 0 && v <= 100, describe: 'points above 0 and at most 100' },
+  { path: 'health.maxPerPick', check: (v) => typeof v === 'number' && v > 0 && v <= 100, describe: 'points above 0 and at most 100' },
   { path: 'movement.keyboardCrossingSeconds', check: (v) => typeof v === 'number' && v > 0.05, describe: 'seconds above 0.05' },
   { path: 'movement.verticalSpeedScale', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'movement.drag.sensitivity', check: (v) => typeof v === 'number' && v > 0 && v <= 4, describe: 'a displacement multiplier above 0 and at most 4; 1 is finger-for-finger' },
@@ -2666,9 +2746,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.look.innerAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'angry.look.rimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'angry.look.rimWidthRatio', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.6, describe: 'a stroke width ratio between 0 and 0.6' },
-  { path: 'angry.look.glowOuterAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'angry.look.glowInnerAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
-  { path: 'angry.look.glowOuterRadiusRatio', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a radius ratio between 1 and 4' },
   { path: 'angry.look.glowInnerRadiusRatio', check: (v) => typeof v === 'number' && v >= 1 && v <= 4, describe: 'a radius ratio between 1 and 4' },
   { path: 'angry.look.innerRing', check: (v) => typeof v === 'boolean', describe: 'true or false' },
   { path: 'angry.look.innerRingAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },

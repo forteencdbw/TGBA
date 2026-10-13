@@ -20,6 +20,7 @@ import { chainTargets } from './conductive';
 import { tuning } from './config';
 import { massFromEating } from './consumption';
 import { hazardTuning, shoveCreature, type Hazard, type SpawnOptions } from './hazards';
+import { healthAfterHit, healthMaxFor, hitsLeft } from './health';
 import { canEatHazard } from './consumption';
 import { LEVEL, type LevelEntry } from './levels';
 import { mech } from './mechanisms';
@@ -291,6 +292,55 @@ export class Run {
   bestScore = 0;
   score = new Score();
   surfaced = false;
+  /**
+   * Health, for the routes whose bubble does not grow.
+   *
+   * Left at zero by the growing route, where `player.volume` is the health -- a second number there would be a
+   * second answer to one question. `healthView` is the single place the two are reconciled into the bar's pair.
+   */
+  health = 0;
+  /** The ceiling above: `mech.health.start` plus every 「血上限」 pick this run has taken. */
+  healthMax = 0;
+
+  /**
+   * Whether this form's DEATH is read off its volume.
+   *
+   * True for the growing routes, where volume is the health, and for a `hitsToPop` form, which zeroes its volume
+   * so that it can reuse the same pop check rather than branching to a second death. False for the fixed-size
+   * routes, whose health is a count that the volume knows nothing about.
+   */
+  private get diesByVolume(): boolean {
+    return this.bubbleType.growsByAbsorbing || this.bubbleType.hitsToPop !== null;
+  }
+
+  /**
+   * The health bar's numbers, from whichever rule this route is under.
+   *
+   * Both are in HITS rather than in each route's own unit (volume, points), because the bar answers one question
+   * -- "how many more mistakes can I afford" -- and a volume is not comparable to a point. A growing route's
+   * ceiling is its VOLUME ceiling, so its bar fills as it eats: that is the honest reading, since eating is
+   * exactly what buys those hit points back.
+   */
+  get healthView(): { current: number; max: number; hits: number } {
+    if (this.bubbleType.growsByAbsorbing) {
+      const per = mech.volume.hitCost;
+      const current = this.player.volume / per;
+      return { current, max: mech.volume.max / per, hits: hitsLeft(current) };
+    }
+    return { current: this.health, max: this.healthMax, hits: hitsLeft(this.health) };
+  }
+
+  /**
+   * Full health for a fresh level, re-derived from the picks this run is carrying.
+   *
+   * Called where the player is reset, so both health rules are restored at the same moment and every level starts
+   * from the same bar whichever route is running. The 「血上限」 count is read here rather than remembered, which is
+   * what lets a carried mutation survive the level transition the way every other passive does.
+   */
+  resetHealth(): void {
+    this.healthMax = healthMaxFor(this.mutations['maxHp'] ?? 0);
+    this.health = this.healthMax;
+  }
 
   /**
    * Land one hit on the bubble.
@@ -322,27 +372,33 @@ export class Run {
      */
     const hitPoints = 1;
     /**
-     * A type whose hit points are a COUNT rather than a volume.
+     * Where the hit LANDS: the volume, or the count.
      *
-     * The volumetric rule above is the devour bubble's reward for eating and the volatile bubble's consolation for
-     * having no stomach; a type that declares `hitsToPop` has neither and takes that many hits at ANY size. The plain
-     * bubble is the one that does, and its design is exactly that a touch is fatal and nothing it does changes that.
+     * The growing route's health is its volume -- eating refills it, a hit takes a hit-point out of it, and the
+     * bubble's size moves with it. A route that does not grow holds one size all run, so its health is a separate
+     * count and eating does not touch it. The two are one decision (`bubbleTypes.growsByAbsorbing`), and this is
+     * the only place damage is applied, so it is the only place that decision has to be read.
      *
-     * Setting the volume to zero rather than branching to a second death: the pop check below is the same one every
-     * other hit goes through, so only the AMOUNT of damage has a second rule, not the dying.
+     * `hitsToPop` is the third case and the narrowest: a form whose hit points are a COUNT but whose death still
+     * goes through the volume, by zeroing it. No form declares it today -- it is what the pre-route plain bubble
+     * was, kept for a form that wants "a touch is fatal" back.
      */
     if (this.bubbleType.hitsToPop !== null) {
       this.player.volume = 0;
-    } else {
+    } else if (this.bubbleType.growsByAbsorbing) {
       for (let i = 0; i < hitPoints; i++) {
         this.player.volume = shrinkFromHit(this.player.volume, this.player.shrinkResistance);
       }
+    } else {
+      this.health = healthAfterHit(this.health, this.player.shrinkResistance);
     }
 
-    // Decide from the POST-hit volume: asking whether the current volume can survive one more hit
-    // is the right question, and asking it of the pre-hit volume let health reach zero without ever
-    // popping the bubble.
-    if (isPopped(this.player.volume) || this.player.volume <= 0) {
+    // Decide from the POST-hit value: asking whether what is left can survive one more hit is the right question,
+    // and asking it of the pre-hit value let health reach zero without ever popping the bubble.
+    const dead = this.diesByVolume
+      ? isPopped(this.player.volume) || this.player.volume <= 0
+      : this.health <= 0;
+    if (dead) {
       this.startBurst();
       return;
     }
@@ -1117,12 +1173,12 @@ this.sound('slow');
 
       if (playerR >= bubbleR * 0.92) {
         /**
-         * Absorbed -- and what that PAYS depends on whether this type grows at all.
+         * Absorbed -- and what that PAYS depends on whether this form grows at all.
          *
-         * For the devour and volatile bubbles, growth is the reward: bubbles are food, food is volume, and volume is
-         * hit points as well as hitbox. For a type that declares `growsByAbsorbing: false` the same act pays in
-         * POINTS and the bubble stays exactly the size it was -- growing would buy it nothing (its hit points are a
-         * fixed count) and cost it a bigger hitbox, a slower bubble and the stage penalty on top. So the bubble is
+         * For a form that grows (devour is the only one) growth IS the reward: bubbles are food, food is volume, and
+         * volume is hit points as well as hitbox. For every other form the same act pays in POINTS and the bubble
+         * stays exactly the size it was -- growing would buy it nothing, because its hit points are a count that
+         * eating does not touch (`src/health.ts`), and it would cost it a bigger hitbox on top. So the bubble is
          * still removed and still pays; only the currency differs.
          *
          * The stage counter is deliberately not touched in that branch either: advancing it would apply the growth
@@ -1179,15 +1235,25 @@ this.sound('slow');
     // would still let the player kill themselves by overeating.
     if (this.infiniteHealth) return;
     const before = this.player.volume;
+    const beforeHealth = this.health;
     let hits = 0;
     for (let i = 0; i < mech.angry.overload.punishHits; i++) {
-      // Stop while one hit point remains: see the note above.
-      if (hitsSurvived(this.player.volume) <= 1) break;
-      this.player.volume = shrinkFromHit(this.player.volume, this.player.shrinkResistance);
+      // Stop while one hit point remains: see the note above. Which pool is being drained is the same question the
+      // contact damage asks, and answered the same way.
+      if (this.diesByVolume) {
+        if (hitsSurvived(this.player.volume) <= 1) break;
+        this.player.volume = shrinkFromHit(this.player.volume, this.player.shrinkResistance);
+      } else {
+        if (this.health <= 1) break;
+        this.health = healthAfterHit(this.health, this.player.shrinkResistance);
+      }
       hits++;
     }
     this.stats.overloads++;
-    this.banner(`怒气失控  ·  体积 ${before.toFixed(2)} → ${this.player.volume.toFixed(2)}`);
+    const wound = this.diesByVolume
+      ? `体积 ${before.toFixed(2)} → ${this.player.volume.toFixed(2)}`
+      : `血量 ${hitsLeft(beforeHealth)} → ${hitsLeft(this.health)}`;
+    this.banner(`怒气失控  ·  ${wound}`);
 this.sound('pop');
   }
   /** The bubble pops: slow-motion burst, then a brief result card, then a fresh run. */

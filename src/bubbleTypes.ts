@@ -110,10 +110,16 @@ export interface BubbleType {
    */
   hitsToPop: number | null;
   /**
-   * Whether ABSORBING a collectable bubble makes this form grow.
+   * Whether ABSORBING a collectable bubble makes this form grow -- and, with it, whether `volume` is this form's
+   * health at all.
    *
-   * True for every form: bubbles are food, food is volume, and volume is both hit points and hitbox. That
-   * tension -- bigger is stronger and harder to miss -- is the game's, before any route is picked.
+   * Those are one question, which is why one flag answers both. A form that grows has a health pool its food
+   * refills (`volume`, where bigger is both stronger and easier to hit). A form that does not grow needs a pool
+   * its food does NOT touch, or the same hit would cost more to undo the longer the run went -- see
+   * `src/health.ts`. A form that grew while keeping a separate bar would be paid for its food twice.
+   *
+   * TRUE ONLY FOR THE DEVOUR ROUTE. The base bubble and the other two routes hold one size for the whole run,
+   * which is also what makes their collision radius a thing a player can learn by looking.
    */
   growsByAbsorbing: boolean;
   /**
@@ -127,9 +133,14 @@ export interface BubbleType {
 /**
  * The one form a run starts as, and the one it keeps if nothing is ever added to it.
  *
- * Skill button (a carried skill is an item, not an ability), the gun, growth, volume-as-health, the growth
- * palette. No field, no swallow, no rage -- everything beyond this is a ROUTE, and the route is chosen in the
- * water rather than on the menu.
+ * Skill button (a carried skill is an item, not an ability), the gun, a FIXED size with fuel-free hit points, and
+ * the growth palette. No field, no swallow, no rage -- everything beyond this is a ROUTE, and the route is chosen
+ * in the water rather than on the menu.
+ *
+ * It does not grow, and that is the shape the whole route system is built on: the first level-up offers three
+ * cards, and only one of them (devour) turns the bubble into something that eats its way up the food chain. A
+ * player who picks either of the other two keeps the bubble they have been steering, at the size they have
+ * learned, for the rest of the run.
  */
 export const BASE_TYPE: BubbleType = {
   id: 'base',
@@ -141,7 +152,7 @@ export const BASE_TYPE: BubbleType = {
   firesBullets: true,
   resource: null,
   hitsToPop: null,
-  growsByAbsorbing: true,
+  growsByAbsorbing: false,
 };
 
 /** A route: what the run's bubble BECOMES, the moment its card is picked. */
@@ -159,6 +170,14 @@ export interface Route {
   look: LookSource;
   /** Whether the form can swallow hazards. */
   swallowsHazards: boolean;
+  /**
+   * Whether the form still GROWS by absorbing, and so whether `volume` is its health.
+   *
+   * The one field a route sets that the other two do not: devour keeps the base rule (food is volume is health),
+   * and the other two replace it with the fixed hit points in `src/health.ts`. See `BubbleType.growsByAbsorbing`
+   * for why those are one question.
+   */
+  growsByAbsorbing: boolean;
   /** The HUD's second resource, if the route brings one. */
   resource: { label: string } | null;
 }
@@ -183,6 +202,8 @@ export const ROUTES: readonly Route[] = [
     controls: ['skill', 'suction'],
     look: 'growthStage',
     swallowsHazards: true,
+    /** The only route that grows: eating is the whole point, and the price is a bigger hitbox. */
+    growsByAbsorbing: true,
     resource: null,
   },
   {
@@ -197,6 +218,8 @@ export const ROUTES: readonly Route[] = [
     controls: ['skill', 'charge', 'burst'],
     look: 'rage',
     swallowsHazards: false,
+    /** Fixed size. Rage is this route's answer to growth, and a bubble that also grew would be two answers. */
+    growsByAbsorbing: false,
     resource: { label: '怒气' },
   },
   {
@@ -211,6 +234,8 @@ export const ROUTES: readonly Route[] = [
     controls: ['skill'],
     look: 'growthStage',
     swallowsHazards: false,
+    /** Fixed size: this route deepens the gun rather than the body, so the body stays the one you learned. */
+    growsByAbsorbing: false,
     resource: null,
   },
 ];
@@ -229,6 +254,7 @@ export function formForRoute(route: Route): BubbleType {
     controls: route.controls,
     look: route.look,
     swallowsHazards: route.swallowsHazards,
+    growsByAbsorbing: route.growsByAbsorbing,
     resource: route.resource,
   };
 }

@@ -535,6 +535,14 @@ export interface HudState {
    * not a boss bar at zero health.
    */
   boss: { name: string; fraction: number } | null;
+  /**
+   * The player's own health, as the bar reads it: the value now, the ceiling, and whole hits for the label.
+   *
+   * Three numbers rather than one proportion, because the bar shows both and they answer different questions --
+   * the track says "how much of me is left", the label says "how many more mistakes can I afford". A proportion
+   * alone cannot do the second, and the ceiling moves under the bar on both routes (a 「血上限」 pick, or eating).
+   */
+  health: { current: number; max: number; hits: number };
   /** Which birth type this run rolled. */
   seed: string;
   /** This run's talent, for the line under the seed. Null or empty shows nothing. */
@@ -632,6 +640,24 @@ export class Hud {
    */
   private readonly bossName: Text;
   private readonly bossBar = new Graphics();
+  /**
+   * The player's own health: a bar and its `3/5` label, in the bottom-left corner.
+   *
+   * Own layer and own label like the boss bar, for the same reason -- this is the one readout whose job is to be
+   * noticed while it CHANGES, so it is drawn from the state and guarded on it rather than re-laid-out each frame.
+   *
+   * The corner is the reason it lives here rather than in the top block: the touch controls occupy the bottom-RIGHT
+   * column and dragging starts anywhere, so the bottom-left is the one corner that is both empty and out of the way
+   * of a thumb.
+   */
+  private readonly healthGauge = new Graphics();
+  private readonly healthLabel: Text;
+  /** What the health bar last drew, so a frame that did not move it does not rebuild it. */
+  private shownHealth = -1;
+  private shownHealthMax = -1;
+  private shownHealthHits = -1;
+  /** The canvas height in CSS pixels, remembered for the health bar (which is pinned to the bottom edge). */
+  private canvasHeight = 0;
   /** What the bar currently shows, so a per-frame call does not redraw a bar that has not moved. */
   private shownBossFraction = -1;
   /** The bar's width in the last frame it was drawn at: a resize moves the lane out from under a bar that has not moved. */
@@ -700,6 +726,11 @@ export class Hud {
      */
     this.scoreLabel = makeLabel('', mech.hud.score.colour, mech.hud.score.size);
     this.bossName = makeLabel('', mech.hud.bossBar.nameColour, mech.hud.bossBar.nameSize);
+    this.healthLabel = makeLabel('', mech.hud.healthBar.labelColour, mech.hud.healthBar.labelSize);
+    // Left-aligned on its own right end, so the bar can grow or shrink without moving the number: `layout` puts the
+    // label beside the track, and the track's length is fixed, but the label's own text is not ("9/9" is wider than
+    // "5/5"). Anchored at 0 it starts at the same x whatever it says.
+    this.healthLabel.anchor.set(0, 0.5);
     this.bossName.anchor.set(0.5, 1);
     this.bossName.visible = false;
     this.bossBar.visible = false;
@@ -714,6 +745,8 @@ export class Hud {
       this.scoreLabel,
       this.bossBar,
       this.bossName,
+      this.healthGauge,
+      this.healthLabel,
       this.debug,
     );
 
@@ -804,6 +837,23 @@ export class Hud {
     this.bossName.x = this.laneCentreX;
     this.bossName.y = mech.hud.bossBar.y * s - mech.hud.bossBar.nameOffset * s;
 
+    /**
+     * The health bar: the bottom-left corner, measured from the LANE's left edge and the canvas' bottom edge.
+     *
+     * Both ends of that sentence are deliberate. The lane rather than the canvas, because the two differ on a wide
+     * window and the HUD's other bars all measure from the lane -- a bar that hung over the water beside the play
+     * area would be the odd one out. The bottom edge rather than the top, because the top is already carrying the
+     * stage line, the resource gauge, the mutation meter and the boss bar.
+     *
+     * The LABEL is placed here rather than at draw time: the track's length is fixed, so the number's x is a
+     * property of the layout, and only its text changes per frame.
+     */
+    this.canvasHeight = viewport.height;
+    const hb = mech.hud.healthBar;
+    this.healthLabel.scale.set(s);
+    this.healthLabel.x = viewport.left + hb.x * s + this.laneWidthPx * hb.widthRatio + hb.labelGap * s;
+    this.healthLabel.y = viewport.height - hb.y * s - (hb.height * s) / 2;
+
 }
 
   /**
@@ -856,9 +906,63 @@ export class Hud {
       }
     }
 
+    /**
+     * The health bar, redrawn when any of its three numbers moves.
+     *
+     * Guarded because two of them change constantly on a growing route: eating raises the value AND the ceiling,
+     * and every one of those frames would otherwise rebuild a rounded rect and a string.
+     */
+    const health = state.health;
+    if (
+      health.current !== this.shownHealth ||
+      health.max !== this.shownHealthMax ||
+      health.hits !== this.shownHealthHits
+    ) {
+      this.shownHealth = health.current;
+      this.shownHealthMax = health.max;
+      this.shownHealthHits = health.hits;
+      this.redrawHealth(health);
+    }
+
     this.seedLabel = state.seed;
     this.talentLabel = state.talent ?? '';
     this.skillLabel = state.skill ? `${state.skill.name} ×${state.skill.uses}` : '';
+  }
+
+  /**
+   * The health bar's pixels, from the numbers `updateRunReadouts` handed over.
+   *
+   * A FIXED-length track with a proportional fill, and the length deliberately does not follow the ceiling: the two
+   * routes' ceilings differ by ten times, so a track that grew with them would make "half health" look identical at
+   * 3 of 5 and at 25 of 50 while saying nothing about the hole the player is actually in.
+   *
+   * The fill swaps colour below `lowThreshold`, because that is the one moment the label is too small to be the
+   * answer -- "nearly out" has to be readable from the corner of the eye.
+   */
+  private redrawHealth(health: { current: number; max: number; hits: number }): void {
+    const cfg = mech.hud.healthBar;
+    const s = this.hudScale;
+    const g = this.healthGauge;
+    g.clear();
+
+    const w = this.laneWidthPx * cfg.widthRatio;
+    const h = cfg.height * s;
+    const x = this.laneCentreX - this.laneWidthPx / 2 + cfg.x * s;
+    const y = this.canvasHeight - cfg.y * s - h;
+    const radius = h / 2;
+
+    const fraction = health.max > 0 ? Math.min(1, Math.max(0, health.current / health.max)) : 0;
+    const low = fraction <= cfg.lowThreshold;
+
+    g.roundRect(x, y, w, h, radius).fill({ color: cfg.trackColour, alpha: cfg.trackAlpha });
+    const filled = w * fraction;
+    if (filled > 0.5) {
+      g.roundRect(x, y, filled, h, radius).fill({ color: low ? cfg.lowColour : cfg.fillColour, alpha: cfg.fillAlpha });
+    }
+    g.roundRect(x, y, w, h, radius).stroke({ color: cfg.borderColour, alpha: cfg.borderAlpha, width: 1 });
+
+    // Whole hits over the ceiling: `hits` rounds up (see `src/health.ts`), and the ceiling is whole on both routes.
+    this.healthLabel.text = `${health.hits}/${Math.round(health.max)}`;
   }
 
   /** Test hooks: the boss bar as the player sees it. Absence is information, so both are read. */

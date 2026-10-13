@@ -1,5 +1,6 @@
 import { mech } from './mechanisms';
 import type { Run } from './run';
+import { healthAfterHeal, healthMaxFor } from './health';
 import { SKILLS } from './skills';
 import { ROUTES, type RouteId } from './bubbleTypes';
 
@@ -116,12 +117,49 @@ const POOL: readonly Mutation[] = [
   },
   {
     id: 'heal',
-    name: '修复体积',
-    blurb: `立刻恢复 ${mech.mutation.pool.healVolume} 体积（一次性）`,
+    name: '修复血条',
+    blurb: `血条立刻回 ${mech.health.healPerPick} 点（一次性）`,
+    /**
+     * One card, two pools -- and the same AMOUNT of health, which is why this is not two cards.
+     *
+     * A growing route keeps its health in its volume, so "one point" is `volume.hitCost` of it; every other route
+     * keeps its health in the count. The player reads the same thing either way ("my bar went up a point"), and the
+     * bar is what they are looking at -- the unit underneath is the implementation's business.
+     */
     routes: 'all',
-    available: (run) => run.player.volume < mech.volume.max - 0.01,
+    available: (run) => {
+      const view = run.healthView;
+      return view.current < view.max - 0.01;
+    },
     apply: (run) => {
-      run.player.volume = Math.min(mech.volume.max, run.player.volume + mech.mutation.pool.healVolume);
+      if (run.bubbleType.growsByAbsorbing) {
+        run.player.volume = Math.min(mech.volume.max, run.player.volume + mech.volume.hitCost * mech.health.healPerPick);
+      } else {
+        run.health = healthAfterHeal(run.health, run.healthMax);
+      }
+    },
+  },
+  {
+    id: 'maxHp',
+    name: '血上限 +1',
+    blurb: '血条的上限加一格，可叠加',
+    /**
+     * Always legal, and it stops being offered on its own once it has nothing left to give.
+     *
+     * On a growing route this card IS a growth card: one more hit point is `volume.hitCost` more volume, the bubble
+     * gets visibly bigger, and it goes dead the moment the volume ceiling is reached -- which is exactly the
+     * `available` test below, so the pool never offers a card that would do nothing.
+     */
+    routes: 'all',
+    available: (run) => (run.bubbleType.growsByAbsorbing ? run.player.volume < mech.volume.max - 0.01 : true),
+    apply: (run) => {
+      if (run.bubbleType.growsByAbsorbing) {
+        run.player.volume = Math.min(mech.volume.max, run.player.volume + mech.volume.hitCost * mech.health.maxPerPick);
+      } else {
+        // Both numbers, so the new ceiling arrives full: see `applyMutationPassives`.
+        run.health += mech.health.maxPerPick;
+        run.healthMax = healthMaxFor((run.mutations['maxHp'] ?? 0) + 1);
+      }
     },
   },
   {
@@ -317,4 +355,12 @@ export function applyMutationPassives(run: Run): void {
   run.player.steerScale = run.talentEffects.steerMultiplier * (1 + pool.steerPerPick) ** count('steer');
   run.player.ascentBonus = run.talentEffects.ascentMultiplier * (1 + pool.ascentPerPick) ** count('ascent');
   run.player.shrinkResistance = Math.min(0.9, run.talentEffects.shrinkResistance + pool.armorPerPick * count('armor'));
+  /**
+   * The health ceiling, re-derived like every other passive.
+   *
+   * The 「血上限」 card also adds to the CURRENT health when it is taken -- a ceiling without the point that fills
+   * it would leave the bar showing a deficit the player never took damage for. Both numbers move by the same
+   * amount, one at pick time and one here, and this one is idempotent so a re-roll cannot double it.
+   */
+  run.healthMax = healthMaxFor(count('maxHp'));
 }

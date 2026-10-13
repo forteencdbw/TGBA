@@ -62,6 +62,13 @@ export interface GameSnapshot {
   };
   stage: StageState;
   bubbleType: BubbleType;
+  /**
+   * The health bar's numbers: the value now, the ceiling, and whole hits.
+   *
+   * A getter on the run rather than a stored pair, because the two routes keep their health in different places --
+   * the volume, or a count beside it -- and this is the single place the two are reconciled into one answer.
+   */
+  healthView: { current: number; max: number; hits: number };
   /** The route this run committed to at its first level-up, or null while it is still the base bubble. */
   route: RouteId | null;
   /** The gun's row count: what the 枪管 cards and the barrage route's own grant move. */

@@ -13,7 +13,6 @@ import { stageName, stageRadiusFraction, type StageAppearance } from './stages';
 import { suctionRadiusFraction } from './suction';
 import { TALENTS } from './talents';
 import { buildLabel, GIT_DIRTY, GIT_HASH, APP_VERSION } from './version';
-import { hitsSurvived } from './volume';
 
 /**
  * What one frame of the game looks like from outside it.
@@ -262,6 +261,8 @@ export function diagnosticsOf(g: GameSnapshot): {
     phase: string;
     volume: number;
     hitsSurvived: number;
+    /** The health bar's own numbers: what the player reads in the bottom-left corner. */
+    health: { current: number; max: number; hits: number };
     invulnerable: number;
     bubbles: number;
     lastEaten: number;
@@ -556,13 +557,16 @@ export function diagnosticsOf(g: GameSnapshot): {
       phase: g.phase,
       volume: g.player.volume,
       /**
-       * How many hits this bubble can still take.
+       * How many hits this bubble can still take, whichever rule it is under.
        *
-       * The TYPE's rule comes first, not the volume's: a type that declares `hitsToPop` has that many hits whatever it
-       * has grown to, so reporting `hitsSurvived(volume)` for the plain bubble would say "6" about a bubble that dies
-       * to one touch -- and a probe-facing number that lies is worse than no number.
+       * Read from `healthView` rather than computed from the volume, because on the fixed-size routes the health is
+       * not in the volume at all -- asking the volume there would report a number that has nothing to do with the
+       * bar the player is looking at, and a probe-facing number that lies is worse than no number. The `hitsToPop`
+       * form still answers for itself: it dies to one touch whatever its volume says.
        */
-      hitsSurvived: g.bubbleType.hitsToPop ?? hitsSurvived(g.player.volume),
+      hitsSurvived: g.bubbleType.hitsToPop ?? g.healthView.hits,
+      /** The same numbers the HUD's bar is drawn from, so a probe asserts the display rather than a parallel copy. */
+      health: g.healthView,
       invulnerable: g.invulnerable,
       bubbles: g.field.bubbles.length,
       lastEaten: g.lastEaten,

@@ -1197,6 +1197,16 @@ class Game {
    * everything else by the pause and by the mutation pick.
    */
   private grazeSlow = 0;
+  /**
+   * Seconds of graze FLASH left on the bubble's own edge.
+   *
+   * Real time, like `grazeSlow` beside it and for the same mechanical reason: it counts down in the same frozen
+   * phases, and a flash measured in scaled seconds would be stretched by the very slow motion that accompanies it.
+   *
+   * Presentation state rather than simulation state, which is why it lives here and not on `Run`: nothing in the
+   * rules reads it, and the graze itself is already paid by the time this starts.
+   */
+  private grazeFlash = 0;
   /** White-out flash driven by the surface breach, 1 -> 0. */
   private splash = 0;
   /** Whether the current burst is a SURFACE finish rather than a death. */
@@ -1448,6 +1458,7 @@ class Game {
       this.run.phase !== 'codex'
     ) {
       this.grazeSlow = Math.max(0, this.grazeSlow - dt);
+      this.grazeFlash = Math.max(0, this.grazeFlash - dt);
     }
     const scaled = dt * this.grazeTimeScale();
 
@@ -2207,6 +2218,14 @@ class Game {
      * `applyMutationPassives`.
      */
     applyMutationPassives(this.run);
+    /**
+     * The health bar, full, for the level that is starting.
+     *
+     * AFTER the passives, deliberately: `applyMutationPassives` is what re-derives the ceiling from the carried
+     * 「血上限」 picks, and filling before that would fill to last level's ceiling. The growing route has nothing
+     * to do here -- `player.reset()` already put its volume back, and its health IS that volume.
+     */
+    this.run.resetHealth();
     this.talentLabel = this.run.talentEffects.talent.name;
   }
 
@@ -2679,15 +2698,17 @@ private updateBoss(): void {
           break;
         case 'graze':
           /**
-           * The graze's two presents, both the presentation's to give.
+           * The graze's three presents, all of them the presentation's to give.
            *
-           * The word goes in the water where the near-miss happened; the slow motion is a whole-world
-           * timescale (see `frame`), so it cannot be granted by the rule that noticed the graze. The
-           * refresh-not-stack is deliberate: consecutive grazes keep the world slow rather than slowing
-           * it towards a standstill, which was the design's call -- the reward is TIME, not power.
+           * The word goes in the water where the near-miss happened; the slow motion is a whole-world timescale
+           * (see `frame`), so it cannot be granted by the rule that noticed the graze; and the flash goes on the
+           * BUBBLE, which is the only one of the three that says "that was YOU that nearly got hit". The
+           * refresh-not-stack is deliberate: consecutive grazes keep the world slow rather than slowing it towards
+           * a standstill, which was the design's call -- the reward is TIME, not power.
            */
           this.grazePopups.say(e.x, e.y, mech.grazePopups.prefix, this.camera);
           this.grazeSlow = mech.graze.slowSeconds + mech.graze.recoverSeconds;
+          this.grazeFlash = mech.graze.playerFlash.seconds;
           break;
         case 'callout':
           // The graze's small change: a word where the trick happened, and nothing else.
@@ -2773,6 +2794,7 @@ private updateBoss(): void {
       this.hud.update({
         score: this.run.score.value,
         boss: this.bossView,
+        health: this.run.healthView,
         seed: this.seedLabel,
         talent: this.talentLabel,
         skill: this.run.skill ? { name: this.run.skill.name, uses: this.run.skill.uses } : null,
@@ -3379,16 +3401,40 @@ private updateBoss(): void {
      * The bubble's interior is deliberately MOSTLY TRANSPARENT, and the STAGE COLOUR is carried by the rim and
      * the glow instead.
      *
-     * Measured reason: five translucent layers of light colour stack over the interior (two glow passes, the
-     * inner wash, the sheen and the speculars), and stacked past roughly half opacity they average toward white
-     * -- which over dark water is a NEUTRAL GREY. The stage hue was being averaged away exactly where the player
-     * looks most, and the bubble read as a grey disc with a coloured ring rather than as a coloured bubble.
+     * Measured reason: translucent layers of light colour stack over the interior (the glow, the inner wash, the
+     * sheen and the speculars), and stacked past roughly half opacity they average toward white -- which over dark
+     * water is a NEUTRAL GREY. The stage hue was being averaged away exactly where the player looks most, and the
+     * bubble read as a grey disc with a coloured ring rather than as a coloured bubble.
      *
      * So the interior keeps the water's darkness and the hue lives in the parts that are opaque by nature: the
      * rim, which is a silhouette, and the glow, which is a glow.
+     *
+     * ONE glow pass, and it stops close to the edge. There used to be a second disc out at 1.55x the radius, which
+     * is 55% PAST the edge the bubble actually collides at -- a player reading that edge as their own boundary
+     * misjudges every graze they attempt, and the honest fix for a wrong boundary is to delete it rather than to
+     * shrink or dim it. What is left is 1.18x, which reads as a highlight in dark water rather than as a silhouette.
      */
-    g.circle(worldX, worldY, radius * look.glowOuterRadiusRatio).fill({ color: look.glow, alpha: look.glowOuterAlpha * alpha });
     g.circle(worldX, worldY, radius * look.glowInnerRadiusRatio).fill({ color: look.glow, alpha: look.glowInnerAlpha * alpha });
+
+    /**
+     * The graze flash: a ring ON the bubble's own edge, fading out over `graze.playerFlash.seconds`.
+     *
+     * On the edge and not around it, and that is the whole point rather than a detail: this flash exists to teach
+     * a player where their boundary is, moments after they found out by not being hit. A ring drawn outside the
+     * collision radius would re-teach exactly the mistake the outer glow used to make -- see the note above for
+     * what that cost.
+     *
+     * Drawn at the radius the collision uses, which is the same `radius` every other ring here is built from.
+     */
+    if (this.grazeFlash > 0) {
+      const flash = mech.graze.playerFlash;
+      const fade = Math.min(1, this.grazeFlash / Math.max(1e-6, flash.seconds));
+      g.circle(worldX, worldY, radius).stroke({
+        color: flash.colour,
+        alpha: flash.alpha * fade * alpha,
+        width: radius * flash.widthRatio,
+      });
+    }
 
     // Slowed by a jellyfish: a purple rind around the bubble. Shown ON the player rather than in a
     // status bar, because the penalty is about where the bubble IS -- the player needs to see it
@@ -3508,6 +3554,7 @@ private updateBoss(): void {
       stats: this.run.stats,
       stage: this.run.stage,
       bubbleType: this.run.bubbleType,
+      healthView: this.run.healthView,
       route: this.run.route,
       gunStreams: this.run.gunStreams,
       lateral: this.run.lateral,
