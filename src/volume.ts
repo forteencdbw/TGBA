@@ -1,5 +1,9 @@
 // Volume economy for D2 (volume = health, absorbing = growing).
 //
+// WHICH ROUTES THIS IS ABOUT: the ones that GROW, which is now only devour. A run that did not pick it holds one
+// size all run and keeps its hit points in `src/health.ts` instead -- volume is not its health, and eating does not
+// touch it. The two economies are separate on purpose; see that module's header for why they do not share one.
+//
 // This is its own module because the numbers form a CLOSED ECONOMY. Deriving them in three
 // different files is how you end up with a bubble that cannot die, or one that dies in two hits.
 //
