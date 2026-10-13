@@ -205,7 +205,6 @@ export interface BossDossier {
   patrolPeriodSeconds: number;
   /** How fast it tracks the player sideways, in lane widths per second. Kept below the player's own speed. */
   seekSpeedFactor: number;
-  contactDamage: number;
   /** Body radius as a fraction of the lane width. Large on purpose: this is the level's answer, not another fish. */
   radiusRatio: number;
   colour: number;
@@ -421,7 +420,6 @@ export interface Mechanisms {
   volume: {
     start: number;
     max: number;
-    hitCost: number;
     absorbEfficiency: number;
     laneRatio: number;
   };
@@ -433,12 +431,20 @@ export interface Mechanisms {
    * growth routes keep `volume` as their health, where it belongs. See `config/mechanics.json5`.
    */
   health: {
-    /** Starting maximum, in points. One point is one hit. */
+    /** Starting maximum, in hit points. */
     start: number;
     /** What one 「修复血条」 pick restores. */
     healPerPick: number;
     /** What one 「血上限」 pick adds to the maximum. */
     maxPerPick: number;
+    /**
+     * The floor under one hit, as a fraction of the damage: `max(damage × this, damage - defense)`.
+     *
+     * Not "at least 1 point", which on a 100-point pool is barely a floor at all -- a 20-damage fish against a
+     * player with 30 defence would cost 1 each, which is invulnerability with extra steps. This says DEFENCE MAY
+     * EAT AT MOST NINETY PERCENT.
+     */
+    minDamageRatio: number;
   };
   movement: {
     keyboardCrossingSeconds: number;
@@ -527,7 +533,9 @@ export interface Mechanisms {
       damagePerPick: number;
       steerPerPick: number;
       ascentPerPick: number;
-      armorPerPick: number;
+      /** Extra DEFENSE per 「护甲」 pick, and per 「厚甲」 pick. See `src/health.ts` for the formula. */
+      defensePerPick: number;
+      defenseBigPerPick: number;
       invulnSecondsPerPick: number;
       ragePerPick: number;
       suctionPerPick: number;
@@ -682,7 +690,6 @@ export interface Mechanisms {
     /** LEVEL 1's signature: the black smoker's lethal column. */
     vent: {
       radiusRatio: number;
-      contactDamage: number;
       periodSeconds: number;
       activeSeconds: number;
       warnSeconds: number;
@@ -700,7 +707,6 @@ export interface Mechanisms {
     };
     shrimp: {
       driftSpeedFactor: number;
-      contactDamage: number;
     };
     angler: {
       driftFactor: number;
@@ -754,7 +760,6 @@ export interface Mechanisms {
     foam: {
       radiusRatio: number;
       lifeSeconds: number;
-      contactDamage: number;
       colour: number;
       rimColour: number;
       alpha: number;
@@ -763,7 +768,6 @@ export interface Mechanisms {
     rain: {
       fallSpeedFactor: number;
       pushMeters: number;
-      contactDamage: number;
       colour: number;
       lengthRatio: number;
     };
@@ -772,7 +776,6 @@ export interface Mechanisms {
       runMeters: number;
       seekSpeedFactor: number;
       seekSeconds: number;
-      contactDamage: number;
     };
     bombfish: {
       /** Toward the player, in lane widths per second. Kept below the player's own lateral speed, so it can be fled. */
@@ -790,9 +793,6 @@ export interface Mechanisms {
     };
     slowFactor: number;
     slowSeconds: number;
-    /** Hit points a jellyfish sting costs, on top of the slow. */
-    /** The jellyfish: what its touch costs. Its slow is cross-creature and stays at the top level. */
-    jelly: { contactDamage: number };
     /**
      * How many bullet hits each kind of creature takes before it flees.
      *
@@ -801,6 +801,18 @@ export interface Mechanisms {
      * does NOT kill the creature -- see `fleeSpeedFactor` and `HazardField`'s flee state.
      */
     health: Record<string, number>;
+    /**
+     * What each kind costs the player, in hit points, when it touches them.
+     *
+     * A second table beside `health` rather than a field inside each creature's own block, because the two answer
+     * different questions: `health` is how many bullets drive it off, this is what it does to you. One table is
+     * what makes "how much does a shark hurt, versus a tuna" readable at a glance -- scattered across twenty
+     * blocks it was a thing you had to already know.
+     *
+     * The player's DEFENSE comes straight out of these (`max(damage × minDamageRatio, damage - defense)`), so
+     * these numbers are also the scale the defence cards are priced against. See `src/health.ts`.
+     */
+    contactDamage: Record<string, number>;
     /** How fast a creature that has had enough leaves, in SCREEN HEIGHTS per second: see the config's note. */
     fleeScreensPerSecond: number;
     /** How visible a creature is while it leaves, 0..1. The same drawing, dimmed, rather than a second palette. */
@@ -832,7 +844,7 @@ export interface Mechanisms {
      * These two are a PAIR -- a full grip deals `drainPerSecond * minGripSeconds` -- which is the argument for keeping
      * them in one place rather than as two flat keys whose relationship is a comment.
      */
-    trash: { drainPerSecond: number; minGripSeconds: number };
+    trash: { drainPerSecond: number; drainPerHit: number; minGripSeconds: number };
     /**
      * The eel: how long its BOLTS cost the player their steering.
      *
@@ -880,6 +892,8 @@ export interface Mechanisms {
      * accumulates by size -- see `src/consumption.ts` for what went wrong when the two were conflated.
      */
     tierVolume: number[];
+    /** What running into a collectable too big to eat costs, before defence. See the config's note. */
+    bumpDamage: number;
     /** Mass (in volume terms) of each hazard kind. */
     mass: Record<string, number>;
     /** The volume tier at which each hazard kind becomes edible. */
@@ -1372,6 +1386,8 @@ export interface Mechanisms {
    * a silent default.
    */
   obstacles: {
+    /** What running into one costs the player, before defence. One number, not a row per kind: see the config. */
+    contactDamage: number;
     health: Record<string, number>;
     radius: Record<string, number>;
     /**
@@ -1488,7 +1504,7 @@ export interface Mechanisms {
       radiusBonus: number;
       ramDamage: number;
       releaseHealth: number;
-      punishHits: number;
+      punishDamage: number;
     };
     /** The rage gauge on the HUD: a bar, drawn only for a type that has a resource. */
     gauge: {
@@ -1618,7 +1634,7 @@ export interface Mechanisms {
    */
   talents: {
     soda: { ascentMultiplier: number; steerPenalty: number };
-    silt: { startVolume: number; shrinkResistance: number };
+    silt: { startVolume: number; defense: number };
     'fish-fart': { radiusMeters: number; cooldownSeconds: number; baitCount: number };
   };
 }
@@ -1689,7 +1705,6 @@ function bossRules(prefix: string): { path: string; check: (v: unknown) => boole
     { path: `${prefix}.patrolAmplitude`, check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a lane fraction between 0 and 1' },
     { path: `${prefix}.patrolPeriodSeconds`, check: (v) => typeof v === 'number' && v > 0.2 && v <= 60, describe: 'seconds above 0.2 and at most 60' },
     { path: `${prefix}.seekSpeedFactor`, check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
-    { path: `${prefix}.contactDamage`, check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
     { path: `${prefix}.radiusRatio`, check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.5, describe: 'a lane fraction above 0.001 and at most 0.5' },
     { path: `${prefix}.colour`, check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
     { path: `${prefix}.eyeColour`, check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
@@ -1967,7 +1982,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     'damagePerPick',
     'steerPerPick',
     'ascentPerPick',
-    'armorPerPick',
     'invulnSecondsPerPick',
     'ragePerPick',
     'suctionPerPick',
@@ -1983,6 +1997,15 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 5,
     describe: 'a per-pick amount between 0 and 5',
   })),
+  /**
+   * The two defence cards, OUTSIDE the list above and on a wider range.
+   *
+   * The list's ceiling of 5 is a guard against a multiplier typed as a percentage (0.15 written as 15). Defence
+   * is not a multiplier -- it is hit points subtracted from each blow -- so its cards are allowed to grow well
+   * past 5 without that guard losing its point. See `src/health.ts`.
+   */
+  { path: 'mutation.pool.defensePerPick', check: (v) => typeof v === 'number' && v >= 0 && v <= 100, describe: 'defence points between 0 and 100' },
+  { path: 'mutation.pool.defenseBigPerPick', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'defence points between 0 and 200' },
   { path: 'mutation.gauge.widthRatio', check: (v) => typeof v === 'number' && v > 0.05 && v <= 1, describe: 'a fraction of the lane width above 0.05 and at most 1' },
   { path: 'mutation.gauge.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 60, describe: 'design pixels between 2 and 60' },
   { path: 'mutation.gauge.gap', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'design pixels between 0 and 60' },
@@ -2075,10 +2098,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   },
   { path: 'volume.start', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'volume.max', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
-  { path: 'volume.hitCost', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'volume.absorbEfficiency', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'volume.laneRatio', check: (v) => typeof v === 'number' && v > 0 && v < 0.5, describe: 'a small number above 0' },
-  { path: 'health.start', check: (v) => typeof v === 'number' && v >= 1 && v <= 200, describe: 'a hit count between 1 and 200' },
+  { path: 'health.start', check: (v) => typeof v === 'number' && v >= 1 && v <= 2000, describe: 'hit points between 1 and 2000' },
+  { path: 'health.minDamageRatio', check: (v) => typeof v === 'number' && v > 0 && v < 1, describe: 'a fraction of the damage above 0 and below 1' },
   { path: 'health.healPerPick', check: (v) => typeof v === 'number' && v > 0 && v <= 100, describe: 'points above 0 and at most 100' },
   { path: 'health.maxPerPick', check: (v) => typeof v === 'number' && v > 0 && v <= 100, describe: 'points above 0 and at most 100' },
   { path: 'movement.keyboardCrossingSeconds', check: (v) => typeof v === 'number' && v > 0.05, describe: 'seconds above 0.05' },
@@ -2237,7 +2260,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'collectables.wobbleMax', check: (v) => typeof v === 'number' && v >= (readRaw('collectables.wobbleMin') as number), describe: 'at least wobbleMin' },
   { path: 'hazards.radius', check: (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && Object.values(v as Record<string, unknown>).every((n) => typeof n === 'number' && n > 0.001 && n <= 0.5), describe: 'an object of kind -> radius fraction between 0.001 and 0.5' },
   { path: 'hazards.vent.radiusRatio', check: (v) => typeof v === 'number' && v > 0.01 && v <= 0.5, describe: 'a fraction of the lane width above 0.01 and at most 0.5' },
-  { path: 'hazards.vent.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 50, describe: 'hit points between 0 and 50' },
   { path: 'hazards.vent.periodSeconds', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 60, describe: 'seconds between 0.5 and 60' },
   { path: 'hazards.vent.activeSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 60, describe: 'seconds between 0 and 60' },
   { path: 'hazards.vent.warnSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'seconds between 0 and 10' },
@@ -2250,7 +2272,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.mineral.wobblePeriodSeconds', check: (v) => typeof v === 'number' && v >= 0.2 && v <= 30, describe: 'seconds between 0.2 and 30' },
   { path: 'hazards.mineral.lifeMeters', check: (v) => typeof v === 'number' && v >= 50 && v <= 5000, describe: 'metres between 50 and 5000' },
   { path: 'hazards.shrimp.driftSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
-  { path: 'hazards.shrimp.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
   { path: 'hazards.angler.driftFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'a fraction of the current between 0 and 3' },
   { path: 'hazards.angler.lureMeters', check: (v) => typeof v === 'number' && v >= 20 && v <= 800, describe: 'metres between 20 and 800' },
   { path: 'hazards.angler.telegraphSeconds', check: (v) => typeof v === 'number' && v > 0.1 && v <= 5, describe: 'seconds above 0.1 and at most 5' },
@@ -2287,21 +2308,18 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.charge.burstSeconds', check: (v) => typeof v === 'number' && v >= 0.05 && v <= 5, describe: 'seconds between 0.05 and 5' },
   { path: 'hazards.foam.radiusRatio', check: (v) => typeof v === 'number' && v > 0.005 && v <= 0.3, describe: 'a fraction of the lane width above 0.005 and at most 0.3' },
   { path: 'hazards.foam.lifeSeconds', check: (v) => typeof v === 'number' && v >= 0.2 && v <= 60, describe: 'seconds between 0.2 and 60' },
-  { path: 'hazards.foam.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
   { path: 'hazards.foam.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.foam.rimColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.foam.alpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'hazards.foam.rimAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1' },
   { path: 'hazards.rain.fallSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
   { path: 'hazards.rain.pushMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
-  { path: 'hazards.rain.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
   { path: 'hazards.rain.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.rain.lengthRatio', check: (v) => typeof v === 'number' && v > 0.005 && v <= 0.6, describe: 'a fraction of the lane width above 0.005 and at most 0.6' },
   { path: 'hazards.torpedo.runSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
   { path: 'hazards.torpedo.runMeters', check: (v) => typeof v === 'number' && v >= 0 && v <= 2000, describe: 'metres between 0 and 2000' },
   { path: 'hazards.torpedo.seekSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
   { path: 'hazards.torpedo.seekSeconds', check: (v) => typeof v === 'number' && v >= 0.5 && v <= 60, describe: 'seconds between 0.5 and 60' },
-  { path: 'hazards.torpedo.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
   { path: 'hazards.bombfish.seekSpeedFactor', check: (v) => typeof v === 'number' && v >= 0 && v <= 3, describe: 'lane widths per second between 0 and 3' },
   { path: 'hazards.bombfish.armMeters', check: (v) => typeof v === 'number' && v >= 10 && v <= 600, describe: 'metres between 10 and 600' },
   { path: 'hazards.bombfish.fuseSeconds', check: (v) => typeof v === 'number' && v > 0.2 && v <= 15, describe: 'seconds above 0.2 and at most 15' },
@@ -2309,10 +2327,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.bombfish.blastDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10' },
   { path: 'hazards.bombfish.blastShakePixels', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'design pixels between 0 and 40; 0 disables the shake' },
   { path: 'hazards.bombfish.blastShakeSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'seconds between 0 and 2' },
-  { path: 'hazards.jelly.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: 'hit points between 0 and 10; 0 makes a jellyfish a pure slow again' },
   { path: 'hazards.slowFactor', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a number above 0 and at most 1' },
   { path: 'hazards.slowSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'hazards.health', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0), describe: 'an object of hazard kind to hit points, e.g. { fish: 3, jelly: 0 }; 0 means the bullets pass through' },
+  { path: 'hazards.contactDamage', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0 && n <= 400), describe: 'an object of hazard kind to the hit points it costs the player, e.g. { fish: 20, whale: 35 }; defence comes straight out of these' },
   { path: 'hazards.fleeScreensPerSecond', check: (v) => typeof v === 'number' && v > 0.05 && v <= 8, describe: 'screen heights per second, above 0.05 and at most 8; 0.9 is about a second to leave the screen' },
   { path: 'hazards.fleeAlpha', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity between 0 and 1 for a creature that is leaving' },
   /** The crab: one row per key of its own block, for the reason the config gives at `hazards.crab`. */
@@ -2323,6 +2341,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.crab.launchScreenBonus', check: (v) => typeof v === 'number' && v >= 0, describe: 'a multiplier of 0 or more' },
   { path: 'hazards.launchDecaySeconds', check: (v) => typeof v === 'number' && v > 0.01, describe: 'seconds above 0.01' },
   { path: 'hazards.trash.drainPerSecond', check: (v) => typeof v === 'number' && v > 0, describe: 'hit points per second above 0' },
+  { path: 'hazards.trash.drainPerHit', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'hit points between 0 and 400' },
   { path: 'hazards.trash.minGripSeconds', check: (v) => typeof v === 'number' && v > 0, describe: 'seconds above 0' },
 
 { path: 'hazards.eel.boltShockSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 10, describe: "seconds between 0 and 10; 0 disables the control loss an eel's bolt causes" },
@@ -2361,6 +2380,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     describe: 'an object of hazard kind to the volume tier that can eat it',
   },
   { path: 'consumption.massEfficiency', check: (v) => typeof v === 'number' && v > 0 && v <= 2, describe: 'a number above 0 and at most 2' },
+  { path: 'consumption.bumpDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'hit points between 0 and 400' },
   { path: 'consumption.eatInvulnerableSeconds', check: (v) => typeof v === 'number' && v >= 0, describe: 'a number of 0 or more' },
   { path: 'consumption.marker.edibleColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'consumption.marker.widthRatio', check: (v) => typeof v === 'number' && v >= 0.01 && v <= 0.6, describe: 'a stroke width ratio between 0.01 and 0.6' },
@@ -2678,6 +2698,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'audio.musicVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'an opacity-like level between 0 and 1' },
   { path: 'audio.bulletHitVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1; 0 mutes the bullet hit' },
   { path: 'audio.bulletFireVolume', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a level between 0 and 1; 0 mutes the shot' },
+  { path: 'obstacles.contactDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'hit points between 0 and 400' },
   { path: 'obstacles.health', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to hit points' },
   { path: 'obstacles.radius', check: (v) => isNumberTable(v) && Object.keys(v).length >= 1, describe: 'an object of obstacle kind to a radius fraction' },
   {
@@ -2775,7 +2796,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.overload.radiusBonus', check: (v) => typeof v === 'number' && v >= 0 && v <= 2, describe: 'a fraction between 0 and 2' },
   { path: 'angry.overload.ramDamage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
   { path: 'angry.overload.releaseHealth', check: (v) => typeof v === 'number' && v > 0, describe: 'a number above 0' },
-  { path: 'angry.overload.punishHits', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 20, describe: 'a whole number of hit points between 0 and 20' },
+  { path: 'angry.overload.punishDamage', check: (v) => typeof v === 'number' && v >= 0 && v <= 400, describe: 'hit points between 0 and 400' },
   { path: 'angry.gauge.height', check: (v) => typeof v === 'number' && v >= 2 && v <= 40, describe: 'design pixels between 2 and 40' },
   { path: 'angry.gauge.gap', check: (v) => typeof v === 'number' && v >= 0 && v <= 40, describe: 'design pixels between 0 and 40' },
   { path: 'angry.gauge.radius', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'a corner radius between 0 and 20' },
@@ -2839,7 +2860,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'talents.soda.ascentMultiplier', check: (v) => typeof v === 'number' && v >= 1 && v <= 10, describe: 'an ascent multiplier between 1 and 10' },
   { path: 'talents.soda.steerPenalty', check: (v) => typeof v === 'number' && v > 0 && v <= 1, describe: 'a fraction of the steering authority, above 0 and at most 1' },
   { path: 'talents.silt.startVolume', check: (v) => typeof v === 'number' && v > 0.2 && v <= 10, describe: 'a starting volume above 0.2 and at most 10' },
-  { path: 'talents.silt.shrinkResistance', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction of the shrink ignored, between 0 and 1' },
+  { path: 'talents.silt.defense', check: (v) => typeof v === 'number' && v >= 0 && v <= 200, describe: 'defence points between 0 and 200' },
   { path: 'talents.fish-fart.radiusMeters', check: (v) => typeof v === 'number' && v >= 10 && v <= 2000, describe: 'metres between 10 and 2000' },
   { path: 'talents.fish-fart.cooldownSeconds', check: (v) => typeof v === 'number' && v >= 0 && v <= 30, describe: 'seconds between 0 and 30' },
   { path: 'talents.fish-fart.baitCount', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 20, describe: 'a whole number of bait bubbles between 0 and 20' },
@@ -3133,6 +3154,27 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
   if (missing.length || extra.length) {
     fail(
       'hazards.health must state hit points for every hazard kind (0 = immune to the bullets)' +
+        (missing.length ? `; missing: ${missing.join(', ')}` : '') +
+        (extra.length ? `; not a hazard kind: ${extra.join(', ')}` : ''),
+    );
+  }
+}
+
+/**
+ * The same completeness rule for the damage table, and the reason it is a SEPARATE check rather than a second row
+ * of the one above: the two tables answer different questions and a kind can legitimately appear in one and not
+ * the other's mind. `health: 0` means "immune to bullets"; there is no equivalent for damage -- every creature
+ * that can touch you has a number, and a missing row would read as "this one cannot hurt you", which is a thing
+ * the game does not have.
+ */
+{
+  const rows = Object.keys(mech.hazards.contactDamage).sort();
+  const kinds = Object.keys(mech.consumption.mass).sort();
+  const missing = kinds.filter((k) => !rows.includes(k));
+  const extra = rows.filter((k) => !kinds.includes(k));
+  if (missing.length || extra.length) {
+    fail(
+      'hazards.contactDamage must state a damage for every hazard kind' +
         (missing.length ? `; missing: ${missing.join(', ')}` : '') +
         (extra.length ? `; not a hazard kind: ${extra.join(', ')}` : ''),
     );

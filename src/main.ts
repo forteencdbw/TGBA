@@ -1343,7 +1343,6 @@ class Game {
     this.run.talentEffects = resolveTalent(talent);
     this.run.player.ascentBonus = this.run.talentEffects.ascentMultiplier;
     this.run.player.steerScale = this.run.talentEffects.steerMultiplier;
-    this.run.player.shrinkResistance = this.run.talentEffects.shrinkResistance;
     this.run.player.volume = this.run.talentEffects.startVolume;
     this.talentLabel = talent.name;
     return talent.id;
@@ -3734,6 +3733,7 @@ private updateBoss(): void {
       stage: this.run.stage,
       bubbleType: this.run.bubbleType,
       healthView: this.run.healthView,
+      defense: this.run.defense,
       route: this.run.route,
       gunStreams: this.run.gunStreams,
       lateral: this.run.lateral,
@@ -3876,9 +3876,13 @@ private updateBoss(): void {
    * swallowed by the invulnerability window is useless for testing, and waiting 0.8s per hit makes
    * the test slower than the thing it checks.
    */
-  debugForceHit(): void {
+  /**
+   * @param damage what to take; the default is one standard fish, so a probe that just wants "lose some health"
+   *   does not have to know the damage table.
+   */
+  debugForceHit(damage = mech.hazards.contactDamage.fish ?? 0): void {
     this.run.invulnerable = 0;
-    this.run.takeHit();
+    this.run.takeHit(damage);
   }
 
   /** Test hook: the obstacle field, so a probe can inspect or place individual obstacles. */

@@ -20,7 +20,7 @@ import { chainTargets } from './conductive';
 import { tuning } from './config';
 import { massFromEating } from './consumption';
 import { hazardTuning, shoveCreature, type Hazard, type SpawnOptions } from './hazards';
-import { healthAfterHit, healthMaxFor, hitsLeft } from './health';
+import { healthAfterHit, healthMaxFor } from './health';
 import { canEatHazard } from './consumption';
 import { LEVEL, type LevelEntry } from './levels';
 import { mech } from './mechanisms';
@@ -32,7 +32,7 @@ import { sayBlast, sayCallout, sayGraze } from './runEvents';
 import { findSkill } from './skills';
 import { recordAbsorb, stageName, stageRadiusFraction } from './stages';
 import { fartBaitCount, fartPushFor } from './talents';
-import { bubbleVolumeFromRadius, growByAbsorbing, hitsSurvived, isPopped, shrinkFromHit } from './volume';
+import { bubbleVolumeFromRadius, growByAbsorbing } from './volume';
 import type { Phase } from './snapshot';
 import { sayBanner, sayDamage, sayScore, saySkillSlot, saySound, type RunEvent } from './runEvents';
 import type { SoundEvent } from './audio';
@@ -293,41 +293,31 @@ export class Run {
   score = new Score();
   surfaced = false;
   /**
-   * Health, for the routes whose bubble does not grow.
+   * Health: one pool, for all three routes.
    *
-   * Left at zero by the growing route, where `player.volume` is the health -- a second number there would be a
-   * second answer to one question. `healthView` is the single place the two are reconciled into the bar's pair.
+   * It used to belong to the non-growing routes only, because the growing one kept its health in its volume. That
+   * split is gone -- see `takeHit` -- so this is every route's pool, and `healthView` is what the HUD bar reads.
    */
   health = 0;
   /** The ceiling above: `mech.health.start` plus every 「血上限」 pick this run has taken. */
   healthMax = 0;
+  /**
+   * What every blow subtracts before it lands.
+   *
+   * Re-derived by `applyMutationPassives` from the card counts and the talent, like every other passive, so a
+   * carried card survives the level transition's fresh talent. See `src/health.ts` for the formula this feeds.
+   */
+  defense = 0;
 
   /**
-   * Whether this form's DEATH is read off its volume.
+   * The health bar's numbers: hit points now, and the ceiling they are measured against.
    *
-   * True for the growing routes, where volume is the health, and for a `hitsToPop` form, which zeroes its volume
-   * so that it can reuse the same pop check rather than branching to a second death. False for the fixed-size
-   * routes, whose health is a count that the volume knows nothing about.
+   * Two numbers rather than one proportion, because the bar shows both and they answer different questions -- the
+   * track says "how much of me is left", the label says "out of how much". The ceiling moves (a 「血上限」 pick),
+   * so a proportion alone cannot say it.
    */
-  private get diesByVolume(): boolean {
-    return this.bubbleType.growsByAbsorbing || this.bubbleType.hitsToPop !== null;
-  }
-
-  /**
-   * The health bar's numbers, from whichever rule this route is under.
-   *
-   * Both are in HITS rather than in each route's own unit (volume, points), because the bar answers one question
-   * -- "how many more mistakes can I afford" -- and a volume is not comparable to a point. A growing route's
-   * ceiling is its VOLUME ceiling, so its bar fills as it eats: that is the honest reading, since eating is
-   * exactly what buys those hit points back.
-   */
-  get healthView(): { current: number; max: number; hits: number } {
-    if (this.bubbleType.growsByAbsorbing) {
-      const per = mech.volume.hitCost;
-      const current = this.player.volume / per;
-      return { current, max: mech.volume.max / per, hits: hitsLeft(current) };
-    }
-    return { current: this.health, max: this.healthMax, hits: hitsLeft(this.health) };
+  get healthView(): { current: number; max: number } {
+    return { current: this.health, max: this.healthMax };
   }
 
   /**
@@ -349,7 +339,13 @@ export class Run {
    * condition that has to be repeated at every source of damage. A hazard, an obstacle, a trash bag's drain and
    * the debug forge all arrive here.
    */
-  takeHit(): void {
+  /**
+   * @param damage what the blow is worth before defence, from the source
+   * @param defense what may be subtracted from it. Every source passes the player's own defence EXCEPT the three
+   *   that are the player's own doing -- see `selfInflicted`, which is why this is a parameter rather than a read
+   *   of `this.defense` inside here.
+   */
+  takeHit(damage: number, defense = this.defense): void {
     /**
      * The cheat: nothing happens at all.
      *
@@ -363,42 +359,19 @@ export class Run {
     // The base window is the config's; the mutation ladder's picks widen it in 0.2s steps.
     this.invulnerable = tuning.invulnerableSeconds + this.invulnBonusSeconds;
     /**
-     * Digestion's cost, paid here rather than at the sources.
+     * ONE pool now, for all three routes.
      *
-     * The design asks for "防御力下降 while digesting", and this game has no defence stat -- only a fixed number of
-     * hit points -- so the honest translation is "a hit costs more hit points". Applied as EXTRA applications of
-     * the same `shrinkFromHit` rather than by scaling the loss, so the volume economy keeps its one implementation
-     * and the silt talent's resistance still applies to every point of it.
+     * It used to depend on the route: the growing bubble's health WAS its volume, so a hit shrank it and the size
+     * moved. That is what made the numbers stay small -- and it also meant two of the three routes had a health
+     * bar while the third had a size. `volume` is no longer anyone's health.
+     *
+     * `hitsToPop` is the vestige of a form whose death was "a touch is fatal" whatever its pool said. No form
+     * declares it, and it is honoured here by emptying the pool, which is what it always meant.
      */
-    const hitPoints = 1;
-    /**
-     * Where the hit LANDS: the volume, or the count.
-     *
-     * The growing route's health is its volume -- eating refills it, a hit takes a hit-point out of it, and the
-     * bubble's size moves with it. A route that does not grow holds one size all run, so its health is a separate
-     * count and eating does not touch it. The two are one decision (`bubbleTypes.growsByAbsorbing`), and this is
-     * the only place damage is applied, so it is the only place that decision has to be read.
-     *
-     * `hitsToPop` is the third case and the narrowest: a form whose hit points are a COUNT but whose death still
-     * goes through the volume, by zeroing it. No form declares it today -- it is what the pre-route plain bubble
-     * was, kept for a form that wants "a touch is fatal" back.
-     */
-    if (this.bubbleType.hitsToPop !== null) {
-      this.player.volume = 0;
-    } else if (this.bubbleType.growsByAbsorbing) {
-      for (let i = 0; i < hitPoints; i++) {
-        this.player.volume = shrinkFromHit(this.player.volume, this.player.shrinkResistance);
-      }
-    } else {
-      this.health = healthAfterHit(this.health, this.player.shrinkResistance);
-    }
+    if (this.bubbleType.hitsToPop !== null) this.health = 0;
+    else this.health = healthAfterHit(this.health, damage, defense);
 
-    // Decide from the POST-hit value: asking whether what is left can survive one more hit is the right question,
-    // and asking it of the pre-hit value let health reach zero without ever popping the bubble.
-    const dead = this.diesByVolume
-      ? isPopped(this.player.volume) || this.player.volume <= 0
-      : this.health <= 0;
-    if (dead) {
+    if (this.health <= 0) {
       this.startBurst();
       return;
     }
@@ -578,19 +551,12 @@ export class Run {
         /**
          * HOW HARD THIS ROUND HITS, from the shooter's own row.
          *
-         * `damage` sat validated-but-unread in the config since the shooters table was born (both existing
-         * rows say 1, so wiring it changed nothing until something said otherwise); the pistol shrimp is the
-         * first shooter that does -- its cavitation round costs TWO hit points, which is the whole "elite"
-         * in one number. Looked up per round rather than carried on it, so a live console edit of the row
-         * changes the next round that lands.
-         *
-         * Consecutive `takeHit` calls in one frame are deliberate: the invulnerability window protects
-         * against a FAN of separate rounds, not against one round being heavy -- the same way a digesting
-         * bubble pays `extraHitPoints` on a single hit.
+         * Looked up per round rather than carried on it, so a live console edit of the row changes the next round
+         * that lands. The pistol shrimp's cavitation round is what makes the "elite" real: 40 against a fish's 20.
          */
-        const hitPoints = Math.max(1, mech.enemyBullets.shooters[kind]?.damage ?? 1);
-        for (let i = 0; i < hitPoints; i++) {
-          this.takeHit();
+        const damage = Math.max(0, mech.enemyBullets.shooters[kind]?.damage ?? 0);
+        if (damage > 0) {
+          this.takeHit(damage);
           // A hit can end the run; nothing after this may assume there is still a bubble.
           if (this.phase !== 'playing') return;
         }
@@ -781,7 +747,9 @@ this.sound('slow');
       this.scorePopup(h.x, h.y, this.score.award('drivenOff'));
       this.xp.gain('drivenOff');
     }
-    if (cfg.chainSelfDamage > 0) this.takeHit();
+    // Self-inflicted, so defence does NOT apply (`takeHit`'s second argument): the chain is the player's own
+    // doing, and a player who could armour their way out of it would be deleting the cost of the button.
+    if (cfg.chainSelfDamage > 0) this.takeHit(cfg.chainSelfDamage, 0);
     this.banner(`连锁放电  ·  ${reached.size} 只`);
   }
   /**
@@ -979,7 +947,7 @@ this.sound('slow');
          * for a blast that missed -- the player needs to see the thing that nearly got them.
          */
         if ((e.damage ?? 0) > 0) {
-          this.takeHit();
+          this.takeHit(e.damage ?? 0);
           if (this.phase !== 'playing') return;
         }
       }
@@ -998,7 +966,10 @@ this.sound('slow');
       }
 
       if (e.damage) {
-        for (let i = 0; i < e.damage; i++) this.takeHit();
+        // ONE blow worth the creature's damage, rather than N blows of one point each: the defence is subtracted
+        // once from the real number, which is what makes "defence 8 against a 20-damage fish" arithmetic a player
+        // can do. See `src/health.ts`.
+        this.takeHit(e.damage);
         // The fish-fart talent fires on the contact that would have hurt, which is what makes it a
         // reflex rather than an action. Its BACKLASH is the point: it shoves the fish off and then
         // leaves bait behind, so the escape is also what feeds the swarm. See src/talents.ts.
@@ -1030,10 +1001,12 @@ this.sound('slow');
       if (e.drainPerSecond) {
         // Continuous, so it is applied as a fraction of a hit point per second rather than as whole
         // hits -- otherwise being grabbed would be instant death at any frame rate.
+        const perHit = hazardTuning.trashDrainPerHit;
         this.trashDrain += hazardTuning.trashDrainPerSecond * dt;
-        while (this.trashDrain >= 1) {
-          this.trashDrain -= 1;
-          this.takeHit();
+        while (this.trashDrain >= perHit) {
+          this.trashDrain -= perHit;
+          // Self-inflicted (`takeHit`'s second argument): being grabbed is what swimming into the bag costs.
+          this.takeHit(perHit, 0);
         }
       }
       if (e.broke) {
@@ -1140,7 +1113,7 @@ this.sound('slow');
        * a hit point for the one kind a small player can get through would cost exactly what the kinds they cannot
        * get through cost, which would remove the reason it exists.
        */
-      if (contact.hurt) this.takeHit();
+      if (contact.hurt) this.takeHit(mech.obstacles.contactDamage);
       // Pushed back down the screen, out of the obstacle, so one crate cannot cost several hits.
       this.player.impulseVy = -Math.max(this.player.impulseVy, 0.25);
     }
@@ -1210,8 +1183,8 @@ this.sound('slow');
         this.sound('absorb', Math.min(1, bubbleR / Math.max(1e-6, playerR)));
         this.field.bubbles.splice(i, 1);
       } else if (this.invulnerable <= 0) {
-        // Too big to eat: it hurts.
-        this.takeHit();
+        // Too big to eat: it hurts -- the standard price of running into something, same as a fish or a crate.
+        this.takeHit(mech.consumption.bumpDamage);
         this.field.bubbles.splice(i, 1);
       }
     }
@@ -1225,35 +1198,28 @@ this.sound('slow');
    * ---------------------------------------------------------------------------------------------
    * IT CANNOT KILL, AND THAT IS THE DESIGN RATHER THAN A MERCY
    * ---------------------------------------------------------------------------------------------
-   * The document is explicit: "the bubble does NOT simply end the game, it takes a heavy wound". So the loss is
-   * applied one hit point at a time and STOPS while the bubble still has one left -- the same floor `drainByDigesting`
-   * uses, for the same reason. The punishment is real (the volume and the rage are both gone, and volume is
-   * everything in this game) without a player being executed for missing a button.
+   * The document is explicit: "the bubble does NOT simply end the game, it takes a heavy wound". So the wound
+   * STOPS while one hit point is left: a player who missed a button loses most of a bar, not a run. The punishment
+   * is real -- 60 of a 100-point pool, plus the gauge -- without anyone being executed for a missed input.
    */
   punishOverload(): void {
     // The cheat covers the overload too: it is a third way to lose the bubble, and a cheat that only blocks collisions
     // would still let the player kill themselves by overeating.
     if (this.infiniteHealth) return;
-    const before = this.player.volume;
-    const beforeHealth = this.health;
-    let hits = 0;
-    for (let i = 0; i < mech.angry.overload.punishHits; i++) {
-      // Stop while one hit point remains: see the note above. Which pool is being drained is the same question the
-      // contact damage asks, and answered the same way.
-      if (this.diesByVolume) {
-        if (hitsSurvived(this.player.volume) <= 1) break;
-        this.player.volume = shrinkFromHit(this.player.volume, this.player.shrinkResistance);
-      } else {
-        if (this.health <= 1) break;
-        this.health = healthAfterHit(this.health, this.player.shrinkResistance);
-      }
-      hits++;
-    }
+    const before = this.health;
+    /**
+     * ONE wound of `punishDamage`, and it stops while one hit point remains.
+     *
+     * It used to be N applications of one point each, applied to whichever pool the route kept its health in.
+     * Both of those are gone: one pool now, and one number big enough to be felt (`config`: 60 of a 100-point
+     * pool). The floor is what makes the design's "it does NOT end the game" literal rather than aspirational.
+     *
+     * Defence does NOT apply (`takeHit`'s second argument 0): the overload is the player's own doing, and a
+     * player who could armour it away would be deleting the reason to watch the gauge at all.
+     */
+    this.health = Math.max(1, this.health - mech.angry.overload.punishDamage);
     this.stats.overloads++;
-    const wound = this.diesByVolume
-      ? `体积 ${before.toFixed(2)} → ${this.player.volume.toFixed(2)}`
-      : `血量 ${hitsLeft(beforeHealth)} → ${hitsLeft(this.health)}`;
-    this.banner(`怒气失控  ·  ${wound}`);
+    this.banner(`怒气失控  ·  血量 ${Math.round(before)} → ${Math.round(this.health)}`);
 this.sound('pop');
   }
   /** The bubble pops: slow-motion burst, then a brief result card, then a fresh run. */
@@ -1444,7 +1410,6 @@ this.sound('pop');
     this.talentEffects = resolveTalent(pickTalent());
     this.player.ascentBonus = this.talentEffects.ascentMultiplier;
     this.player.steerScale = this.talentEffects.steerMultiplier;
-    this.player.shrinkResistance = this.talentEffects.shrinkResistance;
     // Volume is set AFTER `player.reset()` above, which zeroes it back to 1.
     this.player.volume = this.talentEffects.startVolume;
     this.stats.maxVolume = this.talentEffects.startVolume;

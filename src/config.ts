@@ -81,14 +81,14 @@ export const PLAYER_SCREEN_Y_RATIO = 0.5;
  * ---------------------------------------------------------------------------------------------
  * `window.__GB.tuning` is the documented way to dial a number in from the browser console, and to hold that
  * promise a member has to be a live view of `mech` rather than a copy of it. It was a mix of the two: three
- * getters and eleven values captured at module load, so editing `tuning.verticalSpeedScale`, `hitPointVolume` or
+ * getters and eleven values captured at module load, so editing `tuning.verticalSpeedScale`, `bubbleLaneRatio` or
  * any of the other eleven did nothing at all -- silently, because a captured number looks exactly like a live one.
  * A tunable that cannot be tuned is worse than one that is not there, which is the rule this project already holds
  * for the whole config file.
  *
  * So: a new member is a getter/setter pair, never a value. The names are the flat, gameplay-facing vocabulary for
- * knobs whose config paths are grouped by system; where the two disagree (`hitPointVolume` against
- * `volume.hitCost`) this is the name the simulation reads by.
+ * knobs whose config paths are grouped by system; where the two disagree (`bubbleLaneRatio` against
+ * `volume.laneRatio`) this is the name the simulation reads by.
  */
 export const tuning = {
   // Volume economy.
@@ -109,12 +109,6 @@ export const tuning = {
   },
   set bubbleLaneRatio(v: number) {
     mech.volume.laneRatio = v;
-  },
-  get hitPointVolume() {
-    return mech.volume.hitCost;
-  },
-  set hitPointVolume(v: number) {
-    mech.volume.hitCost = v;
   },
 
   // Movement.

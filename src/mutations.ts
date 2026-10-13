@@ -107,8 +107,15 @@ const POOL: readonly Mutation[] = [
   },
   {
     id: 'armor',
-    name: '减伤 +8%',
-    blurb: '每次受伤掉得更少，可叠加',
+    name: `护甲 +${mech.mutation.pool.defensePerPick}`,
+    blurb: `每次受击少掉 ${mech.mutation.pool.defensePerPick} 点，可叠加`,
+    /**
+     * A whole number subtracted from every blow, rather than the percentage this card used to grant.
+     *
+     * The percentage had no floor under it: 90% off a 20-damage fish is 2 points whatever else the player does, so
+     * the last pick and the first were worth the same. Defence stacks linearly and reads as a number the player
+     * can count -- which is what makes it a thing to build toward.
+     */
     routes: 'all',
     available: () => true,
     apply: (run) => {
@@ -116,15 +123,28 @@ const POOL: readonly Mutation[] = [
     },
   },
   {
+    id: 'thickArmor',
+    name: `厚甲 +${mech.mutation.pool.defenseBigPerPick}`,
+    blurb: `每次受击少掉 ${mech.mutation.pool.defenseBigPerPick} 点，可叠加`,
+    /**
+     * The same effect, bigger, and it exists so the ladder has a late step: the small card is the steady climb,
+     * this is the pick that visibly changes what the player can swim through.
+     */
+    routes: 'all',
+    available: () => true,
+    apply: (run) => {
+      run.mutations.thickArmor = (run.mutations.thickArmor ?? 0) + 1;
+    },
+  },
+  {
     id: 'heal',
     name: '修复血条',
     blurb: `血条立刻回 ${mech.health.healPerPick} 点（一次性）`,
     /**
-     * One card, two pools -- and the same AMOUNT of health, which is why this is not two cards.
+     * One card, one pool, for every route.
      *
-     * A growing route keeps its health in its volume, so "one point" is `volume.hitCost` of it; every other route
-     * keeps its health in the count. The player reads the same thing either way ("my bar went up a point"), and the
-     * bar is what they are looking at -- the unit underneath is the implementation's business.
+     * It used to branch: a growing bubble kept its health in its volume, so healing it meant adding volume. Health is
+     * its own pool for all three routes now, which makes this the same one line everywhere.
      */
     routes: 'all',
     available: (run) => {
@@ -132,34 +152,24 @@ const POOL: readonly Mutation[] = [
       return view.current < view.max - 0.01;
     },
     apply: (run) => {
-      if (run.bubbleType.growsByAbsorbing) {
-        run.player.volume = Math.min(mech.volume.max, run.player.volume + mech.volume.hitCost * mech.health.healPerPick);
-      } else {
-        run.health = healthAfterHeal(run.health, run.healthMax);
-      }
+      run.health = healthAfterHeal(run.health, run.healthMax);
     },
   },
   {
     id: 'maxHp',
-    name: '血上限 +1',
-    blurb: '血条的上限加一格，可叠加',
+    name: `血上限 +${mech.health.maxPerPick}`,
+    blurb: `血条的上限加 ${mech.health.maxPerPick} 点，可叠加`,
     /**
-     * Always legal, and it stops being offered on its own once it has nothing left to give.
-     *
-     * On a growing route this card IS a growth card: one more hit point is `volume.hitCost` more volume, the bubble
-     * gets visibly bigger, and it goes dead the moment the volume ceiling is reached -- which is exactly the
-     * `available` test below, so the pool never offers a card that would do nothing.
+     * Always legal now, and that is a consequence of the same change: on a growing route it used to be a growth card
+     * (one more hit point = more volume), so it had to go dead once the volume ceiling was reached. Volume is not the
+     * ceiling any more, and the health ceiling has no top.
      */
     routes: 'all',
-    available: (run) => (run.bubbleType.growsByAbsorbing ? run.player.volume < mech.volume.max - 0.01 : true),
+    available: () => true,
     apply: (run) => {
-      if (run.bubbleType.growsByAbsorbing) {
-        run.player.volume = Math.min(mech.volume.max, run.player.volume + mech.volume.hitCost * mech.health.maxPerPick);
-      } else {
-        // Both numbers, so the new ceiling arrives full: see `applyMutationPassives`.
-        run.health += mech.health.maxPerPick;
-        run.healthMax = healthMaxFor((run.mutations['maxHp'] ?? 0) + 1);
-      }
+      // Both numbers, so the new ceiling arrives full: see `applyMutationPassives`.
+      run.health += mech.health.maxPerPick;
+      run.healthMax = healthMaxFor((run.mutations['maxHp'] ?? 0) + 1);
     },
   },
   {
@@ -354,7 +364,16 @@ export function applyMutationPassives(run: Run): void {
   run.bulletLifeMultiplier = 1 + pool.bulletRangePerPick * count('bulletRange');
   run.player.steerScale = run.talentEffects.steerMultiplier * (1 + pool.steerPerPick) ** count('steer');
   run.player.ascentBonus = run.talentEffects.ascentMultiplier * (1 + pool.ascentPerPick) ** count('ascent');
-  run.player.shrinkResistance = Math.min(0.9, run.talentEffects.shrinkResistance + pool.armorPerPick * count('armor'));
+  /**
+   * Defence: the talent's flat amount plus both cards' worth, with NO ceiling.
+   *
+   * There is no `min` here on purpose. The card that used to live in this line was a percentage capped at 0.9,
+   * because a percentage has to be capped -- at 1.0 it is invulnerability, and the game has no way to say "90% of
+   * a fish". A subtraction caps itself: the `minDamageRatio` floor in `src/health.ts` is what keeps a very high
+   * defence from being the same thing.
+   */
+  run.defense =
+    run.talentEffects.defense + pool.defensePerPick * count('armor') + pool.defenseBigPerPick * count('thickArmor');
   /**
    * The health ceiling, re-derived like every other passive.
    *

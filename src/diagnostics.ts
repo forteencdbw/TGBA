@@ -167,7 +167,7 @@ export function diagnosticsOf(g: GameSnapshot): {
       ascentMultiplier: number;
       steerMultiplier: number;
       startVolume: number;
-      shrinkResistance: number;
+      defense: number;
     };
     skill: { id: string; uses: number } | null;
     skillActivations: number;
@@ -262,7 +262,9 @@ export function diagnosticsOf(g: GameSnapshot): {
     volume: number;
     hitsSurvived: number;
     /** The health bar's own numbers: what the player reads in the bottom-left corner. */
-    health: { current: number; max: number; hits: number };
+    health: { current: number; max: number };
+    /** What the player's defence subtracts from every blow. */
+    defense: number;
     invulnerable: number;
     bubbles: number;
     lastEaten: number;
@@ -443,7 +445,7 @@ export function diagnosticsOf(g: GameSnapshot): {
         ascentMultiplier: g.talentEffects.ascentMultiplier,
         steerMultiplier: g.talentEffects.steerMultiplier,
         startVolume: g.talentEffects.startVolume,
-        shrinkResistance: g.talentEffects.shrinkResistance,
+        defense: g.talentEffects.defense,
       },
       skill: g.skill ? { id: g.skill.id, uses: g.skill.uses } : null,
       skillActivations: g.skillActivations,
@@ -557,16 +559,19 @@ export function diagnosticsOf(g: GameSnapshot): {
       phase: g.phase,
       volume: g.player.volume,
       /**
-       * How many hits this bubble can still take, whichever rule it is under.
+       * How many STANDARD blows this bubble can still take.
        *
-       * Read from `healthView` rather than computed from the volume, because on the fixed-size routes the health is
-       * not in the volume at all -- asking the volume there would report a number that has nothing to do with the
-       * bar the player is looking at, and a probe-facing number that lies is worse than no number. The `hitsToPop`
-       * form still answers for itself: it dies to one touch whatever its volume says.
+       * A fish's damage is the unit, because that is the number a player thinks in ("five more fish") and because
+       * health alone says nothing about how big a blow is. Defence is not folded in: this is the pool divided by the
+       * standard, not what the NEXT fish would actually cost.
+       *
+       * The `hitsToPop` form still answers for itself: it dies to one touch whatever its pool says.
        */
-      hitsSurvived: g.bubbleType.hitsToPop ?? g.healthView.hits,
+      hitsSurvived: g.bubbleType.hitsToPop ?? Math.floor(g.healthView.current / standardBlow()),
       /** The same numbers the HUD's bar is drawn from, so a probe asserts the display rather than a parallel copy. */
       health: g.healthView,
+      /** What the player's defence subtracts from every blow. */
+      defense: g.defense,
       invulnerable: g.invulnerable,
       bubbles: g.field.bubbles.length,
       lastEaten: g.lastEaten,
@@ -586,4 +591,14 @@ export function diagnosticsOf(g: GameSnapshot): {
         hazards: g.hazards.hazards.length,
       },
 }
+}
+
+/**
+ * A fish's damage: the unit "how many more mistakes" is counted in.
+ *
+ * Read from the config rather than written as 20, so a retune of the table moves the reported number with it -- a
+ * probe-facing count that disagreed with the game would be worse than not reporting one.
+ */
+function standardBlow(): number {
+  return mech.hazards.contactDamage.fish ?? 20;
 }

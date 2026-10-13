@@ -83,7 +83,6 @@ export class Player {
     this.impulseVx = 0;
     this.ascentBonus = 1;
     this.steerScale = 1;
-    this.shrinkResistance = 0;
     this.skillRemaining = 0;
     this.skillId = null;
     this.skillAscentBonus = 1;
@@ -166,8 +165,6 @@ export class Player {
   /** Talents and skills, as plain multipliers. */
   ascentBonus = 1;
   steerScale = 1;
-  /** Fraction of a hit's shrink ignored, 0..1. Set by the silt talent. */
-  shrinkResistance = 0;
 
   /**
    * Movement multiplier from the current growth stage, 0..1.

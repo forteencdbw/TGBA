@@ -536,13 +536,13 @@ export interface HudState {
    */
   boss: { name: string; fraction: number } | null;
   /**
-   * The player's own health, as the bar reads it: the value now, the ceiling, and whole hits for the label.
+   * The player's own health, as the bar reads it: hit points now, and the ceiling they are measured against.
    *
    * Three numbers rather than one proportion, because the bar shows both and they answer different questions --
    * the track says "how much of me is left", the label says "how many more mistakes can I afford". A proportion
    * alone cannot do the second, and the ceiling moves under the bar on both routes (a 「血上限」 pick, or eating).
    */
-  health: { current: number; max: number; hits: number };
+  health: { current: number; max: number };
   /** Which birth type this run rolled. */
   seed: string;
   /** This run's talent, for the line under the seed. Null or empty shows nothing. */
@@ -655,7 +655,6 @@ export class Hud {
   /** What the health bar last drew, so a frame that did not move it does not rebuild it. */
   private shownHealth = -1;
   private shownHealthMax = -1;
-  private shownHealthHits = -1;
   /** The canvas height in CSS pixels, remembered for the health bar (which is pinned to the bottom edge). */
   private canvasHeight = 0;
   /** What the bar currently shows, so a per-frame call does not redraw a bar that has not moved. */
@@ -907,20 +906,15 @@ export class Hud {
     }
 
     /**
-     * The health bar, redrawn when any of its three numbers moves.
+     * The health bar, redrawn when either of its two numbers moves.
      *
-     * Guarded because two of them change constantly on a growing route: eating raises the value AND the ceiling,
-     * and every one of those frames would otherwise rebuild a rounded rect and a string.
+     * Guarded because both change constantly on a route that eats: the pool goes up and so does its ceiling, and
+     * every one of those frames would otherwise rebuild a rounded rect and a string.
      */
     const health = state.health;
-    if (
-      health.current !== this.shownHealth ||
-      health.max !== this.shownHealthMax ||
-      health.hits !== this.shownHealthHits
-    ) {
+    if (health.current !== this.shownHealth || health.max !== this.shownHealthMax) {
       this.shownHealth = health.current;
       this.shownHealthMax = health.max;
-      this.shownHealthHits = health.hits;
       this.redrawHealth(health);
     }
 
@@ -939,7 +933,7 @@ export class Hud {
    * The fill swaps colour below `lowThreshold`, because that is the one moment the label is too small to be the
    * answer -- "nearly out" has to be readable from the corner of the eye.
    */
-  private redrawHealth(health: { current: number; max: number; hits: number }): void {
+  private redrawHealth(health: { current: number; max: number }): void {
     const cfg = mech.hud.healthBar;
     const s = this.hudScale;
     const g = this.healthGauge;
@@ -961,8 +955,10 @@ export class Hud {
     }
     g.roundRect(x, y, w, h, radius).stroke({ color: cfg.borderColour, alpha: cfg.borderAlpha, width: 1 });
 
-    // Whole hits over the ceiling: `hits` rounds up (see `src/health.ts`), and the ceiling is whole on both routes.
-    this.healthLabel.text = `${health.hits}/${Math.round(health.max)}`;
+    // Whole points, rounded UP, because a label is read at a glance and `87.4/100` is not. Rounding up rather than
+    // down so the number never claims less health than there is; the part a whole number cannot show is what the
+    // track above it is for.
+    this.healthLabel.text = `${Math.ceil(health.current)}/${Math.round(health.max)}`;
   }
 
   /** Test hooks: the boss bar as the player sees it. Absence is information, so both are read. */

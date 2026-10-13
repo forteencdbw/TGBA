@@ -568,7 +568,7 @@ function routeFacts(route: Route): readonly CodexFact[] {
   } else if (route.id === 'boil') {
     facts.push(
       { label: '怒气', value: `受伤 +${mech.angry.rage.perHit} · 安全 ${num(mech.angry.rage.decayDelaySeconds, 1)}s 后每秒 -${mech.angry.rage.decayPerSecond}` },
-      { label: '失控', value: `满怒 ${num(mech.angry.overload.seconds, 1)}s 倒计时，不放掉扣 ${mech.angry.overload.punishHits} 点但不破` },
+      { label: '失控', value: `满怒 ${num(mech.angry.overload.seconds, 1)}s 倒计时，不放掉扣 ${mech.angry.overload.punishDamage} 点但不破` },
       { label: '专属卡', value: `怒气积攒 +${Math.round(pool.ragePerPick * 100)}% · 爆破半径 +${Math.round(pool.burstRadiusPerPick * 100)}% · 余温 -${Math.round(pool.rageDecayReductionPerPick * 100)}% 衰减` },
     );
   } else {
@@ -595,7 +595,7 @@ function baseFacts(): readonly CodexFact[] {
     { label: '成长', value: `吸收 ${mech.stages.absorbToStage2} / ${mech.stages.absorbToStage3} 颗晋升 · 速度 ${mech.stages.speedMultiplier.map((m) => `×${num(m)}`).join(' → ')}` },
     { label: '开局体积', value: num(mech.volume.start, 1) },
     { label: '上限', value: num(mech.volume.max, 1) },
-    { label: '一次受击', value: `-${num(mech.volume.hitCost, 1)}（固定值，与当前体积无关）` },
+    { label: '一次受击', value: '扣血见每种敌人的伤害表，防御直接减' },
     { label: '无敌时间', value: `${num(mech.hazards.invulnerableSeconds, 1)}s` },
   ];
 }
@@ -698,7 +698,7 @@ function talentEntry(id: TalentId): CodexEntry {
 const TALENT_NOTES: Record<TalentId, readonly string[]> = {
   'fish-fart': ['它是反射不是技能：被打到才触发，所以没法主动用。', '冷却就是它和"护盾"的区别——没有冷却的话，走进鱼群里就永远不会死。'],
   soda: [`上升 ×${num(mech.talents.soda.ascentMultiplier)}，横向操控 ×${num(mech.talents.soda.steerPenalty)}。`, '更快，也更难控——这是同一个设计里的两个方向，不是一笔好交易。'],
-  silt: [`出生体积 ×${num(mech.talents.silt.startVolume, 1)}，受击缩小减免 ${pct(mech.talents.silt.shrinkResistance)}。`, '一开始就更结实，但块头大也更容易被优先锁定。'],
+  silt: [`出生体积 ×${num(mech.talents.silt.startVolume, 1)}，受击减免 ${mech.talents.silt.defense} 点。`, '一开始就更结实，但块头大也更容易被优先锁定。'],
 };
 
 /**

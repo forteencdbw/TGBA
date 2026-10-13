@@ -103,10 +103,10 @@ export interface BubbleType {
   /**
    * How many hits this form SURVIVES, at any size, or null for the volumetric rule.
    *
-   * `null` is every form that has shipped so far, and it means what the game has always meant: hit points ARE
-   * volume, one hit costs `volume.hitCost`, so growing is what buys the right to be hit again. No route replaces
-   * that rule -- a fixed count was the plain bubble's idea, and the plain bubble is gone with the character
-   * select: a route is something ADDED to the base, and "fewer hit points than the base" is not a route.
+   * `null` is every form that has shipped, and it now means "the pool is the pool": hit points come from
+   * `src/health.ts` and are the same shape for every route. The field is the vestige of a form whose death was "a
+   * touch is fatal" whatever its pool said -- kept because a future form might want that back, not because
+   * anything reads it today.
    */
   hitsToPop: number | null;
   /**

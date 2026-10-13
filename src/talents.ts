@@ -76,7 +76,7 @@ export interface TalentEffects {
   /** Volume the run starts at. */
   startVolume: number;
   /** Fraction of a hit's shrink that is ignored, 0..1. */
-  shrinkResistance: number;
+  defense: number;
 }
 
 export function resolveTalent(talent: Talent): TalentEffects {
@@ -87,7 +87,7 @@ export function resolveTalent(talent: Talent): TalentEffects {
         ascentMultiplier: mech.talents.soda.ascentMultiplier,
         steerMultiplier: mech.talents.soda.steerPenalty,
         startVolume: 1,
-        shrinkResistance: 0,
+        defense: 0,
       };
     case 'silt':
       return {
@@ -95,13 +95,13 @@ export function resolveTalent(talent: Talent): TalentEffects {
         ascentMultiplier: 1,
         steerMultiplier: 1,
         startVolume: mech.talents.silt.startVolume,
-        shrinkResistance: mech.talents.silt.shrinkResistance,
+        defense: mech.talents.silt.defense,
       };
     case 'fish-fart':
     default:
       // The fart talent changes nothing about the player's body: its whole effect is the reaction on
       // contact, which the game applies.
-      return { talent, ascentMultiplier: 1, steerMultiplier: 1, startVolume: 1, shrinkResistance: 0 };
+      return { talent, ascentMultiplier: 1, steerMultiplier: 1, startVolume: 1, defense: 0 };
   }
 }
 

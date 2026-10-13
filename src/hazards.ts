@@ -191,6 +191,18 @@ export function bossDossier(kind: HazardKind): BossDossier {
   return mech.hazards.bosses[kind] ?? mech.hazards.boss;
 }
 
+/**
+ * What one touch of `kind` costs the player, from the single damage table.
+ *
+ * Every contact reads this now instead of each creature reading a field inside its own config block: one table is
+ * what makes "how much does a shark hurt, versus a tuna" readable in one place, and it is the same shape as
+ * `hazards.health` right beside it (`mechanisms.ts` checks both for completeness at startup, so neither can be
+ * missing a row by accident).
+ */
+export function contactDamageOf(kind: HazardKind): number {
+  return mech.hazards.contactDamage[kind] ?? 0;
+}
+
 /** What a hazard did to the player this frame, so the caller can react (HUD, audio, comedy). */
 export interface HazardEffect {
   kind: HazardKind;
@@ -601,6 +613,10 @@ export const hazardTuning = {
    */
   get trashDrainPerSecond() {
     return mech.hazards.trash.drainPerSecond;
+  },
+  /** How much drain it takes to land one bite, in hit points: the other half of that pair. */
+  get trashDrainPerHit() {
+    return mech.hazards.trash.drainPerHit;
   },
   trashStruggleRelease: 0.55,
   /**
@@ -1417,7 +1433,7 @@ function contactJelly(_field: HazardField, h: Hazard, ctx: HazardContext, effect
    */
   effects.push({
     kind: 'jelly',
-    damage: mech.hazards.jelly.contactDamage,
+    damage: contactDamageOf('jelly'),
     slowSeconds: tuning.hazardSlowSeconds,
     slowFactor: tuning.hazardSlowFactor,
     broke: false,
@@ -1459,7 +1475,7 @@ function contactPlain(_field: HazardField, h: Hazard, ctx: HazardContext, effect
 function contactShrimp(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
   const r = ctx.laneWidth * h.radiusFraction;
   if (ctx.invulnerable) return;
-  effects.push({ kind: 'shrimp', damage: mech.hazards.shrimp.contactDamage, broke: false });
+  effects.push({ kind: 'shrimp', damage: contactDamageOf('shrimp'), broke: false });
   h.y -= r * 2;
   return;
 }
@@ -1496,8 +1512,7 @@ function contactFoam(_field: HazardField, h: Hazard, ctx: HazardContext, effects
    * The effect is still reported because the caller needs to know it was TOUCHED: that is what tells the game
    * the player has just found out where they really are.
    */
-  const fc = mech.hazards.foam;
-  effects.push({ kind: 'foam', damage: ctx.invulnerable ? 0 : fc.contactDamage, broke: true });
+  effects.push({ kind: 'foam', damage: ctx.invulnerable ? 0 : contactDamageOf('foam'), broke: true });
   h.flee = 'up';
   return;
 }
@@ -1510,7 +1525,7 @@ function contactRain(_field: HazardField, h: Hazard, ctx: HazardContext, effects
    * The push is what costs the player the height they just earned, so it is reported separately from the hit.
    */
   const rc = mech.hazards.rain;
-  effects.push({ kind: 'rain', damage: rc.contactDamage, pushDown: rc.pushMeters, broke: true });
+  effects.push({ kind: 'rain', damage: contactDamageOf('rain'), pushDown: rc.pushMeters, broke: true });
   h.flee = 'down';
   return;
 }
@@ -1524,7 +1539,7 @@ function contactVent(_field: HazardField, h: Hazard, ctx: HazardContext, effects
    */
   const vent = mech.hazards.vent;
   if (h.phase >= vent.activeSeconds || ctx.invulnerable) return;
-  effects.push({ kind: 'vent', damage: vent.contactDamage, broke: false });
+  effects.push({ kind: 'vent', damage: contactDamageOf('vent'), broke: false });
   return;
 }
 
@@ -1539,7 +1554,7 @@ function contactMineral(_field: HazardField, h: Hazard, ctx: HazardContext, effe
 function contactBoss(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
   const r = ctx.laneWidth * h.radiusFraction;
   if (ctx.invulnerable) return;
-  effects.push({ kind: h.kind, damage: bossDossier(h.kind).contactDamage, broke: false });
+  effects.push({ kind: h.kind, damage: contactDamageOf(h.kind), broke: false });
   // Bounce it away so one cannot immediately re-hit, as a fish does.
   h.y -= r * 2;
   return;

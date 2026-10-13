@@ -1,10 +1,10 @@
 import { mech } from './mechanisms';
 
 /**
- * The hit points of a route whose bubble never changes size.
+ * The health economy: hit points, defence, and what one blow costs.
  *
  * ---------------------------------------------------------------------------------------------
- * WHY THE GAME HAS TWO HEALTH ECONOMIES
+ * WHY THERE ARE TWO HEALTH ECONOMIES
  * ---------------------------------------------------------------------------------------------
  * `volume` is the growing routes' health, and it is a good answer for them: eating adds to it, a hit takes one
  * hit-point out of it, and the bubble's SIZE moves with it -- so "how much health do I have" is answered by "how
@@ -15,12 +15,25 @@ import { mech } from './mechanisms';
  * travels 2.6x. The information was there and could not be read off the bubble.
  *
  * So a route whose bubble is a FIXED size gets a number of its own, and this module is that number's economy.
- * The two do not share arithmetic on purpose: volume is a continuous pool that both grows and shrinks, health is
- * a count that only goes down (until a card puts some back), and a shared implementation would have to pretend
- * one of those is the other. What they DO share is `resistance` -- see `healthAfterHit`.
  *
- * The split lives in `bubbleTypes.growsByAbsorbing`: the routes that grow keep the volume rule, and every other
- * form (the base bubble included) uses this one.
+ * ---------------------------------------------------------------------------------------------
+ * AND WHY THE NUMBERS ARE BIG NOW
+ * ---------------------------------------------------------------------------------------------
+ * This pool started at 5, which made everything else small: a creature's damage could only be 1, 2 or 5, and the
+ * 「减伤」 card's 8% had nowhere to land (8% of one point is 0.92). At 100 the scale has room -- damage reads as
+ * 20, defence reads as 2 -- and `defense` becomes a whole number a player can count.
+ *
+ * The formula is SUBTRACTION, with one floor:
+ *
+ *     damageAfterDefense = max(damage × minDamageRatio, damage − defense)
+ *
+ * The floor is not "at least 1 point": on a 100-point pool that is barely a floor at all -- a 20-damage fish
+ * against 30 defence would cost 1 each, which is invulnerability with extra steps. `minDamageRatio` says DEFENCE
+ * MAY EAT AT MOST NINETY PERCENT, so a big blow still lands as a big blow.
+ *
+ * There is no percentage resistance anywhere. `shrinkResistance` and the 「减伤」 card that granted it are gone:
+ * defence and resistance together were two channels answering one question, and a defender who can stack a
+ * percentage on top of a subtraction has no readable ceiling at all.
  */
 
 /** The maximum, from how many 「血上限」 picks the run has taken. */
@@ -29,32 +42,22 @@ export function healthMaxFor(maxPicks: number): number {
 }
 
 /**
- * After one hit.
+ * What one blow costs, after the player's defence.
  *
- * `resistance` (0..1) is the 「减伤」 card and the silt talent's discount. It is applied HERE for the same reason
- * `shrinkFromHit` applies it there: "one hit is worth the same at every size" is the delicate part of the volume
- * economy, and for health the delicate part is that a hit costs one point -- so the discount scales the POINT
- * rather than the number of points (a 8% discount that sometimes skipped a whole point would be a different card,
- * and one that rounded would be a card that does nothing at nine tenths of the time).
+ * `defense` is floored at 0 here rather than at every call site, so a config value with a minus sign in it cannot
+ * turn into healing.
  */
-export function healthAfterHit(health: number, resistance = 0): number {
-  const factor = 1 - Math.min(1, Math.max(0, resistance));
-  return Math.max(0, health - factor);
+export function damageAfterDefense(damage: number, defense: number): number {
+  const floor = Math.max(0, damage) * mech.health.minDamageRatio;
+  return Math.max(floor, Math.max(0, damage) - Math.max(0, defense));
+}
+
+/** Health after one blow. Floors at zero rather than going negative: nothing reads a negative pool. */
+export function healthAfterHit(health: number, damage: number, defense: number): number {
+  return Math.max(0, health - damageAfterDefense(damage, defense));
 }
 
 /** After a 「修复血条」 pick: it heals, and never past the maximum. */
 export function healthAfterHeal(health: number, max: number): number {
   return Math.min(max, health + mech.health.healPerPick);
-}
-
-/**
- * Whole hits still available, for the bar's label.
- *
- * Rounded UP, and the difference is real: at 4.1 health the fifth hit is the one that kills (`4.1 - 5 = -0.9`),
- * so the honest answer to "how many more can I take" is 5. Rounding down would call that a 4 and be wrong about
- * the only thing the label is for. The fraction is not lost -- the bar's LENGTH carries it, which is why the pair
- * exists rather than a number on its own.
- */
-export function hitsLeft(health: number): number {
-  return Math.max(0, Math.ceil(health));
 }

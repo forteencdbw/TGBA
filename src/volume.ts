@@ -1,91 +1,27 @@
-// Volume economy for D2 (volume = health, absorbing = growing).
+// Volume: the bubble's SIZE, and what that size decides.
 //
-// WHICH ROUTES THIS IS ABOUT: the ones that GROW, which is now only devour. A run that did not pick it holds one
-// size all run and keeps its hit points in `src/health.ts` instead -- volume is not its health, and eating does not
-// touch it. The two economies are separate on purpose; see that module's header for why they do not share one.
+// ---------------------------------------------------------------------------------------------
+// WHAT VOLUME IS NOW
+// ---------------------------------------------------------------------------------------------
+// It used to be health as well: a hit shrank it, absorbing grew it, and "how much health do I have" was answered by
+// "how big am I". That split is gone -- health is its own pool for every route (`src/health.ts`) -- and what is left
+// here is the other half of the old equation. Size:
 //
-// This is its own module because the numbers form a CLOSED ECONOMY. Deriving them in three
-// different files is how you end up with a bubble that cannot die, or one that dies in two hits.
+//   - the DRAWN radius, which is also the hitbox (one function, so a bubble is exactly as big as it looks);
+//   - the MOUTH, which is what decides what it can eat.
 //
-// Design intent (spec section 5):
-//   - volume IS health, and a hit shrinks you;
-//   - absorbing grows you, so growth is a survivability buffer;
-//   - bigger means a bigger hitbox, which is the cost.
+// Those two cannot be separated, and that is the tension the numbers still encode: bigger means a bigger hitbox,
+// which is the cost of being able to eat more. It is why growth used to double as a health stat and why it is now
+// purely a trade.
 //
-// The model, and why it is shaped this way:
-//
-//   Health is a FIXED number of hits (5). A hit spends exactly one, implemented as removing a fixed
-//   share of BASE volume, so the share is the same whether the bubble is tiny or grown. Volume is
-//   the pool of hit-points above zero: absorbing adds hit-points, and the pool's ceiling is capped.
-//
-//   Two earlier attempts got this wrong in opposite directions, and both were about the same
-//   mistake -- letting the SIZE of a hit depend on the size of the bubble:
-//
-//     - loss proportional to current volume: multiplicative decay, so a big bubble survived 13 hits
-//       and a small one 8. Growing made the game easier, inverting the premise.
-//     - loss as a fixed absolute amount: survivability was flat but a big bubble's hit cost 3x as
-//       much to undo, because the reward stayed fixed while the cost scaled.
-//
-//   Fixing the hit at one hit-point solves both: hits-to-die is exactly `hitPoints` at any size,
-//   and the reward for absorbing scales with the bubble you ate, so the economy stays proportional.
+// What is NOT here any more: `hitCost`, `hitsSurvived` and `shrinkFromHit`. All three existed to convert between
+// volume and hit points, and nothing converts between them now.
 
 import { tuning } from './config';
-
-/** Hits the bubble can survive at this volume. */
-export function hitsSurvived(volume: number): number {
-  return (volume / tuning.hitPointVolume) | 0;
-}
-
-/** Whether the next hit would pop the bubble. */
-export function isPopped(volume: number): boolean {
-  return hitsSurvived(volume) <= 0;
-}
 
 /** Volume after absorbing a bubble whose own volume is `bubbleVolume`. */
 export function growByAbsorbing(volume: number, bubbleVolume: number): number {
   return Math.min(tuning.volumeMax, volume + bubbleVolume * tuning.absorbEfficiency);
-}
-
-/**
- * Volume after taking a hit: exactly one hit-point, regardless of current size.
- *
- * Removing a fixed share of BASE volume rather than of current volume is what keeps a hit worth the
- * same at every size. See the header for the two shapes this replaced.
- *
- * `resistance` (0..1) scales the SIZE of the loss, and exists for the silt talent's backlash
- * discount. It is applied HERE rather than by the caller on purpose: the "one hit is worth the same
- * at every size" invariant is the delicate part of this economy, and it should have exactly one
- * implementation. A caller computing `volume - hitPointVolume * (1 - r)` itself would quietly fork
- * that rule.
- *
- * Note a hit still costs one hit-POINT: resistance changes how much volume leaves, not how many hits
- * the bubble has left, so `hitsSurvived` is unaffected.
- */
-export function shrinkFromHit(volume: number, resistance = 0): number {
-  const factor = 1 - Math.min(1, Math.max(0, resistance));
-  return Math.max(0, volume - tuning.hitPointVolume * factor);
-}
-
-/**
- * Volume after digesting `mass` of stomach contents away.
- *
- * ---------------------------------------------------------------------------------------------
- * WHY THIS IS NOT JUST A SUBTRACTION
- * ---------------------------------------------------------------------------------------------
- * Digestion is the only way a player can spend their OWN health, which makes it the only mechanic in the game
- * that a player can use to kill themselves. A plain subtraction would let a nearly-dead bubble pop itself by
- * pressing compress -- a death with no enemy, no warning and nothing to answer, in a game whose other
- * self-inflicted death (ignoring the over-eating fuse) at least gives five seconds of alarm.
- *
- * So the drain FLOORS AT ONE HIT POINT: digesting can take you to the brink and no further. The mass that could
- * not leave is written off, because there is nothing to refund it to and the alternative -- an item that stalls
- * half-digested forever -- buys a rounding error at the price of a stuck state.
- *
- * The floor never RAISES the volume either: a bubble already below one hit point keeps what it has.
- */
-export function drainByDigesting(volume: number, mass: number): number {
-  const floor = Math.min(tuning.hitPointVolume, volume);
-  return Math.max(floor, volume - Math.max(0, mass));
 }
 
 /**
