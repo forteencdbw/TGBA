@@ -876,6 +876,18 @@ export interface Mechanisms {
      * these numbers are also the scale the defence cards are priced against. See `src/health.ts`.
      */
     contactDamage: Record<string, number>;
+    /**
+     * Per-kind multiplier on the HITBOX, on top of the shape the sprite gives it. Absent means 1.
+     *
+     * A partial map, and the only table in this file that may be empty -- empty is the meaningful default ("nothing is
+     * overridden"), where an empty `health` or `contactDamage` would be a table nobody filled in.
+     *
+     * Collision only: the art is sized by `radius × hazardArt.<kind>.scale`, which is what decides how big a creature
+     * is DRAWN. This decides how much of that drawing can touch you, which is the one thing a picture cannot be asked
+     * about -- a tail does not need to be lethal, and a small thing that behaves aggressively may deserve more than
+     * its picture.
+     */
+    hitboxScale: Record<string, number>;
     /** How fast a creature that has had enough leaves, in SCREEN HEIGHTS per second: see the config's note. */
     fleeScreensPerSecond: number;
     /** How visible a creature is while it leaves, 0..1. The same drawing, dimmed, rather than a second palette. */
@@ -2496,6 +2508,13 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.slowFactor', check: anyNumber, describe: 'a number' },
   { path: 'hazards.slowSeconds', check: anyNumber, describe: 'a number of 0 or more' },
   { path: 'hazards.health', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0), describe: 'an object of hazard kind to hit points, e.g. { fish: 3, jelly: 0 }; 0 means the bullets pass through' },
+  /**
+   * The hitbox multiplier table. The one rule in this file that accepts an EMPTY object, and that is not laxness --
+   * empty means "no creature overrides its shape", which is the default rather than an omission. It still checks the
+   * types, and a boot check below refuses a key that is not a hazard kind, which is the failure that would otherwise
+   * be silent: a typo'd kind would multiply nothing and read as a knob that does nothing.
+   */
+  { path: 'hazards.hitboxScale', check: (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && Object.values(v as Record<string, unknown>).every((n) => typeof n === 'number' && Number.isFinite(n)), describe: 'an object of hazard kind to a hitbox multiplier; anything not listed is 1' },
   { path: 'hazards.contactDamage', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0 && n <= 400), describe: 'an object of hazard kind to the hit points it costs the player, e.g. { fish: 20, whale: 35 }; defence comes straight out of these' },
   { path: 'hazards.fleeScreensPerSecond', check: anyNumber, describe: 'screen heights per second; 0.9 is about a second to leave the screen' },
   { path: 'hazards.fleeAlpha', check: anyNumber, describe: 'an opacity for a creature that is leaving' },
@@ -3371,6 +3390,22 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
         (missing.length ? `; missing: ${missing.join(', ')}` : '') +
         (extra.length ? `; not a hazard kind: ${extra.join(', ')}` : ''),
     );
+  }
+}
+
+/**
+ * Every kind named in the hitbox multiplier table must be a real one.
+ *
+ * The table may be empty -- that is the default -- but it may not contain a NAME THAT IS NOT A CREATURE. The failure
+ * is the quiet kind in the same way the shooter list's is: a typo would multiply nothing, the creature would keep the
+ * shape its sprite gives it, and the only evidence would be that a knob at the top of a file did nothing when it was
+ * turned. Nothing about that reads as a config error from inside the game.
+ */
+{
+  const kinds = Object.keys(mech.consumption.mass);
+  const unknown = Object.keys(mech.hazards.hitboxScale).filter((k) => !kinds.includes(k));
+  if (unknown.length) {
+    fail(`hazards.hitboxScale names something that is not a hazard kind: ${unknown.join(', ')}`);
   }
 }
 

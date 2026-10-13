@@ -1,6 +1,6 @@
 import { Graphics } from 'pixi.js';
 import { mech } from './config';
-import { boxDistance, hazardBoxFractions, type HazardField } from './hazards';
+import { boxDistance, hazardBoxFractions, hazardSizeFraction, type HazardField } from './hazards';
 import type { ObstacleField } from './obstacles';
 
 /**
@@ -292,7 +292,7 @@ export class BulletField {
         for (const h of ctx.hazards.hazards) {
           // Not shootable, or already leaving: the round passes through rather than being eaten by it.
           if (h.maxHealth <= 0 || h.flee) continue;
-          const reach = radius + ctx.laneWidth * h.radiusFraction;
+          const reach = radius + ctx.laneWidth * hazardSizeFraction(h.kind);
           const dx = h.x - b.x;
           const dy = h.y - b.y;
           /**

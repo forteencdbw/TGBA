@@ -206,6 +206,7 @@ for (const line of warnings) {
   console.log(`\nanimations with a single frame size: ${checked}/${Object.keys(animations).length}`);
 
   const NO_ART = new Set(['trash', 'rot', 'oil', 'vent', 'foam', 'rain']);
+  const hitboxScale = mech.hazards?.hitboxScale ?? {};
   const rows = [];
   for (const [kind, art] of Object.entries(mech.hazardArt ?? {})) {
     const radius = mech.hazards?.radius?.[kind];
@@ -219,15 +220,25 @@ for (const line of warnings) {
         : move;
       const frame = framesByBareName.get(String(first).replace(/\.[^.]+$/, ''));
       if (!frame) { failures.push(`hazardArt.${kind}: "${first}" is not in the atlas`); continue; }
-      const halfW = radius * (row.scale ?? art.scale ?? 1);
+      /**
+       * THE BOX THE COLLISION WILL ACTUALLY BUILD, `hazards.hitboxScale` included.
+       *
+       * That multiplier is the one number in this chain that is NOT derived from the art, so it is the one that can
+       * quietly take a creature's hitbox away: a `0` here is a creature that cannot touch you, and a `0.2` is one that
+       * barely can. Printing the product rather than the sprite box makes that visible on the spot, and the negative
+       * case is refused outright -- a box with inverted extents is not a thing to discover in play.
+       */
+      const mult = hitboxScale[kind] ?? 1;
+      if (!(mult >= 0)) failures.push(`hazards.hitboxScale.${kind} is ${mult} -- a hitbox cannot be a negative size`);
+      const halfW = radius * mult * (row.scale ?? art.scale ?? 1);
       const halfH = halfW * (frame.height / frame.width);
       if (!(halfW > 0) || !(halfH > 0)) failures.push(`hazardArt.${kind}: the hitbox box came out ${halfW}x${halfH}`);
-      rows.push([kind, halfW * 2, halfH * 2]);
+      rows.push([kind + (mult === 1 ? '' : `  x${mult}`), halfW * 2, halfH * 2]);
     }
   }
-  console.log('\nthe box each creature is hit as (lane widths, w x h):');
+  console.log('\nthe box each creature is hit as (lane widths, w x h; xN = hazards.hitboxScale):');
   for (const [kind, w, h] of rows.sort((a, b) => b[1] - a[1])) {
-    console.log('  ' + kind.padEnd(14) + w.toFixed(3) + ' x ' + h.toFixed(3));
+    console.log('  ' + kind.padEnd(18) + w.toFixed(3) + ' x ' + h.toFixed(3));
   }
   const missing = Object.keys(mech.hazards?.radius ?? {}).filter((k) => !(mech.hazardArt ?? {})[k]);
   const unexpected = missing.filter((k) => !NO_ART.has(k));

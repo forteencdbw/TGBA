@@ -2,7 +2,7 @@ import { Graphics } from 'pixi.js';
 import { mech } from './config';
 import { radiusOf, type BulletField } from './bullets';
 import type { EnemyBulletField } from './enemyBullets';
-import { chargeWindow, hazardBoxFractions, type Hazard, type HazardField, type HazardKind } from './hazards';
+import { chargeWindow, hazardBoxFractions, hazardSizeFraction, type Hazard, type HazardField, type HazardKind } from './hazards';
 import type { ObstacleField } from './obstacles';
 
 /**
@@ -99,7 +99,8 @@ function outlineBox(g: Graphics, x: number, y: number, halfW: number, halfH: num
 function outlineHazard(g: Graphics, h: Hazard, laneWidth: number): void {
   const box = hazardBoxFractions(h.kind, h.variety);
   if (box) outlineBox(g, h.x, h.y, box.halfW * laneWidth, box.halfH * laneWidth);
-  else outlineCircle(g, h.x, h.y, laneWidth * h.radiusFraction);
+  // The circle the no-art kinds collide as, at the size the multiplier leaves it.
+  else outlineCircle(g, h.x, h.y, laneWidth * hazardSizeFraction(h.kind));
 }
 
 /**
@@ -212,7 +213,7 @@ export function paintHitboxes(g: Graphics, s: HitboxScene): void {
   // --- the near-miss rings, which are a second and larger circle around the same test --------------------
   for (const h of s.hazards.hazards) {
     if (!grazeLive(h)) continue;
-    const reach = s.playerRadius + s.laneWidth * h.radiusFraction;
+    const reach = s.playerRadius + s.laneWidth * hazardSizeFraction(h.kind);
     const extra = reach * (mech.graze.radiusMultiplier - 1);
     const box = hazardBoxFractions(h.kind, h.variety);
     if (box) {

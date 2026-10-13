@@ -1618,7 +1618,8 @@ function contactShrimp(_field: HazardField, h: Hazard, ctx: HazardContext, effec
 }
 
 function contactZapper(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
-  const r = ctx.laneWidth * h.radiusFraction;
+  // The bell the player has to touch to set it off, so it follows the hitbox rather than the art.
+  const r = ctx.laneWidth * hazardSizeFraction(h.kind);
   /**
    * The RING is the hitbox, not the bell.
    *
@@ -1681,7 +1682,7 @@ function contactVent(_field: HazardField, h: Hazard, ctx: HazardContext, effects
    */
   if (ctx.invulnerable) return;
   const playerR = ctx.laneWidth * ctx.playerRadiusFraction;
-  const base = ctx.laneWidth * h.radiusFraction;
+  const base = ctx.laneWidth * hazardSizeFraction(h.kind);
   const onRock = Math.hypot(h.x - ctx.playerX, h.y - ctx.playerY) <= playerR + base;
   if (!onRock && !ventErupting(h)) return;
   effects.push({ kind: 'vent', damage: contactDamageOf('vent'), broke: false });
@@ -1774,7 +1775,7 @@ function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: n
  */
 function ventTouchesPlayer(h: Hazard, ctx: HazardContext): boolean {
   const playerR = ctx.laneWidth * ctx.playerRadiusFraction;
-  const base = ctx.laneWidth * h.radiusFraction;
+  const base = ctx.laneWidth * hazardSizeFraction(h.kind);
   if (Math.hypot(h.x - ctx.playerX, h.y - ctx.playerY) <= playerR + base) return true;
   if (!h.vent || !ventErupting(h)) return false;
   const length = ctx.laneWidth * h.vent.lengthRatio;
@@ -2266,7 +2267,9 @@ export class HazardField {
     // Contact. Resolved after movement so a hazard that arrives this frame still lands.
     const playerR = ctx.laneWidth * ctx.playerRadiusFraction;
     for (const h of this.hazards) {
-      const r = ctx.laneWidth * h.radiusFraction;
+      // `hazardSizeFraction` rather than `h.radiusFraction`: the per-kind hitbox multiplier is part of the COLLISION
+      // size, and this is the loop that decides both the touch and the graze band around it.
+      const r = ctx.laneWidth * hazardSizeFraction(h.kind);
       const dx = h.x - ctx.playerX;
       const dy = h.y - ctx.playerY;
       const reach = playerR + r;
@@ -3428,6 +3431,22 @@ export function warmAnimations(): Promise<void[]> {
  * how long a death takes and which frame it is on are one answer rather than two.
  */
 /**
+ * A creature's collision size as a lane fraction: `radiusFraction` with its own multiplier folded in.
+ *
+ * `hazards.hitboxScale` exists because the sprite box is the right DEFAULT and not much more: a fish's tail does not
+ * need to be lethal, and a thing drawn small that behaves aggressively may deserve more than its picture. The
+ * multiplier moves the hitbox without moving the art -- the art is sized by `radius × hazardArt.<kind>.scale`, and
+ * this is the one number that says how much of that drawing can touch you.
+ *
+ * Clamped at zero rather than signed, on the same reasoning as the bullet cards' rates: the config is not
+ * range-checked, so a negative multiplier is a legal file, and "this creature cannot touch you" is a legible outcome
+ * while a box with inverted extents is not. The overlay draws it as nothing, so it is visible rather than mysterious.
+ */
+export function hazardSizeFraction(kind: HazardKind): number {
+  return KIND_TUNING[kind].radius * Math.max(0, mech.hazards.hitboxScale[kind] ?? 1);
+}
+
+/**
  * How big a creature IS, as the box its picture occupies.
  *
  * ---------------------------------------------------------------------------------------------
@@ -3440,7 +3459,8 @@ export function warmAnimations(): Promise<void[]> {
  * A circle cannot fix that, because a fish is not round. The box can: it is the shape the picture actually occupies,
  * derived from the SAME three numbers the drawing uses -- `radiusFraction`, the row's `scale`, and the texture's own
  * aspect. So "what you see is what can hit you" holds by construction rather than by a config number that someone has
- * to keep in step with a PNG.
+ * to keep in step with a PNG. `hazards.hitboxScale` is the one deliberate exception to that, and it is a knob rather
+ * than a derivation: see `hazardSizeFraction`.
  *
  * ---------------------------------------------------------------------------------------------
  * WHY THE ASPECT COMES FROM THE TEXTURE AND NOT FROM THE CONFIG
@@ -3454,7 +3474,7 @@ export function warmAnimations(): Promise<void[]> {
  * as a creature swam.
  *
  * @returns half-extents in LANE FRACTIONS, or null when there is no art. Null means "use the circle": a square is not
- *   a circle, so the fallback has to be the shape the DRAWING falls back to (a dot of radius `radiusFraction`), or the
+ *   a circle, so the fallback has to be the shape the DRAWING falls back to (a dot of `hazardSizeFraction`), or the
  *   two would disagree exactly when something has gone wrong.
  */
 export function hazardBoxFractions(kind: HazardKind, variety: number): { halfW: number; halfH: number } | null {
@@ -3469,7 +3489,7 @@ export function hazardBoxFractions(kind: HazardKind, variety: number): { halfW: 
   const texture = animation ? (animationTextures(move)?.[0] ?? null) : assetTextureNow(move);
   if (!texture || !(texture.width > 0) || !(texture.height > 0)) return null;
 
-  const halfW = KIND_TUNING[kind].radius * (variant?.scale ?? art.scale ?? 1);
+  const halfW = hazardSizeFraction(kind) * (variant?.scale ?? art.scale ?? 1);
   return { halfW, halfH: halfW * (texture.height / texture.width) };
 }
 
