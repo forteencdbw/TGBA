@@ -2460,7 +2460,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'bullets.accelerationPerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 20, describe: 'lane widths per second squared between 0 and 20' },
   { path: 'bullets.speedMaxPerSecond', check: (v) => typeof v === 'number' && v > 0 && v <= 12, describe: 'lane widths per second, above 0 and at most 12' },
   { path: 'bullets.radiusRatio', check: (v) => typeof v === 'number' && v > 0.001 && v <= 0.1, describe: 'a fraction of the lane width, above 0.001 and at most 0.1' },
-  { path: 'bullets.radiusGrowthPerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.1, describe: 'a fraction of the lane width per second, between 0 and 0.1' },
+  { path: 'bullets.radiusGrowthPerSecond', check: (v) => typeof v === 'number' && v >= 0 && v <= 0.5, describe: 'a fraction of the lane width per second, between 0 and 0.5' },
   { path: 'bullets.upgradeSpreadRatio', check: (v) => typeof v === 'number' && v > 0.005 && v < 0.3, describe: 'a fraction of the lane width above 0.005 and below 0.3' },
   { path: 'bullets.maxStreams', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 8, describe: 'a whole number of gun rows between 1 and 8' },
   { path: 'bullets.damage', check: (v) => typeof v === 'number' && v > 0, describe: 'a number of hit points above 0' },

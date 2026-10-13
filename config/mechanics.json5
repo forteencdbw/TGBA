@@ -3008,7 +3008,7 @@
     // 没有上限：唯一的限制是它能活多久（`lifeSeconds`）。加一道人为的天花板会让"堆射程"在后期变成一张
     // 被截断的卡——真糊住视野就调小每秒增长，那是数值问题不是机制问题。
     "radiusRatio": 0.011,
-    "radiusGrowthPerSecond": 0.007,
+    "radiusGrowthPerSecond": 0.187,
 
     // 每发伤害（点）。和 hazards.health 一起决定"几发打跑一条鱼"：默认 2 血 ÷ 1 伤 = 两发。
     "damage": 1,
