@@ -66,8 +66,14 @@ function speedOf(b: Bullet, laneWidth: number, multiplier: number): number {
  *
  * There is no ceiling here on purpose. See the config: the only real limit is `lifeSeconds`, and a second one would
  * mean the range card stopped paying at some point.
+ *
+ * EXPORTED because there are TWO drawings. `paintBullets` below draws the dots, and `main.ts` draws the picture
+ * when `bullets.image` names one -- and the sprite path used to size every sprite from `radiusRatio` once, which
+ * is the LAUNCH size. The growth reached the hitbox and the dots but not the picture, so a run with art on had
+ * rounds that got bigger only in the collision maths. Anyone drawing a round asks this function, so there is one
+ * size in the game rather than two.
  */
-function radiusOf(b: Bullet, laneWidth: number, multiplier: number): number {
+export function radiusOf(b: Bullet, laneWidth: number, multiplier: number): number {
   const cfg = mech.bullets;
   return (cfg.radiusRatio + cfg.radiusGrowthPerSecond * b.age) * multiplier * laneWidth;
 }

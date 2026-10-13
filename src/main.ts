@@ -3,7 +3,7 @@ import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeL
 import { tuning } from './config';
 import { LEVEL, LEVELS, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
 import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, isBossKind, LURE_PROBE, paintHazards, setReducedFlash, warmAnimations, type HazardKind } from './hazards';
-import { paintBullets } from './bullets';
+import { paintBullets, radiusOf } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
 import { diagnosticsOf } from './diagnostics';
 import { BURST_SECONDS, Run, type WorldView } from './run';
@@ -3330,7 +3330,7 @@ private updateBoss(): void {
      * for reuse. Creating one per frame is what made the bubble enormous twice over, and with bullets it would be that
      * every frame.
      */
-    const bulletArt = this.syncBulletSprites(g, laneWidth);
+    const bulletArt = this.syncBulletSprites(g, laneWidth, this.run.bulletRadiusMultiplier);
     this.hitParticles.draw();
 
     if (!bulletArt) paintBullets(g, this.run.bullets, laneWidth, this.run.bulletRadiusMultiplier, this.run.bulletLifeMultiplier);
@@ -3552,8 +3552,14 @@ private updateBoss(): void {
    * The texture is shared by every bullet and asked for by name, not built: Pixi's asset manager already holds it (the
    * loading screen fetched every picture before the run began), so this is a cache lookup and a sprite scale. Bullets are
    * pooled because they are created and destroyed constantly.
+   *
+   * THE SIZE IS ASKED FOR PER BULLET, from `radiusOf` -- the same function the hitbox and the dots use. This used to
+   * compute one scale from `bullets.radiusRatio` before the loop and hand it to every sprite, which is the LAUNCH
+   * radius: the picture was the one thing in the game that ignored the growth, so a round swelled for the collision
+   * maths and for the dots (drawn only while the texture was still loading, which is why it looked right for a moment)
+   * and then stopped the instant the art arrived. It also ignored the 大弹丸 card, which scales the same radius.
    */
-  private syncBulletSprites(g: Graphics, laneWidth: number): boolean {
+  private syncBulletSprites(g: Graphics, laneWidth: number, radiusMultiplier: number): boolean {
     const cfg = mech.bullets;
     if (!cfg.image) {
       for (const sprite of this.bulletSprites) sprite.visible = false;
@@ -3568,10 +3574,10 @@ private updateBoss(): void {
      */
     const texture = assetTextureNow(cfg.image);
     if (!texture) return false;
-    const size = laneWidth * mech.bullets.radiusRatio * 2 * cfg.imageScale;
-    // The world is Y-flipped, so the sprite's own Y is negative to keep the picture upright; see the bubble.
-    const scale = size / texture.width;
-    if (!Number.isFinite(scale) || scale <= 0) return true;
+    // Scale per metre of radius, so the loop below only has to multiply. `size = radius * 2 * imageScale`, and the
+    // sprite's scale is that over the texture's width.
+    const scalePerMetre = (2 * cfg.imageScale) / texture.width;
+    if (!Number.isFinite(scalePerMetre) || scalePerMetre <= 0) return true;
     const list = this.run.bullets.bullets;
     for (const [index, bullet] of list.entries()) {
       let sprite = this.bulletSprites[index];
@@ -3588,6 +3594,8 @@ private updateBoss(): void {
       sprite.y = bullet.y;
       sprite.alpha = cfg.imageAlpha;
       sprite.tint = cfg.imageTint;
+      const scale = radiusOf(bullet, laneWidth, radiusMultiplier) * scalePerMetre;
+      // The world is Y-flipped, so the sprite's own Y is negative to keep the picture upright; see the bubble.
       sprite.scale.set(scale, -Math.abs(scale));
     }
     for (let i = list.length; i < this.bulletSprites.length; i++) this.bulletSprites[i]!.visible = false;
