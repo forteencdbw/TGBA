@@ -1472,7 +1472,15 @@ class Game {
     const cfg = mech.hud.brokenScreen;
     const view = this.run.healthView;
     const fraction = view.max > 0 ? view.current / view.max : 1;
-    const strength = hidden ? 0 : Math.min(1, Math.max(0, (cfg.threshold - fraction) / cfg.threshold));
+    /**
+     * 0 at `threshold`, 1 at `maxThreshold`, and pinned at 1 below it.
+     *
+     * The span is floored rather than trusted: the config's numbers are not range-checked any more, so
+     * `maxThreshold` equal to `threshold` -- or above it -- is a legal file. That is bad tuning, but the failure has
+     * to be "the warning is instant" or "the warning is off", not a division by zero that blanks the screen.
+     */
+    const span = Math.max(1e-6, cfg.threshold - cfg.maxThreshold);
+    const strength = hidden ? 0 : Math.min(1, Math.max(0, (cfg.threshold - fraction) / span));
 
     /**
      * The edge glow, which is a DIFFERENT KINDS of thing from the cracks and is handled before the cracks' guard.

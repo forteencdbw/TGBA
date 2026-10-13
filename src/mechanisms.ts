@@ -350,11 +350,22 @@ export interface Mechanisms {
      * bubble they are about.
      */
     brokenScreen: {
-      /** The health fraction below which cracks appear. The same number as `healthBar.lowThreshold`. */
+      /**
+       * The health fraction below which cracks appear, and the one below which they stop growing.
+       *
+       * Two numbers rather than one because the warning has a beginning and a ceiling, and they are not the same event:
+       * at 50% the screen says "you are in trouble", and by 30% it has said everything it is going to say. Below
+       * `maxThreshold` the picture is FROZEN -- the player has 30% of their health left to spend and needs to see where
+       * they are, not a screen that keeps getting busier.
+       *
+       * `maxThreshold` is deliberately equal to `healthBar.lowThreshold`, so the bar turning red lands exactly on the
+       * cracks maxing out -- the red is "this is as bad as it gets" rather than a second, vaguer alarm.
+       */
       threshold: number;
+      maxThreshold: number;
       /** How far inward a crack may reach, as a fraction of the SHORTER screen side. */
       reachRatio: number;
-      /** How many cracks at the threshold, and how many when health is gone. Interpolated by strength. */
+      /** How many cracks at `threshold`, and how many at `maxThreshold`. Interpolated by strength. */
       crackCountNear: number;
       crackCountDeep: number;
       branchChance: number;
@@ -2155,7 +2166,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hud.healthBar.labelSize', check: anyNumber, describe: 'a font size' },
   { path: 'hud.healthBar.labelColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hud.healthBar.labelGap', check: anyNumber, describe: 'design pixels' },
-  { path: 'hud.brokenScreen.threshold', check: anyNumber, describe: 'a health proportion' },
+  { path: 'hud.brokenScreen.threshold', check: anyNumber, describe: 'a health proportion, where the warning starts' },
+  { path: 'hud.brokenScreen.maxThreshold', check: anyNumber, describe: 'a health proportion, where the warning maxes out' },
   { path: 'hud.brokenScreen.reachRatio', check: anyNumber, describe: 'a fraction of the short screen side' },
   { path: 'hud.brokenScreen.crackCountNear', check: anyNumber, describe: 'a crack count' },
   { path: 'hud.brokenScreen.crackCountDeep', check: anyNumber, describe: 'a crack count' },
