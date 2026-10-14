@@ -479,25 +479,38 @@ try {
     );
 
     /**
-     * The sway -- and what is NOT asserted is as much of the point: the shafts' geometry is built once, in `layout`,
-     * so the only thing moving per frame is a rotation and an alpha.
+     * The sea surface, sampled over a full period of the SLOWEST thing in it -- which is what makes "it reaches both
+     * ends of its band" mean something, rather than being an assertion that the first frame looked busy.
+     *
+     * What is NOT asserted is as much of the point: the shafts' geometry is built once, in `layout`, so everything
+     * moving here is a container property. And the bands are what is checked rather than the values, because the
+     * values are the owner's and the BANDS are the thing a retune can break.
      */
-    const rot0 = bd.beams.map((b) => b.holder.rotation);
-    const alpha0 = bd.beams.map((b) => b.holder.alpha);
-    for (let i = 0; i < 300; i++) bd.update(DT);
-    const rot1 = bd.beams.map((b) => b.holder.rotation);
-    check('every shaft has moved', rot1.every((r, i) => r !== rot0[i]), true);
-    check(
-      'and none has left the arc it was given',
-      rot1.every((r, i) => Math.abs(r - bd.beams[i].lean) <= light.beamSway + 1e-9),
-      true,
-    );
-    check('and every one has changed brightness', bd.beams.every((b, i) => b.holder.alpha !== alpha0[i]), true);
-    check(
-      'within the pulse the config asks for',
-      bd.beams.every((b) => Math.abs(b.holder.alpha - light.beamAlpha) <= light.beamAlpha * light.beamPulse + 1e-9),
-      true,
-    );
+    const seen = { rot: [], scale: [], drift: [], pulse: [], glowY: [], glowAlpha: [] };
+    for (let i = 0; i < 3000; i++) {
+      bd.update(DT);
+      for (const b of bd.beams) {
+        seen.rot.push(b.holder.rotation - b.lean);
+        seen.scale.push(b.holder.scale.x - 1);
+        seen.drift.push(b.holder.position.x - b.baseX);
+        seen.pulse.push(b.holder.alpha / light.beamAlpha - 1);
+      }
+      seen.glowY.push(bd.glowGfx.position.y);
+      seen.glowAlpha.push(bd.glowGfx.alpha - 1);
+    }
+    const within = (values, limit) => values.every((v) => Math.abs(v) <= limit + 1e-9);
+    const reached = (values, limit) => Math.max(...values) - Math.min(...values) > limit * 1.9;
+    const band = (label, values, limit) => {
+      check(`${label} stays inside its band`, within(values, limit), true);
+      check(`${label} reaches both ends of it`, reached(values, limit), true);
+    };
+
+    band('the angle', seen.rot, light.beamSway);
+    band('the width', seen.scale, light.beamWidth);
+    band('the root', seen.drift, light.beamDrift * W);
+    band('the brightness', seen.pulse, light.beamPulse);
+    band('the halo', seen.glowY, light.glowDrift * H);
+    check('and the halo brightens within its own pulse', within(seen.glowAlpha, light.glowPulse), true);
   }
 
   // ---------------------------------------------------------------------------------------------

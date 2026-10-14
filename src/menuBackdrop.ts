@@ -173,8 +173,8 @@ export class MenuBackdrop {
   private readonly darkGfx = new Graphics();
   private readonly beamLayer = new Container();
   private readonly glowGfx = new Graphics();
-  /** One entry per shaft: the lean it sways around, and which way it starts. */
-  private readonly beams: { holder: Container; lean: number; phase: number }[] = [];
+  /** One entry per shaft: the lean and the root it sways around, and which way it starts. */
+  private readonly beams: { holder: Container; lean: number; baseX: number; phase: number }[] = [];
   private readonly swimmers = new HazardField();
   private readonly backBed = new ObstacleField();
   private readonly frontBed = new ObstacleField();
@@ -275,23 +275,33 @@ export class MenuBackdrop {
     });
 
     /**
-     * THE HALO. A radial whose centre is ABOVE the top of the lane, which is what makes it read as light coming down
-     * from a surface that is off screen rather than as a bright patch painted on the water.
+     * THE HALO, and it is drawn with ROOM TO MOVE -- which is the one place in this file where the gradient's texture
+     * space matters.
+     *
+     * `textureSpace: 'local'` measures the ramp against the bounds of the shape being filled, which is what makes the
+     * shafts' one shared gradient work. Here it would be wrong twice over: the halo has to be able to drift, and a
+     * shape tall enough to drift within would stretch the ramp with it. In `'global'` the ramp is in the graphics' own
+     * pixels, so the shape can be as tall as it likes and `glowCentreY` / `glowRadius` keep meaning "a fraction of the
+     * lane's height" however much slack is added.
+     *
+     * The slack is what stops a drift from leaving a strip of unlit water along the top of the lane -- which is the
+     * brightest part of the halo, so a strip there would read as a seam rather than as darkness.
      */
+    const slack = height * Math.max(0.05, cfg.glowDrift * 2);
     this.glowGfx.clear();
-    this.glowGfx.rect(0, 0, lane, height).fill({
+    this.glowGfx.rect(0, -slack, lane, height + slack * 2).fill({
       fill: new FillGradient({
         type: 'radial',
-        center: { x: 0.5, y: cfg.glowCentreY },
+        center: { x: lane / 2, y: height * cfg.glowCentreY },
         innerRadius: 0,
-        outerCenter: { x: 0.5, y: cfg.glowCentreY },
-        outerRadius: cfg.glowRadius,
+        outerCenter: { x: lane / 2, y: height * cfg.glowCentreY },
+        outerRadius: height * cfg.glowRadius,
         colorStops: [
           { offset: 0, color: rgba(cfg.glowColour, cfg.glowAlpha) },
           { offset: cfg.glowMidOffset, color: rgba(cfg.glowColour, cfg.glowMidAlpha) },
           { offset: 1, color: rgba(cfg.glowColour, 0) },
         ],
-        textureSpace: 'local',
+        textureSpace: 'global',
       }),
     });
 
@@ -342,7 +352,8 @@ export class MenuBackdrop {
 
     for (let i = 0; i < count; i++) {
       const holder = new Container();
-      holder.position.set(lane * (cfg.beamFirstX + i * cfg.beamSpread), height * cfg.beamTop);
+      const baseX = lane * (cfg.beamFirstX + i * cfg.beamSpread);
+      holder.position.set(baseX, height * cfg.beamTop);
       const lean = cfg.beamLean + i * cfg.beamPitch;
       holder.rotation = lean;
       const gfx = new Graphics();
@@ -365,7 +376,7 @@ export class MenuBackdrop {
       }
       holder.addChild(gfx);
       this.beamLayer.addChild(holder);
-      this.beams.push({ holder, lean, phase: i });
+      this.beams.push({ holder, lean, baseX, phase: i });
     }
   }
 
@@ -607,21 +618,38 @@ export class MenuBackdrop {
     }
 
     /**
-     * THE SHAFTS SWAY, and this is the only part of the lighting that costs anything per frame: one rotation and one
-     * alpha each, with the geometry left alone.
+     * THE SEA SURFACE, moving.
      *
-     * Two periods rather than one. A shaft whose brightness and angle share a period reads as a single object rocking;
-     * two that drift in and out of step read as water.
+     * Four things move, and they are the four things light does under a surface that is not still: the ANGLE of each
+     * shaft (the water refracts it somewhere else), its WIDTH (the surface focuses it and spreads it), where its root
+     * LANDS (the bright spot on the surface travels), and how BRIGHT it is. Four periods that do not divide one
+     * another, and a different starting offset for each shaft, so the picture never comes back round and the four
+     * never move as one.
+     *
+     * ALL OF IT IS CONTAINER PROPERTIES. The 240 slices are still built once, in `layout` -- the width pulse is
+     * `scale.x` and not a redrawn path, which is the whole reason this costs nothing. (And scaling the holder scales
+     * the shared horizontal gradient with it, so the soft edges stay soft.)
      *
      * Off `elapsed`, the menu's own clock, so a menu that is not being updated is a menu where nothing moves.
      */
     const light = mech.menu.lighting;
-    const sway = (this.elapsed / Math.max(0.001, light.beamSwaySeconds)) * Math.PI * 2;
-    const pulse = (this.elapsed / Math.max(0.001, light.beamPulseSeconds)) * Math.PI * 2;
+    const at = (seconds: number, phase: number): number =>
+      Math.sin((this.elapsed / Math.max(0.001, seconds)) * Math.PI * 2 + phase);
     for (const beam of this.beams) {
-      beam.holder.rotation = beam.lean + Math.sin(sway + beam.phase) * light.beamSway;
-      beam.holder.alpha = light.beamAlpha * (1 + Math.sin(pulse + beam.phase * 1.7) * light.beamPulse);
+      const i = beam.phase;
+      beam.holder.rotation = beam.lean + at(light.beamSwaySeconds, i) * light.beamSway;
+      beam.holder.scale.x = 1 + at(light.beamWidthSeconds, i * 1.7) * light.beamWidth;
+      beam.holder.position.x = beam.baseX + at(light.beamDriftSeconds, i * 2.3) * light.beamDrift * this.width;
+      beam.holder.alpha = light.beamAlpha * (1 + at(light.beamPulseSeconds, i * 1.7) * light.beamPulse);
     }
+    /**
+     * And the halo breathes with them, but slowly and barely.
+     *
+     * It is the floor every shaft stands on, and a floor that shakes takes the depth out of the picture. Its own alpha
+     * modulates around 1 rather than around `glowAlpha`, because that brightness is already in the gradient's stops.
+     */
+    this.glowGfx.position.y = at(light.glowSeconds, Math.PI / 2) * light.glowDrift * this.height;
+    this.glowGfx.alpha = 1 + at(light.glowSeconds, 0) * light.glowPulse;
 
     this.backGfx.clear();
     this.swimGfx.clear();

@@ -1520,6 +1520,9 @@ export interface Mechanisms {
       glowAlpha: number;
       glowMidOffset: number;
       glowMidAlpha: number;
+      glowPulse: number;
+      glowDrift: number;
+      glowSeconds: number;
 
       beamColour: number;
       beamCount: number;
@@ -1536,6 +1539,9 @@ export interface Mechanisms {
       beamFadeMidAlpha: number;
       beamSway: number;
       beamSwaySeconds: number;
+      beamWidthSeconds: number;
+      beamDrift: number;
+      beamDriftSeconds: number;
       beamPulse: number;
       beamPulseSeconds: number;
 
@@ -2920,6 +2926,9 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['glowAlpha', 'an opacity'],
     ['glowMidOffset', 'a fraction along the gradient'],
     ['glowMidAlpha', 'an opacity'],
+    ['glowPulse', 'a fraction of the base brightness'],
+    ['glowDrift', 'a fraction of the screen height'],
+    ['glowSeconds', 'seconds'],
     ['beamCount', 'a count of beams'],
     ['beamWidth', 'a fraction of the lane width'],
     ['beamHeight', 'a fraction of the screen height'],
@@ -2934,6 +2943,9 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['beamFadeMidAlpha', 'a fraction'],
     ['beamSway', 'radians'],
     ['beamSwaySeconds', 'seconds'],
+    ['beamWidthSeconds', 'seconds'],
+    ['beamDrift', 'a fraction of the lane width'],
+    ['beamDriftSeconds', 'seconds'],
     ['beamPulse', 'an opacity'],
     ['beamPulseSeconds', 'seconds'],
     ['darknessTopAlpha', 'an opacity'],
