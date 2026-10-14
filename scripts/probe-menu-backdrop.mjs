@@ -284,6 +284,30 @@ try {
 
     const spent = measure(0);
     near('a burst that has run out is back to normal speed', spent.dx, 1);
+
+    /**
+     * AND IT DOES NOT END SUDDENLY, which is the whole of the tail.
+     *
+     * `boostAt` hands `measure` one frame MORE than it is asking about, because `update` is what takes the frame:
+     * without that the sample would always be one frame further down the tail than the number it was asked for, and
+     * every expected value here would be out by a frame's worth of easing.
+     */
+    const fall = cfg.burstFallSeconds;
+    const boostAt = (left) => measure(left + DT).dx;
+    near('at the start of the tail it is still at full speed', boostAt(fall), cfg.burstScale);
+    near('a quarter of the way down', boostAt(fall * 0.75), 1 + (cfg.burstScale - 1) * 0.5625);
+    near('halfway down', boostAt(fall * 0.5), 1 + (cfg.burstScale - 1) * 0.25);
+    near('and it has all but arrived by the end', boostAt(fall * 0.1), 1 + (cfg.burstScale - 1) * 0.01, 0.02);
+    near('while a burst that is over is over', boostAt(0), 1);
+
+    /**
+     * And sampled across the whole tail: it only ever slows, it never dips below cruising on the way back, and it
+     * never overshoots the burst. Those three ARE the shape, and the shape is what a retune can break.
+     */
+    const steps = Array.from({ length: Math.round(fall / DT / 4) }, (_, i) => boostAt(fall - i * 4 * DT));
+    check('the tail only ever slows down', steps.every((b, i) => i === 0 || b <= steps[i - 1] + 1e-9), true);
+    check('and never dips below cruising on the way back', steps.every((b) => b >= 1 - 1e-9), true);
+    check('and never overshoots the burst', steps.every((b) => b <= cfg.burstScale + 1e-9), true);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -304,7 +328,7 @@ try {
     bd.update(DT);
     restore();
 
-    check('a small fish darts', fishSchool.burstLeft, cfg.burstSeconds);
+    check('a small fish darts', fishSchool.burstLeft, cfg.burstSeconds + cfg.burstFallSeconds);
     check('a shark never does', sharkSchool.burstLeft, 0);
     // Both turned -- the difference measured here is the SPEED, so the burst is the only thing left that could
     // explain it.

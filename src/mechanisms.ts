@@ -1484,6 +1484,7 @@ export interface Mechanisms {
       turnBand: number;
       burstScale: number;
       burstSeconds: number;
+      burstFallSeconds: number;
       burstEverySeconds: number;
       creatureScale: number;
       creatureAlpha: number;
@@ -2937,7 +2938,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['fishTurnEverySeconds', 'seconds'],
     ['turnBand', 'a fraction of the screen width'],
     ['burstScale', 'a speed multiple'],
-    ['burstSeconds', 'seconds'],
+    ['burstSeconds', 'seconds at full speed'],
+    ['burstFallSeconds', 'seconds spent slowing back down'],
     ['burstEverySeconds', 'seconds'],
     ['creatureScale', 'a size multiple'],
     ['creatureAlpha', 'an opacity'],

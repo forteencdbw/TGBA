@@ -629,7 +629,7 @@ export class MenuBackdrop {
        * `burstEverySeconds`" true at any frame rate instead of only at the one it was tuned on.
        */
       if (darts(kind) && school.burstLeft <= 0 && dart < dt / Math.max(0.01, cfg.burstEverySeconds)) {
-        school.burstLeft = cfg.burstSeconds;
+        school.burstLeft = cfg.burstSeconds + cfg.burstFallSeconds;
       }
       /**
        * And the turn, the one rule with a PLACE as well as a rate -- and the one thing here that every creature does
@@ -672,8 +672,10 @@ export class MenuBackdrop {
        *
        * That is the whole of "a burst and a turn do not interfere": the turn owns the direction, the burst owns the
        * rate, and a creature that turns halfway through a burst simply carries on bursting the other way.
+       *
+       * The rate itself is not a switch -- see `burstBoost`.
        */
-      const boost = v.school.burstLeft > 0 ? cfg.burstScale : 1;
+      const boost = this.burstBoost(v.school.burstLeft);
       if (h.flee) {
         const step = this.height * mech.hazards.fleeScreensPerSecond * dt;
         h.x += h.flee === 'right' ? step : -step;
@@ -899,6 +901,23 @@ export class MenuBackdrop {
       this.faceTravel(h, dir);
       this.swimmers.hazards.push(h);
     }
+  }
+
+  /**
+   * How hard a school is swimming, `left` seconds from the end of a burst.
+   *
+   * A burst STARTS suddenly and does not END suddenly. It runs at full speed for `burstSeconds` and then slides back
+   * down over `burstFallSeconds`, because a speed that goes from 2.5x to 1x between two frames reads on a small fish
+   * as a jumper landing rather than as a sprint finishing. The onset is left alone: that part is the punctuation.
+   *
+   * The slide is a SQUARE -- an ease-out. It drops hardest the moment the tail begins and flattens as it arrives, so
+   * the last frames of it are indistinguishable from cruising and the speed has no kink where the tail ends.
+   */
+  private burstBoost(left: number): number {
+    const cfg = mech.menu.backdrop;
+    const fall = Math.max(0.001, cfg.burstFallSeconds);
+    const t = left >= fall ? 1 : Math.max(0, left / fall);
+    return 1 + (cfg.burstScale - 1) * t * t;
   }
 
   /**
