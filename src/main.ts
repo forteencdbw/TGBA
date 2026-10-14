@@ -468,9 +468,26 @@ class Game {
     // Routed through the handle* methods rather than straight into the touch layer, so there is ONE
     // path every pointer event takes. Two paths meant the diagnostic log could not see what the real
     // handlers received, which is exactly what is needed to debug multi-touch routing.
-    stage.on('pointerdown', (e) => this.handlePointerDown(e.pointerId, e.global.x, e.global.y));
-    stage.on('globalpointermove', (e) => this.handlePointerMove(e.pointerId, e.global.x, e.global.y));
-    stage.on('pointerup', (e) => this.handlePointerUp(e.pointerId));
+    /**
+     * The menu is told whether the pointer can HOVER, here, because this is the only place that has the event.
+     *
+     * A mouse can be over a button without pressing and a finger cannot, and the menu draws a different picture for
+     * each -- so without this, a touch tap left the button it pressed showing its hover art, and nothing was coming to
+     * clear it: a touch produces no more moves after the finger lifts, and no page that opens over the menu touches it.
+     * `pointerType` is the fact, and it is per EVENT rather than per device: a laptop with a touchscreen sends both.
+     */
+    stage.on('pointerdown', (e) => {
+      this.menu.pointerHovers = e.pointerType !== 'touch';
+      this.handlePointerDown(e.pointerId, e.global.x, e.global.y);
+    });
+    stage.on('globalpointermove', (e) => {
+      this.menu.pointerHovers = e.pointerType !== 'touch';
+      this.handlePointerMove(e.pointerId, e.global.x, e.global.y);
+    });
+    stage.on('pointerup', (e) => {
+      this.menu.pointerHovers = e.pointerType !== 'touch';
+      this.handlePointerUp(e.pointerId);
+    });
     stage.on('pointerupoutside', (e) => this.handlePointerUp(e.pointerId));
     stage.on('pointercancel', (e) => this.handlePointerUp(e.pointerId));
 

@@ -187,6 +187,18 @@ export class MainMenu {
    * would be the second place that decides what the panel is for. The menu says what was pressed and stops.
    */
   onSettings: () => void = () => {};
+  /**
+   * Whether the pointer driving the menu right now can be somewhere WITHOUT pressing.
+   *
+   * A mouse can, and a finger cannot: there is no "over" once the finger has lifted, so a touch tap that left a button
+   * in its hover state would leave a stone glowing with nobody near it -- and it does not clear itself, because a touch
+   * produces no further moves to clear it with. The fact is per EVENT rather than per device (a laptop with a
+   * touchscreen produces both kinds), which is why the game sets it from the event it is handling instead of the menu
+   * caching it once at startup.
+   *
+   * Defaults to `true`, so a probe that calls `handlePointer*` directly gets the desktop behaviour it is asking about.
+   */
+  pointerHovers = true;
 
   /**
    * The level row: one pill per level, with its lock state.
@@ -782,11 +794,16 @@ export class MainMenu {
    *
    * Pressed beats hovered, which is what makes pressing a button feel like pushing the stone in rather than like
    * hovering it harder.
+   *
+   * A press is a press on any pointer, so `Pressed` does not ask whether the pointer can hover -- a finger dragged from
+   * one button onto another is still pushing the second one. Only `Hover` does, and that is the whole of
+   * `pointerHovers`.
    */
   private showPointerState(x: number, y: number): void {
     for (const button of this.buttons) {
       const over = this.inRect(button.rect, x, y);
-      const want: ButtonState = over && this.pressed === button.id ? 'Pressed' : over ? 'Hover' : 'normal';
+      const want: ButtonState =
+        over && this.pressed === button.id ? 'Pressed' : over && this.pointerHovers ? 'Hover' : 'normal';
       if (button.state === want) continue;
       button.state = want;
       this.showButtonState(button);
