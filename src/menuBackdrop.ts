@@ -275,33 +275,40 @@ export class MenuBackdrop {
     });
 
     /**
-     * THE HALO, and it is drawn with ROOM TO MOVE -- which is the one place in this file where the gradient's texture
-     * space matters.
+     * THE HALO -- and it is drawn with ROOM TO MOVE, which is the only reason it is not the shape the config's numbers
+     * describe.
      *
-     * `textureSpace: 'local'` measures the ramp against the bounds of the shape being filled, which is what makes the
-     * shafts' one shared gradient work. Here it would be wrong twice over: the halo has to be able to drift, and a
-     * shape tall enough to drift within would stretch the ramp with it. In `'global'` the ramp is in the graphics' own
-     * pixels, so the shape can be as tall as it likes and `glowCentreY` / `glowRadius` keep meaning "a fraction of the
-     * lane's height" however much slack is added.
+     * `textureSpace: 'local'` and NOT `'global'`, which is what it was for one commit. The difference is a measurement
+     * rather than a taste: in global space the ramp is a CIRCLE whose radius is a fraction of the lane's HEIGHT, so on
+     * a lane wider than it is tall the light dies out before it reaches the sides. The water there goes black, and
+     * what is left of the shafts is only their brightest part -- their narrow tops -- swaying in it: four thin lines,
+     * which is a light rig and not the sea.
      *
-     * The slack is what stops a drift from leaving a strip of unlit water along the top of the lane -- which is the
-     * brightest part of the halo, so a strip there would read as a seam rather than as darkness.
+     * In LOCAL space the ramp is proportional to the shape, so it always spans the lane however wide or short the
+     * window is. That makes it an ellipse of the lane's aspect rather than the reference's circle -- and the reference
+     * draws on a full-screen canvas, where those are the same thing. This draws on a lane.
+     *
+     * The slack is the room: the shape is taller than the lane so the drift cannot uncover the top of the lane, which
+     * is the brightest part of the halo and would show as a seam. Everything about the gradient is then in the SHAPE's
+     * normalised space, while the config's numbers are fractions of the LANE, so the centre is converted here.
      */
     const slack = height * Math.max(0.05, cfg.glowDrift * 2);
+    const boxHeight = height + slack * 2;
+    const glowY = (height * cfg.glowCentreY + slack) / boxHeight;
     this.glowGfx.clear();
-    this.glowGfx.rect(0, -slack, lane, height + slack * 2).fill({
+    this.glowGfx.rect(0, -slack, lane, boxHeight).fill({
       fill: new FillGradient({
         type: 'radial',
-        center: { x: lane / 2, y: height * cfg.glowCentreY },
+        center: { x: 0.5, y: glowY },
         innerRadius: 0,
-        outerCenter: { x: lane / 2, y: height * cfg.glowCentreY },
-        outerRadius: height * cfg.glowRadius,
+        outerCenter: { x: 0.5, y: glowY },
+        outerRadius: cfg.glowRadius,
         colorStops: [
           { offset: 0, color: rgba(cfg.glowColour, cfg.glowAlpha) },
           { offset: cfg.glowMidOffset, color: rgba(cfg.glowColour, cfg.glowMidAlpha) },
           { offset: 1, color: rgba(cfg.glowColour, 0) },
         ],
-        textureSpace: 'global',
+        textureSpace: 'local',
       }),
     });
 
