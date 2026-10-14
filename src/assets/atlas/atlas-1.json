@@ -3118,28 +3118,28 @@
         "sha256": "a4c12db2a92f4d190622866c083c829ddf92361d81c700d1598feaeef072e04b"
       },
       "按钮-图鉴-Hover.png": {
-        "bytes": 9796,
-        "sha256": "dbfeb524ffb220726521cc59f5b31611f2aef8a0fc97f26c257c41323cb603c7"
+        "bytes": 9835,
+        "sha256": "ee83029fae220274fc0b3c90c2a6ff9cf438010db586866730e8076fd142476c"
       },
       "按钮-图鉴.png": {
-        "bytes": 10500,
-        "sha256": "d91aa7c91ba6373b6657ce71b18b64b5b72922ed7905f7887942976063d6c849"
+        "bytes": 10506,
+        "sha256": "1fe086714eeda2e926334a9eabcecc38bae26f0b007cd80b921b46d5aa321d53"
       },
       "按钮-开始游戏-Hover.png": {
-        "bytes": 10707,
-        "sha256": "100108a764d39d36f09bd342f5c339bb08921fe38b476dd9937839bf41321930"
+        "bytes": 10777,
+        "sha256": "6dd44e7bc0302ae02cc0234354510770959b6fd814fc9cbadd6f3ca22cc0c747"
       },
       "按钮-开始游戏.png": {
-        "bytes": 11875,
-        "sha256": "8a86ee7091d430d77b233d87af58bc621c4883ca7043ed6edb8a06f9103250dd"
+        "bytes": 11749,
+        "sha256": "7e8a47575770a69d6d55bec25c3fa416ad128bfa954222d60e511a5140a350d9"
       },
       "按钮-设置-Hover.png": {
-        "bytes": 9406,
-        "sha256": "c730f23ca500aa44f474e047d0db788d244a87fd67d95ec472fae2fd0edb8dec"
+        "bytes": 9460,
+        "sha256": "b6cfac5da4b824459912bc3d3173b60dd4456273132bab26495808aff200a5d0"
       },
       "按钮-设置.png": {
-        "bytes": 9404,
-        "sha256": "3c5501fdca7636ddc41aa6ee73b82dbd8c712d2ba2aa779fb20d761912438693"
+        "bytes": 9407,
+        "sha256": "be0aeaecff6f12e3aeb7791ee4590cebf6b24bde12336678bf7937c97337bd6e"
       },
       "木箱.png": {
         "bytes": 5976,
@@ -3598,7 +3598,7 @@
         "sha256": "356ae26b7afe3f17806ecbb04da1fe86f8cf9277039fa881ebc2f6d71739fc33"
       }
     },
-    "textureBytes": 1440462,
+    "textureBytes": 1439964,
     "version": "1.0"
   }
 }
