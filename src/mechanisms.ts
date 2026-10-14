@@ -1609,19 +1609,16 @@ export interface Mechanisms {
         everySeconds: number;
         everyJitter: number;
         gap: number;
+        /** The LARGEST bubble's diameter, as a fraction of the lane width -- the whole set's scale. */
         size: number;
-        sizeVariance: number;
         speed: number;
         accel: number;
         sway: number;
         swaySeconds: number;
         fadeEdge: number;
-        colour: number;
+        /** Multiplies the pictures' own colours. White is the identity and the default. */
+        tint: number;
         alpha: number;
-        bodyAlpha: number;
-        rimWidth: number;
-        highlightRadius: number;
-        highlightAlpha: number;
       };
     };
   };
@@ -3030,9 +3027,13 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   ].map(([key, describe]) => ({ path: `menu.lighting.${key}`, check: anyNumber, describe: describe as string })),
   /**
    * The specks and the bubbles, the same way -- with their two colours out of the loop for the same reason.
+   *
+   * The bubble's is `tint` rather than `colour` now: the pictures carry their own colours, so this one MULTIPLIES
+   * them rather than being them, and its default of white is the identity. A key called `colour` whose default meant
+   * "no colour" would be the wrong word for the thing.
    */
   { path: 'menu.water.motes.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  { path: 'menu.water.bubbles.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'menu.water.bubbles.tint', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   ...[
     ['count', 'a count of specks'],
     ['size', 'a fraction of the lane width'],
@@ -3050,18 +3051,13 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['everySeconds', 'seconds'],
     ['everyJitter', 'a fraction of the interval'],
     ['gap', 'a fraction of the screen height'],
-    ['size', 'a fraction of the lane width'],
-    ['sizeVariance', 'a fraction of the size'],
+    ['size', 'the largest bubble\'s diameter, as a fraction of the lane width'],
     ['speed', 'screen heights per second'],
     ['accel', 'a multiple per second'],
     ['sway', 'a fraction of the lane width'],
     ['swaySeconds', 'seconds'],
     ['fadeEdge', 'a fraction of the screen height'],
     ['alpha', 'an opacity'],
-    ['bodyAlpha', 'a fraction of the bubble opacity'],
-    ['rimWidth', 'a fraction of the radius'],
-    ['highlightRadius', 'a fraction of the radius'],
-    ['highlightAlpha', 'an opacity'],
   ].map(([key, describe]) => ({ path: `menu.water.bubbles.${key}`, check: anyNumber, describe: describe as string })),
   ...[
     ['perRow', 'how many pills fit on a row'],

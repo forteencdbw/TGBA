@@ -1218,6 +1218,174 @@
       },
       "trimmed": false
     },
+    "气泡-1.png": {
+      "frame": {
+        "h": 5,
+        "w": 5,
+        "x": 1206,
+        "y": 1116
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 5,
+        "w": 5
+      },
+      "trimmed": false
+    },
+    "气泡-10.png": {
+      "frame": {
+        "h": 12,
+        "w": 12,
+        "x": 1293,
+        "y": 329
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 12,
+        "w": 12
+      },
+      "trimmed": false
+    },
+    "气泡-11.png": {
+      "frame": {
+        "h": 6,
+        "w": 6,
+        "x": 1296,
+        "y": 964
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 6,
+        "w": 6
+      },
+      "trimmed": false
+    },
+    "气泡-12.png": {
+      "frame": {
+        "h": 9,
+        "w": 9,
+        "x": 1296,
+        "y": 974
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 9,
+        "w": 9
+      },
+      "trimmed": false
+    },
+    "气泡-2.png": {
+      "frame": {
+        "h": 10,
+        "w": 9,
+        "x": 1296,
+        "y": 989
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 10,
+        "w": 9
+      },
+      "trimmed": false
+    },
+    "气泡-3.png": {
+      "frame": {
+        "h": 5,
+        "w": 5,
+        "x": 1215,
+        "y": 1116
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 5,
+        "w": 5
+      },
+      "trimmed": false
+    },
+    "气泡-4.png": {
+      "frame": {
+        "h": 12,
+        "w": 12,
+        "x": 1293,
+        "y": 345
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 12,
+        "w": 12
+      },
+      "trimmed": false
+    },
+    "气泡-5.png": {
+      "frame": {
+        "h": 9,
+        "w": 10,
+        "x": 1296,
+        "y": 1014
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 9,
+        "w": 10
+      },
+      "trimmed": false
+    },
+    "气泡-6.png": {
+      "frame": {
+        "h": 5,
+        "w": 5,
+        "x": 1224,
+        "y": 1116
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 5,
+        "w": 5
+      },
+      "trimmed": false
+    },
+    "气泡-7.png": {
+      "frame": {
+        "h": 9,
+        "w": 9,
+        "x": 1296,
+        "y": 1064
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 9,
+        "w": 9
+      },
+      "trimmed": false
+    },
+    "气泡-8.png": {
+      "frame": {
+        "h": 5,
+        "w": 5,
+        "x": 1233,
+        "y": 1116
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 5,
+        "w": 5
+      },
+      "trimmed": false
+    },
+    "气泡-9.png": {
+      "frame": {
+        "h": 5,
+        "w": 5,
+        "x": 1242,
+        "y": 1116
+      },
+      "rotated": false,
+      "sourceSize": {
+        "h": 5,
+        "w": 5
+      },
+      "trimmed": false
+    },
     "水母-待机-1.png": {
       "frame": {
         "h": 77,
@@ -1684,8 +1852,8 @@
       "frame": {
         "h": 12,
         "w": 12,
-        "x": 1293,
-        "y": 329
+        "x": 1266,
+        "y": 398
       },
       "rotated": false,
       "sourceSize": {
@@ -3149,6 +3317,54 @@
         "bytes": 26678,
         "sha256": "77006cd6a422f8ae3bc30937ce98319d67881aa91d665ea0d7c1827d16f5fd68"
       },
+      "气泡-1.png": {
+        "bytes": 169,
+        "sha256": "d6f576ef03532a780e93fb89257fdea437e4ee12e1b3137ac0c20a70c459e4eb"
+      },
+      "气泡-10.png": {
+        "bytes": 443,
+        "sha256": "183ac38ccc09341f531c6de7258fbfce22055048e0a1c09b68aed272c56ff5c4"
+      },
+      "气泡-11.png": {
+        "bytes": 205,
+        "sha256": "c53a361891d1d254964fa00bd6c5e64b494275a2aca8c063ef0e139fc0b445af"
+      },
+      "气泡-12.png": {
+        "bytes": 324,
+        "sha256": "992bbc1aa5ce0df53741dc6d317fbf783262b0e88d066cf407bfcbd64df9e470"
+      },
+      "气泡-2.png": {
+        "bytes": 348,
+        "sha256": "87a0695faf5bc27f1a392cad1a07b4f88d4dbc34e563dd26bdd6e78ee0a8ca34"
+      },
+      "气泡-3.png": {
+        "bytes": 173,
+        "sha256": "34530c663ddf5b2075cc5e81a3762b3dd7f28330afaa89115e3bbcf0ee45c2b2"
+      },
+      "气泡-4.png": {
+        "bytes": 437,
+        "sha256": "644bca577e9ece342d357dc4ef253d7b54f4edb3ebdad7bcb1dbb3414b84f214"
+      },
+      "气泡-5.png": {
+        "bytes": 342,
+        "sha256": "cbe83a5003ecb4f93b65dda180e7413b21c204a1e637e3159c35c480228eb723"
+      },
+      "气泡-6.png": {
+        "bytes": 173,
+        "sha256": "044510718f64abdd7564d37f4fd295afaa69b7ba324eb08fd2518f072c1b5e72"
+      },
+      "气泡-7.png": {
+        "bytes": 341,
+        "sha256": "8569826e34ec847d3057adad3b4a72943be0757303b81fb7b3720e2e1ca2d1f1"
+      },
+      "气泡-8.png": {
+        "bytes": 173,
+        "sha256": "b4cd53c44d37726549da40c1768726cebb7f9ba5a285029c58668d3682fd0971"
+      },
+      "气泡-9.png": {
+        "bytes": 170,
+        "sha256": "d66ee680b2c3ea92f68a3e4b0b8db6ac7373949e56790b46d5d5706d5192e980"
+      },
       "水母-待机-1.png": {
         "bytes": 5416,
         "sha256": "35b430545cd8bd91bc18d8f1e83707ff6ff7e44eef3b070fdccef21250c2bd77"
@@ -3598,7 +3814,7 @@
         "sha256": "356ae26b7afe3f17806ecbb04da1fe86f8cf9277039fa881ebc2f6d71739fc33"
       }
     },
-    "textureBytes": 1439964,
+    "textureBytes": 1444076,
     "version": "1.0"
   }
 }

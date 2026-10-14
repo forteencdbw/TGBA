@@ -1,4 +1,6 @@
-import { Graphics } from 'pixi.js';
+import { Container, Graphics, Sprite } from 'pixi.js';
+import type { Texture } from 'pixi.js';
+import { assetSizeNow, loadAssetTexture } from './assets';
 import { mech } from './config';
 
 /**
@@ -12,15 +14,15 @@ import { mech } from './config';
  * scrolls past it, so its whole lifetime model is "the camera moved". The menu never scrolls. Everything here rises
  * on its own, is born below the lane and dies above it, and fades at both ends so the recycle is invisible.
  *
- * The DRAWING is shared in the only sense that matters: both are circles filled from a config colour.
- *
  * ---------------------------------------------------------------------------------------------
  * TWO FIELDS IN ONE FILE
  * ---------------------------------------------------------------------------------------------
  * They are here together because they are the same sentence twice -- something small, born at the bottom, rising,
  * fading in and out at the ends -- and separating them would put `edgeFade` in one file and its other caller in
- * another. What separates them is what they are made of: a speck is a dot whose brightness is a question about the
- * LIGHT, and a bubble is a drawn object whose brightness is not.
+ * another.
+ *
+ * What separates them is what they are MADE of, and that is not shared at all: a speck is a dot whose brightness is a
+ * question about the LIGHT, and a bubble is a PICTURE -- twelve of them, each drawn at the size it was drawn at.
  */
 
 /** How much of the shafts' light lands on a point: 0 between them, about 1 inside one. */
@@ -132,13 +134,47 @@ interface Bubble {
   x0: number;
   x: number;
   y: number;
-  r: number;
+  readonly sprite: Sprite;
+  /** The picture, once one has been picked for it. See `draw`, which assigns it. */
+  picture: Texture | null;
   speed: number;
   /** Its own age in seconds. It accelerates, so this is not `y / speed`. */
   age: number;
   /** Where in the wobble it starts, so a string does not sway as one object. */
   phase: number;
 }
+
+/**
+ * The bubble pictures, as a SET.
+ *
+ * TWELVE DRAWINGS RATHER THAN ONE THAT IS SCALED, and the difference is not detail -- it is line weight. One picture
+ * scaled up and down goes from a hairline at the bottom of its range to a slab at the top, which is exactly what a
+ * pixel-art rim cannot survive. The artist drew a range of about 2.5x, so the code carries the range instead of
+ * inventing one: each bubble is drawn at the size its own drawing is, and the variety in the water is the artwork's
+ * rather than a random number's. That is also why `sizeVariance` is gone -- two mechanisms would be saying the same
+ * thing, and the code one would be saying it worse.
+ *
+ * The twelve SIZES are not written down anywhere: the pictures were imported so that their texel sizes are
+ * proportional to their drawn sizes, so a single scale factor for all twelve produces the right twelve sizes. See
+ * `MAX_BUBBLE_TEXELS`, which is what the config's `size` is measured against.
+ */
+const BUBBLE_PICTURES = [
+  '气泡-1', '气泡-2', '气泡-3', '气泡-4', '气泡-5', '气泡-6',
+  '气泡-7', '气泡-8', '气泡-9', '气泡-10', '气泡-11', '气泡-12',
+] as const;
+
+/**
+ * The widest of those drawings, in texels.
+ *
+ * Read off the atlas manifest rather than stated: the manifest is eager, so this is known before anything is decoded,
+ * and a number written here would be a second copy of what the importing already decided. It is the denominator of the
+ * one scale factor every bubble shares -- `size` is the LARGEST bubble's diameter, and this is the largest bubble's
+ * width in texels, so their ratio IS the screen pixels per texel.
+ *
+ * The `1` floor is for the case where the atlas has none of them: `Math.max` of nothing is `-Infinity`, which would
+ * make every scale `NaN` and every sprite vanish silently.
+ */
+const MAX_BUBBLE_TEXELS = Math.max(1, ...BUBBLE_PICTURES.map((name) => assetSizeNow(name)?.width ?? 0));
 
 /** One place on the seabed that lets bubbles go. */
 interface Vent {
@@ -154,16 +190,42 @@ interface Vent {
  * reads as gas coming out of the ground, and the same bubbles scattered at random read as noise. Each vent lets go of
  * `perString` bubbles at once, strung out BELOW the lane so they enter one after another -- the gap is what makes a
  * string a string.
+ *
+ * IT USED TO DRAW CIRCLES. Fill, stroke and a highlight dot, all from the config -- and the reason it does not any
+ * more is the stroke: its width was `r * 0.22`, which on a bubble three pixels across is 0.77 pixels, i.e. a
+ * sub-pixel stroke that renders as a blurred grey ring. A picture at the same size is pixel-aligned, and the highlight
+ * is drawn by someone who could see it rather than computed from a radius.
  */
 export class BubbleField {
-  readonly graphics = new Graphics();
+  /** A container of sprites rather than one `Graphics` of circles: the drawing is the picture now. */
+  readonly root = new Container();
+  /**
+   * The pictures, once they arrive.
+   *
+   * Empty until then, which does NOT stop the field: a bubble rises without one and is given a picture the moment
+   * there is one to give it. See `draw`.
+   */
+  private readonly textures: Texture[] = [];
   private readonly bubbles: Bubble[] = [];
   private readonly vents: Vent[] = [];
   private height = 0;
+  /** The lane width from the last update, so the shared sprite scale can be worked out without another parameter. */
+  private width = 0;
+
+  constructor() {
+    this.root.eventMode = 'none';
+    for (const name of BUBBLE_PICTURES) {
+      void loadAssetTexture(name).then((texture) => {
+        if (texture) this.textures.push(texture);
+      });
+    }
+  }
 
   seed(width: number, height: number): void {
     const cfg = mech.menu.water.bubbles;
     this.height = height;
+    this.width = width;
+    for (const b of this.bubbles) this.discard(b);
     this.bubbles.length = 0;
     this.vents.length = 0;
     const count = Math.max(1, Math.round(cfg.vents));
@@ -177,28 +239,53 @@ export class BubbleField {
     }
   }
 
-  private born(x: number, y: number, width: number): Bubble {
+  private born(x: number, y: number): Bubble {
     const cfg = mech.menu.water.bubbles;
+    const sprite = new Sprite();
+    sprite.anchor.set(0.5, 0.5);
+    sprite.tint = cfg.tint;
+    // Hidden until it has a picture: a sprite with no texture draws as a white square, and a screen of white squares
+    // is a worse failure than an empty first second.
+    sprite.visible = false;
+    this.root.addChild(sprite);
     return {
       x0: x,
       x,
       y,
-      r: Math.max(0.5, width * cfg.size * (1 - cfg.sizeVariance / 2 + Math.random() * cfg.sizeVariance)),
+      sprite,
+      picture: null,
       speed: this.height * cfg.speed * (0.8 + Math.random() * 0.4),
       age: 0,
       phase: Math.random() * Math.PI * 2,
     };
   }
 
+  /** Take a bubble's picture off the display list for good. */
+  private discard(b: Bubble): void {
+    this.root.removeChild(b.sprite);
+    b.sprite.destroy();
+  }
+
+  /**
+   * How many screen pixels one texel of a bubble is.
+   *
+   * ONE number for all twelve, which is the point of importing them proportionally: a sprite's own texel width times
+   * this is its drawn width, so the twelve come out at twelve sizes without twelve numbers.
+   */
+  private get texelScale(): number {
+    return (mech.menu.water.bubbles.size * this.width) / MAX_BUBBLE_TEXELS;
+  }
+
   update(dt: number, width: number): void {
     const cfg = mech.menu.water.bubbles;
+    this.width = width;
     for (const vent of this.vents) {
       vent.nextAt -= dt;
       if (vent.nextAt > 0) continue;
       // `+=` rather than `=`: a slow frame carries its remainder into the next interval instead of dropping it.
       vent.nextAt += cfg.everySeconds * (1 - cfg.everyJitter / 2 + Math.random() * cfg.everyJitter);
       const per = Math.max(1, Math.round(cfg.perString));
-      for (let i = 0; i < per; i++) this.bubbles.push(this.born(vent.x, -i * this.height * cfg.gap, width));
+      for (let i = 0; i < per; i++) this.bubbles.push(this.born(vent.x, -i * this.height * cfg.gap));
     }
     for (let i = this.bubbles.length - 1; i >= 0; i--) {
       const b = this.bubbles[i]!;
@@ -210,30 +297,44 @@ export class BubbleField {
        */
       b.y += b.speed * (1 + cfg.accel * b.age) * dt;
       b.x = b.x0 + Math.sin((b.age / Math.max(0.001, cfg.swaySeconds)) * Math.PI * 2 + b.phase) * cfg.sway * width;
-      if (b.y > this.height) this.bubbles.splice(i, 1);
+      if (b.y > this.height) {
+        this.discard(b);
+        this.bubbles.splice(i, 1);
+      }
     }
   }
 
+  /**
+   * Put every sprite where its bubble is, and give it a picture if it has not got one yet.
+   *
+   * A sync rather than a draw, because a sprite draws itself -- there is nothing to clear and nothing to paint.
+   *
+   * THE PICTURE IS ASSIGNED HERE RATHER THAN AT BIRTH, and that is the difference between a field you can test and
+   * one you cannot: a bubble exists and rises whether or not the atlas has landed, and only its PICTURE waits. The
+   * first version refused to let a vent fire until a texture existed, which read as harmless -- the atlas arrives in a
+   * second -- but it made the whole mechanism depend on a download, and the probe that checks strings come out of
+   * vents went red in an environment with no canvas to decode a page on. The behaviour was fine and the coupling was
+   * not.
+   *
+   * The scale is applied here for the same kind of reason: `update` is what knows the lane's width, and a lane that
+   * changes width changes what "the largest bubble is this wide" means.
+   */
   draw(): void {
     const cfg = mech.menu.water.bubbles;
-    const g = this.graphics;
-    g.clear();
+    const scale = this.texelScale;
     for (const b of this.bubbles) {
+      if (!b.picture) {
+        if (!this.textures.length) continue;
+        const texture = this.textures[Math.floor(Math.random() * this.textures.length)]!;
+        b.picture = texture;
+        b.sprite.texture = texture;
+      }
       const alpha = edgeFade(b.y, this.height, cfg.fadeEdge) * cfg.alpha;
-      if (alpha <= 0.002) continue;
-      g.circle(b.x, b.y, b.r).fill({ color: cfg.colour, alpha: alpha * cfg.bodyAlpha });
-      g.circle(b.x, b.y, b.r).stroke({ color: cfg.colour, width: Math.max(0.5, b.r * cfg.rimWidth), alpha });
-      /**
-       * THE HIGHLIGHT, and it is offset UPWARD from the centre.
-       *
-       * Up is +y in this container, because the whole backdrop has its y inverted -- and the light comes from the
-       * surface, which is off the top of the lane. The offsets are shape constants rather than dials: they are what
-       * a highlight IS, and one that could be moved to the bottom left would just be wrong.
-       */
-      g.circle(b.x - b.r * 0.3, b.y + b.r * 0.35, b.r * cfg.highlightRadius).fill({
-        color: 0xffffff,
-        alpha: alpha * cfg.highlightAlpha,
-      });
+      b.sprite.visible = alpha > 0.002;
+      if (!b.sprite.visible) continue;
+      b.sprite.position.set(b.x, b.y);
+      b.sprite.scale.set(scale);
+      b.sprite.alpha = alpha;
     }
   }
 

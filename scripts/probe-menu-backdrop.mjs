@@ -477,7 +477,7 @@ try {
             ? 'shafts'
             : child === bd.darkGfx
               ? 'darkness'
-              : child === bd.bubbles.graphics
+              : child === bd.bubbles.root
                 ? 'bubbles'
                 : child === bd.swimLayer
                   ? 'swimmers'
@@ -502,7 +502,7 @@ try {
     check('but the creatures are drawn OVER the mask', at(bd.swimLayer) > at(bd.darkGfx), true);
     check(
       'and the bubbles are over it too, but behind the creatures',
-      at(bd.bubbles.graphics) > at(bd.darkGfx) && at(bd.bubbles.graphics) < at(bd.swimLayer),
+      at(bd.bubbles.root) > at(bd.darkGfx) && at(bd.bubbles.root) < at(bd.swimLayer),
       true,
     );
     check('and the halo is over them', at(bd.glowGfx) > at(bd.swimLayer), true);

@@ -236,7 +236,7 @@ export class MenuBackdrop {
       this.motes.graphics,
       this.beamLayer,
       this.darkGfx,
-      this.bubbles.graphics,
+      this.bubbles.root,
       this.swimLayer,
       this.glowGfx,
       this.frontLayer,
