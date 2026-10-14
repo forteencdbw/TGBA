@@ -358,13 +358,16 @@ class Game {
     this.app.stage.addChild(this.runBanner);
 
     /**
-     * The UI goes on top of everything, and the MENU on top of the UI.
+     * The UI goes on top of everything, and the ORDER of the last three is what makes the menu's own page reachable.
      *
-     * Order matters here rather than being incidental: the settings panel has to cover the HUD and the water,
-     * and the menu has to cover the settings gear while it is showing. The loading page joins them at the front --
-     * it is a full screen in its own right, so nothing of the level or its controls may be drawn over it.
+     * The settings panel has to cover the HUD and the water, so it is over both. Then the menu, and then the panel
+     * AGAIN -- which is the change: the menu's 设置 button opens this panel, so the panel has to be able to cover the
+     * menu rather than the other way round. Both are in the list once, in this order; nothing adds and removes it.
+     *
+     * The pages the menu opens from itself -- the codex and the summary -- are after it for the same reason: they cover
+     * the menu they were reached from.
      */
-    this.app.stage.addChild(this.loading.root, this.settings.root, this.levelup.root, this.menu.root, this.codex.root, this.summary.root);
+    this.app.stage.addChild(this.loading.root, this.levelup.root, this.menu.root, this.settings.root, this.codex.root, this.summary.root);
     this.levelup.onPick = (index) => this.pickMutation(index);
     this.summary.onMenu = () => this.exitToMenu();
     this.settings.setVolume(audio.getVolume());
@@ -409,6 +412,14 @@ class Game {
       void this.beginWithLoading();
     };
     this.menu.onCodex = () => this.enterCodex();
+    /**
+     * The menu's own settings button, which opens the SAME panel the gear opens.
+     *
+     * Reaching into the panel from the menu rather than growing a second panel is the whole point: there is one
+     * definition of what the volume slider does. What the panel has to be told is how it was reached -- see
+     * `openSettings`, which is where the run's own controls are taken off it.
+     */
+    this.menu.onSettings = () => this.openSettings();
     /**
      * Picking a level, which the menu only offers for levels that are reachable.
      *
@@ -556,6 +567,17 @@ class Game {
      * start steering the bubble, and a tap on the panel's scrim would move the player mid-decision.
      */
     if (this.run.phase === 'menu') {
+      /**
+       * The PANEL first, when it is up.
+       *
+       * The menu's 设置 button opened it, so while it is showing it is the topmost thing on the screen -- and the
+       * panel already refuses to let anything through while it is open. Without this the press that closed it would
+       * also land on whatever stone button was under the scrim.
+       */
+      if (this.settings.isOpen) {
+        this.settings.handlePointerDown(pointerId, x, y);
+        return;
+      }
       this.menu.handlePointerDown(x, y);
       return;
     }
@@ -587,6 +609,12 @@ class Game {
     this.logPointer('move', pointerId, x, y);
     this.pointerPositions.set(pointerId, { x, y });
     if (this.run.phase === 'menu') {
+      // The panel, for the same reason as in `handlePointerDown`: a drag along the slider is not a drag across the
+      // menu's buttons.
+      if (this.settings.isOpen) {
+        this.settings.handlePointerMove(pointerId, x, y);
+        return;
+      }
       this.menu.handlePointerMove(x, y);
       return;
     }
@@ -608,6 +636,11 @@ class Game {
     this.pointerPositions.delete(pointerId);
 
     if (this.run.phase === 'menu') {
+      // And the panel's release, so the press it swallowed is matched by its own up rather than the menu's.
+      if (this.settings.isOpen) {
+        this.settings.handlePointerUp(pointerId, at.x, at.y);
+        return;
+      }
       this.menu.handlePointerUp(at.x, at.y);
       return;
     }
@@ -2595,33 +2628,53 @@ class Game {
   }
 
 /**
-   * Open the settings panel and freeze the level.
+   * Open the settings panel.
    *
    * The phase is REMEMBERED rather than assumed to be `playing`: opening the panel during the birth intro or
    * during the ending is legitimate, and restoring to `playing` would skip the rest of whichever animation was
    * interrupted.
    *
-   * Called BY the settings module when its gear is tapped -- `SettingsUi.handlePointerDown` returns true and
-   * this runs from the tap -- so it is not called from the pointer handler directly.
+   * Called BY the settings module when its gear is tapped, and by the menu when its 设置 button is -- `SettingsUi`'s
+   * gear returns true from `handlePointerDown` and the menu's button is read in `handlePointerUp` -- so it is not
+   * called from a pointer handler directly.
    */
   private openSettings(): void {
-    // The codex is excluded with the menu: it is a full-screen page reached FROM the menu, so there is no run to
-    // pause behind it and its gear would be a button onto itself.
-    if (this.run.phase === 'paused' || this.run.phase === 'menu' || this.run.phase === 'codex') return;
-    this.phaseBeforePause = this.run.phase;
-    this.run.phase = 'paused';
-    // Any finger that was steering is forgotten, or releasing it later would resume a drag the player has
-    // already mentally abandoned.
-    this.touch.releaseAll();
+    // The codex is excluded: it is a full-screen page reached FROM the menu, so there is no run to pause behind it and
+    // its gear would be a button onto itself.
+    if (this.run.phase === 'paused' || this.run.phase === 'codex') return;
+    /**
+     * THE MENU IS NOT PAUSED, because there is nothing running to pause.
+     *
+     * `paused` exists to freeze a run, and setting it from the menu would mean the frame loop stopped stepping the
+     * thing that ANIMATES the menu -- the fish, the beams, the bubbles -- so the water behind the panel would stop
+     * dead. Leaving the phase alone keeps the menu exactly as it was and lets the panel be what it is: a page over the
+     * top of it.
+     *
+     * What has to change instead is what the panel OFFERS. 重开本关 and 退出到主菜单 are the run's controls; from the
+     * menu there is no level to restart and no menu to exit to, so `setInRun(false)` takes them off and shortens the
+     * panel to match.
+     */
+    const fromMenu = this.run.phase === 'menu';
+    if (!fromMenu) {
+      this.phaseBeforePause = this.run.phase;
+      this.run.phase = 'paused';
+      // Any finger that was steering is forgotten, or releasing it later would resume a drag the player has
+      // already mentally abandoned.
+      this.touch.releaseAll();
+    }
+    this.settings.setInRun(!fromMenu);
     this.settings.setVolume(audio.getVolume());
     this.settings.setOpen(true);
   }
 
-  /** Close the panel and resume whichever phase it interrupted. */
+  /** Close the panel and resume whichever phase it interrupted -- or, from the menu, nothing at all. */
   private closeSettings(): void {
-    if (this.run.phase !== 'paused') return;
+    // The two cases are told apart by the PHASE rather than by a flag of their own: from the menu the panel never
+    // changed it, so there is nothing to restore and no way for a second flag to disagree with what is on screen.
+    if (this.run.phase === 'paused') this.run.phase = this.phaseBeforePause;
+    else if (this.run.phase !== 'menu') return;
+    this.settings.setInRun(true);
     this.settings.setOpen(false);
-    this.run.phase = this.phaseBeforePause;
   }
 
   /**
@@ -3257,8 +3310,15 @@ private updateBoss(): void {
       this.drawBubble();
     }
 
-    // The gear must not be reachable while a full-screen page is up, and the panel goes with it.
-    this.settings.root.visible = !fullScreenPage;
+    /**
+     * The gear must not be reachable while a full-screen page is up, and the panel goes with it.
+     *
+     * The panel is the exception, and it is the one the menu's 设置 button needed: `setOpen` already decides for itself
+     * whether the gear or the panel is showing, so hiding the whole tree on a full-screen page would hide the panel
+     * that was opened FROM that page. The menu is a full-screen page, which is why this is not academic -- the 设置
+     * button opened a panel that the very next frame put back under the floor.
+     */
+    this.settings.root.visible = !fullScreenPage || this.settings.isOpen;
     this.settings.update();
     /**
      * Nothing of the run is on screen under a full-screen page, and the floating numbers go with it.

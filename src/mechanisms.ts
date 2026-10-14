@@ -1422,29 +1422,27 @@ export interface Mechanisms {
     talentColour: number;
   };
   /**
-   * The main menu's two buttons.
+   * The main menu: three stone buttons, the title, the level row and the water behind them.
    *
-   * Geometry is SHARED between them on purpose: two buttons at slightly different sizes read as a menu that is out
-   * of alignment rather than as a hierarchy, and the hierarchy is already carried by fill versus outline.
+   * The three buttons are PICTURES now (`src/assets/按钮-*.png`, three states each), so what is left here is their
+   * shared WIDTH and the gap between them. Height is not a dial: each button is as tall as its own stone is, and the
+   * three stones are three different shapes -- forcing one height on them would squash whichever two are not the
+   * middle one.
    */
   menu: {
     buttonWidthRatio: number;
     buttonMaxWidth: number;
-    buttonHeight: number;
-    buttonRadius: number;
     buttonGap: number;
-    primaryFill: number;
-    primaryPressedFill: number;
-    primaryTextColour: number;
-    primaryTextSize: number;
-    secondaryFill: number;
-    secondaryPressedFill: number;
-    secondaryStroke: number;
-    secondaryStrokeAlpha: number;
-    secondaryTextColour: number;
-    secondaryTextSize: number;
-    buttonStroke: number;
-    buttonStrokeAlpha: number;
+    /**
+     * Where the button stack starts, as a fraction of the screen height.
+     *
+     * The tagline, the level grid and the three buttons all hang off this one number, so it is the lower half of the
+     * menu in a single dial. It was written into `src/menu.ts` as `0.55` until the buttons became pictures and grew
+     * half again as tall.
+     */
+    buttonsTopRatio: number;
+    /** The corner radius of the level pills. Was `buttonRadius`, which named the wrong thing. */
+    levelRadius: number;
     /** The one line between the level grid and the start button: the base bubble's pitch. */
     taglineGap: number;
     taglineSize: number;
@@ -2917,14 +2915,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   })),
   { path: 'menu.buttonWidthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
   { path: 'menu.buttonMaxWidth', check: anyNumber, describe: 'a pixel width' },
-  { path: 'menu.buttonHeight', check: anyNumber, describe: 'a pixel height' },
-  { path: 'menu.buttonRadius', check: anyNumber, describe: 'a corner radius' },
   { path: 'menu.buttonGap', check: anyNumber, describe: 'design pixels' },
-  { path: 'menu.primaryTextSize', check: anyNumber, describe: 'a font size' },
-  { path: 'menu.secondaryTextSize', check: anyNumber, describe: 'a font size' },
-  { path: 'menu.secondaryStrokeAlpha', check: anyNumber, describe: 'an opacity' },
-  { path: 'menu.buttonStrokeAlpha', check: anyNumber, describe: 'an opacity' },
-        { path: 'menu.taglineGap', check: anyNumber, describe: 'a number' },
+  { path: 'menu.buttonsTopRatio', check: anyNumber, describe: 'a fraction of the screen height' },
+  { path: 'menu.levelRadius', check: anyNumber, describe: 'a corner radius' },
+  { path: 'menu.taglineGap', check: anyNumber, describe: 'a number' },
     { path: 'menu.taglineSize', check: anyNumber, describe: 'a number' },
   { path: 'menu.levelRowHeight', check: anyNumber, describe: 'a number' },
   { path: 'menu.levelRowGap', check: anyNumber, describe: 'a number' },
@@ -3077,20 +3071,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     'levelIdleTextColour',
     'levelNoteColour',
     'levelUnlockColour',
-  ].map((key) => ({
-    path: `menu.${key}`,
-    check: isColour,
-    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
-  })),
-  ...[
-    'primaryFill',
-    'primaryPressedFill',
-    'primaryTextColour',
-    'secondaryFill',
-    'secondaryPressedFill',
-    'secondaryStroke',
-    'secondaryTextColour',
-    'buttonStroke',
   ].map((key) => ({
     path: `menu.${key}`,
     check: isColour,
@@ -3767,30 +3747,6 @@ for (const [where, get, set] of [
   const bag = mech.codex as unknown as Record<string, string | number>;
   for (const key of CODEX_COLOURS) bag[key] = normaliseColour(bag[key]!, `codex.${key}`);
 }
-
-/**
- * The menu's colours, converted too.
- *
- * A second list rather than an entry in the shared one above, because these live under a different block and the
- * tuple in that loop carries a getter and a setter per colour -- eight more of those would be eight more chances to
- * copy one wrong. Same shape as the codex loop, and the same guarantee: a colour validated is a colour converted.
- */
-{
-  const bag = mech.menu as unknown as Record<string, string | number>;
-  for (const key of [
-    'primaryFill',
-    'primaryPressedFill',
-    'primaryTextColour',
-    'secondaryFill',
-    'secondaryPressedFill',
-    'secondaryStroke',
-    'secondaryTextColour',
-    'buttonStroke',
-  ]) {
-    bag[key] = normaliseColour(bag[key]!, `menu.${key}`);
-  }
-}
-
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
 

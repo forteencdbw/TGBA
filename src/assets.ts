@@ -377,6 +377,19 @@ export function assetTextureNow(name: string): Texture | null {
   return texture && texture.width > 0 ? texture : null;
 }
 
+/**
+ * How big a picture IS, without loading it.
+ *
+ * The manifest is read eagerly at import, so a packed frame's size is known from the first line of the program -- which
+ * is what a LAYOUT needs: it runs before any texture has arrived, and a picture whose height is derived from its own
+ * aspect cannot wait for one. (A loose picture is a URL and a URL has no size until something fetches it, so those
+ * answer null; the menu's buttons are atlas frames and pack with a size.)
+ */
+export function assetSizeNow(name: string): { width: number; height: number } | null {
+  const frame = FRAMES.get(withoutExtension(name));
+  return frame ? { width: frame.width, height: frame.height } : null;
+}
+
 /** What the server said each URL weighs, so a second start does not ask again. See `assetByteSizes`. */
 const BYTE_SIZES = new Map<string, number>();
 

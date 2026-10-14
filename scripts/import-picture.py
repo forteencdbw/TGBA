@@ -74,6 +74,17 @@ def main():
         default=None,
         help=f"where to write the picture (default: {ASSETS}); the asset pipeline points it at its candidate dir",
     )
+    parser.add_argument(
+        "--crop",
+        default=None,
+        help=(
+            "x0,y0,x1,y1 to crop with, instead of cropping to the content. THE REASON IT EXISTS: a picture with "
+            "STATE VARIANTS (a button's normal / hover / pressed) has to be cut the same way in all of them, or "
+            "swapping the texture moves the picture -- and cropping each to its own content does exactly that, "
+            "because a pressed state is drawn a few pixels lower on purpose. Pass the UNION of the variants' boxes "
+            "to every one of them."
+        ),
+    )
     arguments = parser.parse_args()
 
     if arguments.grid is None and arguments.drawn is None:
@@ -86,13 +97,23 @@ def main():
         raise SystemExit(f"a grid of {grid} is not a picture")
 
     source = Image.open(arguments.picture).convert("RGBA")
-    alpha = np.array(source)[:, :, 3] > ALPHA_FLOOR
-    if not alpha.any():
-        raise SystemExit("the picture has no opaque pixels at all")
-    ys, xs = np.where(alpha)
-    crop = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
-    content = source.crop(crop)
-    print(f"  {arguments.picture}: {source.width}x{source.height} -> content {content.width}x{content.height}")
+    if arguments.crop:
+        try:
+            crop = tuple(int(part) for part in arguments.crop.split(","))
+        except ValueError:
+            raise SystemExit("--crop takes four integers: x0,y0,x1,y1")
+        if len(crop) != 4:
+            raise SystemExit("--crop takes four integers: x0,y0,x1,y1")
+        content = source.crop(crop)
+        print(f"  {arguments.picture}: {source.width}x{source.height} -> crop {content.width}x{content.height} (stated)")
+    else:
+        alpha = np.array(source)[:, :, 3] > ALPHA_FLOOR
+        if not alpha.any():
+            raise SystemExit("the picture has no opaque pixels at all")
+        ys, xs = np.where(alpha)
+        crop = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+        content = source.crop(crop)
+        print(f"  {arguments.picture}: {source.width}x{source.height} -> content {content.width}x{content.height}")
 
     pipeline = load_pipeline()
     piece, _palette = pipeline.pixelate(content, grid, None, arguments.colours)

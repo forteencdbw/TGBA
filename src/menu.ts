@@ -1,5 +1,6 @@
 import { Container, FillGradient, Graphics, Sprite, Text } from 'pixi.js';
-import { loadAssetTexture } from './assets';
+import type { Texture } from 'pixi.js';
+import { assetSizeNow, loadAssetTexture } from './assets';
 import { rgba } from './background';
 import { mech } from './mechanisms';
 import { BASE_TYPE } from './bubbleTypes';
@@ -19,6 +20,54 @@ export interface MenuLevel {
   name: string;
   locked: boolean;
   selected: boolean;
+}
+
+/**
+ * The three stone buttons, in the order they are stacked.
+ *
+ * The ID is what the pointer handlers compare and what `geometry` reports; `picture` is the asset stem, and the three
+ * states are that stem with a suffix. So this table is also the list of what has to exist in `src/assets/` -- and the
+ * ORDER of it is the order on the screen, which is why it lives here rather than in the config: it is not a number the
+ * owner tunes, it is which button is above which.
+ */
+const BUTTONS = [
+  { id: 'start', picture: '按钮-开始游戏' },
+  { id: 'codex', picture: '按钮-图鉴' },
+  { id: 'settings', picture: '按钮-设置' },
+] as const;
+
+type ButtonId = (typeof BUTTONS)[number]['id'];
+
+/**
+ * A button's three states, and the suffix its picture carries for each.
+ *
+ * `normal` has no suffix because it IS the stem -- `按钮-开始游戏.png` -- and the other two are that stem with
+ * `-Hover` / `-Pressed` appended. Note the capital: the file names came from the art, and this is the one place that
+ * spelling has to be right.
+ */
+const BUTTON_STATES = ['normal', 'Hover', 'Pressed'] as const;
+
+type ButtonState = (typeof BUTTON_STATES)[number];
+
+/** One button as the menu needs it: its pictures, its box, and which state it is showing. */
+interface MenuButton {
+  id: ButtonId;
+  /** The asset stem. The state's file is this, plus the state's suffix. */
+  picture: string;
+  sprite: Sprite;
+  /** Filled in as each state's picture arrives; the state picks which one is on the sprite. */
+  textures: Partial<Record<ButtonState, Texture>>;
+  /**
+   * The width over the height, read from the ART rather than from the loaded texture.
+   *
+   * Same reason as `titleHeight`: the first layout runs before the pictures do, and a `Sprite` with no texture reports
+   * no size -- so sizing the box off the sprite would divide by zero and leave a `NaN` rectangle, which never matches
+   * a pointer. The frame size is known from the atlas manifest before anything is decoded, so this is a real number
+   * from the first layout onward.
+   */
+  aspect: number;
+  state: ButtonState;
+  rect: { x: number; y: number; w: number; h: number };
 }
 
 /**
@@ -44,8 +93,25 @@ export class MainMenu {
    * "used before being assigned" here: the declaration is hoisted for typing but the initialiser is not.
    */
   private readonly screen = mkGraphics();
-  private readonly primary = mkGraphics();
-  private readonly secondary = mkGraphics();
+  /**
+   * The three stone buttons: 开始游戏 / 图鉴 / 设置.
+   *
+   * Each is a PICTURE rather than a drawn shape, and all three states of one button are cut from the SAME box in the
+   * art. That is not a detail -- the pressed state is drawn a few pixels lower on purpose, and cropping each state to
+   * its own content would have deleted exactly that, so swapping the picture would move the button. See the `--crop`
+   * note in `scripts/import-picture.py`, which is what makes the shared box possible.
+   *
+   * The sprite is placed by its CENTRE, so a state whose art is a pixel or two shorter does not move the button.
+   */
+  private readonly buttons: MenuButton[] = BUTTONS.map((button) => ({
+    id: button.id,
+    picture: button.picture,
+    sprite: new Sprite(),
+    textures: {},
+    aspect: pictureAspect(button.picture),
+    state: 'normal' as ButtonState,
+    rect: { x: 0, y: 0, w: 0, h: 0 },
+  }));
   /**
    * The title is a PICTURE: `src/assets/标题.png`, an ordinary frame of the atlas, with the small fish and the coral
    * drawn into the art around the glyphs.
@@ -85,8 +151,6 @@ export class MainMenu {
    * upward from it), so the line stays even though the choice is gone.
    */
   private readonly tagline = mk(BASE_TYPE.tagline, 0x8fd4f0, mech.menu.taglineSize);
-  private readonly primaryLabel = mk('', mech.menu.primaryTextColour, mech.menu.primaryTextSize);
-  private readonly secondaryLabel = mk('', mech.menu.secondaryTextColour, mech.menu.secondaryTextSize);
   /** The one control line, for the base bubble's controls. Static for the same reason as the tagline. */
   private readonly hint = mk('WASD / 方向键移动   ·   右侧按钮：技能（捡到才有）—— 路线等到水里再选', 0x7fb6d4, 12);
   /**
@@ -116,9 +180,14 @@ export class MainMenu {
    * nothing, because "you cannot play this yet" is already visible from its colour and the note below.
    */
   onPickLevel: (levelId: string) => void = () => {};
+  /**
+   * Called when the player asks for the settings panel.
+   *
+   * The menu does not open it: the panel is the game's, its buttons are the game's, and a menu that reached into it
+   * would be the second place that decides what the panel is for. The menu says what was pressed and stops.
+   */
+  onSettings: () => void = () => {};
 
-  private primaryRect = { x: 0, y: 0, w: 0, h: 0 };
-  private secondaryRect = { x: 0, y: 0, w: 0, h: 0 };
   /**
    * The level row: one pill per level, with its lock state.
    *
@@ -142,11 +211,11 @@ export class MainMenu {
    * Which control the current press landed on, or null.
    *
    * One field rather than a boolean per button, so a drag that leaves one button and lands on the other cannot end
-   * up firing both -- which two independent flags would allow.
+   * up firing both -- which two independent flags would allow. A button is named by its id, and a level pill by
+   * `level:<id>`, because the two are hit-tested differently and only one of them can be armed at a time.
    */
-  private pressed: 'start' | 'codex' | `level:${string}` | null = null;
-  private time = 0;
-  /** Scale from the last real layout, so `update` can redraw without a viewport. */
+  private pressed: ButtonId | `level:${string}` | null = null;
+  /** Scale from the last real layout, so a redraw without a viewport has the right one. */
   private scale = 1;
   /**
    * The animated backdrop: creatures swimming, and a coral bed in two layers.
@@ -161,12 +230,9 @@ export class MainMenu {
 
   constructor() {
     this.root.eventMode = 'none';
-    for (const child of [this.screen, this.primary, this.secondary, this.levelRow, this.primaryLabel, this.secondaryLabel]) {
-      child.eventMode = 'none';
-    }
+    this.screen.eventMode = 'none';
+    this.levelRow.eventMode = 'none';
 
-    this.primaryLabel.text = '开始游戏';
-    this.secondaryLabel.text = '图鉴';
     this.title.eventMode = 'none';
     this.titleGlow.eventMode = 'none';
     // By its BOTTOM: it is wide, short art, and a picture placed by its centre has to know its own height twice.
@@ -180,6 +246,28 @@ export class MainMenu {
       this.title.texture = texture;
       this.applyTitleSize();
     });
+
+    /**
+     * The button pictures arrive the same way, and the same reason applies: the one load that brings them is what puts
+     * art on everything else on this screen, so a menu that waited for them before drawing would show nothing at all.
+     *
+     * Every state is fetched up front rather than on demand, because a state swap has to be INSTANT -- loading on hover
+     * would put the picture on the screen a frame or two after the pointer arrived, which reads as lag rather than as a
+     * button. A state whose picture never arrives leaves the sprite showing the previous one, which is the honest
+     * failure: a button that vanishes because its hover art 404s is worse than one that changes late.
+     */
+    for (const button of this.buttons) {
+      button.sprite.anchor.set(0.5, 0.5);
+      button.sprite.eventMode = 'none';
+      for (const state of BUTTON_STATES) {
+        const asset = state === 'normal' ? button.picture : `${button.picture}-${state}`;
+        void loadAssetTexture(asset).then((texture) => {
+          if (!texture) return;
+          button.textures[state] = texture;
+          this.showButtonState(button);
+        });
+      }
+    }
 
     /**
      * Display order is draw order, and the backdrop goes FIRST.
@@ -197,13 +285,36 @@ export class MainMenu {
       ...this.levelLabels,
       this.levelLine,
       this.tagline,
-      this.primary,
-      this.primaryLabel,
-      this.secondary,
-      this.secondaryLabel,
+      ...this.buttons.map((button) => button.sprite),
       this.hint,
       this.versionLine,
     );
+  }
+
+  /**
+   * Put the current state's picture on the sprite, if that picture has arrived.
+   *
+   * Guarded rather than assumed, because the three pictures land independently: a hover that happens between the
+   * `normal` load and the `Hover` one would otherwise put an empty texture on a visible button.
+   */
+  private showButtonState(button: MenuButton): void {
+    const texture = button.textures[button.state];
+    if (!texture) return;
+    button.sprite.texture = texture;
+    this.sizeButton(button);
+  }
+
+  /**
+   * Give the picture the width the last layout asked for.
+   *
+   * Called from BOTH ends -- the layout, and each load -- because either can come second, exactly as with the title.
+   * Every state of a button is the same size (that is what the shared crop buys), so a swap does not need a resize;
+   * this is called anyway so that the two paths cannot drift.
+   */
+  private sizeButton(button: MenuButton): void {
+    const texture = button.sprite.texture;
+    if (!texture || !texture.width) return;
+    button.sprite.scale.set(button.rect.w / texture.width);
   }
 
   /**
@@ -286,27 +397,38 @@ export class MainMenu {
     const laneWidth = viewport.laneWidthPx;
     const cx = laneLeft + laneWidth / 2;
 
-    // Colours and sizes are re-applied here rather than only in the constructor, so a config edit is reflected
-    // without needing the module to be rebuilt.
-    this.primaryLabel.style.fill = cfg.primaryTextColour;
-    this.primaryLabel.style.fontSize = cfg.primaryTextSize;
-    this.secondaryLabel.style.fill = cfg.secondaryTextColour;
-    this.secondaryLabel.style.fontSize = cfg.secondaryTextSize;
-
     this.screen.clear();
     // Opaque, so the menu is its own screen rather than an overlay on a paused level. Drawn over the whole
     // canvas rather than just the lane: the menu is not part of the water.
     this.screen.rect(0, 0, viewport.width, viewport.height).fill({ color: 0x030a17, alpha: 1 });
 
+    /**
+     * The three buttons: one column, one width, each as tall as its own stone is.
+     *
+     * They SHARE A WIDTH because they are one column and three widths would read as three different things. They do
+     * NOT share a height, which is the one place this differs from the drawn buttons it replaces: the art is three
+     * different pictures with three different thicknesses, and forcing one height on them would squash whichever two
+     * are not the middle one -- and a squashed stone reads as a mistake rather than as a button.
+     *
+     * So the box comes from the picture's own aspect, and the stack advances by whatever each one turned out to be.
+     * `buttonsTopRatio` places the TOP of the stack rather than the first button's centre, so the three move together
+     * when the owner retunes it.
+     */
     const w = Math.min(laneWidth * cfg.buttonWidthRatio, cfg.buttonMaxWidth * s);
-    const h = cfg.buttonHeight * s;
-    const top = viewport.height * 0.55;
-    this.primaryRect = { x: cx - w / 2, y: top, w, h };
-    // Stacked below the first, so the two share a column and a width -- see the config's note on shared geometry.
-    this.secondaryRect = { x: cx - w / 2, y: top + h + cfg.buttonGap * s, w, h };
+    const top = viewport.height * cfg.buttonsTopRatio;
+    let buttonY = top;
+    for (const button of this.buttons) {
+      const h = w / Math.max(0.01, button.aspect);
+      button.rect = { x: cx - w / 2, y: buttonY, w, h };
+      button.sprite.x = cx;
+      button.sprite.y = buttonY + h / 2;
+      this.sizeButton(button);
+      buttonY += h + cfg.buttonGap * s;
+    }
+    const buttonsBottom = buttonY - cfg.buttonGap * s;
 
     /**
-     * The tagline, between the level grid and the start button.
+     * The tagline, between the level grid and the buttons.
      *
      * It used to be placed after the grid, which meant the anchoring read whatever `y` the previous layout had left
      * behind -- and on the first layout that is zero, which is why the unlock note ended up at the top of the canvas.
@@ -408,20 +530,10 @@ export class MainMenu {
     this.levelLine.y = noteY;
 
 
-    for (const [rect, label] of [
-      [this.primaryRect, this.primaryLabel],
-      [this.secondaryRect, this.secondaryLabel],
-    ] as const) {
-      label.scale.set(s);
-      label.anchor.set(0.5, 0.5);
-      label.x = rect.x + rect.w / 2;
-      label.y = rect.y + rect.h / 2;
-    }
-
     this.hint.scale.set(s);
     this.hint.anchor.set(0.5, 0.5);
     this.hint.x = cx;
-    this.hint.y = this.secondaryRect.y + h + 30 * s;
+    this.hint.y = buttonsBottom + 30 * s;
 
     this.versionLine.scale.set(s);
     this.versionLine.anchor.set(0.5, 1);
@@ -512,54 +624,29 @@ export class MainMenu {
   }
 
   update(dt: number): void {
-    this.time += dt;
     this.updateBackdrop(dt);
     if (!this.exitReported && this.backdrop.finished) {
       this.exitReported = true;
       this.onStart();
     }
-    // A slow pulse on the primary button, so the menu does not look frozen.
-    this.draw(this.scale);
   }
 
+  /**
+   * Repaint the SHAPES.
+   *
+   * The buttons are not here any more, and that is the whole change: a stone button is a picture, and a picture is not
+   * repainted -- it is swapped, in `showButtonState`. What is left is the level row, which has no art and so is still
+   * drawn, and the pulse the primary button used to breathe is gone with it. A button carved out of stone does not
+   * pulse; the art is what says it is a button now.
+   */
   private draw(s: number): void {
     const cfg = mech.menu;
-    const pulse = 0.5 + 0.5 * Math.sin(this.time * 2);
-    const r = cfg.buttonRadius * s;
-    const stroke = Math.max(1, 1.4 * s);
-
-    this.primary.clear();
-    this.primary
-      .roundRect(this.primaryRect.x, this.primaryRect.y, this.primaryRect.w, this.primaryRect.h, r)
-      .fill({
-        color: this.pressed === 'start' ? cfg.primaryPressedFill : cfg.primaryFill,
-        // The pulse rides on alpha rather than on colour, so the owner can retune the fill without fighting it.
-        alpha: this.pressed === 'start' ? 1 : 0.88 + pulse * 0.1,
-      })
-      .stroke({ color: cfg.buttonStroke, alpha: cfg.buttonStrokeAlpha, width: stroke });
-
-    /**
-     * The codex button: outlined rather than filled.
-     *
-     * The two entries are not equivalent -- one starts the game and the other is reference -- and a menu where both
-     * shout equally makes the player read both labels to find out which. Fill versus outline says it before either
-     * word is read.
-     */
-    this.secondary.clear();
-    this.secondary
-      .roundRect(this.secondaryRect.x, this.secondaryRect.y, this.secondaryRect.w, this.secondaryRect.h, r)
-      .fill({ color: this.pressed === 'codex' ? cfg.secondaryPressedFill : cfg.secondaryFill, alpha: 0.92 })
-      .stroke({
-        color: cfg.secondaryStroke,
-        alpha: cfg.secondaryStrokeAlpha * (this.pressed === 'codex' ? 1 : 0.8 + pulse * 0.2),
-        width: stroke,
-      });
 
     this.levelRow.clear();
     for (const [i, rect] of this.levelRects.entries()) {
       const level = this.levels[i];
       if (!level) continue;
-      const r = cfg.buttonRadius * s;
+      const r = cfg.levelRadius * s;
       /**
        * TWO states, and no lock icon: selected is filled, everything else is outlined.
        *
@@ -635,8 +722,8 @@ export class MainMenu {
   }
 
   handlePointerDown(x: number, y: number): boolean {
-    if (this.inRect(this.primaryRect, x, y)) this.pressed = 'start';
-    else if (this.inRect(this.secondaryRect, x, y)) this.pressed = 'codex';
+    const button = this.buttonAt(x, y);
+    if (button) this.pressed = button.id;
     else {
       const hitLevel = this.levelRects.findIndex((rect) => this.inRect(rect, x, y));
       const level = hitLevel >= 0 ? this.levels[hitLevel] : undefined;
@@ -645,29 +732,31 @@ export class MainMenu {
       if (level && !level.locked) this.pressed = `level:${level.id}`;
       else this.pressed = null;
     }
+    this.showPointerState(x, y);
     return true;
   }
 
   handlePointerMove(x: number, y: number): boolean {
-    if (this.pressed === 'start' && !this.inRect(this.primaryRect, x, y)) this.pressed = null;
-    if (this.pressed === 'codex' && !this.inRect(this.secondaryRect, x, y)) this.pressed = null;
     if (this.pressed?.startsWith('level:')) {
       const hit = this.levelRects.findIndex((rect) => this.inRect(rect, x, y));
       const level = hit >= 0 ? this.levels[hit] : undefined;
       if (!level || `level:${level.id}` !== this.pressed) this.pressed = null;
     }
+    this.showPointerState(x, y);
     return true;
   }
 
   handlePointerUp(x: number, y: number): boolean {
     const fire = this.pressed;
     this.pressed = null;
-    if (fire === 'start' && this.inRect(this.primaryRect, x, y)) {
-      this.beginExit();
-      return true;
-    }
-    if (fire === 'codex' && this.inRect(this.secondaryRect, x, y)) {
-      this.onCodex();
+    const button = this.buttons.find((candidate) => candidate.id === fire);
+    // Fires only on a release OVER the button the press started on, which is the whole press-and-drag-out-to-cancel
+    // behaviour -- and a drag that comes back is a press that was never taken back, so it still fires.
+    if (button && this.inRect(button.rect, x, y)) {
+      this.showPointerState(x, y);
+      if (button.id === 'start') this.beginExit();
+      else if (button.id === 'codex') this.onCodex();
+      else this.onSettings();
       return true;
     }
     if (fire?.startsWith('level:')) {
@@ -675,7 +764,33 @@ export class MainMenu {
       const level = hit >= 0 ? this.levels[hit] : undefined;
       if (level && !level.locked) this.onPickLevel(level.id);
     }
+    this.showPointerState(x, y);
     return true;
+  }
+
+  /** Which button contains the point, if any. */
+  private buttonAt(x: number, y: number): MenuButton | undefined {
+    return this.buttons.find((button) => this.inRect(button.rect, x, y));
+  }
+
+  /**
+   * Put every button in the state the pointer and the press say it is in.
+   *
+   * Called with the POINT rather than a state, and it walks all three, because the three facts are related: a button
+   * under the pointer is hovered, and a button under the pointer that is also the armed one is pressed -- so a single
+   * pass cannot light two of them, and a press that slides from one to the next cannnot leave the first one lit.
+   *
+   * Pressed beats hovered, which is what makes pressing a button feel like pushing the stone in rather than like
+   * hovering it harder.
+   */
+  private showPointerState(x: number, y: number): void {
+    for (const button of this.buttons) {
+      const over = this.inRect(button.rect, x, y);
+      const want: ButtonState = over && this.pressed === button.id ? 'Pressed' : over ? 'Hover' : 'normal';
+      if (button.state === want) continue;
+      button.state = want;
+      this.showButtonState(button);
+    }
   }
 
   /**
@@ -683,18 +798,31 @@ export class MainMenu {
    *
    * `levels` carries the label as well as the rectangle, so a test can assert that the menu is offering what the
    * game actually has -- a mismatch there is a level nobody can choose.
+   *
+   * The three buttons are named for what they DO while the probe-facing key for the first one is still `button`, which
+   * is the name the driver's `menu` command clicks. Renaming it to `start` would be tidier and would silently break
+   * the one caller that presses a real button in a real browser, which is not a trade worth making for symmetry.
+   *
+   * `state` comes along, because for a picture button the state IS the observable: nothing else on this row changes
+   * when the pointer arrives.
    */
   get geometry(): {
     button: { x: number; y: number; w: number; h: number };
     codex: { x: number; y: number; w: number; h: number };
+    settings: { x: number; y: number; w: number; h: number };
+    states: Record<ButtonId, ButtonState>;
     levels: { id: string; label: string; locked: boolean; selected: boolean; rect: { x: number; y: number; w: number; h: number } }[];
     levelNote: string;
     tagline: string;
     hint: string;
   } {
+    const [startButton, codexButton, settingsButton] = this.buttons;
+    const rectOf = (button: MenuButton | undefined) => ({ ...(button?.rect ?? { x: 0, y: 0, w: 0, h: 0 }) });
     return {
-      button: { ...this.primaryRect },
-      codex: { ...this.secondaryRect },
+      button: rectOf(startButton),
+      codex: rectOf(codexButton),
+      settings: rectOf(settingsButton),
+      states: Object.fromEntries(this.buttons.map((button) => [button.id, button.state])) as Record<ButtonId, ButtonState>,
       levels: this.levels.map((level, i) => ({
         id: level.id,
         label: level.name,
@@ -723,6 +851,21 @@ function mkGraphics(): Graphics {
   const g = new Graphics();
   g.eventMode = 'none';
   return g;
+}
+
+/**
+ * A button picture's width over its height, from the atlas manifest.
+ *
+ * The frame size is known before anything is decoded, which is what lets the layout place a button on a screen whose
+ * art has not arrived yet. It falls back to `1` -- square -- rather than to zero, because a zero height is a division
+ * by zero in the layout and a `NaN` rectangle matches no pointer at all.
+ *
+ * The frame is looked up by the button's `normal` stem, and that is safe because the three states of a button are the
+ * same size by construction: they are cut from one shared box. See `MenuButton.aspect`.
+ */
+function pictureAspect(picture: string): number {
+  const size = assetSizeNow(picture);
+  return size && size.height > 0 ? size.width / size.height : 1;
 }
 
 /**

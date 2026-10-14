@@ -74,6 +74,28 @@ export class SettingsUi {
   /** Whether the panel is open. The game reads this to decide whether to pause. */
   open = false;
 
+  /**
+   * Whether the panel was opened during a RUN rather than from the menu.
+   *
+   * It decides exactly one thing -- whether 重开本关 and 退出到主菜单 are offered -- and that is a fact about how the
+   * panel was REACHED rather than about the game. From the menu there is no level to restart and the way out of the
+   * panel is the button that opened it, so a restart button would do something surprising and an exit button would go
+   * where the player already is.
+   *
+   * It defaults to TRUE because that is the panel's only caller that existed before the menu's button: the gear lives
+   * in the HUD, and the HUD is only up during a run.
+   */
+  private inRun = true;
+
+  /**
+   * The viewport of the last layout, so a change that alters the panel's HEIGHT can lay it out again.
+   *
+   * `setInRun` is the only thing that needs it: it removes two rows, and the panel's height is derived from the rows it
+   * has. Nothing else about this panel changes shape without a resize, which is why this is a convenience rather than
+   * the panel's own state.
+   */
+  private lastViewport: Viewport | null = null;
+
   /** Called when the slider moves, with 0..1. The game applies it to the audio immediately. */
   onVolume: (volume: number) => void = () => {};
   /**
@@ -220,9 +242,19 @@ export class SettingsUi {
     return button;
   }
 
-  /** All buttons, so the pointer handlers can walk them without repeating the list three times. */
+  /**
+   * The buttons that are currently OFFERING themselves, so the pointer handlers can walk them without repeating the
+   * list three times.
+   *
+   * Hidden ones are filtered out rather than skipped at each call site, and that is the point of the filter: their
+   * rectangles outlive their visibility -- a button that is not placed keeps whatever box the last layout gave it -- so
+   * a rectangle test against an invisible button can still succeed. `setInRun` is what makes that reachable, and this
+   * is what makes it harmless.
+   */
   private buttons(): Button[] {
-    return [this.closeButton, this.flashButton, this.cheatButton, this.debugButton, this.restartButton, this.exitButton, this.saveButton, this.cancelButton];
+    return [this.closeButton, this.flashButton, this.cheatButton, this.debugButton, this.restartButton, this.exitButton, this.saveButton, this.cancelButton].filter(
+      (button) => button.bg.visible,
+    );
   }
 
   private onPressOf(button: Button): () => void {
@@ -231,6 +263,27 @@ export class SettingsUi {
 
   get isOpen(): boolean {
     return this.open;
+  }
+
+  /**
+   * Tell the panel how it was reached, which decides whether the run's own controls are offered.
+   *
+   * Re-lays out rather than only hiding, because the two rows are part of the panel's HEIGHT: hiding them and leaving
+   * the panel the same size would leave a hole where they were, right above 保存 / 取消.
+   *
+   * The `===` guard is what makes it safe to call this on every open and close without a layout each time.
+   */
+  setInRun(inRun: boolean): void {
+    if (this.inRun === inRun) return;
+    this.inRun = inRun;
+    for (const button of [this.restartButton, this.exitButton]) {
+      button.bg.visible = inRun;
+      button.label.visible = inRun;
+      // A hidden button must not be armed either: the rectangles are still tested while invisible, so a press that
+      // landed where the button WOULD be would fire a control nobody can see.
+      button.pressed = false;
+    }
+    if (this.lastViewport) this.layout(this.lastViewport);
   }
 
   setOpen(open: boolean): void {
@@ -315,6 +368,7 @@ export class SettingsUi {
     this.scale = s;
     this.canvasWidth = viewport.width;
     this.canvasHeight = viewport.height;
+    this.lastViewport = viewport;
     const laneRight = viewport.left + viewport.laneWidthPx;
 
     /**
@@ -332,36 +386,19 @@ export class SettingsUi {
 
     // Panel: most of the lane's width, centred, with a comfortable margin from the edges.
     const w = Math.min(viewport.laneWidthPx * 0.86, 420 * s);
-    /**
-     * Tall enough for the rows below and no taller, and the 522 is a CAP rather than a size: the row stack ends at
-     * 446 design pixels (restart and exit moved down one row when the debug toggle arrived), so a panel of 522 gives
-     * the bottom row its margin on a tall window while a short one still gets a panel that fits on the screen at all.
-     */
-    const h = Math.min(viewport.height * 0.66, 522 * s);
-    this.panelRect = {
-      x: (viewport.width - w) / 2,
-      y: (viewport.height - h) / 2,
-      w,
-      h,
-    };
-
-    this.title.scale.set(s);
-    this.title.anchor.set(0.5, 0);
-    this.title.x = this.panelRect.x + w / 2;
-    this.title.y = this.panelRect.y + 20 * s;
 
     /**
      * The panel's rows, in DESIGN PIXELS below the panel's top edge.
      *
      * They live here rather than in `config/mechanics.json5` and that is deliberate: every number in this file is a
-     * proportional offset inside a panel whose own size is derived from the viewport (`w`, `h` just above), so a value in
-     * the config would have to be kept in step with arithmetic it cannot see. What goes in the config is what the player
-     * looks AT -- colours, sizes, timings -- not the furniture's internal spacing.
+     * proportional offset inside a panel whose own size is derived from the viewport (`w`, `h` just below), so a value
+     * in the config would have to be kept in step with arithmetic it cannot see. What goes in the config is what the
+     * player looks AT -- colours, sizes, timings -- not the furniture's internal spacing.
      *
-     * The gap between a heading and its toggle is 21px rather than 16, and the number is MEASURED: a Chinese glyph at this
-     * size is about 19px tall, not the 13 the font size suggests, so a 16px offset put the button's background over the
-     * bottom of "作弊 / CHEATS" -- the label was drawn first and the background covered it. The screenshot is what caught
-     * it, which is why the rows are checked against each other rather than trusted.
+     * The gap between a heading and its toggle is 21px rather than 16, and the number is MEASURED: a Chinese glyph at
+     * this size is about 19px tall, not the 13 the font size suggests, so a 16px offset put the button's background
+     * over the bottom of "作弊 / CHEATS" -- the label was drawn first and the background covered it. The screenshot is
+     * what caught it, which is why the rows are checked against each other rather than trusted.
      */
     const ROW = {
       volumeLabel: 78,
@@ -373,6 +410,38 @@ export class SettingsUi {
       rowHeight: 42,
       rowGap: 10,
     };
+
+    /**
+     * The rows under the cheats heading: the debug toggle, then the run's own two controls.
+     *
+     * 重开本关 and 退出到主菜单 are the RUN's. There is no level to restart and no menu to exit to when the panel was
+     * opened FROM the menu, which is the one thing `setInRun` decides -- so they are the two rows that come and go.
+     */
+    const lowerRows = this.inRun ? [this.debugButton, this.restartButton, this.exitButton] : [this.debugButton];
+
+    /**
+     * The panel is as tall as its row stack needs and no taller.
+     *
+     * The height is COMPUTED from the same rows that are about to be placed, rather than being the flat `522` it used
+     * to be capped at. A cap and a stack written out as two separate numbers are two numbers that can disagree, and
+     * they did: 522 was 52px more than the three rows it was sized for, which nobody noticed while the extra space was
+     * below the last row -- and `setInRun` removes two rows, at which point a flat height is a hole in the panel.
+     *
+     * `viewport.height * 0.66` is still the cap, so a short screen gets a panel that fits on it at all.
+     */
+    const stackBottom = ROW.cheatsRow + (ROW.rowHeight + ROW.rowGap) * (lowerRows.length - 1) + ROW.rowHeight;
+    const h = Math.min(viewport.height * 0.66, (stackBottom + ROW.rowGap + ROW.rowHeight + 24) * s);
+    this.panelRect = {
+      x: (viewport.width - w) / 2,
+      y: (viewport.height - h) / 2,
+      w,
+      h,
+    };
+
+    this.title.scale.set(s);
+    this.title.anchor.set(0.5, 0);
+    this.title.x = this.panelRect.x + w / 2;
+    this.title.y = this.panelRect.y + 20 * s;
 
     // Volume, near the top: it is the only setting, so it gets the prominent slot.
     this.volumeLabel.scale.set(s);
@@ -408,11 +477,17 @@ export class SettingsUi {
     this.cheatLabel.x = this.panelRect.x + 24 * s;
     this.cheatLabel.y = this.panelRect.y + ROW.cheatsLabel * s;
     this.place(this.cheatButton, rowX, this.panelRect.y + ROW.cheatsRow * s, rowW, rowH, s);
-    // The debug toggle takes the row under the cheat, and everything below it moves down one -- restart, exit, and
-    // the panel's own height, which is what gives the bottom row its margin.
-    this.place(this.debugButton, rowX, this.panelRect.y + ROW.cheatsRow * s + rowH + ROW.rowGap * s, rowW, rowH, s);
-    this.place(this.restartButton, rowX, this.panelRect.y + ROW.cheatsRow * s + (rowH + ROW.rowGap * s) * 2, rowW, rowH, s);
-    this.place(this.exitButton, rowX, this.panelRect.y + ROW.cheatsRow * s + (rowH + ROW.rowGap * s) * 3, rowW, rowH, s);
+    /**
+     * The rows under the cheats heading, placed by the same list the height was computed from.
+     *
+     * A loop rather than three hard-coded offsets, because the offsets and the height have to agree and the way to make
+     * them agree is to have one number for both. Restart and exit are simply not in the list when the panel was opened
+     * from the menu, so they are not placed and the panel is shorter by exactly their two rows.
+     */
+    const rowStep = rowH + ROW.rowGap * s;
+    lowerRows.forEach((button, i) => {
+      this.place(button, rowX, this.panelRect.y + ROW.cheatsRow * s + rowStep * i, rowW, rowH, s);
+    });
 
     const gap = 12 * s;
     const halfW = (rowW - gap) / 2;
@@ -660,12 +735,21 @@ export class SettingsUi {
     gear: { x: number; y: number; radius: number };
     panel: { x: number; y: number; w: number; h: number };
     slider: { x: number; y: number; w: number; h: number };
+    /**
+     * Whether the panel is offering the run's own controls.
+     *
+     * Reported next to the rectangles rather than instead of them, because the rectangles of 重开本关 and 退出到主菜单
+     * OUTLIVE the buttons: they keep whatever box the last layout gave them, so `buttons.restart` answers while there is
+     * no restart button on the screen. This is the flag that says which reading is true.
+     */
+    inRun: boolean;
     buttons: Record<string, { x: number; y: number; w: number; h: number }>;
   } {
     return {
       gear: { ...this.gearCircle },
       panel: { ...this.panelRect },
       slider: { ...this.slider },
+      inRun: this.inRun,
       buttons: {
         close: rectOf(this.closeButton),
         restart: rectOf(this.restartButton),
