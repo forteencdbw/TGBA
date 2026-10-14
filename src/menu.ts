@@ -1,5 +1,6 @@
-import { Container, Graphics, Sprite, Text } from 'pixi.js';
+import { Container, FillGradient, Graphics, Sprite, Text } from 'pixi.js';
 import { loadAssetTexture } from './assets';
+import { rgba } from './background';
 import { mech } from './mechanisms';
 import { BASE_TYPE } from './bubbleTypes';
 import { designScale } from './viewport';
@@ -56,6 +57,18 @@ export class MainMenu {
   private readonly title = new Sprite();
   /** The width the title is drawn at, from the last layout. See `titleHeight`. */
   private titleWidth = 0;
+  /**
+   * The shadow the title sits on.
+   *
+   * The glyphs are stone-blue and everything behind them is blue, so at their own brightness they read as part of the
+   * water rather than as the name of the game. This is what lifts them -- and it is in the MENU'S OWN dark rather than
+   * in black, so it reads as the water deepening here rather than as a patch stuck onto it.
+   *
+   * Drawn rather than baked into the picture, and the three reasons point the same way: the numbers are then in the
+   * config, the fade is smooth (the art is a forty-colour pixel picture and a gradient in it would band), and the
+   * artwork stays the artwork.
+   */
+  private readonly titleGlow = new Graphics();
   private readonly levelLine = mk('', 0xbfe9ff, 15);
   /**
    * The level selector: one pill per level, above the start button.
@@ -155,6 +168,7 @@ export class MainMenu {
     this.primaryLabel.text = '开始游戏';
     this.secondaryLabel.text = '图鉴';
     this.title.eventMode = 'none';
+    this.titleGlow.eventMode = 'none';
     // By its BOTTOM: it is wide, short art, and a picture placed by its centre has to know its own height twice.
     this.title.anchor.set(0.5, 1);
     /**
@@ -177,6 +191,7 @@ export class MainMenu {
       // container of three layers (coral, swimmers, coral), so it IS the water as far as the menu is concerned.
       this.screen,
       this.backdrop.root,
+      this.titleGlow,
       this.title,
       this.levelRow,
       ...this.levelLabels,
@@ -212,6 +227,42 @@ export class MainMenu {
     const texture = this.title.texture;
     if (!texture || !texture.width) return;
     this.title.scale.set(this.titleWidth / texture.width);
+  }
+
+  /**
+   * Paint the shadow from the title's current box.
+   *
+   * The gradient is radial and deliberately NOT a plain one. The title is a wide band, so a radial inscribed in a box
+   * `titleGlowScale` times its size would leave the two ENDS of the title outside the dark core -- the corners of the
+   * art sit at 0.95 of that radius, where there is almost no alpha left. `titleGlowSolid` holds the core dark out to
+   * 65% of the radius and fades from there, so the glyphs are backed and all the softness is outside them.
+   *
+   * The rect is drawn around the GRAPHICS' own origin and the graphics is POSITIONED, rather than the rect being drawn
+   * at the title's corner: the fade is symmetric about the title's centre either way, and this way the two agree.
+   */
+  private drawTitleGlow(): void {
+    const cfg = mech.menu;
+    const w = this.titleWidth * cfg.titleGlowScale;
+    const h = this.titleHeight * cfg.titleGlowScale;
+    this.titleGlow.clear();
+    if (w <= 0 || h <= 0) return;
+    this.titleGlow.rect(-w / 2, -h / 2, w, h).fill({
+      fill: new FillGradient({
+        type: 'radial',
+        center: { x: 0.5, y: 0.5 },
+        innerRadius: 0,
+        outerCenter: { x: 0.5, y: 0.5 },
+        outerRadius: 0.5,
+        colorStops: [
+          { offset: 0, color: rgba(cfg.titleGlowColour, cfg.titleGlowAlpha) },
+          { offset: Math.min(0.999, cfg.titleGlowSolid), color: rgba(cfg.titleGlowColour, cfg.titleGlowAlpha) },
+          { offset: 1, color: rgba(cfg.titleGlowColour, 0) },
+        ],
+        textureSpace: 'local',
+      }),
+    });
+    // The title is anchored by its bottom, so its centre is half its height above `title.y`.
+    this.titleGlow.position.set(this.title.x, this.title.y - this.titleHeight / 2);
   }
 
   layout(viewport: Viewport): void {
@@ -323,6 +374,7 @@ export class MainMenu {
     levelTop = Math.max(levelTop, ceiling + this.titleHeight + cfg.levelRowTopGap * s);
     this.title.x = cx;
     this.title.y = levelTop - cfg.levelRowTopGap * s;
+    this.drawTitleGlow();
     /**
      * The level pills WRAP, and that is a fix rather than a nicety.
      *

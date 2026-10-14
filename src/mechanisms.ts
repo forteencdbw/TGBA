@@ -1460,6 +1460,11 @@ export interface Mechanisms {
      */
     titleWidthRatio: number;
     titleAspect: number;
+    /** The shadow behind the title, which is what makes stone-blue glyphs read against blue water. */
+    titleGlowColour: number;
+    titleGlowAlpha: number;
+    titleGlowScale: number;
+    titleGlowSolid: number;
     levelTextSize: number;
     levelNoteSize: number;
     levelMaxWidthRatio: number;
@@ -2926,6 +2931,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'menu.levelRowTopGap', check: anyNumber, describe: 'a number' },
   { path: 'menu.titleWidthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
   { path: 'menu.titleAspect', check: anyNumber, describe: 'width divided by height of the title picture' },
+  { path: 'menu.titleGlowColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'menu.titleGlowAlpha', check: anyNumber, describe: 'an opacity' },
+  { path: 'menu.titleGlowScale', check: anyNumber, describe: 'a multiple of the title box' },
+  { path: 'menu.titleGlowSolid', check: anyNumber, describe: 'a fraction of the radius that stays dark before the fade' },
   { path: 'menu.levelTextSize', check: anyNumber, describe: 'a number' },
   { path: 'menu.levelNoteSize', check: anyNumber, describe: 'a number' },
   { path: 'menu.levelMinWidthRatio', check: anyNumber, describe: 'a fraction of the menu width' },
