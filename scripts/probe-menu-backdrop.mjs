@@ -52,14 +52,28 @@ try {
   const { mech } = await server.ssrLoadModule('/src/mechanisms.ts');
   const cfg = mech.menu.backdrop;
 
+  /**
+   * The numbers below are the OWNER'S, so they are printed rather than asserted.
+   *
+   * Pinning them here would turn every hand-tune into a failed check -- this block used to say `burstEverySeconds: 8`
+   * and went red the first time it was set to 12 -- and a probe whose red means "somebody turned a dial" is a probe
+   * people learn to ignore. What IS asserted is the SHAPE the code depends on: the relationships that make each rule
+   * mean what it says, which is what a retune can genuinely break.
+   */
   console.log('--- the numbers everything below is measured against ---');
-  check('a non-fish batch is 2..3', [cfg.schoolMin, cfg.schoolMax], [2, 3]);
-  check('a fish shoal is 8..10', [cfg.fishSchoolMin, cfg.fishSchoolMax], [8, 10]);
-  check('the drift is half the horizontal speed', cfg.driftRatio, 0.5);
-  check('the turn band leaves a channel at each side', cfg.turnBand, 0.6);
+  console.log(`    speed ${cfg.speedMin}..${cfg.speedMax}   drift ${cfg.driftRatio}`);
+  console.log(`    turn every ${cfg.fishTurnEverySeconds}s (fish) / ${cfg.turnEverySeconds}s (other), inside ${cfg.turnBand}`);
+  console.log(`    burst x${cfg.burstScale} for ${cfg.burstSeconds}s, every ${cfg.burstEverySeconds}s`);
+  console.log(`    teams ${cfg.schoolMin}..${cfg.schoolMax}   shoals ${cfg.fishSchoolMin}..${cfg.fishSchoolMax}`);
+  console.log(`    crawlers x${cfg.crawlerSpeedScale} in the bottom ${cfg.crawlerBandTop}`);
   check('small fish are the lively ones', cfg.fishTurnEverySeconds < cfg.turnEverySeconds, true);
-  check('the two that crawl', [cfg.crawlerSpeedScale, cfg.crawlerBandTop], [0.4, 0.33]);
-  check('a burst', [cfg.burstScale, cfg.burstSeconds, cfg.burstEverySeconds], [2.5, 1.2, 8]);
+  check('a shoal is bigger than a team, which is what "a big group" means', cfg.fishSchoolMin > cfg.schoolMax, true);
+  check('a team holds at least one', cfg.schoolMin >= 1 && cfg.schoolMin <= cfg.schoolMax, true);
+  check('the spawner has room between its floor and its ceiling', cfg.minAlive < cfg.maxAlive, true);
+  check('a burst is faster than a swim', cfg.burstScale > 1, true);
+  check('the turn band leaves a channel at each side', cfg.turnBand > 0 && cfg.turnBand <= 1, true);
+  check('and the crawlers have the bottom of the screen', cfg.crawlerBandTop > 0 && cfg.crawlerBandTop < 0.5, true);
+  check('where they crawl rather than swim', cfg.crawlerSpeedScale < 1, true);
 
   /** Hand the rules a script instead of dice. Values beyond the list are all `NO`. */
   const dice = (values) => {
@@ -71,16 +85,41 @@ try {
     };
   };
 
+  // ---------------------------------------------------------------------------------------------
+  // The water is the lane, not the window
+  // ---------------------------------------------------------------------------------------------
+  console.log('\n--- the backdrop is laid out against the lane ---');
+  {
+    const LANE = 900;
+    const LEFT = 350;
+    const bd = new MenuBackdrop();
+    bd.layout(LANE, H, LEFT);
+    check('it measures itself in lane widths', bd.width, LANE);
+    check('and sits where the lane is', bd.root.position.x, LEFT);
+    /**
+     * The clip, read back off the mask rather than assumed.
+     *
+     * It is the half of this that is easy to leave out: a creature is BORN just off the lane -- that is how every
+     * arrival slides in from behind the edge instead of appearing mid-window -- and is only retired a third of a lane
+     * beyond it, so with no mask a fish crosses the letterbox in plain sight for a good fraction of a second.
+     */
+    const clip = bd.root.mask?.getLocalBounds();
+    check('and is clipped to exactly the lane', clip ? [clip.minX, clip.width] : null, [LEFT, LANE]);
+  }
+
   /**
    * A backdrop with the spawner switched off, holding a hand-built cast.
    *
    * `sinceSpawn` is driven far into the past so the arrival gap never ripens, and the cast is held at or above
    * `minAlive` so the "a sea should never look empty" rule never fires either. What is left is only what existing
    * creatures do -- and an arrival halfway through a measurement would move every number in it.
+   *
+   * Laid out at `left = 0`, which is what a phone is: the lane and the window are the same width, so everything below
+   * measures one coordinate system instead of two.
    */
   const build = (cast) => {
     const bd = new MenuBackdrop();
-    bd.layout(W, H);
+    bd.layout(W, H, 0);
     bd.sinceSpawn = -1e9;
     for (const c of cast) {
       const h = bd.swimmers.spawnAt(c.kind ?? 'fish', c.x, c.y, { deterministic: true, variety: 0 });
@@ -365,7 +404,7 @@ try {
      */
     const wave = (rolls) => {
       const bd = new MenuBackdrop();
-      bd.layout(W, H);
+      bd.layout(W, H, 0);
       const restore = dice(rolls);
       bd.spawnWave();
       restore();

@@ -175,13 +175,18 @@ export class MainMenu {
     const s = designScale(viewport.width, viewport.height);
     this.scale = s;
     /**
-     * The backdrop is laid out in SCREEN pixels, not against the lane.
+     * The backdrop is laid out against the LANE -- the same one a run happens in.
      *
-     * A lane exists to bound where the bubble may go; a reef has no such bound, and the water behind the menu is the
-     * whole window. So the painters are handed the screen width as their lane and every length in `menu.backdrop` is
-     * a fraction of the screen.
+     * The note that used to be here said "a lane exists to bound where the bubble may go; a reef has no such bound",
+     * which is wrong in the way that is hardest to see: it made the menu the only screen in the game with its own idea
+     * of how wide the water is. On a phone the two are the same width and nothing showed. On a desktop window the fish
+     * swam on behind the letterbox -- past the very wall the player is about to be confined by -- and at SCREEN scale,
+     * so the shark drifting behind the title was twice the size of the same shark once the run began.
+     *
+     * Handing it the lane fixes both at once, and every length in `menu.backdrop` is a fraction of it. What is left
+     * outside the lane is the menu's own flat screen, because the menu is not part of the water.
      */
-    this.backdrop.layout(viewport.width, viewport.height);
+    this.backdrop.layout(viewport.laneWidthPx, viewport.height, viewport.left);
     const laneLeft = viewport.left;
     const laneWidth = viewport.laneWidthPx;
     const cx = laneLeft + laneWidth / 2;

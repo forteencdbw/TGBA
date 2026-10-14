@@ -143,6 +143,14 @@ export class MenuBackdrop {
   private readonly backGfx = new Graphics();
   private readonly swimGfx = new Graphics();
   private readonly frontGfx = new Graphics();
+  /**
+   * The lane clip: everything the backdrop draws is cut to it.
+   *
+   * Deliberately never added to anything, which is what keeps it from being drawn -- a mask has to live in the scene
+   * graph to have a transform, but it must not be a CHILD of what it masks or the filled rectangle would cover it.
+   * `src/background.ts` clips the game's own lane the same way.
+   */
+  private readonly maskShape = new Graphics();
   private readonly swimmers = new HazardField();
   private readonly backBed = new ObstacleField();
   private readonly frontBed = new ObstacleField();
@@ -165,19 +173,33 @@ export class MenuBackdrop {
     this.frontLayer.addChild(this.frontGfx);
     this.root.addChild(this.backLayer, this.swimLayer, this.frontLayer);
     this.root.scale.set(1, -1);
+    this.root.mask = this.maskShape;
   }
 
   /**
-   * Rebuild for a new screen size.
+   * Rebuild for a new screen size, and for wherever the LANE is on it.
    *
    * The corals are laid out once per size rather than per frame: they do not move, so where they are is a property of
-   * the window. The lane the painters are handed is the full screen WIDTH, which is what makes every length in the
-   * config a fraction of the screen and the backdrop keep its proportions when the window changes.
+   * the window. `width` is the lane, so every length in the config is a fraction of the lane and the reef keeps its
+   * proportions when the window changes -- see `layout` in `src/menu.ts` for why that is the lane and not the screen.
    */
-  layout(width: number, height: number): void {
+  layout(width: number, height: number, left: number): void {
     this.width = width;
     this.height = height;
-    this.root.position.set(0, height);
+    this.root.position.set(left, height);
+    /**
+     * AND CLIPPED TO IT, which is the half of this that is easy to forget.
+     *
+     * A creature is BORN just off the lane and is only retired a third of a lane beyond it, so that an arrival slides
+     * in from behind the edge instead of appearing in the middle of the window -- which means, without a mask, that
+     * a fish swims on across the letterbox for a good fraction of a second before it is dropped. The mask is what
+     * makes "the water is the lane" true of the picture and not only of the arithmetic.
+     *
+     * A bare Graphics that is never added to anything, so it is never drawn: that is the same trick the game's own
+     * lane clip uses. See `WorldLayer` in `src/background.ts`.
+     */
+    this.maskShape.clear();
+    this.maskShape.rect(left, 0, width, height).fill(0xffffff);
     const cfg = mech.menu.backdrop;
     this.bed(this.backBed, cfg.backCoralCount, cfg.backCoralHalfWidth, cfg.backCoralBottom);
     this.bed(this.frontBed, cfg.frontCoralCount, cfg.frontCoralHalfWidth, cfg.frontCoralBottom);
