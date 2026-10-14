@@ -1,6 +1,7 @@
 import { Container, FillGradient, Graphics } from 'pixi.js';
 import { rgba } from './background';
 import { mech } from './config';
+import { BubbleField, MoteField } from './menuDrift';
 import { advanceTurn, commitFacing, HazardField, paintHazards, type Hazard, type HazardKind } from './hazards';
 import { ObstacleField, paintObstacles } from './obstacles';
 
@@ -155,11 +156,16 @@ export class MenuBackdrop {
   /**
    * The deep-sea light, in three pieces -- and WHERE they sit in the stack is half of the effect.
    *
-   *     back coral  ->  shafts  ->  [darkness]  ->  swimmers  ->  [halo]  ->  front coral
+   *     back coral  ->  specks  ->  shafts  ->  [darkness]  ->  bubbles  ->  swimmers  ->  [halo]  ->  front coral
    *
-   * So the mask covers the WATER: the back reef and the shafts go black with depth, while the creatures and the front
-   * reef are drawn over it and stay fully lit. The halo then goes over the creatures, because it is the light from the
-   * surface washing the whole scene, but under the front reef, which is nearer to the eye than the light is.
+   * So the mask covers the WATER: the back reef, the specks and the shafts go black with depth, while the creatures,
+   * the bubbles and the front reef are drawn over it and stay fully lit. The halo then goes over the creatures,
+   * because it is the light from the surface washing the whole scene, but under the front reef, which is nearer to
+   * the eye than the light is.
+   *
+   * The specks are under the SHAFTS as well as under the mask, which is deliberate: the shafts add their light over
+   * the top of them, so a speck standing in a beam gets the beam's colour on top of the brightness `BeamLight` gives
+   * it. See `src/menuDrift.ts` for why both are needed and neither is enough.
    *
    * The shafts are UNDER the mask rather than over it, and that is worth a sentence because it is a coin toss that was
    * settled by looking: over the mask, the low tails of four shafts add up into a haze across the middle of the water,
@@ -173,8 +179,21 @@ export class MenuBackdrop {
   private readonly darkGfx = new Graphics();
   private readonly beamLayer = new Container();
   private readonly glowGfx = new Graphics();
-  /** One entry per shaft: the lean and the root it sways around, and which way it starts. */
-  private readonly beams: { holder: Container; lean: number; baseX: number; phase: number }[] = [];
+  /**
+   * One entry per shaft: the lean and the root it sways around, which way it starts, and the shape a probe of the
+   * light needs -- how wide it is at each end and how far it reaches. See `beamLightAt`.
+   */
+  private readonly beams: {
+    holder: Container;
+    lean: number;
+    baseX: number;
+    phase: number;
+    halfTop: number;
+    halfBottom: number;
+    length: number;
+  }[] = [];
+  private readonly motes = new MoteField();
+  private readonly bubbles = new BubbleField();
   private readonly swimmers = new HazardField();
   private readonly backBed = new ObstacleField();
   private readonly frontBed = new ObstacleField();
@@ -195,7 +214,16 @@ export class MenuBackdrop {
     this.backLayer.addChild(this.backGfx);
     this.swimLayer.addChild(this.swimGfx);
     this.frontLayer.addChild(this.frontGfx);
-    this.root.addChild(this.backLayer, this.beamLayer, this.darkGfx, this.swimLayer, this.glowGfx, this.frontLayer);
+    this.root.addChild(
+      this.backLayer,
+      this.motes.graphics,
+      this.beamLayer,
+      this.darkGfx,
+      this.bubbles.graphics,
+      this.swimLayer,
+      this.glowGfx,
+      this.frontLayer,
+    );
     this.root.scale.set(1, -1);
     this.root.mask = this.maskShape;
     /**
@@ -236,6 +264,12 @@ export class MenuBackdrop {
     this.bed(this.backBed, cfg.backCoralCount, cfg.backCoralHalfWidth, cfg.backCoralBottom);
     this.bed(this.frontBed, cfg.frontCoralCount, cfg.frontCoralHalfWidth, cfg.frontCoralBottom);
     this.buildLight();
+    /**
+     * And the water's contents, seeded AFTER the light because the specks are seeded across the whole lane and the
+     * light is what decides how visible each one of them is.
+     */
+    this.motes.seed(width, height);
+    this.bubbles.seed(width, height);
   }
 
   /**
@@ -349,14 +383,6 @@ export class MenuBackdrop {
       ],
       textureSpace: 'local',
     });
-    const mid = Math.max(0.001, cfg.beamFadeMidOffset);
-    /** How much of the shaft is left at `t` of the way down it: full, then the mid value, then nothing. */
-    const fadeAt = (t: number): number => {
-      if (t >= 1) return 0;
-      if (t <= mid) return 1 + (cfg.beamFadeMidAlpha - 1) * (t / mid);
-      return cfg.beamFadeMidAlpha * (1 - (t - mid) / (1 - mid));
-    };
-
     for (let i = 0; i < count; i++) {
       const holder = new Container();
       const baseX = lane * (cfg.beamFirstX + i * cfg.beamSpread);
@@ -365,6 +391,12 @@ export class MenuBackdrop {
       holder.rotation = lean;
       const gfx = new Graphics();
       gfx.blendMode = 'add';
+      /**
+       * NOT left at 1 until the first `update`. The sway sets this every frame before anything is drawn, so it would
+       * never be seen wrong -- but `beamLightAt` reads it, and "the light is right except before the first frame" is
+       * the kind of thing a probe finds and a player never does.
+       */
+      holder.alpha = cfg.beamAlpha;
       for (let s = 0; s < slices; s++) {
         const t0 = s / slices;
         const t1 = (s + 1) / slices;
@@ -378,13 +410,58 @@ export class MenuBackdrop {
         const y1 = -t1 * beamHeight;
         gfx.poly([-w0, y0, w0, y0, w1, y1, -w1, y1]).fill({
           fill: edge,
-          alpha: fadeAt((t0 + t1) / 2),
+          alpha: this.beamFade((t0 + t1) / 2),
         });
       }
       holder.addChild(gfx);
       this.beamLayer.addChild(holder);
-      this.beams.push({ holder, lean, baseX, phase: i });
+      this.beams.push({ holder, lean, baseX, phase: i, halfTop, halfBottom, length: beamHeight });
     }
+  }
+
+  /**
+   * How much of a shaft is left at `t` of the way down it: full, then the mid value, then nothing.
+   *
+   * A method rather than a local in `buildLight`, because `beamLightAt` asks the same question about the same shafts.
+   * Two copies of this would agree with each other until somebody tuned one of them, and then the specks would be lit
+   * by a shaft that is not the one being drawn.
+   */
+  private beamFade(t: number): number {
+    const cfg = mech.menu.lighting;
+    const mid = Math.max(0.001, cfg.beamFadeMidOffset);
+    if (t >= 1) return 0;
+    if (t <= mid) return 1 + (cfg.beamFadeMidAlpha - 1) * (t / mid);
+    return cfg.beamFadeMidAlpha * (1 - (t - mid) / (1 - mid));
+  }
+
+  /**
+   * How much of the shafts' light lands on a point: 0 between them, about 1 inside one.
+   *
+   * It reads the shafts' OWN current state -- their angle, their root, their width, their fade and, crucially, the
+   * alpha the sway is giving them right now -- rather than re-deriving where a shaft is from the config. A second
+   * model of the beam geometry is exactly the thing that agrees with the first one until somebody tunes one of them;
+   * and taking the live alpha is what makes the specks in a beam flicker along with it.
+   */
+  private beamLightAt(x: number, y: number): number {
+    let lit = 0;
+    for (const beam of this.beams) {
+      const dx = x - beam.holder.position.x;
+      const dy = y - beam.holder.position.y;
+      // Into the shaft's own frame: it hangs below its anchor, so "down the shaft" is -y there.
+      const cos = Math.cos(beam.holder.rotation);
+      const sin = Math.sin(beam.holder.rotation);
+      const along = -dx * sin + dy * cos;
+      if (along > 0) continue;
+      const t = -along / Math.max(0.001, beam.length);
+      if (t > 1) continue;
+      const across = dx * cos + dy * sin;
+      const half = (beam.halfTop + (beam.halfBottom - beam.halfTop) * t) * beam.holder.scale.x;
+      const off = Math.abs(across) / Math.max(0.001, half);
+      if (off >= 1) continue;
+      // The shaft's own two fades, multiplied: across it is its soft edge, down it is its length.
+      lit += (1 - off) * this.beamFade(t) * beam.holder.alpha;
+    }
+    return Math.min(1, lit);
   }
 
   /** One row of corals, evenly spaced with a little jitter so it does not read as a fence. */
@@ -658,9 +735,19 @@ export class MenuBackdrop {
     this.glowGfx.position.y = at(light.glowSeconds, Math.PI / 2) * light.glowDrift * this.height;
     this.glowGfx.alpha = 1 + at(light.glowSeconds, 0) * light.glowPulse;
 
+    /**
+     * And the water's contents. The specks ask the shafts where the light is AFTER the sway has set their alphas, so
+     * a speck in a beam brightens and dims with the beam itself -- which is most of what makes moving water read as
+     * moving water rather than as a light doing a slow dance.
+     */
+    this.motes.update(dt, (x, y) => this.beamLightAt(x, y));
+    this.bubbles.update(dt, this.width);
+
     this.backGfx.clear();
     this.swimGfx.clear();
     this.frontGfx.clear();
+    this.motes.draw();
+    this.bubbles.draw();
     paintObstacles(this.backGfx, this.backBed, this.width);
     /**
      * `playerX` is `NaN`, which is what the codex passes and means "nobody is in the room".

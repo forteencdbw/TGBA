@@ -1550,6 +1550,47 @@ export interface Mechanisms {
       darknessMidOffset: number;
       darknessMidAlpha: number;
     };
+    /**
+     * What drifts UPWARD through the menu's water -- suspended specks, and bubbles off the seabed.
+     *
+     * Sizes are fractions of the lane's width, like everything else that lives in the water; speeds are fractions of
+     * the screen's height, like the lighting. Two different units in one block, which is why the config says so out
+     * loud rather than leaving it to be worked out from the numbers.
+     */
+    water: {
+      motes: {
+        count: number;
+        size: number;
+        sizeVariance: number;
+        speed: number;
+        speedVariance: number;
+        drift: number;
+        colour: number;
+        baseAlpha: number;
+        litAlpha: number;
+        fadeEdge: number;
+      };
+      bubbles: {
+        vents: number;
+        perString: number;
+        everySeconds: number;
+        everyJitter: number;
+        gap: number;
+        size: number;
+        sizeVariance: number;
+        speed: number;
+        accel: number;
+        sway: number;
+        swaySeconds: number;
+        fadeEdge: number;
+        colour: number;
+        alpha: number;
+        bodyAlpha: number;
+        rimWidth: number;
+        highlightRadius: number;
+        highlightAlpha: number;
+      };
+    };
   };
   /**
    * Obstacles: what is in the water that is neither food nor threat, but scenery you have to answer.
@@ -2952,6 +2993,41 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['darknessMidOffset', 'a fraction of the screen height'],
     ['darknessMidAlpha', 'an opacity'],
   ].map(([key, describe]) => ({ path: `menu.lighting.${key}`, check: anyNumber, describe: describe as string })),
+  /**
+   * The specks and the bubbles, the same way -- with their two colours out of the loop for the same reason.
+   */
+  { path: 'menu.water.motes.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'menu.water.bubbles.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  ...[
+    ['count', 'a count of specks'],
+    ['size', 'a fraction of the lane width'],
+    ['sizeVariance', 'a fraction of the size'],
+    ['speed', 'screen heights per second'],
+    ['speedVariance', 'a fraction of the speed'],
+    ['drift', 'a fraction of the lane width per second'],
+    ['baseAlpha', 'an opacity; the speck with no light on it'],
+    ['litAlpha', 'an opacity; what the brightest light adds'],
+    ['fadeEdge', 'a fraction of the screen height'],
+  ].map(([key, describe]) => ({ path: `menu.water.motes.${key}`, check: anyNumber, describe: describe as string })),
+  ...[
+    ['vents', 'a count of vents'],
+    ['perString', 'a count of bubbles'],
+    ['everySeconds', 'seconds'],
+    ['everyJitter', 'a fraction of the interval'],
+    ['gap', 'a fraction of the screen height'],
+    ['size', 'a fraction of the lane width'],
+    ['sizeVariance', 'a fraction of the size'],
+    ['speed', 'screen heights per second'],
+    ['accel', 'a multiple per second'],
+    ['sway', 'a fraction of the lane width'],
+    ['swaySeconds', 'seconds'],
+    ['fadeEdge', 'a fraction of the screen height'],
+    ['alpha', 'an opacity'],
+    ['bodyAlpha', 'a fraction of the bubble opacity'],
+    ['rimWidth', 'a fraction of the radius'],
+    ['highlightRadius', 'a fraction of the radius'],
+    ['highlightAlpha', 'an opacity'],
+  ].map(([key, describe]) => ({ path: `menu.water.bubbles.${key}`, check: anyNumber, describe: describe as string })),
   ...[
     'levelSelectedFill',
     'levelSelectedStroke',

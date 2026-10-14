@@ -85,6 +85,7 @@ try {
    * this probe is about are new, which is exactly the case that check exists for.
    */
   const { mech } = await server.ssrLoadModule('/src/mechanisms.ts');
+  const drift = await server.ssrLoadModule('/src/menuDrift.ts');
   const cfg = mech.menu.backdrop;
 
   /**
@@ -446,28 +447,40 @@ try {
     const name = (child) =>
       child === bd.backLayer
         ? 'back reef'
-        : child === bd.darkGfx
-          ? 'darkness'
+        : child === bd.motes.graphics
+          ? 'specks'
           : child === bd.beamLayer
             ? 'shafts'
-            : child === bd.swimLayer
-              ? 'swimmers'
-              : child === bd.glowGfx
-                ? 'halo'
-                : child === bd.frontLayer
-                  ? 'front reef'
-                  : '?';
+            : child === bd.darkGfx
+              ? 'darkness'
+              : child === bd.bubbles.graphics
+                ? 'bubbles'
+                : child === bd.swimLayer
+                  ? 'swimmers'
+                  : child === bd.glowGfx
+                    ? 'halo'
+                    : child === bd.frontLayer
+                      ? 'front reef'
+                      : '?';
     check('the stack, bottom first', bd.root.children.map(name), [
       'back reef',
+      'specks',
       'shafts',
       'darkness',
+      'bubbles',
       'swimmers',
       'halo',
       'front reef',
     ]);
     const at = (child) => bd.root.children.indexOf(child);
     check('so the shafts are darkened with the water', at(bd.darkGfx) > at(bd.beamLayer), true);
+    check('and the specks are under the shafts that light them', at(bd.beamLayer) > at(bd.motes.graphics), true);
     check('but the creatures are drawn OVER the mask', at(bd.swimLayer) > at(bd.darkGfx), true);
+    check(
+      'and the bubbles are over it too, but behind the creatures',
+      at(bd.bubbles.graphics) > at(bd.darkGfx) && at(bd.bubbles.graphics) < at(bd.swimLayer),
+      true,
+    );
     check('and the halo is over them', at(bd.glowGfx) > at(bd.swimLayer), true);
     check('but under the near reef', at(bd.frontLayer) > at(bd.glowGfx), true);
 
@@ -511,6 +524,61 @@ try {
     band('the brightness', seen.pulse, light.beamPulse);
     band('the halo', seen.glowY, light.glowDrift * H);
     check('and the halo brightens within its own pulse', within(seen.glowAlpha, light.glowPulse), true);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // What drifts up through the water
+  // ---------------------------------------------------------------------------------------------
+  console.log('\n--- the specks and the bubbles ---');
+  {
+    /** The two ends: born invisible at the bottom, gone again before the top. */
+    check('something at the very bottom is invisible', drift.edgeFade(0, 100, 0.1), 0);
+    check('fully visible past the band', drift.edgeFade(10, 100, 0.1), 1);
+    check('and invisible again at the top', drift.edgeFade(100, 100, 0.1), 0);
+    check('and never negative', drift.edgeFade(-5, 100, 0.1), 0);
+    near('halfway into the far band', drift.edgeFade(95, 100, 0.1), 0.5);
+
+    const bd = new MenuBackdrop();
+    bd.layout(W, H, 0);
+    // One frame first: the sway is what gives the shafts the alpha the specks read off them.
+    bd.update(DT);
+
+    /**
+     * THE LIGHT THE SPECKS STAND IN, which is the whole of what makes them dust in a sunbeam rather than dots.
+     *
+     * Sampled across the lane at one height instead of asked about one point, because where a shaft actually is
+     * depends on its lean, its root and its width -- a probe that hard-coded a point would be testing its own
+     * arithmetic rather than the code's.
+     */
+    const litAcross = (y) => Array.from({ length: 41 }, (_, i) => bd.beamLightAt((i / 40) * W, y));
+    const high = litAcross(H * 0.8);
+    const low = litAcross(H * 0.2);
+    check('the light across the lane is not flat', Math.max(...high) - Math.min(...high) > 0.02, true);
+    check('and there is somewhere really lit', Math.max(...high) > 0.05, true);
+    /**
+     * And it thins with depth. The mask is not in this at all: this is the light the WATER has, not what survives to
+     * the eye -- two different things, which is why the specks can be dark low down without the mask's help.
+     */
+    check('and the light thins with depth', Math.max(...low) < Math.max(...high), true);
+
+    const specks = bd.motes.lighting;
+    check('as many specks as the config asks for', specks.length, Math.round(mech.menu.water.motes.count));
+    check('and they are not all in the same light', Math.max(...specks) - Math.min(...specks) > 0.01, true);
+
+    /** The bubbles: a few fixed vents, spread out, each letting go of whole strings over time. */
+    const vents = bd.bubbles.ventXs;
+    check('as many vents as the config asks for', vents.length, Math.round(mech.menu.water.bubbles.vents));
+    check('and they are spread across the lane', Math.min(...vents) < W * 0.4 && Math.max(...vents) > W * 0.6, true);
+
+    const before = bd.bubbles.count;
+    // Long enough for every vent to have let at least one string go, whatever its staggered start.
+    for (let i = 0; i < 600; i++) bd.update(DT);
+    check('bubbles come out of the vents', bd.bubbles.count > before, true);
+    check(
+      'and the specks are still all inside the lane',
+      bd.motes.heights.every((y) => y >= 0 && y <= H),
+      true,
+    );
   }
 
   // ---------------------------------------------------------------------------------------------
