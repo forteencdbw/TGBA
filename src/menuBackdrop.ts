@@ -1,6 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
 import { mech } from './config';
-import { HazardField, paintHazards, type Hazard, type HazardKind } from './hazards';
+import { advanceTurn, commitFacing, HazardField, paintHazards, type Hazard, type HazardKind } from './hazards';
 import { ObstacleField, paintObstacles } from './obstacles';
 
 /**
@@ -396,6 +396,17 @@ export class MenuBackdrop {
        */
       h.phase += dt * boost;
       /**
+       * And the turn animation's own clock, which is NOT `phase`.
+       *
+       * `phase` is the frame-by-frame picture and it runs at the burst's rate, so a fishing sprinting away from a
+       * turn would finish the turn early -- the picture would be part-way round for a shorter time than the water
+       * says. A turn takes `turnSeconds` on the world's clock wherever it happens, so it counts down against `dt`.
+       *
+       * This is the second of the two places a turn is advanced (the game's per-frame loop is the other); see
+       * `advanceTurn`.
+       */
+      advanceTurn(h, dt);
+      /**
        * `heading` is the creature's own fact about which way it is going.
        *
        * A departing creature reads its direction from `flee`, because the velocity map still holds the speed it was
@@ -544,13 +555,23 @@ export class MenuBackdrop {
    * Commit the picture to a direction, so a creature is never drawn swimming backwards.
    *
    * The expression is the painter's own, asked here instead of there because "which way should this face" needs a
-   * player and the menu has none. `facingRest` is then set out of reach: that timer exists to stop a creature strobing
-   * as the player drifts across its centre line, and a decorative fish has nothing to re-decide about.
+   * player and the menu has none.
    */
   private faceTravel(h: Hazard, dir: number): void {
     const front = mech.hazardArt[h.kind]?.front ?? mech.hazardFront;
     const facesRight = dir > 0;
-    h.facing = (front === 'left') === facesRight ? -1 : 1;
+    /**
+     * `commitFacing` rather than an assignment, because a turn is a turn wherever it happens -- and this is the only
+     * other place one does. The painter turns what it can see a player through; the backdrop has no player, so it
+     * turns its own creatures here, and both doors have to lead to the same animation.
+     *
+     * The FIRST one is not animated, which is what makes a creature arrive already facing the way it set off.
+     */
+    commitFacing(h, (front === 'left') === facesRight ? -1 : 1);
+    /**
+     * `facingRest` is then set out of reach: that timer exists to stop a creature strobing as the player drifts
+     * across its centre line, and a decorative fish has nothing to re-decide about.
+     */
     h.facingRest = Number.MAX_SAFE_INTEGER;
   }
 }

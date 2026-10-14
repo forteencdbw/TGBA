@@ -1095,6 +1095,7 @@ export interface Mechanisms {
   /** How long a creature keeps a facing before it may change its mind. */
   hazardFacing: {
     cooldownSeconds: number;
+    turnSeconds: number;
   };
   /**
    * Frame-by-frame animations, by name -- what a creature's art points at for a state it has more than one picture for.
@@ -2690,6 +2691,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   },
   { path: 'hazardFront', check: (v) => v === 'left' || v === 'right', describe: '"left" or "right": which way round a creature with a picture counts as facing' },
   { path: 'hazardFacing.cooldownSeconds', check: anyNumber, describe: 'seconds; 0 lets a creature turn every frame' },
+  { path: 'hazardFacing.turnSeconds', check: anyNumber, describe: 'seconds; 0 turns instantly with no animation' },
   { path: 'angry.look.inner', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   // The boss dossiers, expanded: the tombstone's row, then one per kind the file declares.
   ...bossRules('hazards.boss'),

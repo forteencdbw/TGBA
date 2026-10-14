@@ -319,6 +319,41 @@ try {
   }
 
   // ---------------------------------------------------------------------------------------------
+  // The backdrop's turn goes through the same door as the painter's
+  // ---------------------------------------------------------------------------------------------
+  console.log('\n--- a backdrop turn is an animated turn ---');
+  {
+    const school = { burstLeft: 0 };
+    const cast = [{ kind: 'fish', x: W * 0.5, y: H * 0.5, vx: 0.05, vy: 0, school }];
+    const bd = build([...cast, ...filler(cfg.minAlive - 1)]);
+    const h = cast[0].h;
+    /**
+     * `build` hands the hazard to the field the way the spawner does NOT -- it skips `faceTravel` -- so the arrival
+     * facing is set here, by that same method. Which is itself the first thing checked: ARRIVING is what sets a
+     * facing, and it is not a turn.
+     */
+    bd.faceTravel(h, 1);
+    check('arriving is not a turn', h.turn, undefined);
+    const before = h.facing;
+    check('and it does leave a facing behind', typeof before, 'number');
+    const restore = dice([NO, 0]); // no dart, and yes to the turn
+    bd.update(DT);
+    restore();
+    check('but a turn is', h.turn !== undefined, true);
+    check('the facing really changed', h.facing, -before);
+    near('and the picture starts where it was', h.turn.from, before);
+
+    /**
+     * And the countdown runs on the BACKDROP's clock -- the same update loop that moves the fish -- rather than on a
+     * wall clock, so a menu that is not being updated is a menu where nothing turns either. See `advanceTurn`.
+     */
+    const restore2 = dice([]);
+    for (let i = 0; i < Math.ceil(mech.hazardFacing.turnSeconds / DT) + 1; i++) bd.update(DT);
+    restore2();
+    check('and it is over within the time it was given', h.turn, undefined);
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // Only small fish ever share a school
   // ---------------------------------------------------------------------------------------------
   console.log('\n--- what the spawner hands out ---');

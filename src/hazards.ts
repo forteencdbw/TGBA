@@ -390,10 +390,11 @@ export interface Hazard {
   /**
    * WHICH WAY IT IS SWIMMING: -1 left, +1 right, 0 when nothing has decided yet.
    *
-   * Separate from `facing`, which is the mirror the SPRITE is drawn with and carries a cooldown so a creature
-   * cannot strobe as the player drifts across its centre line. This one is a fact about the creature -- written by
-   * the movement that knows, at the moment it moves -- and not every kind has an opinion about it: a jellyfish
-   * drifts and a vent does not move at all, and both leave it at 0.
+   * Separate from `facing`, which is the way the creature has COMMITTED to LOOKING and carries a cooldown so a
+   * creature cannot strobe as the player drifts across its centre line. (What the picture is actually drawn with is
+   * neither of these: it is `hazardMirror`, which is `facing` plus the part of a turn in flight.) This one is a fact
+   * about the creature -- written by the movement that knows, at the moment it moves -- and not every kind has an
+   * opinion about it: a jellyfish drifts and a vent does not move at all, and both leave it at 0.
    *
    * It exists because looking at the player is a choice rather than a rule. A fish that is hunting should face
    * where it is going; a creature that is merely drifting past should not spin round to stare at a bubble it has
@@ -646,13 +647,25 @@ export interface Hazard {
   heavyStarted?: number;
   heavyStrength?: number;
   /**
-   * The facing the creature has COMMITTED to, and how long before it may change: +1 keeps the picture as drawn, -1 mirrors it.
+   * The facing the creature has COMMITTED to, and how long before it may change: +1 is as drawn, -1 is mirrored.
+   *
+   * It is the creature's MIND and not the picture. What the sprite is drawn with is `hazardMirror(h)`, which is this
+   * value seen through whatever turn is in flight -- and everything that needs a straight answer (where an archer
+   * points, which side a charge comes from, the hitbox) reads THIS one.
    *
    * Optional, and set on first use, because the alternative is teaching every spawn literal in three modules about a field only
    * the painter writes -- see the commit for why that trade is not worth it for state that has exactly one owner.
    */
   facing?: number;
   facingRest?: number;
+  /**
+   * A turn in progress: the mirror it started FROM, and how long it has left.
+   *
+   * `from` is the mirror that was actually being DRAWN when the turn began, which is NOT +-1 -- a creature that turns
+   * again halfway through a turn has to carry on from where the picture had got to instead of snapping back, and
+   * storing the drawn value rather than the committed one is the whole of that.
+   */
+  turn?: { from: number; left: number };
 }
 
 /** Tunables for D3. Kept together because they are only meaningful as a set. */
@@ -2184,6 +2197,11 @@ export class HazardField {
        */
       if (h.facingRest !== undefined && h.facingRest > 0) h.facingRest = Math.max(0, h.facingRest - dt);
       /**
+       * And the turn animation, which is in this loop for exactly the reason above: `advance` returns early for a
+       * charge, for a path follower and for a creature that is leaving, and a creature turns in all three of those.
+       */
+      advanceTurn(h, dt);
+      /**
        * NOT the death clock, which is `tickDeaths`'s and runs from the frame loop.
        *
        * Both paths reach a live field in the same frame -- `tickDeaths` before the phase switch and this one after it -- so a
@@ -3506,6 +3524,77 @@ export function boxDistance(px: number, py: number, x: number, y: number, halfW:
   return Math.hypot(dx, dy);
 }
 
+/**
+ * The mirror the sprite is DRAWN with: +1 as drawn, -1 flipped, and everything between while a turn is in flight.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHY THIS IS NOT `h.facing`
+ * ---------------------------------------------------------------------------------------------
+ * `h.facing` is the creature's MIND. It is +1 or -1, it says which way the creature is looking, and everything that
+ * reads it -- where an archer's weapon points, which side a charge comes from, the hitbox -- needs a straight answer
+ * from it. A picture that is halfway round is not a fact about the creature; it is a fact about the PICTURE, so it
+ * is computed here and reaches exactly one place, which is the sprite.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * THE EASING IS THE MOTION, NOT A STYLE
+ * ---------------------------------------------------------------------------------------------
+ * `(1 - cos(PI * t)) / 2` run from +1 to -1 comes out as `cos(PI * t)`, which is exactly the width of a flat thing
+ * turning at a CONSTANT ANGULAR RATE -- widest at the ends, fastest through edge-on, and a perfect line at the
+ * midpoint. There is no taste in that number; it is what a turn looks like, and a linear sweep would be the thing
+ * that looks wrong.
+ *
+ * Exported because it is the CONTRACT of the turn rather than an internal: it is the number a picture is drawn with,
+ * and the one part of this feature that can be measured without a canvas.
+ */
+export function hazardMirror(h: Hazard): number {
+  const facing = h.facing ?? 1;
+  const seconds = mech.hazardFacing.turnSeconds;
+  if (!h.turn || seconds <= 0) return facing;
+  const t = 1 - h.turn.left / seconds;
+  if (t >= 1) return facing;
+  return h.turn.from + (facing - h.turn.from) * ((1 - Math.cos(Math.PI * t)) / 2);
+}
+
+/**
+ * Commit a creature's facing -- and start the turn from wherever the picture had got to.
+ *
+ * ONE DOOR, because two things change a facing and they must not disagree about what a turn is: the painter, which
+ * works out for itself which way a creature should look at a player, and the menu backdrop, which has no player and
+ * so decides for itself too. Everything else about a turn lives in here -- that it is animated, that it may be
+ * interrupted mid-flight, and that the first one is not animated at all.
+ */
+export function commitFacing(h: Hazard, facing: number): void {
+  /**
+   * THE FIRST FACING IS NOT A TURN.
+   *
+   * A creature that arrives already looking the way it should is not something anybody watched it decide, and
+   * animating it would mean every creature in the water sweeping round on the frame it is born.
+   */
+  if (h.facing === undefined || mech.hazardFacing.turnSeconds <= 0) {
+    h.facing = facing;
+    // `delete` rather than `= undefined`, which `exactOptionalPropertyTypes` refuses -- and it keeps the invariant
+    // that says exactly what it looks like: a creature has a turn exactly while it is turning.
+    delete h.turn;
+    return;
+  }
+  if (facing === h.facing) return;
+  h.turn = { from: hazardMirror(h), left: mech.hazardFacing.turnSeconds };
+  h.facing = facing;
+}
+
+/**
+ * Count a turn down, and let it go when it has run out.
+ *
+ * Whoever advances a creature every frame owns this call, which is one loop in the game and one in the menu -- and
+ * it is deliberately tied to those rather than to a wall clock, so a world that is frozen (the pause panel, the
+ * mutation pick) is a world where nothing turns either.
+ */
+export function advanceTurn(h: Hazard, dt: number): void {
+  if (!h.turn) return;
+  h.turn.left = Math.max(0, h.turn.left - dt);
+  if (h.turn.left <= 0) delete h.turn;
+}
+
 function hazardArtState(name: string, elapsed: number): Texture | null {
   const animation = mech.animations[name];
   if (animation) {
@@ -4805,7 +4894,9 @@ export function paintHazards(
          *
          * The picture's front is `front` (the kind's own, or the global default). If the player is on the side the front
          * already faces, nothing happens; otherwise the sprite is mirrored on X. X is a plain axis (unlike Y, which the world
-         * flips), so a negative X scale IS the mirror and nothing has to be undone.
+         * flips), so a negative X scale IS the mirror and nothing has to be undone -- and the number handed to it is
+         * `hazardMirror(h)` rather than `h.facing`, because a creature part-way through a turn is drawn part-way round.
+         * See that function for why those are two different numbers and why the second one is not animated.
          */
         const front = art.front ?? mech.hazardFront;
         // No player (a codex card) means no turning: the picture is shown as drawn.
@@ -4847,13 +4938,18 @@ export function paintHazards(
          */
         const wantFacing = ((front === 'left') !== wantFrontLeft) ? -1 : 1;
         if (h.facing === undefined) {
-          h.facing = wantFacing;
+          commitFacing(h, wantFacing);
           h.facingRest = 0;
         } else if (wantFacing !== h.facing && (h.facingRest ?? 0) <= 0) {
-          h.facing = wantFacing;
+          commitFacing(h, wantFacing);
           h.facingRest = mech.hazardFacing.cooldownSeconds;
         }
-        const facing = h.facing;
+        /**
+         * `h.facing` is set on both branches above, and the `?? 1` is unreachable -- it is here only because
+         * `commitFacing` is a CALL and the compiler cannot see through it. `1` is "as drawn", the same fallback
+         * `hazardMirror` uses for a creature that has never been painted.
+         */
+        const facing = h.facing ?? 1;
         /**
          * A `volleyAligned` picture is NEVER mirrored, and the mirror is not a matter of taste here.
          *
@@ -4863,7 +4959,7 @@ export function paintHazards(
          * mirror silently rotates the telegraph instead of breaking it, which is exactly the failure that has no
          * symptom. Opting out of both the turn and the mirror is one decision, and `volleyAligned` carries it.
          */
-        const mirror = art.volleyAligned ? 1 : facing;
+        const mirror = art.volleyAligned ? 1 : hazardMirror(h);
         sprite.scale.set(unit * mirror, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
         /**
          * SPIN, for a kind whose picture is a radial thing, and NOTHING AT ALL for every other kind.
