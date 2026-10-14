@@ -1422,7 +1422,34 @@ export interface Mechanisms {
     talentColour: number;
   };
   /**
-   * The main menu: three stone buttons, the title, the level row and the water behind them.
+   * The settings panel's player-visible numbers.
+   *
+   * The panel's own FURNITURE is not here on purpose and never was -- the panel's box and each row's offset inside it
+   * are proportional arithmetic against a size derived from the viewport, and they live in `src/settings.ts` beside the
+   * arithmetic they have to agree with. What is here is the one thing in that panel the player looks AT: the level
+   * pills, which have their own colours, sizes and wrapping.
+   */
+  settings: {
+    /** The level row, which is a debug affordance on the panel rather than a menu row. */
+    levels: {
+      /** How many pills fit on a row. The wrap basis -- see `LevelPill` in `src/settings.ts`. */
+      perRow: number;
+      /** The widest a row may be, as a fraction of the panel's content width. */
+      maxRowWidthRatio: number;
+      rowHeight: number;
+      radius: number;
+      rowGap: number;
+      textSize: number;
+      selectedFill: number;
+      selectedStroke: number;
+      selectedTextColour: number;
+      idleFill: number;
+      idleStroke: number;
+      idleTextColour: number;
+    };
+  };
+  /**
+   * The main menu: three stone buttons, the title, and the water behind them.
    *
    * The three buttons are PICTURES now (`src/assets/按钮-*.png`, three states each), so what is left here is their
    * shared WIDTH and the gap between them. Height is not a dial: each button is as tall as its own stone is, and the
@@ -1430,26 +1457,29 @@ export interface Mechanisms {
    * middle one.
    */
   menu: {
-    buttonWidthRatio: number;
-    buttonMaxWidth: number;
-    buttonGap: number;
     /**
-     * Where the button stack starts, as a fraction of the screen height.
+     * The height all three stones are drawn at, in design pixels.
      *
-     * The tagline, the level grid and the three buttons all hang off this one number, so it is the lower half of the
-     * menu in a single dial. It was written into `src/menu.ts` as `0.55` until the buttons became pictures and grew
-     * half again as tall.
+     * The shared dimension is the HEIGHT and not the width, and that is a correction rather than a preference: the
+     * three pictures are three independent drawings with three different plate ratios, so a shared width gives them
+     * three different heights -- and the lettering is painted ON the plate, so those heights are letter heights. The
+     * owner saw it as "设置's text is bigger than 开始游戏's". Shared height, per-picture width.
+     *
+     * There is deliberately no width cap to go with it: width and text size are the same thing here, so any cap that
+     * actually binds would shrink one button's text and put the bug back.
      */
-    buttonsTopRatio: number;
-    /** The corner radius of the level pills. Was `buttonRadius`, which named the wrong thing. */
-    levelRadius: number;
-    /** The one line between the level grid and the start button: the base bubble's pitch. */
-    taglineGap: number;
-    taglineSize: number;
-    /** The level row: one pill per level, with a selected, an idle and a locked state. */
-    levelRowHeight: number;
-    levelRowGap: number;
-    levelRowTopGap: number;
+    buttonHeight: number;
+    buttonGap: number;
+    /** How far down the whole stone moves while pressed, in design pixels. */
+    buttonPressDrop: number;
+    /**
+     * Where the GROUP -- title plus buttons, as one stack -- is centred vertically, as a fraction of screen height.
+     *
+     * The anchor is the group's centre rather than the buttons' top edge because `buttonHeight` is a dial: a number
+     * pinned to the top edge stops meaning "centred" the moment the stack changes height, and "centred" is the thing
+     * being asked for.
+     */
+    groupCentreRatio: number;
     /**
      * The title, which is a picture rather than a line of text.
      *
@@ -1458,24 +1488,8 @@ export interface Mechanisms {
      */
     titleWidthRatio: number;
     titleAspect: number;
-    /** The shadow behind the title, which is what makes stone-blue glyphs read against blue water. */
-    titleGlowColour: number;
-    titleGlowAlpha: number;
-    titleGlowScale: number;
-    titleGlowSolid: number;
-    levelTextSize: number;
-    levelNoteSize: number;
-    levelMaxWidthRatio: number;
-    /** The narrowest a level pill may be, as a fraction of the menu width. Decides how many fit per row. */
-    levelMinWidthRatio: number;
-    levelSelectedFill: number;
-    levelSelectedStroke: number;
-    levelSelectedTextColour: number;
-    levelIdleFill: number;
-    levelIdleStroke: number;
-    levelIdleTextColour: number;
-    levelNoteColour: number;
-    levelUnlockColour: number;
+    /** The gap between the title's bottom edge and the top of the first stone. */
+    titleButtonGap: number;
     /**
      * The animated menu backdrop: decorative creatures swimming, and a coral bed in two layers.
      *
@@ -2913,26 +2927,13 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: isColour,
     describe: 'a colour, either 0xrrggbb or "#rrggbb"',
   })),
-  { path: 'menu.buttonWidthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
-  { path: 'menu.buttonMaxWidth', check: anyNumber, describe: 'a pixel width' },
+  { path: 'menu.buttonHeight', check: anyNumber, describe: 'the shared height of the three stones, in design pixels' },
   { path: 'menu.buttonGap', check: anyNumber, describe: 'design pixels' },
-  { path: 'menu.buttonsTopRatio', check: anyNumber, describe: 'a fraction of the screen height' },
-  { path: 'menu.levelRadius', check: anyNumber, describe: 'a corner radius' },
-  { path: 'menu.taglineGap', check: anyNumber, describe: 'a number' },
-    { path: 'menu.taglineSize', check: anyNumber, describe: 'a number' },
-  { path: 'menu.levelRowHeight', check: anyNumber, describe: 'a number' },
-  { path: 'menu.levelRowGap', check: anyNumber, describe: 'a number' },
-  { path: 'menu.levelRowTopGap', check: anyNumber, describe: 'a number' },
+  { path: 'menu.buttonPressDrop', check: anyNumber, describe: 'design pixels' },
+  { path: 'menu.groupCentreRatio', check: anyNumber, describe: 'a fraction of the screen height' },
   { path: 'menu.titleWidthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
   { path: 'menu.titleAspect', check: anyNumber, describe: 'width divided by height of the title picture' },
-  { path: 'menu.titleGlowColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  { path: 'menu.titleGlowAlpha', check: anyNumber, describe: 'an opacity' },
-  { path: 'menu.titleGlowScale', check: anyNumber, describe: 'a multiple of the title box' },
-  { path: 'menu.titleGlowSolid', check: anyNumber, describe: 'a fraction of the radius that stays dark before the fade' },
-  { path: 'menu.levelTextSize', check: anyNumber, describe: 'a number' },
-  { path: 'menu.levelNoteSize', check: anyNumber, describe: 'a number' },
-  { path: 'menu.levelMinWidthRatio', check: anyNumber, describe: 'a fraction of the menu width' },
-  { path: 'menu.levelMaxWidthRatio', check: anyNumber, describe: 'a fraction' },
+  { path: 'menu.titleButtonGap', check: anyNumber, describe: 'design pixels' },
   /**
    * The menu backdrop's numbers, in one block.
    *
@@ -3063,16 +3064,22 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['highlightAlpha', 'an opacity'],
   ].map(([key, describe]) => ({ path: `menu.water.bubbles.${key}`, check: anyNumber, describe: describe as string })),
   ...[
-    'levelSelectedFill',
-    'levelSelectedStroke',
-    'levelSelectedTextColour',
-    'levelIdleFill',
-    'levelIdleStroke',
-    'levelIdleTextColour',
-    'levelNoteColour',
-    'levelUnlockColour',
+    ['perRow', 'how many pills fit on a row'],
+    ['maxRowWidthRatio', 'a fraction of the panel content width'],
+    ['rowHeight', 'design pixels'],
+    ['radius', 'a corner radius'],
+    ['rowGap', 'design pixels'],
+    ['textSize', 'a font size'],
+  ].map(([key, describe]) => ({ path: `settings.levels.${key}`, check: anyNumber, describe: describe as string })),
+  ...[
+    'selectedFill',
+    'selectedStroke',
+    'selectedTextColour',
+    'idleFill',
+    'idleStroke',
+    'idleTextColour',
   ].map((key) => ({
-    path: `menu.${key}`,
+    path: `settings.levels.${key}`,
     check: isColour,
     describe: 'a colour, either 0xrrggbb or "#rrggbb"',
   })),

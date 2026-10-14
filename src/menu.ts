@@ -1,26 +1,11 @@
-import { Container, FillGradient, Graphics, Sprite, Text } from 'pixi.js';
+import { Container, Graphics, Sprite, Text } from 'pixi.js';
 import type { Texture } from 'pixi.js';
 import { assetSizeNow, loadAssetTexture } from './assets';
-import { rgba } from './background';
 import { mech } from './mechanisms';
-import { BASE_TYPE } from './bubbleTypes';
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
 import { buildLabel } from './version';
 import { MenuBackdrop } from './menuBackdrop';
-
-/**
- * One level as the menu needs it: what to draw, and whether it can be played.
- *
- * The lock state is GIVEN to the menu rather than worked out by it, because what unlocks what belongs to the progress
- * store. A menu that knew the rule would be a second place to change it, and the two would eventually disagree.
- */
-export interface MenuLevel {
-  id: string;
-  name: string;
-  locked: boolean;
-  selected: boolean;
-}
 
 /**
  * The three stone buttons, in the order they are stacked.
@@ -44,10 +29,18 @@ type ButtonId = (typeof BUTTONS)[number]['id'];
  * `normal` has no suffix because it IS the stem -- `按钮-开始游戏.png` -- and the other two are that stem with
  * `-Hover` / `-Pressed` appended. Note the capital: the file names came from the art, and this is the one place that
  * spelling has to be right.
+ *
+ * THERE IS NO `Pressed` PICTURE, and the state is still `Pressed`. The three that existed drew a "thinner and darker"
+ * stone, which at this size read as squashed rather than pressed, so they were dropped and the press is a displacement
+ * instead -- see `showButtonState`. The state itself stays, because it is what the pointer handlers decide and what a
+ * probe reads.
  */
-const BUTTON_STATES = ['normal', 'Hover', 'Pressed'] as const;
+const BUTTON_STATES = ['normal', 'Hover'] as const;
 
 type ButtonState = (typeof BUTTON_STATES)[number];
+
+/** The state a button is in, which is one of its pictures plus whether it is being pushed. */
+type ButtonLook = ButtonState | 'Pressed';
 
 /** One button as the menu needs it: its pictures, its box, and which state it is showing. */
 interface MenuButton {
@@ -60,13 +53,17 @@ interface MenuButton {
   /**
    * The width over the height, read from the ART rather than from the loaded texture.
    *
-   * Same reason as `titleHeight`: the first layout runs before the pictures do, and a `Sprite` with no texture reports
-   * no size -- so sizing the box off the sprite would divide by zero and leave a `NaN` rectangle, which never matches
-   * a pointer. The frame size is known from the atlas manifest before anything is decoded, so this is a real number
-   * from the first layout onward.
+   * It is the one thing that still differs between the three: they share a HEIGHT and each is as wide as its own
+   * picture is, because the three stones were drawn with three different plate ratios and the lettering is painted on
+   * the plate -- a shared width would be a shared nothing, and the text would come out three sizes.
+   *
+   * From the ART rather than off the sprite, for the same reason as `titleHeight`: the first layout runs before the
+   * pictures do, and a `Sprite` with no texture reports no size, so sizing the box off the sprite would divide by zero
+   * and leave a `NaN` rectangle, which never matches a pointer. The frame size is known from the atlas manifest before
+   * anything is decoded.
    */
   aspect: number;
-  state: ButtonState;
+  state: ButtonLook;
   rect: { x: number; y: number; w: number; h: number };
 }
 
@@ -109,7 +106,7 @@ export class MainMenu {
     sprite: new Sprite(),
     textures: {},
     aspect: pictureAspect(button.picture),
-    state: 'normal' as ButtonState,
+    state: 'normal' as ButtonLook,
     rect: { x: 0, y: 0, w: 0, h: 0 },
   }));
   /**
@@ -123,36 +120,6 @@ export class MainMenu {
   private readonly title = new Sprite();
   /** The width the title is drawn at, from the last layout. See `titleHeight`. */
   private titleWidth = 0;
-  /**
-   * The shadow the title sits on.
-   *
-   * The glyphs are stone-blue and everything behind them is blue, so at their own brightness they read as part of the
-   * water rather than as the name of the game. This is what lifts them -- and it is in the MENU'S OWN dark rather than
-   * in black, so it reads as the water deepening here rather than as a patch stuck onto it.
-   *
-   * Drawn rather than baked into the picture, and the three reasons point the same way: the numbers are then in the
-   * config, the fade is smooth (the art is a forty-colour pixel picture and a gradient in it would band), and the
-   * artwork stays the artwork.
-   */
-  private readonly titleGlow = new Graphics();
-  private readonly levelLine = mk('', 0xbfe9ff, 15);
-  /**
-   * The level selector: one pill per level, above the start button.
-   *
-   * The larger choice the menu owns -- which water -- and the row doubles as the progress display: cleared
-   * levels are plain, the next one is the only thing that was ever locked.
-   */
-  private readonly levelRow = new Graphics();
-  /**
-   * The line between the level grid and the start button.
-   *
-   * Static now: it names the one thing every run shares -- the base bubble -- where it used to follow a
-   * character select that no longer exists. Its place in the layout is load-bearing (the grid is measured
-   * upward from it), so the line stays even though the choice is gone.
-   */
-  private readonly tagline = mk(BASE_TYPE.tagline, 0x8fd4f0, mech.menu.taglineSize);
-  /** The one control line, for the base bubble's controls. Static for the same reason as the tagline. */
-  private readonly hint = mk('WASD / 方向键移动   ·   右侧按钮：技能（捡到才有）—— 路线等到水里再选', 0x7fb6d4, 12);
   /**
    * Which build this is, at the bottom of the menu.
    *
@@ -174,13 +141,6 @@ export class MainMenu {
   /** Called when the player asks for the codex. */
   onCodex: () => void = () => {};
   /**
-   * Called when the player taps a level that is selectable.
-   *
-   * Only reachable levels fire: a locked pill is not a disabled button that reports a press, it is a thing that does
-   * nothing, because "you cannot play this yet" is already visible from its colour and the note below.
-   */
-  onPickLevel: (levelId: string) => void = () => {};
-  /**
    * Called when the player asks for the settings panel.
    *
    * The menu does not open it: the panel is the game's, its buttons are the game's, and a menu that reached into it
@@ -201,33 +161,19 @@ export class MainMenu {
   pointerHovers = true;
 
   /**
-   * The level row: one pill per level, with its lock state.
-   *
-   * A row rather than the line of text it replaces, because a level is a CHOICE now and a line of text can only say
-   * which one is current. `locked` is carried in the data rather than worked out here: what unlocks what is the
-   * progress store's rule, and the menu should not have a second copy of it.
-   */
-  private levels: readonly MenuLevel[] = [];
-  private levelRects: { x: number; y: number; w: number; h: number }[] = [];
-  private levelLabels: Text[] = [];
-  private selectedLevelId = '';
-  /**
-   * What the line under the level row says, and whether it is the "unlocked!" highlight.
-   *
-   * Set by the game rather than derived, because the two things it reports -- why a level is locked, and that one
-   * just opened -- are both facts only the game has.
-   */
-  private levelNote = '';
-  private levelNoteHighlight = false;
-  /**
-   * Which control the current press landed on, or null.
+   * Which button the current press landed on, or null.
    *
    * One field rather than a boolean per button, so a drag that leaves one button and lands on the other cannot end
-   * up firing both -- which two independent flags would allow. A button is named by its id, and a level pill by
-   * `level:<id>`, because the two are hit-tested differently and only one of them can be armed at a time.
+   * up firing both -- which two independent flags would allow.
    */
-  private pressed: ButtonId | `level:${string}` | null = null;
-  /** Scale from the last real layout, so a redraw without a viewport has the right one. */
+  private pressed: ButtonId | null = null;
+  /**
+   * The design scale from the last layout.
+   *
+   * Needed by `showButtonState` for one thing only: the press drop is a design-pixel number and the offset happens
+   * from a pointer handler, which has no viewport in hand. It was removed when the menu stopped drawing anything and
+   * came back with the press.
+   */
   private scale = 1;
   /**
    * The animated backdrop: creatures swimming, and a coral bed in two layers.
@@ -243,10 +189,8 @@ export class MainMenu {
   constructor() {
     this.root.eventMode = 'none';
     this.screen.eventMode = 'none';
-    this.levelRow.eventMode = 'none';
 
     this.title.eventMode = 'none';
-    this.titleGlow.eventMode = 'none';
     // By its BOTTOM: it is wide, short art, and a picture placed by its centre has to know its own height twice.
     this.title.anchor.set(0.5, 1);
     /**
@@ -285,42 +229,51 @@ export class MainMenu {
      * Display order is draw order, and the backdrop goes FIRST.
      *
      * Everything that should be visible belongs after `backdrop`, so nothing can end up behind the opaque screen.
+     *
+     * The title has no shadow behind it any more: the picture is an arch with its own stone base, coral and moss drawn
+     * into it, so the contrast that the old flat glyphs needed is part of the art now.
      */
     this.root.addChild(
       // The opaque screen first, then the water's contents, then the interface. The backdrop's own root is a
       // container of three layers (coral, swimmers, coral), so it IS the water as far as the menu is concerned.
       this.screen,
       this.backdrop.root,
-      this.titleGlow,
       this.title,
-      this.levelRow,
-      ...this.levelLabels,
-      this.levelLine,
-      this.tagline,
       ...this.buttons.map((button) => button.sprite),
-      this.hint,
       this.versionLine,
     );
   }
 
   /**
-   * Put the current state's picture on the sprite, if that picture has arrived.
+   * Put the current state's picture on the sprite, and put the sprite where that state belongs.
    *
-   * Guarded rather than assumed, because the three pictures land independently: a hover that happens between the
-   * `normal` load and the `Hover` one would otherwise put an empty texture on a visible button.
+   * THE PRESS IS A DISPLACEMENT, not a picture. The art's own pressed state was "a thinner, darker stone", which at
+   * this size read as squashed -- a stone does not get thinner, it goes down. So `Pressed` selects the HOVER picture
+   * (a press is a lit stone being pushed) and offsets the whole sprite by `buttonPressDrop`.
+   *
+   * The whole sprite moves, its own baked-in bottom shadow with it, so it reads as the stone sliding down rather than
+   * being pushed into the ground. That is the honest description of what this does; faking the other reading would take
+   * a scale change as well, and that is a knob nobody has asked for.
+   *
+   * The texture load is guarded rather than assumed, because the pictures land independently: a hover arriving between
+   * the `normal` load and the `Hover` one would otherwise put an empty texture on a visible button. The offset is NOT
+   * guarded -- it has nothing to do with whether the art has arrived.
    */
   private showButtonState(button: MenuButton): void {
-    const texture = button.textures[button.state];
-    if (!texture) return;
-    button.sprite.texture = texture;
-    this.sizeButton(button);
+    const texture = button.textures[button.state === 'Pressed' ? 'Hover' : button.state];
+    if (texture) {
+      button.sprite.texture = texture;
+      this.sizeButton(button);
+    }
+    const drop = button.state === 'Pressed' ? mech.menu.buttonPressDrop * this.scale : 0;
+    button.sprite.y = button.rect.y + button.rect.h / 2 + drop;
   }
 
   /**
    * Give the picture the width the last layout asked for.
    *
    * Called from BOTH ends -- the layout, and each load -- because either can come second, exactly as with the title.
-   * Every state of a button is the same size (that is what the shared crop buys), so a swap does not need a resize;
+   * A button's two states are the same size (they come from the same stated crop), so a swap does not need a resize;
    * this is called anyway so that the two paths cannot drift.
    */
   private sizeButton(button: MenuButton): void {
@@ -352,42 +305,6 @@ export class MainMenu {
     this.title.scale.set(this.titleWidth / texture.width);
   }
 
-  /**
-   * Paint the shadow from the title's current box.
-   *
-   * The gradient is radial and deliberately NOT a plain one. The title is a wide band, so a radial inscribed in a box
-   * `titleGlowScale` times its size would leave the two ENDS of the title outside the dark core -- the corners of the
-   * art sit at 0.95 of that radius, where there is almost no alpha left. `titleGlowSolid` holds the core dark out to
-   * 65% of the radius and fades from there, so the glyphs are backed and all the softness is outside them.
-   *
-   * The rect is drawn around the GRAPHICS' own origin and the graphics is POSITIONED, rather than the rect being drawn
-   * at the title's corner: the fade is symmetric about the title's centre either way, and this way the two agree.
-   */
-  private drawTitleGlow(): void {
-    const cfg = mech.menu;
-    const w = this.titleWidth * cfg.titleGlowScale;
-    const h = this.titleHeight * cfg.titleGlowScale;
-    this.titleGlow.clear();
-    if (w <= 0 || h <= 0) return;
-    this.titleGlow.rect(-w / 2, -h / 2, w, h).fill({
-      fill: new FillGradient({
-        type: 'radial',
-        center: { x: 0.5, y: 0.5 },
-        innerRadius: 0,
-        outerCenter: { x: 0.5, y: 0.5 },
-        outerRadius: 0.5,
-        colorStops: [
-          { offset: 0, color: rgba(cfg.titleGlowColour, cfg.titleGlowAlpha) },
-          { offset: Math.min(0.999, cfg.titleGlowSolid), color: rgba(cfg.titleGlowColour, cfg.titleGlowAlpha) },
-          { offset: 1, color: rgba(cfg.titleGlowColour, 0) },
-        ],
-        textureSpace: 'local',
-      }),
-    });
-    // The title is anchored by its bottom, so its centre is half its height above `title.y`.
-    this.titleGlow.position.set(this.title.x, this.title.y - this.titleHeight / 2);
-  }
-
   layout(viewport: Viewport): void {
     const cfg = mech.menu;
     const s = designScale(viewport.width, viewport.height);
@@ -414,170 +331,71 @@ export class MainMenu {
     // canvas rather than just the lane: the menu is not part of the water.
     this.screen.rect(0, 0, viewport.width, viewport.height).fill({ color: 0x030a17, alpha: 1 });
 
-    /**
-     * The three buttons: one column, one width, each as tall as its own stone is.
-     *
-     * They SHARE A WIDTH because they are one column and three widths would read as three different things. They do
-     * NOT share a height, which is the one place this differs from the drawn buttons it replaces: the art is three
-     * different pictures with three different thicknesses, and forcing one height on them would squash whichever two
-     * are not the middle one -- and a squashed stone reads as a mistake rather than as a button.
-     *
-     * So the box comes from the picture's own aspect, and the stack advances by whatever each one turned out to be.
-     * `buttonsTopRatio` places the TOP of the stack rather than the first button's centre, so the three move together
-     * when the owner retunes it.
-     */
-    const w = Math.min(laneWidth * cfg.buttonWidthRatio, cfg.buttonMaxWidth * s);
-    const top = viewport.height * cfg.buttonsTopRatio;
-    let buttonY = top;
-    for (const button of this.buttons) {
-      const h = w / Math.max(0.01, button.aspect);
-      button.rect = { x: cx - w / 2, y: buttonY, w, h };
-      button.sprite.x = cx;
-      button.sprite.y = buttonY + h / 2;
-      this.sizeButton(button);
-      buttonY += h + cfg.buttonGap * s;
-    }
-    const buttonsBottom = buttonY - cfg.buttonGap * s;
+    this.scale = s;
 
     /**
-     * The tagline, between the level grid and the buttons.
+     * THE THREE BUTTONS: one column, one HEIGHT, each as wide as its own stone is.
      *
-     * It used to be placed after the grid, which meant the anchoring read whatever `y` the previous layout had left
-     * behind -- and on the first layout that is zero, which is why the unlock note ended up at the top of the canvas.
+     * They share a height and not a width, and the reason is the lettering: the three pictures are three independent
+     * drawings with three different plate ratios, and the text is painted ON the plate. Give them a shared width and
+     * the plates come out three heights -- 3.67 : 3.49 : 3.06 means the tallest is 20% taller than the shortest -- and
+     * so does the text. Which is exactly what the owner saw, as "设置's text is bigger than 开始游戏's".
+     *
+     * So the height is the config's, the width is the picture's, and each is CENTRED: the three widths differ by up to
+     * 17%, and a column of centred stones reads as three carved plaques where a column sharing a left edge would read
+     * as a broken layout.
      */
-    this.tagline.style.fontSize = cfg.taglineSize;
-    this.tagline.scale.set(s);
-    this.tagline.anchor.set(0.5, 0.5);
-    this.tagline.x = cx;
-    this.tagline.y = top - cfg.taglineGap * s - cfg.taglineSize * s;
+    const buttonH = cfg.buttonHeight * s;
 
     /**
-     * The level row: the menu's one choice, above the tagline.
+     * THE GROUP IS THE UNIT: the title sitting on the buttons, centred by its own middle.
      *
-     * Placed from the subtitle down rather than from the buttons up, so the top of the menu reads as a stack of
-     * headings: which water, go.
-     */
-    const levelH = cfg.levelRowHeight * s;
-    /**
-     * The top block is placed from the BOTTOM UP, and that is the fix for a second overlap.
+     * Rung by rung: the group's centre comes from `groupCentreRatio`, the group's top is half its height above that,
+     * the buttons start one title-plus-gap below it, and everything above the title is water. There used to be a chain
+     * here -- title, a line of text, and a level grid, each measured off the next -- and deleting those two and the row
+     * deleted the chain with them. One relation is left, and one guard.
      *
-     * The title, subtitle and level grid used to hang from `height * 0.3` and grow downward while the tagline and the
-     * buttons were anchored to the bottom. One row of level pills fitted in the space between; two rows did not, and
-     * the extra row pushed the grid and its note line into the tagline -- which is what the owner saw, on a desktop
-     * window where the menu has less vertical room than a phone.
+     * The anchor is the group's CENTRE rather than the buttons' top edge because the height is a dial: a number pinned
+     * to the top edge stops meaning "centred" the moment the stack changes height, and "centred" is the thing being
+     * asked for. The dial still moves the whole group up and down, which is what it is for.
      *
-     * Placing upward from the tagline means the two halves can never meet: whatever the grid's height is, the heading
-     * above it moves up by the same amount. The only thing that gives is the title's own margin, which is why it is
-     * clamped rather than allowed off the top of the canvas.
-     */
-    /**
-     * AN EMPTY LIST IS NO ROW AT ALL, and the arithmetic has to say so.
+     * The guard is the ceiling, and it pushes the whole group DOWN: the title is anchored to the buttons, so the only
+     * way it can leave the screen is for the group to be too high. That is the right way round, because the buttons are
+     * what the player has to be able to press and the title only has to be readable.
      *
-     * The row reserves its own vertical band, and everything above it is placed upward from the tagline -- so a row
-     * that exists structurally but has nothing in it does not disappear, it leaves the title and the subtitle floating
-     * with a gap where the pills were. The game hands an empty list when the level ladder is off (`debug` decides),
-     * which makes this the difference between "that feature is not here" and "that feature is broken".
-     */
-    const rowShown = this.levels.length > 0;
-    const perRow = Math.max(1, Math.min(this.levels.length, Math.floor(1 / Math.max(0.05, cfg.levelMinWidthRatio))));
-    const rows = rowShown ? Math.max(1, Math.ceil(this.levels.length / perRow)) : 0;
-    const noteLineH = rowShown ? cfg.levelTextSize * s : 0;
-    const noteY = this.tagline.y - (cfg.taglineSize * s) / 2 - cfg.levelRowGap * s * 2 - noteLineH;
-    const gridHeight = rows * levelH + Math.max(0, rows - 1) * cfg.levelRowGap * s;
-    let levelTop = rowShown
-      ? noteY - cfg.levelRowGap * s - gridHeight
-      : this.tagline.y - (cfg.taglineSize * s) / 2 - cfg.levelRowGap * s;
-
-    /**
-     * THE TITLE IS A PICTURE, and the chain that used to place it is one link shorter.
-     *
-     * It was a line of text with a line of English under it, and the two took turns moving each other: the subtitle
-     * anchored to the level row, the title anchored 30*s above the subtitle, the subtitle dropping again if the title
-     * had hit the ceiling, and then the level row dropping if the subtitle had. One picture instead of two lines
-     * leaves one relation and one guard.
-     *
-     * The relation is the title's BOTTOM `levelRowTopGap` above the level row, and the guard is the ceiling: if that
-     * would put the title's top above `36*s`, everything below moves down as one instead of the two overlapping.
-     *
-     * The height comes from the CONFIG's aspect rather than from the sprite, because the layout runs before the art
-     * does -- a `Sprite` with no texture has no size, and dividing by it would be a division by zero.
+     * The title's height comes from the CONFIG's aspect rather than from the sprite, because the layout runs before
+     * the art does -- a `Sprite` with no texture has no size, and dividing by it would be a division by zero. That is
+     * also why `titleWidth` is set before the group is measured: it is one stack, and it is measured as one.
      */
     this.titleWidth = laneWidth * cfg.titleWidthRatio;
     this.applyTitleSize();
+    const rowStep = buttonH + cfg.buttonGap * s;
+    const buttonsH = this.buttons.length * buttonH + Math.max(0, this.buttons.length - 1) * cfg.buttonGap * s;
+    const groupH = this.titleHeight + cfg.titleButtonGap * s + buttonsH;
     const ceiling = 36 * s;
-    levelTop = Math.max(levelTop, ceiling + this.titleHeight + cfg.levelRowTopGap * s);
+    const groupTop = Math.max(viewport.height * cfg.groupCentreRatio - groupH / 2, ceiling);
+
+    let buttonY = groupTop + this.titleHeight + cfg.titleButtonGap * s;
+    for (const button of this.buttons) {
+      const bw = buttonH * Math.max(0.01, button.aspect);
+      button.rect = { x: cx - bw / 2, y: buttonY, w: bw, h: buttonH };
+      button.sprite.x = cx;
+      // Through `showButtonState` rather than by setting `y` here, so the place that knows about the press offset is
+      // the only place that sets a sprite's position.
+      this.showButtonState(button);
+      buttonY += rowStep;
+    }
+
     this.title.x = cx;
-    this.title.y = levelTop - cfg.levelRowTopGap * s;
-    this.drawTitleGlow();
-    /**
-     * The level pills WRAP, and that is a fix rather than a nicety.
-     *
-     * They used to be one row of equal shares: with three levels that reads fine, and with six -- one per level the
-     * game now has -- every pill became a third of its own name's width and the names drew on top of each other. The
-     * row is a CHOICE, so the labels have to be readable; a pill nobody can read is not a choice.
-     *
-     * So: as many per row as fit at `levelMinWidthRatio` of the menu, then the next row below, each row centred. The
-     * bottom of the stack does not move because it is anchored to the buttons -- the grid grows DOWNWARD from the
-     * subtitle, which is the direction the rest of the menu's headings already read.
-     */
-    const rowStep = levelH + cfg.levelRowGap * s;
-    // One row's worth of pills is at most this wide, so two levels on a desktop do not become two enormous bars.
-    const maxRowW = Math.min(w, perRow * w * cfg.levelMaxWidthRatio);
-    this.levelRects = this.levels.map((_, i) => {
-      const row = Math.floor(i / perRow);
-      const inRow = Math.min(perRow, this.levels.length - row * perRow);
-      const rowW = Math.min(maxRowW, inRow * w * cfg.levelMaxWidthRatio);
-      const slot = rowW / inRow;
-      const col = i - row * perRow;
-      return { x: cx - rowW / 2 + col * slot, y: levelTop + row * rowStep, w: slot, h: levelH };
-    });
-    this.placeLevelLabels();
-
-    this.levelLine.scale.set(s);
-    this.levelLine.anchor.set(0.5, 0.5);
-    this.levelLine.text = this.levelNote;
-    this.levelLine.style.fill = this.levelNoteHighlight ? cfg.levelUnlockColour : cfg.levelNoteColour;
-    this.levelLine.x = cx;
-    // One gap below the LAST row of pills -- the same line the top block was measured upward from, so the two cannot disagree.
-    this.levelLine.y = noteY;
-
-
-    this.hint.scale.set(s);
-    this.hint.anchor.set(0.5, 0.5);
-    this.hint.x = cx;
-    this.hint.y = buttonsBottom + 30 * s;
+    this.title.y = groupTop + this.titleHeight;
 
     this.versionLine.scale.set(s);
     this.versionLine.anchor.set(0.5, 1);
     this.versionLine.text = buildLabel();
     this.versionLine.x = cx;
-    // Pinned to the bottom edge rather than to the buttons, so a long build label cannot collide with the hint.
+    // Pinned to the bottom edge rather than to the buttons: it is reference, not part of the stack, and a long build
+    // label must not be able to push anything around.
     this.versionLine.y = viewport.height - 14 * s;
-
-    this.draw(s);
-  }
-
-  /**
-   * Put each level label in its pill.
-   *
-   * `layout` calls this, and so does `setLevels`. That second call is the point: a list handed in is rebuilt from
-   * scratch (the NUMBER of buttons is part of the layout), and a label that has just been created sits at the origin
-   * -- which put the names of the levels in the top-left corner of the canvas with the pills left blank until the
-   * next resize. Placement belongs with the rebuild, not only with a resize.
-   *
-   * The rects come from the last real layout, so a rebuild before the first one places nothing and the layout that
-   * follows does it. `this.scale` is that layout's scale, for the same reason `update` uses it.
-   */
-  private placeLevelLabels(): void {
-    for (const [i, label] of this.levelLabels.entries()) {
-      const rect = this.levelRects[i];
-      if (!rect) continue;
-      label.style.fontSize = mech.menu.levelTextSize;
-      label.scale.set(this.scale);
-      label.anchor.set(0.5, 0.5);
-      label.x = rect.x + rect.w / 2;
-      label.y = rect.y + rect.h / 2;
-    }
   }
 
   /**
@@ -643,117 +461,17 @@ export class MainMenu {
     }
   }
 
-  /**
-   * Repaint the SHAPES.
-   *
-   * The buttons are not here any more, and that is the whole change: a stone button is a picture, and a picture is not
-   * repainted -- it is swapped, in `showButtonState`. What is left is the level row, which has no art and so is still
-   * drawn, and the pulse the primary button used to breathe is gone with it. A button carved out of stone does not
-   * pulse; the art is what says it is a button now.
-   */
-  private draw(s: number): void {
-    const cfg = mech.menu;
-
-    this.levelRow.clear();
-    for (const [i, rect] of this.levelRects.entries()) {
-      const level = this.levels[i];
-      if (!level) continue;
-      const r = cfg.levelRadius * s;
-      /**
-       * TWO states, and no lock icon: selected is filled, everything else is outlined.
-       *
-       * There used to be a third -- locked, drawn darker with a dim stroke -- and it went when the ladder became a
-       * debug affordance that shows every level as reachable. `MenuLevel.locked` is still computed and still reported,
-       * because the unlock RULE is still real and still written to the save; there is just nothing on this row that
-       * could be locked, so a state for it would be a branch nothing can reach.
-       */
-      const fill = level.selected ? cfg.levelSelectedFill : cfg.levelIdleFill;
-      const stroke = level.selected ? cfg.levelSelectedStroke : cfg.levelIdleStroke;
-      this.levelRow
-        .roundRect(rect.x, rect.y, rect.w, rect.h, r)
-        .fill({ color: fill, alpha: 0.95 })
-        .stroke({ color: stroke, alpha: level.selected ? 1 : 0.7, width: Math.max(1, 1.2 * s) });
-    }
-
-    for (const [i, label] of this.levelLabels.entries()) {
-      const level = this.levels[i];
-      if (!level) continue;
-      const want = level.selected ? cfg.levelSelectedTextColour : cfg.levelIdleTextColour;
-      if (label.style.fill !== want) label.style.fill = want;
-    }
-  }
-
   private inRect(rect: { x: number; y: number; w: number; h: number }, x: number, y: number): boolean {
     return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
   }
 
-  /**
-   * Hand the menu the levels to offer, with their lock state.
-   *
-   * The list comes from the progress store rather than from `LEVELS` directly, so the menu never has to know the
-   * unlock rule -- and a probe can hand it any list to check the row re-lays out. Rebuilds the labels because the
-   * number of pills is part of the layout.
-   */
-  setLevels(levels: readonly MenuLevel[]): void {
-    this.levels = levels;
-    for (const label of this.levelLabels) {
-      this.root.removeChild(label);
-      label.destroy();
-    }
-    this.levelLabels.length = 0;
-    for (const level of levels) {
-      const label = mk(level.name, mech.menu.levelIdleTextColour, mech.menu.levelTextSize);
-      label.eventMode = 'none';
-      this.levelLabels.push(label);
-      this.root.addChild(label);
-    }
-    if (!levels.some((l) => l.id === this.selectedLevelId)) {
-      this.selectedLevelId = levels.find((l) => !l.locked)?.id ?? '';
-    }
-    // The rebuilt labels start at the origin; put them back in their pills. This is the path a level PICK takes,
-    // so without it the names of the levels jumped to the top-left corner of the canvas and the pills went blank.
-    this.placeLevelLabels();
-    this.draw(this.scale);
-  }
-
-  /**
-   * Set the line under the level row.
-   *
-   * The game owns both texts: why a level is locked ("通关 X 之后解锁") and what has just opened, because both are
-   * facts about progress rather than about the menu.
-   */
-  setLevelNote(text: string, highlight = false): void {
-    this.levelNote = text;
-    this.levelNoteHighlight = highlight;
-    this.draw(this.scale);
-  }
-
-  /** Test hook and game hook: which level the start button would begin a run on. */
-  get selectedLevelIdValue(): string {
-    return this.selectedLevelId;
-  }
-
   handlePointerDown(x: number, y: number): boolean {
-    const button = this.buttonAt(x, y);
-    if (button) this.pressed = button.id;
-    else {
-      const hitLevel = this.levelRects.findIndex((rect) => this.inRect(rect, x, y));
-      const level = hitLevel >= 0 ? this.levels[hitLevel] : undefined;
-      // A LOCKED pill does not even arm: not firing on release is the whole behaviour, and arming it would make the
-      // press look accepted while nothing happened.
-      if (level && !level.locked) this.pressed = `level:${level.id}`;
-      else this.pressed = null;
-    }
+    this.pressed = this.buttonAt(x, y)?.id ?? null;
     this.showPointerState(x, y);
     return true;
   }
 
   handlePointerMove(x: number, y: number): boolean {
-    if (this.pressed?.startsWith('level:')) {
-      const hit = this.levelRects.findIndex((rect) => this.inRect(rect, x, y));
-      const level = hit >= 0 ? this.levels[hit] : undefined;
-      if (!level || `level:${level.id}` !== this.pressed) this.pressed = null;
-    }
     this.showPointerState(x, y);
     return true;
   }
@@ -770,11 +488,6 @@ export class MainMenu {
       else if (button.id === 'codex') this.onCodex();
       else this.onSettings();
       return true;
-    }
-    if (fire?.startsWith('level:')) {
-      const hit = this.levelRects.findIndex((rect) => this.inRect(rect, x, y));
-      const level = hit >= 0 ? this.levels[hit] : undefined;
-      if (level && !level.locked) this.onPickLevel(level.id);
     }
     this.showPointerState(x, y);
     return true;
@@ -802,7 +515,7 @@ export class MainMenu {
   private showPointerState(x: number, y: number): void {
     for (const button of this.buttons) {
       const over = this.inRect(button.rect, x, y);
-      const want: ButtonState =
+      const want: ButtonLook =
         over && this.pressed === button.id ? 'Pressed' : over && this.pointerHovers ? 'Hover' : 'normal';
       if (button.state === want) continue;
       button.state = want;
@@ -813,25 +526,21 @@ export class MainMenu {
   /**
    * Test hook: every control, so a probe presses the real ones.
    *
-   * `levels` carries the label as well as the rectangle, so a test can assert that the menu is offering what the
-   * game actually has -- a mismatch there is a level nobody can choose.
-   *
    * The three buttons are named for what they DO while the probe-facing key for the first one is still `button`, which
    * is the name the driver's `menu` command clicks. Renaming it to `start` would be tidier and would silently break
    * the one caller that presses a real button in a real browser, which is not a trade worth making for symmetry.
    *
    * `state` comes along, because for a picture button the state IS the observable: nothing else on this row changes
    * when the pointer arrives.
+   *
+   * The LEVEL ROW is no longer here: it moved into the settings panel, so `settingsRef.geometry.levels` is where a test
+   * looks for it now.
    */
   get geometry(): {
     button: { x: number; y: number; w: number; h: number };
     codex: { x: number; y: number; w: number; h: number };
     settings: { x: number; y: number; w: number; h: number };
     states: Record<ButtonId, ButtonState>;
-    levels: { id: string; label: string; locked: boolean; selected: boolean; rect: { x: number; y: number; w: number; h: number } }[];
-    levelNote: string;
-    tagline: string;
-    hint: string;
   } {
     const [startButton, codexButton, settingsButton] = this.buttons;
     const rectOf = (button: MenuButton | undefined) => ({ ...(button?.rect ?? { x: 0, y: 0, w: 0, h: 0 }) });
@@ -840,16 +549,6 @@ export class MainMenu {
       codex: rectOf(codexButton),
       settings: rectOf(settingsButton),
       states: Object.fromEntries(this.buttons.map((button) => [button.id, button.state])) as Record<ButtonId, ButtonState>,
-      levels: this.levels.map((level, i) => ({
-        id: level.id,
-        label: level.name,
-        locked: level.locked,
-        selected: level.selected,
-        rect: { ...(this.levelRects[i] ?? { x: 0, y: 0, w: 0, h: 0 }) },
-      })),
-      levelNote: this.levelLine.text,
-      tagline: this.tagline.text,
-      hint: this.hint.text,
     };
   }
 

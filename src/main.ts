@@ -421,17 +421,20 @@ class Game {
      */
     this.menu.onSettings = () => this.openSettings();
     /**
-     * Picking a level, which the menu only offers for levels that are reachable.
+     * Picking a level, which the panel only offers for levels that are reachable.
      *
-     * The menu does not know the unlock rule -- it is handed the list and reports a press -- so the decision is made
-     * here, by the store, and the menu is handed the result. `refreshLevelMenu` is what puts the new selection and the
-     * note back on screen.
+     * The panel does not know the unlock rule -- it is handed the list and reports a press -- so the decision is made
+     * here, by the store, and the panel is handed the result. `refreshLevelMenu` is what puts the new selection back on
+     * screen.
+     *
+     * It is the PANEL's callback now rather than the menu's, because that is where the row is. The rule did not move
+     * with it: a level is still chosen by the progress store and still only takes effect on the next run.
      */
-    this.menu.onPickLevel = (levelId) => {
+    this.settings.onPickLevel = (levelId) => {
       /**
        * The row is the debug ladder, so every pill on it is reachable and `select` can only refuse an id that does not
        * exist. There is no "not unlocked yet" note any more: the ladder does not draw locks, and a note explaining one
-       * would be the menu describing a state nobody can see.
+       * would be the panel describing a state nobody can see.
        */
       this.run.progress.select(levelId);
       this.refreshLevelMenu();
@@ -2792,19 +2795,20 @@ class Game {
    *
    * With it on every level is selectable, `locked` and all: the unlock rule is still computed and still written to the
    * save, it just has no say in what can be clicked while the tool is up. The row deliberately does NOT mark which
-   * levels are cleared -- see the note in `src/menu.ts` -- because a row that is only ever a jump-to menu does not need
-   * to double as a progress display.
+   * levels are cleared -- see the note in `src/settings.ts` -- because a row that is only ever a jump-to menu does not
+   * need to double as a progress display.
    *
-   * The note under the row goes with it: it exists to explain a lock, and there are no locks.
+   * The row lives in the SETTINGS PANEL now rather than on the menu, so this hands the list to `SettingsUi`. That also
+   * means it can be called while the panel is open -- it is, every time the debug switch in it is flipped -- which is
+   * why `setLevels` lays the panel out again rather than only drawing again: the number of ROWS is part of the panel's
+   * height, and the switch that changes it is inside the thing being resized.
    */
   private refreshLevelMenu(): void {
     if (!isDebugHitboxes()) {
-      this.menu.setLevels([]);
-      this.menu.setLevelNote('');
+      this.settings.setLevels([]);
       return;
     }
-    this.menu.setLevels(this.run.progress.entries().map((l) => ({ ...l, locked: false })));
-    this.menu.setLevelNote('');
+    this.settings.setLevels(this.run.progress.entries().map((l) => ({ ...l, locked: false })));
   }
 
   /**

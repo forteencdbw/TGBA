@@ -31,6 +31,21 @@ interface Button {
   pressed: boolean;
 }
 
+/**
+ * One level as the settings panel needs it: what to draw, and whether it can be played.
+ *
+ * The lock state is GIVEN to the panel rather than worked out by it, because what unlocks what belongs to the progress
+ * store. A panel that knew the rule would be a second place to change it, and the two would eventually disagree.
+ *
+ * It lives here now rather than on the menu because the row does. It was `MenuLevel` in `src/menu.ts`.
+ */
+export interface LevelPill {
+  id: string;
+  name: string;
+  locked: boolean;
+  selected: boolean;
+}
+
 export class SettingsUi {
   readonly root = new Container();
   private readonly gear = new Graphics();
@@ -95,6 +110,34 @@ export class SettingsUi {
    * the panel's own state.
    */
   private lastViewport: Viewport | null = null;
+
+  /**
+   * The level row: one pill per level, with its lock state.
+   *
+   * IT MOVED HERE from the main menu, and the move is the whole of its reason: it is the DEBUG ladder -- the game hands
+   * it an empty list unless the debug switch is on -- and the switch that turns it on is the row directly above it. A
+   * row that only ever appears on the screen that owns its switch is easier to reason about than one two screens away.
+   *
+   * It replaced `MenuLevel`, `setLevels`, `setLevelNote`, `onPickLevel` and the whole drawn row on `MainMenu`; those
+   * are gone rather than duplicated. What is NOT gone is the gating rule, which lives in the game: the list is empty
+   * unless debug is on, and `inRun` decides the rest -- see `levelRowShown`.
+   */
+  private levels: readonly LevelPill[] = [];
+  private levelRects: { x: number; y: number; w: number; h: number }[] = [];
+  private levelLabels: Text[] = [];
+  private selectedLevelId = '';
+  /**
+   * Which pill the current press landed on, or null.
+   *
+   * An INDEX rather than a reference, because the list can be rebuilt under a press -- `setLevels` is called every time
+   * the debug switch flips or a level is picked. An index that no longer exists simply reads as `undefined` and the
+   * release does nothing, where a remembered label would have to be checked for destruction.
+   */
+  private pressedPill = -1;
+  private readonly levelRow = new Graphics();
+
+  /** Called when the player taps a level that is selectable. */
+  onPickLevel: (levelId: string) => void = () => {};
 
   /** Called when the slider moves, with 0..1. The game applies it to the audio immediately. */
   onVolume: (volume: number) => void = () => {};
@@ -163,6 +206,7 @@ export class SettingsUi {
     this.sliderTrack.eventMode = 'none';
     this.sliderFill.eventMode = 'none';
     this.sliderKnob.eventMode = 'none';
+    this.levelRow.eventMode = 'none';
 
     this.title = mkText('设置 / SETTINGS', 0xeaf9ff, 22);
     this.volumeLabel = mkText('', 0xbfe9ff, 15);
@@ -198,6 +242,7 @@ export class SettingsUi {
 
     this.panel.addChild(
       this.panelBg,
+      this.levelRow,
       this.title,
       this.volumeLabel,
       this.sliderTrack,
@@ -228,7 +273,6 @@ export class SettingsUi {
     this.root.addChild(this.scrim, this.gear, this.panel);
     this.setOpen(false);
   }
-
   /** Build a button and wire its own press handling through the shared callback. */
   private mkButton(label: string, onPress: () => void): Button {
     const bg = new Graphics();
@@ -412,24 +456,56 @@ export class SettingsUi {
     };
 
     /**
-     * The rows under the cheats heading: the debug toggle, then the run's own two controls.
+     * The rows under the `作弊 / CHEATS` heading, in the order they are stacked: the cheat itself, the debug toggle,
+     * and then the run's own two controls.
+     *
+     * THE CHEAT IS IN THE LIST, and forgetting it is what this list exists to prevent: it used to be placed by its own
+     * hard-coded offset while the rest came from a loop, so the loop's first row landed on top of it and the infinite
+     * health switch disappeared under the debug toggle. One list is one place to be wrong.
      *
      * 重开本关 and 退出到主菜单 are the RUN's. There is no level to restart and no menu to exit to when the panel was
      * opened FROM the menu, which is the one thing `setInRun` decides -- so they are the two rows that come and go.
      */
-    const lowerRows = this.inRun ? [this.debugButton, this.restartButton, this.exitButton] : [this.debugButton];
+    const lowerRows = this.inRun
+      ? [this.cheatButton, this.debugButton, this.restartButton, this.exitButton]
+      : [this.cheatButton, this.debugButton];
+
+    /**
+     * The level block, and its height in DESIGN PIXELS -- which is the same unit as `ROW` above.
+     *
+     * It is the one row on this panel whose height is not fixed: it is a GRID, and how many rows it has depends on how
+     * many levels the game handed over. So it is measured here, before the panel's height is worked out, from the very
+     * same numbers that are about to place it.
+     *
+     * Zero when the list is empty, which is the ordinary case: the game hands an empty list unless the debug switch is
+     * on, and `showsLevelRow` is false in a run.
+     */
+    const levelCfg = mech.settings.levels;
+    const levelRows = this.showsLevelRow ? Math.ceil(this.levels.length / Math.max(1, levelCfg.perRow)) : 0;
+    const levelBlock = levelRows > 0 ? levelRows * levelCfg.rowHeight + (levelRows - 1) * levelCfg.rowGap : 0;
+    /**
+     * And it sits AFTER the toggle rows rather than between them, which is only possible because the level row and
+     * restart/exit never appear together: the row is offered to a panel opened from the menu and the other two to one
+     * opened during a run, so the stack is either `cheat, debug, restart, exit` or `cheat, debug, pills`. Putting it
+     * last keeps the height and the placement a single list to walk.
+     */
+    const stackBottom =
+      ROW.cheatsRow +
+      (ROW.rowHeight + ROW.rowGap) * (lowerRows.length - 1) +
+      ROW.rowHeight +
+      (levelBlock > 0 ? levelBlock + ROW.rowGap : 0);
 
     /**
      * The panel is as tall as its row stack needs and no taller.
      *
-     * The height is COMPUTED from the same rows that are about to be placed, rather than being the flat `522` it used
-     * to be capped at. A cap and a stack written out as two separate numbers are two numbers that can disagree, and
-     * they did: 522 was 52px more than the three rows it was sized for, which nobody noticed while the extra space was
-     * below the last row -- and `setInRun` removes two rows, at which point a flat height is a hole in the panel.
+     * The height is COMPUTED from the same rows that were just placed, rather than being the flat `522` it used to be
+     * capped at. A cap and a stack written out as two separate numbers are two numbers that can disagree -- and 522 is
+     * exactly what this arithmetic produces for the four rows it was sized for, which is how you can tell it is the
+     * right arithmetic. With two rows removed and a two-row pill grid added it produces something else, and it has to:
+     * `setInRun` and `setLevels` both change how many rows there are while the panel is on screen.
      *
      * `viewport.height * 0.66` is still the cap, so a short screen gets a panel that fits on it at all.
      */
-    const stackBottom = ROW.cheatsRow + (ROW.rowHeight + ROW.rowGap) * (lowerRows.length - 1) + ROW.rowHeight;
     const h = Math.min(viewport.height * 0.66, (stackBottom + ROW.rowGap + ROW.rowHeight + 24) * s);
     this.panelRect = {
       x: (viewport.width - w) / 2,
@@ -476,18 +552,27 @@ export class SettingsUi {
     this.cheatLabel.anchor.set(0, 0.5);
     this.cheatLabel.x = this.panelRect.x + 24 * s;
     this.cheatLabel.y = this.panelRect.y + ROW.cheatsLabel * s;
-    this.place(this.cheatButton, rowX, this.panelRect.y + ROW.cheatsRow * s, rowW, rowH, s);
     /**
      * The rows under the cheats heading, placed by the same list the height was computed from.
      *
-     * A loop rather than three hard-coded offsets, because the offsets and the height have to agree and the way to make
-     * them agree is to have one number for both. Restart and exit are simply not in the list when the panel was opened
-     * from the menu, so they are not placed and the panel is shorter by exactly their two rows.
+     * A loop rather than hard-coded offsets, because the offsets and the height have to agree and the way to make them
+     * agree is to have one number for both. Restart and exit are simply not in the list when the panel was opened from
+     * the menu, so they are not placed and the panel is shorter by exactly their two rows.
      */
     const rowStep = rowH + ROW.rowGap * s;
-    lowerRows.forEach((button, i) => {
-      this.place(button, rowX, this.panelRect.y + ROW.cheatsRow * s + rowStep * i, rowW, rowH, s);
+    let nextRowY = this.panelRect.y + ROW.cheatsRow * s;
+    lowerRows.forEach((button) => {
+      this.place(button, rowX, nextRowY, rowW, rowH, s);
+      nextRowY += rowStep;
     });
+    /**
+     * And the level block, below the last toggle row and below nothing else.
+     *
+     * Its own placement rather than a `place()` call, because it is a grid of N pills and not one rectangle. It is
+     * handed the row's own left edge and width, so the pills line up with the toggle above them -- which is the whole
+     * reason the panel computes `rowW` once.
+     */
+    if (levelRows > 0) this.placeLevelRow(rowX, nextRowY, rowW, levelCfg, s);
 
     const gap = 12 * s;
     const halfW = (rowW - gap) / 2;
@@ -497,6 +582,100 @@ export class SettingsUi {
 
     this.buildStatic();
     this.redraw();
+  }
+
+  /**
+   * Lay the level pills out in a centred grid, each row at most `maxRowWidthRatio` of the available width.
+   *
+   * The wrap is the same rule the main menu used and for the same reason: they were one row of equal shares, and with
+   * six levels every pill became a third of its own name's width and the names drew on top of each other. A pill nobody
+   * can read is not a choice.
+   *
+   * A row that is not full is CENTRED and its pills keep the full-row slot width -- so a lone last pill is not stretched
+   * into a bar three times the width of the ones above it, which is what `rowW_here / inRow` would do on its own.
+   */
+  private placeLevelRow(x: number, y: number, availableW: number, cfg: typeof mech.settings.levels, s: number): void {
+    const perRow = Math.max(1, Math.floor(cfg.perRow));
+    const slotW = availableW / perRow;
+    const maxRowW = Math.min(availableW, availableW * cfg.maxRowWidthRatio);
+    const rowH = cfg.rowHeight * s;
+    const rowStep = rowH + cfg.rowGap * s;
+    this.levelRects = this.levels.map((_, i) => {
+      const row = Math.floor(i / perRow);
+      const inRow = Math.min(perRow, this.levels.length - row * perRow);
+      const rowW = Math.min(maxRowW, inRow * slotW);
+      const slot = rowW / inRow;
+      const col = i - row * perRow;
+      return { x: x + (availableW - rowW) / 2 + col * slot, y: y + row * rowStep, w: slot, h: rowH };
+    });
+    this.placeLevelLabels(cfg, s);
+  }
+
+  /**
+   * Put each pill's name in its pill.
+   *
+   * Called from the placement above AND from `setLevels`. Both are needed: a rebuilt list has labels sitting at the
+   * origin, and a resize has pills with no names in them yet. The rects come from the last real layout, so a rebuild
+   * before the first one places nothing and the layout that follows does it.
+   */
+  private placeLevelLabels(cfg: typeof mech.settings.levels, s: number): void {
+    for (const [i, label] of this.levelLabels.entries()) {
+      const rect = this.levelRects[i];
+      if (!rect) continue;
+      label.style.fontSize = cfg.textSize;
+      label.scale.set(s);
+      label.anchor.set(0.5, 0.5);
+      label.x = rect.x + rect.w / 2;
+      label.y = rect.y + rect.h / 2;
+    }
+  }
+
+  /**
+   * Whether the level row is on the panel right now.
+   *
+   * Two conditions, and both matter. An empty list is "the ladder is off" -- the game hands one unless the debug switch
+   * is on -- and `inRun` is "a level has already been chosen and is being played": picking one here would change what
+   * the NEXT run starts at, with nothing on screen to say so. `setInRun` is what decides the second, and this is the
+   * only thing that reads it besides the restart/exit rows.
+   */
+  private get showsLevelRow(): boolean {
+    return !this.inRun && this.levels.length > 0;
+  }
+
+  /**
+   * Hand the panel the levels to offer, with their lock state.
+   *
+   * The list comes from the progress store rather than from `LEVELS` directly, so the panel never has to know the
+   * unlock rule -- and a probe can hand it any list to check the row re-lays out. Rebuilds the labels because the
+   * number of pills is part of the layout, and lays the panel out again because the number of ROWS is part of the
+   * panel's HEIGHT: a list that arrives while the panel is open is a different-sized panel, not a different drawing on
+   * the same one.
+   */
+  setLevels(levels: readonly LevelPill[]): void {
+    this.levels = levels;
+    for (const label of this.levelLabels) {
+      this.panel.removeChild(label);
+      label.destroy();
+    }
+    this.levelLabels.length = 0;
+    for (const level of levels) {
+      const label = mkText(level.name, mech.settings.levels.idleTextColour, mech.settings.levels.textSize);
+      label.eventMode = 'none';
+      this.levelLabels.push(label);
+      this.panel.addChild(label);
+    }
+    if (!levels.some((level) => level.id === this.selectedLevelId)) {
+      this.selectedLevelId = levels.find((level) => !level.locked)?.id ?? '';
+    }
+    this.levelRects = [];
+    this.placeLevelLabels(mech.settings.levels, this.scale);
+    if (this.lastViewport) this.layout(this.lastViewport);
+    else this.redraw();
+  }
+
+  /** Test hook and game hook: which level the run would start at. */
+  get selectedLevelIdValue(): string {
+    return this.selectedLevelId;
   }
 
   /** Position a button and size its background to match. */
@@ -589,6 +768,40 @@ export class SettingsUi {
           alpha: 0.95,
         })
         .stroke({ color: b.pressed ? 0x9fe4ff : danger ? 0xd88a9a : 0x5fa8cc, alpha: 0.7, width: 1.2 * s });
+    }
+
+    this.drawLevelRow(s);
+  }
+
+  /**
+   * Paint the level pills, and colour their names.
+   *
+   * Here rather than in `buildStatic` because it is the DYNAMIC half: the rectangles are the layout's, but which pill
+   * looks selected changes the moment one is tapped, and this is the method a pointer handler can call without a
+   * viewport in hand.
+   *
+   * TWO states, and no lock icon: selected is filled, everything else is outlined. There used to be a third -- locked,
+   * drawn darker with a dim stroke -- and it went when the ladder became a debug affordance that shows every level as
+   * reachable. `LevelPill.locked` is still computed and still carried, because the unlock RULE is still real and still
+   * written to the save; there is just nothing on this row that could be locked, so a state for it would be a branch
+   * nothing can reach.
+   */
+  private drawLevelRow(s: number): void {
+    const cfg = mech.settings.levels;
+    this.levelRow.clear();
+    for (const [i, rect] of this.levelRects.entries()) {
+      const level = this.levels[i];
+      if (!level) continue;
+      this.levelRow
+        .roundRect(rect.x, rect.y, rect.w, rect.h, cfg.radius * s)
+        .fill({ color: level.selected ? cfg.selectedFill : cfg.idleFill, alpha: 0.95 })
+        .stroke({ color: level.selected ? cfg.selectedStroke : cfg.idleStroke, alpha: level.selected ? 1 : 0.7, width: Math.max(1, 1.2 * s) });
+    }
+    for (const [i, label] of this.levelLabels.entries()) {
+      const level = this.levels[i];
+      if (!level) continue;
+      const want = level.selected ? cfg.selectedTextColour : cfg.idleTextColour;
+      if (label.style.fill !== want) label.style.fill = want;
     }
   }
 
@@ -690,6 +903,16 @@ export class SettingsUi {
     for (const b of this.buttons()) {
       if (this.inRect(x, y, b)) b.pressed = true;
     }
+    /**
+     * The level pills, which are not in `buttons()` because they are a LIST rather than a fixed set -- and because a
+     * locked one must not arm. A pill that cannot be picked is not a disabled button that reports a press; it is a
+     * thing that does nothing, which is what "you cannot play this yet" already looks like.
+     */
+    this.pressedPill = -1;
+    if (this.showsLevelRow) {
+      const hit = this.levelRects.findIndex((rect) => this.inRect(x, y, rect));
+      if (hit >= 0 && !this.levels[hit]?.locked) this.pressedPill = hit;
+    }
     if (this.inRect(x, y, { x: this.slider.x - 14, y: this.slider.y - 20, w: this.slider.w + 28, h: 40 })) {
       this.sliderPointer = pointerId;
       this.moveSlider(x);
@@ -704,6 +927,10 @@ export class SettingsUi {
     for (const b of this.buttons()) {
       if (b.pressed && !this.inRect(x, y, b)) b.pressed = false;
     }
+    // And a pill, the same way -- a finger that slid off a level has changed its mind about which water.
+    if (this.pressedPill >= 0 && !this.inRect(x, y, this.levelRects[this.pressedPill] ?? { x: 0, y: 0, w: 0, h: 0 })) {
+      this.pressedPill = -1;
+    }
     if (this.sliderPointer === pointerId) this.moveSlider(x);
     this.draw(1);
     return true;
@@ -717,6 +944,19 @@ export class SettingsUi {
       b.pressed = false;
       // Fire only if the release is still inside: a finger that slid away has changed its mind.
       if (wasPressed && this.inRect(x, y, b)) this.onPressOf(b)();
+    }
+    /**
+     * The pill, fired the same way and for the same reason: only if the release is still over it.
+     *
+     * The rectangle is looked up AGAIN rather than remembered with the index, because a rebuild between the press and
+     * the release would have left the old index pointing at a pill that has since moved.
+     */
+    const pill = this.pressedPill;
+    this.pressedPill = -1;
+    if (pill >= 0 && this.showsLevelRow) {
+      const rect = this.levelRects[pill];
+      const level = this.levels[pill];
+      if (rect && level && this.inRect(x, y, rect)) this.onPickLevel(level.id);
     }
     this.draw(1);
     return true;
@@ -743,6 +983,8 @@ export class SettingsUi {
      * no restart button on the screen. This is the flag that says which reading is true.
      */
     inRun: boolean;
+    /** The level row as offered, with its label -- the same shape the main menu used to report. */
+    levels: { id: string; label: string; locked: boolean; selected: boolean; rect: { x: number; y: number; w: number; h: number } }[];
     buttons: Record<string, { x: number; y: number; w: number; h: number }>;
   } {
     return {
@@ -750,8 +992,18 @@ export class SettingsUi {
       panel: { ...this.panelRect },
       slider: { ...this.slider },
       inRun: this.inRun,
+      levels: this.levels.map((level, i) => ({
+        id: level.id,
+        label: level.name,
+        locked: level.locked,
+        selected: level.selected,
+        rect: { ...(this.levelRects[i] ?? { x: 0, y: 0, w: 0, h: 0 }) },
+      })),
       buttons: {
         close: rectOf(this.closeButton),
+        flash: rectOf(this.flashButton),
+        cheat: rectOf(this.cheatButton),
+        debug: rectOf(this.debugButton),
         restart: rectOf(this.restartButton),
         exit: rectOf(this.exitButton),
         save: rectOf(this.saveButton),

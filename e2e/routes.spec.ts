@@ -32,15 +32,18 @@ const menuGeometry = (page: Page) =>
             geometry: {
               button: Rect;
               codex: Rect;
+              settings: Rect;
+            };
+          };
+          settingsRef: {
+            geometry: {
               levels: { id: string; label: string; locked: boolean; selected: boolean; rect: Rect }[];
-              tagline: string;
-              hint: string;
             };
           };
         };
       };
     }).__GB.game;
-    return g.menuRef.geometry;
+    return { ...g.menuRef.geometry, levels: g.settingsRef.geometry.levels };
   });
 
 /** Press the centre of a canvas rectangle through the stage-level path a finger takes. */
@@ -96,12 +99,14 @@ test.describe('routes', () => {
     const offered = await menuGeometry(page);
 
     /**
-     * The menu decides ONE thing now -- which water -- and its geometry says so: a levels row, no types row.
-     * A character select that had stopped agreeing with the game would show up here as a row nobody reads.
+     * The menu decides ONE thing now -- which water -- and its geometry says so. That row has MOVED: it lives in the
+     * settings panel, because it is the debug ladder and the switch that turns it on is in there.
+     *
+     * What is asserted is unchanged in substance: the game offers levels to choose between, and the menu offers no
+     * character select. The two lines that read the tagline and the hint are GONE, not moved: both were deleted from
+     * the menu, and asserting on the absence of text that does not exist is not a test.
      */
-    expect(offered.levels.length, 'the menu offers the levels to choose between').toBeGreaterThan(0);
-    expect(offered.tagline.length, 'and names what every run starts as').toBeGreaterThan(0);
-    expect(offered.hint.length, 'and says which controls that uses').toBeGreaterThan(0);
+    expect(offered.levels.length, 'the levels to choose between, offered by the panel').toBeGreaterThan(0);
 
     await press(page, offered.button);
     await waitForPhase(page, 'intro');
