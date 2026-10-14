@@ -3366,6 +3366,15 @@
     "levelRowGap": 10,
     // 关卡行与上方标题之间的间距。
     "levelRowTopGap": 40,
+    // **主菜单的标题是一张图**（`src/assets/标题.png` —— 图集里普普通通的一张，画的时候把字形周围的小鱼和
+    // 珊瑚一起画进去了）。
+    //
+    // `titleWidthRatio` 是它画多宽，占**泳道**宽的比例，和菜单里别的东西同一套。
+    //
+    // `titleAspect` 是**这张图自己的**宽高比（186 ÷ 66）。它必须写在配置里，因为标题的**高度**是排布局时要用的
+    // ——那时候图片可能还没加载完，精灵还没有尺寸。这是"图片本身的事实"，和 `chargeTrail.columns/rows` 同类。
+    "titleWidthRatio": 0.62,
+    "titleAspect": 2.82,
     "levelTextSize": 13,
     // 关卡名字下面那行状态文字的字号。
     "levelNoteSize": 11,

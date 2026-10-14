@@ -1452,6 +1452,14 @@ export interface Mechanisms {
     levelRowHeight: number;
     levelRowGap: number;
     levelRowTopGap: number;
+    /**
+     * The title, which is a picture rather than a line of text.
+     *
+     * `titleAspect` looks like it should be readable off the picture -- and it is, once the picture has loaded. The
+     * LAYOUT needs it before that, so it is stated here. See the config's own note.
+     */
+    titleWidthRatio: number;
+    titleAspect: number;
     levelTextSize: number;
     levelNoteSize: number;
     levelMaxWidthRatio: number;
@@ -2916,6 +2924,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'menu.levelRowHeight', check: anyNumber, describe: 'a number' },
   { path: 'menu.levelRowGap', check: anyNumber, describe: 'a number' },
   { path: 'menu.levelRowTopGap', check: anyNumber, describe: 'a number' },
+  { path: 'menu.titleWidthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
+  { path: 'menu.titleAspect', check: anyNumber, describe: 'width divided by height of the title picture' },
   { path: 'menu.levelTextSize', check: anyNumber, describe: 'a number' },
   { path: 'menu.levelNoteSize', check: anyNumber, describe: 'a number' },
   { path: 'menu.levelMinWidthRatio', check: anyNumber, describe: 'a fraction of the menu width' },

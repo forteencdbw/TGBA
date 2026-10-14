@@ -1,4 +1,5 @@
-import { Container, Graphics, Text } from 'pixi.js';
+import { Container, Graphics, Sprite, Text } from 'pixi.js';
+import { loadAssetTexture } from './assets';
 import { mech } from './mechanisms';
 import { BASE_TYPE } from './bubbleTypes';
 import { designScale } from './viewport';
@@ -44,8 +45,17 @@ export class MainMenu {
   private readonly screen = mkGraphics();
   private readonly primary = mkGraphics();
   private readonly secondary = mkGraphics();
-  private readonly title = mk('冒泡大作战', 0xeaf9ff, 34);
-  private readonly subtitle = mk('BUBBLE BATTLE', 0x8fd4f0, 13);
+  /**
+   * The title is a PICTURE: `src/assets/标题.png`, an ordinary frame of the atlas, with the small fish and the coral
+   * drawn into the art around the glyphs.
+   *
+   * It starts with no texture and is given one when the atlas arrives, the way `chargeTrail` does it. Standing in for
+   * a missing title with the old line of text would buy nothing -- the SAME load is what puts the art on every fish in
+   * the water behind it, so a menu with no picture is a menu with no pictures.
+   */
+  private readonly title = new Sprite();
+  /** The width the title is drawn at, from the last layout. See `titleHeight`. */
+  private titleWidth = 0;
   private readonly levelLine = mk('', 0xbfe9ff, 15);
   /**
    * The level selector: one pill per level, above the start button.
@@ -144,6 +154,18 @@ export class MainMenu {
 
     this.primaryLabel.text = '开始游戏';
     this.secondaryLabel.text = '图鉴';
+    this.title.eventMode = 'none';
+    // By its BOTTOM: it is wide, short art, and a picture placed by its centre has to know its own height twice.
+    this.title.anchor.set(0.5, 1);
+    /**
+     * The picture arrives on its own, and when it does it is given the texture AND the size the last layout asked for
+     * -- see `applyTitleSize`, which the layout calls too, because either of the two can come second.
+     */
+    void loadAssetTexture('标题').then((texture) => {
+      if (!texture) return;
+      this.title.texture = texture;
+      this.applyTitleSize();
+    });
 
     /**
      * Display order is draw order, and the backdrop goes FIRST.
@@ -156,7 +178,6 @@ export class MainMenu {
       this.screen,
       this.backdrop.root,
       this.title,
-      this.subtitle,
       this.levelRow,
       ...this.levelLabels,
       this.levelLine,
@@ -168,6 +189,29 @@ export class MainMenu {
       this.hint,
       this.versionLine,
     );
+  }
+
+  /**
+   * The height the title's width implies.
+   *
+   * From the CONFIG's aspect and not off the sprite, because the layout runs before the art does: a `Sprite` with no
+   * texture reports no size, and the guard that keeps the title off the ceiling needs a real number either way.
+   */
+  private get titleHeight(): number {
+    return this.titleWidth / Math.max(0.01, mech.menu.titleAspect);
+  }
+
+  /**
+   * Give the sprite the width the last layout asked for -- called from BOTH ends, because either can come second.
+   *
+   * On the first layout the picture has not arrived and there is nothing to size; when it arrives the load handler
+   * calls this. And a resize before the picture arrives sets `titleWidth` with nothing to apply it to, which is why
+   * the handler has to come back here rather than only setting the texture.
+   */
+  private applyTitleSize(): void {
+    const texture = this.title.texture;
+    if (!texture || !texture.width) return;
+    this.title.scale.set(this.titleWidth / texture.width);
   }
 
   layout(viewport: Viewport): void {
@@ -259,18 +303,26 @@ export class MainMenu {
       ? noteY - cfg.levelRowGap * s - gridHeight
       : this.tagline.y - (cfg.taglineSize * s) / 2 - cfg.levelRowGap * s;
 
-    this.subtitle.scale.set(s);
-    this.subtitle.anchor.set(0.5, 0.5);
-    this.subtitle.x = cx;
-    this.subtitle.y = levelTop - cfg.levelRowTopGap * s;
-
-    this.title.scale.set(s);
-    this.title.anchor.set(0.5, 0.5);
+    /**
+     * THE TITLE IS A PICTURE, and the chain that used to place it is one link shorter.
+     *
+     * It was a line of text with a line of English under it, and the two took turns moving each other: the subtitle
+     * anchored to the level row, the title anchored 30*s above the subtitle, the subtitle dropping again if the title
+     * had hit the ceiling, and then the level row dropping if the subtitle had. One picture instead of two lines
+     * leaves one relation and one guard.
+     *
+     * The relation is the title's BOTTOM `levelRowTopGap` above the level row, and the guard is the ceiling: if that
+     * would put the title's top above `36*s`, everything below moves down as one instead of the two overlapping.
+     *
+     * The height comes from the CONFIG's aspect rather than from the sprite, because the layout runs before the art
+     * does -- a `Sprite` with no texture has no size, and dividing by it would be a division by zero.
+     */
+    this.titleWidth = laneWidth * cfg.titleWidthRatio;
+    this.applyTitleSize();
+    const ceiling = 36 * s;
+    levelTop = Math.max(levelTop, ceiling + this.titleHeight + cfg.levelRowTopGap * s);
     this.title.x = cx;
-    this.title.y = Math.max(36 * s, this.subtitle.y - 30 * s);
-    // If the title hit the ceiling, the subtitle follows it down rather than the two overlapping.
-    if (this.title.y > this.subtitle.y - 30 * s) this.subtitle.y = this.title.y + 30 * s;
-    if (this.subtitle.y > levelTop - cfg.levelRowTopGap * s) levelTop = this.subtitle.y + cfg.levelRowTopGap * s;
+    this.title.y = levelTop - cfg.levelRowTopGap * s;
     /**
      * The level pills WRAP, and that is a fix rather than a nicety.
      *
