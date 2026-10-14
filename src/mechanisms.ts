@@ -1604,22 +1604,68 @@ export interface Mechanisms {
         fadeEdge: number;
       };
       bubbles: {
+        /**
+         * How many vents, and how many bubbles each lets go of.
+         *
+         * A RANGE rather than a count, because a fixed one makes every string identical: the density of the water is
+         * part of what changes about it, and four strings of exactly four bubbles each is a pattern the eye catches.
+         */
         vents: number;
-        perString: number;
+        perStringMin: number;
+        perStringMax: number;
         everySeconds: number;
         everyJitter: number;
         gap: number;
         /** The LARGEST bubble's diameter, as a fraction of the lane width -- the whole set's scale. */
         size: number;
         speed: number;
+        speedJitter: number;
         accel: number;
+        /** The wobble, randomised per bubble: amplitude, period, and how much each of those varies. */
         sway: number;
+        swayJitter: number;
         swaySeconds: number;
+        swaySecondsJitter: number;
         fadeEdge: number;
+        /**
+         * The two ends of the distance cue: the nearest vent's opacity and the furthest one's.
+         *
+         * OPACITY rather than a blur, and that is not a shortcut -- a blur would eat the pixel edges the twelve
+         * drawings are made of. There is no `alpha` beside these because there is nothing left for it to multiply:
+         * the pair IS a bubble's opacity, and a third number on top would be a second way to say the same thing.
+         */
+        nearAlpha: number;
+        farAlpha: number;
         /** Multiplies the pictures' own colours. White is the identity and the default. */
         tint: number;
-        alpha: number;
       };
+    };
+    /**
+     * The bubbles coming off the interface itself: three on the title, one on each of the three stones.
+     *
+     * A SEPARATE BLOCK FROM `water.bubbles`, and they are not two views of one thing: those live in the lane, in a
+     * container whose y is mirrored, and these live in the menu's own space and rise the other way up the screen. The
+     * numbers overlap by coincidence -- a size, a speed, a wobble -- and are separate so either can be tuned without
+     * dragging the other along.
+     *
+     * The SPOUTS' positions are not here: where a vent sits on a picture is a fact about that picture, like its
+     * aspect, and it lives beside the picture in `src/menu.ts`.
+     */
+    uiBubbles: {
+      everySeconds: number;
+      everyJitter: number;
+      size: number;
+      speed: number;
+      speedJitter: number;
+      accel: number;
+      /** How long a bubble takes to be blown up to full size, while it is already rising. */
+      growSeconds: number;
+      sway: number;
+      swayJitter: number;
+      swaySeconds: number;
+      swaySecondsJitter: number;
+      alpha: number;
+      tint: number;
     };
   };
   /**
@@ -3047,18 +3093,38 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   ].map(([key, describe]) => ({ path: `menu.water.motes.${key}`, check: anyNumber, describe: describe as string })),
   ...[
     ['vents', 'a count of vents'],
-    ['perString', 'a count of bubbles'],
+    ['perStringMin', 'a count of bubbles'],
+    ['perStringMax', 'a count of bubbles'],
     ['everySeconds', 'seconds'],
     ['everyJitter', 'a fraction of the interval'],
     ['gap', 'a fraction of the screen height'],
     ['size', 'the largest bubble\'s diameter, as a fraction of the lane width'],
     ['speed', 'screen heights per second'],
+    ['speedJitter', 'a fraction of the speed'],
     ['accel', 'a multiple per second'],
     ['sway', 'a fraction of the lane width'],
+    ['swayJitter', 'a fraction of the swell'],
     ['swaySeconds', 'seconds'],
+    ['swaySecondsJitter', 'a fraction of the period'],
     ['fadeEdge', 'a fraction of the screen height'],
-    ['alpha', 'an opacity'],
+    ['nearAlpha', 'an opacity; the nearest vent'],
+    ['farAlpha', 'an opacity; the furthest vent'],
   ].map(([key, describe]) => ({ path: `menu.water.bubbles.${key}`, check: anyNumber, describe: describe as string })),
+  ...[
+    ['everySeconds', 'seconds'],
+    ['everyJitter', 'a fraction of the interval'],
+    ['size', "the largest bubble's diameter, as a fraction of the screen width"],
+    ['speed', 'screen heights per second'],
+    ['speedJitter', 'a fraction of the speed'],
+    ['accel', 'a multiple per second'],
+    ['growSeconds', 'seconds'],
+    ['sway', 'a fraction of the screen width'],
+    ['swayJitter', 'a fraction of the swell'],
+    ['swaySeconds', 'seconds'],
+    ['swaySecondsJitter', 'a fraction of the period'],
+    ['alpha', 'an opacity'],
+  ].map(([key, describe]) => ({ path: `menu.uiBubbles.${key}`, check: anyNumber, describe: describe as string })),
+  { path: 'menu.uiBubbles.tint', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   ...[
     ['perRow', 'how many pills fit on a row'],
     ['maxRowWidthRatio', 'a fraction of the panel content width'],

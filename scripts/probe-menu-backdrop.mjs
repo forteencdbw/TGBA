@@ -598,11 +598,51 @@ try {
     // Long enough for every vent to have let at least one string go, whatever its staggered start.
     for (let i = 0; i < 600; i++) bd.update(DT);
     check('bubbles come out of the vents', bd.bubbles.count > before, true);
+    /**
+     * The depths, which are the whole of the distance cue: a far vent's string is drawn fainter. They are the evenly
+     * spaced set DEALT OUT at random rather than counted off in order -- counting them off would put the faintest vent
+     * at one end of the lane and the brightest at the other, which reads as light falling from one side rather than as
+     * distance.
+     *
+     * What is asserted is that they are still that set, whatever order they landed in. The ORDER itself is a roll and
+     * is deliberately NOT asserted: a shuffle produces the sorted order about once in twenty-four, so a check on it
+     * would go red on its own about that often, and a probe that fails at random is a probe people stop reading.
+     */
+    const depths = bd.bubbles.ventDepths;
+    const expected = depths.map((_, i) => (depths.length === 1 ? 1 : i / (depths.length - 1)));
+    check('every vent has a distance', depths.length, vents.length);
+    check(
+      'and the distances are the evenly spaced set, whatever order they were dealt in',
+      [...depths].sort((a, b) => a - b).map((d) => +d.toFixed(3)),
+      expected.map((d) => +d.toFixed(3)),
+    );
     check(
       'and the specks are still all inside the lane',
       bd.motes.heights.every((y) => y >= 0 && y <= H),
       true,
     );
+
+    /**
+     * And the bubbles on the INTERFACE, which are a different field in a different coordinate space -- and the one
+     * thing about them a probe has to pin down is the direction: these rise up the screen, so their `y` must DECREASE.
+     * Getting that from the water's convention would send them down through the buttons, which is the kind of bug a
+     * screenshot catches and nothing else does.
+     */
+    console.log('\n--- the bubbles on the title and the stones ---');
+    const ui = new drift.UiBubbles();
+    ui.setScreen(W, H);
+    ui.setSpouts([{ x: W * 0.3, y: H * 0.5 }, { x: W * 0.3, y: H * 0.8 }]);
+    check('the spouts the menu handed over', ui.spoutCount, 2);
+    for (let i = 0; i < 300; i++) ui.update(DT);
+    check('bubbles come off them', ui.count > 0, true);
+    const life = mech.menu.uiBubbles;
+    // One is followed from birth: it must start at the spout and be ABOVE it a moment later.
+    const bornAt = H * 0.8;
+    const rises = ui.yOf(0) < bornAt;
+    check('and they rise UP the screen, not down into the stones', rises, true);
+    const early = ui.sizeOf(0);
+    check('and they are blown up rather than appearing whole', early >= 0 && early <= 1, true);
+    check('with a growth time the config owns', life.growSeconds > 0 && life.growSeconds < 2, true);
   }
 
   // ---------------------------------------------------------------------------------------------

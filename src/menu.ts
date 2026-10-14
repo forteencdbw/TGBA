@@ -6,6 +6,24 @@ import { designScale } from './viewport';
 import type { Viewport } from './viewport';
 import { buildLabel } from './version';
 import { MenuBackdrop } from './menuBackdrop';
+import { UiBubbles } from './menuDrift';
+
+/**
+ * Where the bubbles come out of each picture, as a fraction of its box.
+ *
+ * NOT IN THE CONFIG, and the same argument as `MenuButton.aspect`: this is a fact about a drawing, measured off the
+ * drawing, and it belongs beside it. A block of six x/y pairs in JSON5 would be a place that knows about pictures
+ * without being able to show them, and the numbers mean nothing without the picture in front of you.
+ *
+ * Each one sits on stone or on the coral growing out of it -- the left foot of the arch, the coral under 泡, the right
+ * foot; and on each stone, its icon. They are all in front of the lettering, so a bubble never rises through a
+ * character.
+ */
+const TITLE_SPOUTS = [
+  { x: 0.10, y: 0.76 },
+  { x: 0.33, y: 0.52 },
+  { x: 0.90, y: 0.70 },
+] as const;
 
 /**
  * The three stone buttons, in the order they are stacked.
@@ -14,11 +32,15 @@ import { MenuBackdrop } from './menuBackdrop';
  * states are that stem with a suffix. So this table is also the list of what has to exist in `src/assets/` -- and the
  * ORDER of it is the order on the screen, which is why it lives here rather than in the config: it is not a number the
  * owner tunes, it is which button is above which.
+ *
+ * `spout` is where its bubbles come out, as a fraction of its own box -- see `TITLE_SPOUTS`. All three are at roughly
+ * the same place, which is what makes the column of bubbles read as one edge of the menu leaking rather than as three
+ * unrelated puffs.
  */
 const BUTTONS = [
-  { id: 'start', picture: '按钮-开始游戏' },
-  { id: 'codex', picture: '按钮-图鉴' },
-  { id: 'settings', picture: '按钮-设置' },
+  { id: 'start', picture: '按钮-开始游戏', spout: { x: 0.09, y: 0.58 } },
+  { id: 'codex', picture: '按钮-图鉴', spout: { x: 0.15, y: 0.52 } },
+  { id: 'settings', picture: '按钮-设置', spout: { x: 0.14, y: 0.55 } },
 ] as const;
 
 type ButtonId = (typeof BUTTONS)[number]['id'];
@@ -63,6 +85,8 @@ interface MenuButton {
    * anything is decoded.
    */
   aspect: number;
+  /** Where its bubbles come out, as a fraction of its box. See `BUTTONS`. */
+  spout: { x: number; y: number };
   state: ButtonLook;
   rect: { x: number; y: number; w: number; h: number };
 }
@@ -106,6 +130,7 @@ export class MainMenu {
     sprite: new Sprite(),
     textures: {},
     aspect: pictureAspect(button.picture),
+    spout: { ...button.spout },
     state: 'normal' as ButtonLook,
     rect: { x: 0, y: 0, w: 0, h: 0 },
   }));
@@ -183,6 +208,14 @@ export class MainMenu {
    * way of drawing a creature: see `src/menuBackdrop.ts`.
    */
   private readonly backdrop = new MenuBackdrop();
+  /**
+   * The bubbles coming off the title and the three stones.
+   *
+   * The menu's OWN, and not the backdrop's, because they belong to the pictures above it: they are placed from the
+   * layout's rectangles, they are drawn over the buttons, and they rise up the screen rather than up the lane. See
+   * `UiBubbles`, which is a different class from the water's field for exactly those reasons.
+   */
+  private readonly uiBubbles = new UiBubbles();
   /** Whether `onBackdropExit` has already been fired for the exit now running. */
   private exitReported = false;
 
@@ -232,6 +265,9 @@ export class MainMenu {
      *
      * The title has no shadow behind it any more: the picture is an arch with its own stone base, coral and moss drawn
      * into it, so the contrast that the old flat glyphs needed is part of the art now.
+     *
+     * The bubbles come LAST, over the stones they come out of -- a vent drawn behind an opaque plaque would spend its
+     * first half-second invisible.
      */
     this.root.addChild(
       // The opaque screen first, then the water's contents, then the interface. The backdrop's own root is a
@@ -240,6 +276,7 @@ export class MainMenu {
       this.backdrop.root,
       this.title,
       ...this.buttons.map((button) => button.sprite),
+      this.uiBubbles.root,
       this.versionLine,
     );
   }
@@ -389,6 +426,24 @@ export class MainMenu {
     this.title.x = cx;
     this.title.y = groupTop + this.titleHeight;
 
+    /**
+     * The bubble spouts, from the boxes that were just placed.
+     *
+     * Derived rather than stored, so they follow a resize -- and FOLLOWING is the whole reason they are fractions of a
+     * picture instead of screen coordinates: the title's box is `titleHeight` tall and anchored by its BOTTOM, so a
+     * point on its right foot is a different `y` on every screen.
+     */
+    const titleBox = { x: cx - this.titleWidth / 2, y: groupTop, w: this.titleWidth, h: this.titleHeight };
+    const spouts = [
+      ...TITLE_SPOUTS.map((p) => ({ x: titleBox.x + p.x * titleBox.w, y: titleBox.y + p.y * titleBox.h })),
+      ...this.buttons.map((button) => ({
+        x: button.rect.x + button.spout.x * button.rect.w,
+        y: button.rect.y + button.spout.y * button.rect.h,
+      })),
+    ];
+    this.uiBubbles.setSpouts(spouts);
+    this.uiBubbles.setScreen(viewport.width, viewport.height);
+
     this.versionLine.scale.set(s);
     this.versionLine.anchor.set(0.5, 1);
     this.versionLine.text = buildLabel();
@@ -455,6 +510,8 @@ export class MainMenu {
 
   update(dt: number): void {
     this.updateBackdrop(dt);
+    this.uiBubbles.update(dt);
+    this.uiBubbles.draw();
     if (!this.exitReported && this.backdrop.finished) {
       this.exitReported = true;
       this.onStart();

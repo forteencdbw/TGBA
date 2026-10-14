@@ -137,7 +137,12 @@ interface Bubble {
   readonly sprite: Sprite;
   /** The picture, once one has been picked for it. See `draw`, which assigns it. */
   picture: Texture | null;
+  /** How far away its vent is, 0 far to 1 near. Fixed for the whole rise -- see `Vent.depth`. */
+  depth: number;
   speed: number;
+  /** Its own amplitude and period for the wobble, so no two bubbles trace the same path. */
+  sway: number;
+  swaySeconds: number;
   /** Its own age in seconds. It accelerates, so this is not `y / speed`. */
   age: number;
   /** Where in the wobble it starts, so a string does not sway as one object. */
@@ -181,6 +186,15 @@ interface Vent {
   x: number;
   /** Seconds until it next lets a string go. */
   nextAt: number;
+  /**
+   * How far away this vent is: 0 is the furthest, 1 the nearest.
+   *
+   * A property of the VENT rather than of each bubble, which is what "the whole string is one leak" means -- and it is
+   * also the honest model: a bubble does not get nearer or further as it rises, because it is not moving towards
+   * anything. Assigning it per bubble instead would make a string of four different opacities, which reads as four
+   * leaks rather than one.
+   */
+  depth: number;
 }
 
 /**
@@ -229,17 +243,40 @@ export class BubbleField {
     this.bubbles.length = 0;
     this.vents.length = 0;
     const count = Math.max(1, Math.round(cfg.vents));
+    /**
+     * The depths, DEALT OUT RATHER THAN COUNTED OFF.
+     *
+     * Evenly spaced is right -- four vents should cover the range rather than clump -- but handing them out in order is
+     * not: the vents are also spread left to right by index, so `0, 1/3, 2/3, 1` across them is a brightness RAMP
+     * across the lane, which reads as light falling from one side rather than as some vents being further away.
+     * Shuffled, the same four depths say "these are at different distances" and nothing about which side is near.
+     */
+    const depths: number[] = [];
+    for (let i = 0; i < count; i++) depths.push(count === 1 ? 1 : i / (count - 1));
+    for (let i = depths.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [depths[i], depths[j]] = [depths[j]!, depths[i]!];
+    }
     for (let i = 0; i < count; i++) {
       const slot = width / count;
       this.vents.push({
         x: (i + 0.5) * slot + (Math.random() - 0.5) * slot * 0.7,
         // Staggered starts, or every vent in the lane would fire on the same frame for ever.
         nextAt: Math.random() * Math.max(0.001, cfg.everySeconds),
+        depth: depths[i]!,
       });
     }
   }
 
-  private born(x: number, y: number): Bubble {
+  /**
+   * A spread around `1`, of the shape the config's jitter keys all use: the value is the full WIDTH of the range, so
+   * `0.8` means 0.6 to 1.4. One helper rather than four copies of the same arithmetic, and one place to explain it.
+   */
+  private spread(full: number): number {
+    return 1 - full / 2 + Math.random() * full;
+  }
+
+  private born(vent: Vent, x: number, y: number): Bubble {
     const cfg = mech.menu.water.bubbles;
     const sprite = new Sprite();
     sprite.anchor.set(0.5, 0.5);
@@ -254,7 +291,10 @@ export class BubbleField {
       y,
       sprite,
       picture: null,
-      speed: this.height * cfg.speed * (0.8 + Math.random() * 0.4),
+      depth: vent.depth,
+      speed: this.height * cfg.speed * this.spread(cfg.speedJitter),
+      sway: cfg.sway * this.spread(cfg.swayJitter),
+      swaySeconds: cfg.swaySeconds * this.spread(cfg.swaySecondsJitter),
       age: 0,
       phase: Math.random() * Math.PI * 2,
     };
@@ -283,9 +323,11 @@ export class BubbleField {
       vent.nextAt -= dt;
       if (vent.nextAt > 0) continue;
       // `+=` rather than `=`: a slow frame carries its remainder into the next interval instead of dropping it.
-      vent.nextAt += cfg.everySeconds * (1 - cfg.everyJitter / 2 + Math.random() * cfg.everyJitter);
-      const per = Math.max(1, Math.round(cfg.perString));
-      for (let i = 0; i < per; i++) this.bubbles.push(this.born(vent.x, -i * this.height * cfg.gap));
+      vent.nextAt += cfg.everySeconds * this.spread(cfg.everyJitter);
+      const low = Math.max(1, Math.round(Math.min(cfg.perStringMin, cfg.perStringMax)));
+      const high = Math.max(low, Math.round(Math.max(cfg.perStringMin, cfg.perStringMax)));
+      const per = low + Math.floor(Math.random() * (high - low + 1));
+      for (let i = 0; i < per; i++) this.bubbles.push(this.born(vent, vent.x, -i * this.height * cfg.gap));
     }
     for (let i = this.bubbles.length - 1; i >= 0; i--) {
       const b = this.bubbles[i]!;
@@ -296,7 +338,7 @@ export class BubbleField {
        * string of real bubbles does.
        */
       b.y += b.speed * (1 + cfg.accel * b.age) * dt;
-      b.x = b.x0 + Math.sin((b.age / Math.max(0.001, cfg.swaySeconds)) * Math.PI * 2 + b.phase) * cfg.sway * width;
+      b.x = b.x0 + Math.sin((b.age / Math.max(0.001, b.swaySeconds)) * Math.PI * 2 + b.phase) * b.sway * width;
       if (b.y > this.height) {
         this.discard(b);
         this.bubbles.splice(i, 1);
@@ -329,11 +371,18 @@ export class BubbleField {
         b.picture = texture;
         b.sprite.texture = texture;
       }
-      const alpha = edgeFade(b.y, this.height, cfg.fadeEdge) * cfg.alpha;
+      const alpha = edgeFade(b.y, this.height, cfg.fadeEdge) * (cfg.farAlpha + (cfg.nearAlpha - cfg.farAlpha) * b.depth);
       b.sprite.visible = alpha > 0.002;
       if (!b.sprite.visible) continue;
       b.sprite.position.set(b.x, b.y);
-      b.sprite.scale.set(scale);
+      /**
+       * THE SECOND SCALE IS NEGATIVE, and it is not a flourish: this whole backdrop has `scale.y = -1`, because its
+       * own coordinates run UPWARD from the seabed. That flip never showed before this field became sprites -- every
+       * other layer up here is a `Graphics`, painted with its y already negated by the painter -- so the bubbles were
+       * the first pictures in a mirrored container, and they came out upside down. The artist's highlight is at the
+       * TOP of every one of the twelve drawings, and in the menu it pointed at the seabed.
+       */
+      b.sprite.scale.set(scale, -scale);
       b.sprite.alpha = alpha;
     }
   }
@@ -346,5 +395,203 @@ export class BubbleField {
   /** Test hook: where each vent is, so a probe can ask whether the vents are spread out. */
   get ventXs(): number[] {
     return this.vents.map((v) => v.x);
+  }
+
+  /** Test hook: how far away each vent is, so a probe can ask whether the depths are spread out. */
+  get ventDepths(): number[] {
+    return this.vents.map((v) => v.depth);
+  }
+}
+
+/** One point on the interface that lets bubbles go. */
+interface Spout {
+  x: number;
+  y: number;
+  nextAt: number;
+}
+
+/** One bubble coming off a spout, on its way up the SCREEN. */
+interface SpoutBubble {
+  sprite: Sprite;
+  picture: Texture | null;
+  x0: number;
+  x: number;
+  y: number;
+  speed: number;
+  /** Seconds since it started being blown, against `growSeconds`. */
+  age: number;
+  sway: number;
+  swaySeconds: number;
+  phase: number;
+}
+
+/**
+ * Bubbles coming off the interface: the title and the three stones.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * IT IS NOT PART OF THE BACKDROP, AND THAT IS THE POINT
+ * ---------------------------------------------------------------------------------------------
+ * `BubbleField` above lives inside a container with `scale.y = -1`, where y counts upward from the seabed and the
+ * bubbles rise by INCREASING y. This one lives in the menu's own space, which is not mirrored, so its y counts down
+ * from the top of the screen and its bubbles rise by DECREASING y. Two fields, one rising each way, and neither is
+ * wrong -- but a bubble that crossed from one to the other would go the wrong way, which is why they are separate
+ * classes with separate maths rather than one class with a flag.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * BLOWN RATHER THAN PLACED
+ * ---------------------------------------------------------------------------------------------
+ * The background bubbles APPEAR: a string is let go and every bubble in it is already the size it will be. These
+ * GROW -- each one is inflated at its spout over `growSeconds` while it is already rising, because one that sat still
+ * until it was big enough reads as stuck to the stone rather than leaking out of it.
+ *
+ * `setSpouts` is called from the layout, so the points follow the pictures they belong to when the window changes.
+ * Bubbles already in the air keep their own positions: they have left the stone.
+ */
+export class UiBubbles {
+  readonly root = new Container();
+  private readonly textures: Texture[] = [];
+  private readonly spouts: Spout[] = [];
+  private readonly bubbles: SpoutBubble[] = [];
+  /** The screen, from the layout, which is the only thing that knows it. */
+  private width = 0;
+  private height = 0;
+  /** Screen pixels per texel, from the last layout. See `BubbleField.texelScale` for why there is one of these. */
+  private texelScale = 1;
+
+  constructor() {
+    this.root.eventMode = 'none';
+    for (const name of BUBBLE_PICTURES) {
+      void loadAssetTexture(name).then((texture) => {
+        if (texture) this.textures.push(texture);
+      });
+    }
+  }
+
+  /**
+   * Move the spouts, and keep the count in step.
+   *
+   * A layout that hands over FEWER points than the last one (a shorter level list, a different screen) drops the
+   * extra spouts rather than leaving them at their old coordinates, where they would go on leaking from a place
+   * nothing is drawn any more.
+   */
+  setSpouts(points: readonly { x: number; y: number }[]): void {
+    while (this.spouts.length > points.length) this.spouts.pop();
+    points.forEach((point, i) => {
+      const existing = this.spouts[i];
+      if (existing) {
+        existing.x = point.x;
+        existing.y = point.y;
+        return;
+      }
+      const every = Math.max(0.001, mech.menu.uiBubbles.everySeconds);
+      // A first delay spread over the whole interval rather than zero: six spouts that all fired on the first frame
+      // would arrive as one burst and then stay in lockstep.
+      this.spouts.push({ x: point.x, y: point.y, nextAt: Math.random() * every });
+    });
+  }
+
+  /** How many screen pixels one texel of a bubble is. Called from the layout. */
+  setScreen(width: number, height: number): void {
+    this.width = width;
+    this.height = height;
+    this.texelScale = (mech.menu.uiBubbles.size * width) / MAX_BUBBLE_TEXELS;
+  }
+
+  private spread(full: number): number {
+    return 1 - full / 2 + Math.random() * full;
+  }
+
+  private born(spout: Spout): SpoutBubble {
+    const cfg = mech.menu.uiBubbles;
+    const sprite = new Sprite();
+    sprite.anchor.set(0.5, 0.5);
+    sprite.tint = cfg.tint;
+    sprite.visible = false;
+    this.root.addChild(sprite);
+    return {
+      sprite,
+      picture: null,
+      x0: spout.x,
+      x: spout.x,
+      y: spout.y,
+      speed: this.height * cfg.speed * this.spread(cfg.speedJitter),
+      age: 0,
+      sway: this.width * cfg.sway * this.spread(cfg.swayJitter),
+      swaySeconds: cfg.swaySeconds * this.spread(cfg.swaySecondsJitter),
+      phase: Math.random() * Math.PI * 2,
+    };
+  }
+
+  update(dt: number): void {
+    const cfg = mech.menu.uiBubbles;
+    for (const spout of this.spouts) {
+      spout.nextAt -= dt;
+      if (spout.nextAt > 0) continue;
+      spout.nextAt += cfg.everySeconds * this.spread(cfg.everyJitter);
+      this.bubbles.push(this.born(spout));
+    }
+    for (let i = this.bubbles.length - 1; i >= 0; i--) {
+      const b = this.bubbles[i]!;
+      b.age += dt;
+      // Up the SCREEN, so y decreases. See the class comment.
+      b.y -= b.speed * (1 + cfg.accel * b.age) * dt;
+      b.x = b.x0 + Math.sin((b.age / Math.max(0.001, b.swaySeconds)) * Math.PI * 2 + b.phase) * b.sway;
+      // Well above the top, so one that leaves is off the screen before it is thrown away.
+      if (b.y < -this.height * 0.1) {
+        this.root.removeChild(b.sprite);
+        b.sprite.destroy();
+        this.bubbles.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Put every sprite where its bubble is, and blow it up.
+   *
+   * The growth is `min(1, age / growSeconds)` rather than an eased curve: at four tenths of a second the difference
+   * between a smoothstep and a straight line is a couple of frames, and a straight line says what it does.
+   *
+   * THE PICTURE IS ASSIGNED HERE for the same reason `BubbleField.draw` does it: the bubble exists and rises whether
+   * or not the atlas has landed, and only its picture waits.
+   */
+  draw(): void {
+    const cfg = mech.menu.uiBubbles;
+    for (const b of this.bubbles) {
+      if (!b.picture) {
+        if (!this.textures.length) continue;
+        const texture = this.textures[Math.floor(Math.random() * this.textures.length)]!;
+        b.picture = texture;
+        b.sprite.texture = texture;
+      }
+      const alpha = cfg.alpha * Math.min(1, b.age / Math.max(0.001, cfg.growSeconds));
+      b.sprite.visible = alpha > 0.002;
+      if (!b.sprite.visible) continue;
+      b.sprite.position.set(b.x, b.y);
+      // One scale, no negative second component: this container is not mirrored. See the class comment.
+      b.sprite.scale.set(this.texelScale);
+      b.sprite.alpha = alpha;
+    }
+  }
+
+  /** How much of its full size a bubble has reached, 0..1. Test hook: the growth is the point of this field. */
+  sizeOf(index: number): number {
+    const b = this.bubbles[index];
+    if (!b) return 0;
+    return Math.min(1, b.age / Math.max(0.001, mech.menu.uiBubbles.growSeconds));
+  }
+
+  /** Where a live bubble is on the screen. Test hook: which way it is going is this field's whole shape. */
+  yOf(index: number): number {
+    return this.bubbles[index]?.y ?? Number.NaN;
+  }
+
+  /** Test hook: how many are alive. */
+  get count(): number {
+    return this.bubbles.length;
+  }
+
+  /** Test hook: how many spouts there are, so a probe can count the points the menu placed. */
+  get spoutCount(): number {
+    return this.spouts.length;
   }
 }
