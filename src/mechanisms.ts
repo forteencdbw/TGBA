@@ -1490,6 +1490,13 @@ export interface Mechanisms {
       schoolChance: number;
       schoolMin: number;
       schoolMax: number;
+      /**
+       * The kinds that never arrive in a batch, by name.
+       *
+       * Strings rather than `HazardKind`s, and checked where the swimmers are listed rather than here: this file
+       * cannot import `src/menuBackdrop.ts` without a cycle, so the rule below can only see the shape of the list.
+       */
+      loners: string[];
       fishSchoolChance: number;
       fishSchoolMin: number;
       fishSchoolMax: number;
@@ -2952,6 +2959,18 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['exitSeconds', 'seconds'],
     ['fadeSeconds', 'seconds'],
   ].map(([key, describe]) => ({ path: `menu.backdrop.${key}`, check: anyNumber, describe: describe as string })),
+  /**
+   * The loner list, which is a list rather than a number.
+   *
+   * Its CONTENTS are not this file's to check: whether a name is one of the creatures that actually swims in the menu
+   * is known only where that list is, and a wrong name there is a knob that does nothing at all while looking like it
+   * does something. See the note in `src/menuBackdrop.ts`.
+   */
+  {
+    path: 'menu.backdrop.loners',
+    check: (v) => Array.isArray(v) && v.every((k) => typeof k === 'string'),
+    describe: 'a list of hazard kind names that never arrive in a batch',
+  },
   /**
    * The deep-sea lighting, the same way -- except for the three COLOURS, which are out of the loop.
    *

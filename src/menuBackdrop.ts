@@ -77,6 +77,23 @@ const SWIMMERS: readonly HazardKind[] = [
 ];
 
 /**
+ * EVERY NAME IN THE CONFIG'S LONER LIST HAS TO BE SOMETHING THAT CAN ACTUALLY TURN UP.
+ *
+ * `mechanisms.ts` checks the shape of that list -- an array of strings -- and that is all it can do: whether a name is
+ * real has to be asked of the swimmers, and the swimmers are here. A name that is not one of them would do NOTHING at
+ * all and say nothing about it: the creature would simply never be alone, and a knob that quietly does not work is
+ * the one kind this project does not allow. That covers a typo and it covers `vent`, which is terrain.
+ *
+ * The check lives here rather than beside the other boot checks because `mechanisms.ts` cannot import this file
+ * without a cycle, and it is a throw either way.
+ */
+for (const kind of mech.menu.backdrop.loners) {
+  if (!SWIMMERS.includes(kind as HazardKind)) {
+    throw new Error(`menu.backdrop.loners names "${kind}", which is not one of the creatures that swim in the menu`);
+  }
+}
+
+/**
  * Two creatures that do not swim: they CRAWL.
  *
  * A starfish and an urchin are seabed animals, and in the water they are the two whose art is a lump that already
@@ -796,7 +813,15 @@ export class MenuBackdrop {
     const chance = shoal ? cfg.fishSchoolChance : cfg.schoolChance;
     const lo = shoal ? cfg.fishSchoolMin : cfg.schoolMin;
     const hi = shoal ? cfg.fishSchoolMax : cfg.schoolMax;
-    const count = Math.random() < chance ? Math.max(1, Math.round(lo + Math.random() * (hi - lo))) : 1;
+    /**
+     * A LONER IS ALWAYS ONE, whatever the dice said -- but the roll is STILL TAKEN.
+     *
+     * For the reason the two decisions in `update` are: a kind that drew a different number of values would re-point
+     * every later value in a probe's dice script at another decision, and a probe that quietly measures the wrong
+     * thing is worse than one that fails to compile.
+     */
+    const rolled = Math.random() < chance ? Math.max(1, Math.round(lo + Math.random() * (hi - lo))) : 1;
+    const count = cfg.loners.includes(kind) ? 1 : rolled;
     /**
      * ONE SHARED SCHOOL FOR A SHOAL, AND ONE EACH FOR EVERYTHING ELSE.
      *

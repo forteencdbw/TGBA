@@ -582,6 +582,63 @@ try {
   }
 
   // ---------------------------------------------------------------------------------------------
+  // The ones that travel alone
+  // ---------------------------------------------------------------------------------------------
+  console.log('\n--- the loners ---');
+  {
+    /**
+     * THE DICE SAY YES TO EVERYTHING, and that is the point: a loner that got batched would be nearly invisible in a
+     * probe that rolled the way the game does, because most rolls say no. `0.7` picks the shark out of `SWIMMERS` and
+     * `0.08` the tuna -- and the kind that comes OUT is asserted too, or this would be testing the probe's own
+     * arithmetic about where a kind sits in that list.
+     */
+    const waveOf = (kindRoll) => {
+      const bd = new MenuBackdrop();
+      bd.layout(W, H, 0);
+      const restore = dice([0.9, kindRoll, 0, 0]);
+      bd.spawnWave();
+      restore();
+      return bd.swimmers.hazards.map((h) => h.kind);
+    };
+
+    const shark = waveOf(0.7);
+    check('a roll of 0.7 really does pick a shark', shark[0], 'shark');
+    check('and a shark arrives alone however the dice fall', shark.length, 1);
+
+    const octopus = waveOf(0.65);
+    check('a roll of 0.65 picks an octopus', octopus[0], 'octopus');
+    check('and it arrives alone too', octopus.length, 1);
+
+    const tuna = waveOf(0.08);
+    check('a roll of 0.08 picks a tuna', tuna[0], 'tuna');
+    check('and a tuna still comes in a team', tuna.length, 2);
+
+    /**
+     * And every name in the list is a creature that CAN turn up -- checked by producing them rather than by trusting
+     * the names, which is the difference between asking the spawner and reading the config back to itself.
+     *
+     * `menuBackdrop.ts` throws at import if a name is not a swimmer, so this can only ever fail for a name that IS a
+     * swimmer but that the spawner never reaches; that is a different bug and worth catching separately.
+     */
+    const bd = new MenuBackdrop();
+    bd.layout(W, H, 0);
+    const produced = new Set();
+    for (let i = 0; i < 40; i++) {
+      bd.swimmers.hazards.length = 0;
+      bd.velocity.clear();
+      const restore = dice([0.9, i / 40 + 0.001, 0, 0]);
+      bd.spawnWave();
+      restore();
+      for (const h of bd.swimmers.hazards) produced.add(h.kind);
+    }
+    check(
+      'and every name in the list is one the spawner can actually produce',
+      cfg.loners.every((k) => produced.has(k)),
+      true,
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // Only small fish ever share a school
   // ---------------------------------------------------------------------------------------------
   console.log('\n--- what the spawner hands out ---');
