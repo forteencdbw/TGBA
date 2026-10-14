@@ -22,9 +22,20 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const packer = join(here, 'pack-atlas.py');
 
-/** Does this interpreter exist and can it import Pillow? Asked, not assumed: a stub python.exe "exists" too. */
+/**
+ * Does this interpreter exist and can it import Pillow? Asked, not assumed: a stub python.exe "exists" too.
+ *
+ * THE `existsSync` GUARD IS FOR PATHS ONLY, and that is the bug this comment is here to prevent. It used to run on
+ * every candidate, including the bare names -- and `existsSync('python')` is false on every machine that has Python,
+ * because a bare name is resolved against the current directory rather than against PATH. So `python`, `python3` and
+ * `py` were thrown away before `spawnSync` -- the call that CAN find them -- ever ran, and the search reported "no
+ * Python with Pillow" on a machine where typing `python` at a prompt works. The guard only belongs on a path we were
+ * HANDED (`DSH_PYTHON`, a managed runtime), where a missing file is a cheap thing to rule out first.
+ */
 function hasPillow(exe) {
-  if (!exe || !existsSync(exe)) return false;
+  if (!exe) return false;
+  const isPath = exe.includes('/') || exe.includes('\\');
+  if (isPath && !existsSync(exe)) return false;
   const probe = spawnSync(exe, ['-c', 'import PIL'], { stdio: 'ignore' });
   return probe.status === 0;
 }
