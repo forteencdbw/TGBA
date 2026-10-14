@@ -21,6 +21,41 @@ const { createServer } = await (async () => {
   return import(pathToFileURL(require.resolve('vite')).href);
 })();
 
+/**
+ * A CANVAS, FOR A PROBE -- because Pixi bakes a `FillGradient` into a texture with Canvas 2D.
+ *
+ * Building one calls `document.createElement('canvas')` and then a 2D context's `createLinearGradient` / `fillRect`,
+ * and the menu's deep-sea lighting builds three in `layout` -- which every check in this file calls. Node has no DOM,
+ * and a gradient is a fill and not a texture, which is why this had to be found out by running rather than by reading:
+ * the whole point of choosing `FillGradient` over generated textures was to keep this file working.
+ *
+ * NOTHING HERE EVER RASTERISES. The canvas is wrapped in an `ImageSource` and held; it only reaches the GPU at draw
+ * time, which a probe never gets to. So recording the calls and drawing nothing is the whole of what is needed.
+ *
+ * It is installed HERE rather than guarded for in `src/`: production code should not carry a check for an environment
+ * it will never run in, and a `buildLight` that quietly did nothing would be a silent failure in the one place the
+ * lighting is the whole feature.
+ */
+globalThis.document ??= {
+  createElement: () => ({
+    width: 0,
+    height: 0,
+    /**
+     * The whole of the 2D surface Pixi's gradient builders touch: they make the gradient object, set it as the fill
+     * style, and fill a 1-pixel-tall strip with it. Every one of these is a call to be answered, not a picture.
+     */
+    getContext: () => ({
+      createLinearGradient: () => ({ addColorStop() {} }),
+      createRadialGradient: () => ({ addColorStop() {} }),
+      fillRect: () => {},
+      translate: () => {},
+      rotate: () => {},
+      scale: () => {},
+      fillStyle: '',
+    }),
+  }),
+};
+
 let failures = 0;
 const check = (label, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -390,6 +425,79 @@ try {
     for (let i = 0; i < Math.ceil(mech.hazardFacing.turnSeconds / DT) + 1; i++) bd.update(DT);
     restore2();
     check('and it is over within the time it was given', h.turn, undefined);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The deep-sea light, and where each piece of it sits
+  // ---------------------------------------------------------------------------------------------
+  console.log('\n--- the light, in the stack ---');
+  {
+    const light = mech.menu.lighting;
+    const bd = new MenuBackdrop();
+    bd.layout(W, H, 0);
+
+    /**
+     * WHERE EACH PIECE SITS IS THE EFFECT.
+     *
+     * A mask over the whole scene and a mask over the water alone are the same three lines of code and two completely
+     * different pictures, and the second is the one that was chosen -- because at 0.65 of the way down the mask is
+     * 0.85 opaque while the creatures live from 0.14 to 0.86. `children` is draw order, so this list is BOTTOM-FIRST.
+     */
+    const name = (child) =>
+      child === bd.backLayer
+        ? 'back reef'
+        : child === bd.darkGfx
+          ? 'darkness'
+          : child === bd.beamLayer
+            ? 'shafts'
+            : child === bd.swimLayer
+              ? 'swimmers'
+              : child === bd.glowGfx
+                ? 'halo'
+                : child === bd.frontLayer
+                  ? 'front reef'
+                  : '?';
+    check('the stack, bottom first', bd.root.children.map(name), [
+      'back reef',
+      'shafts',
+      'darkness',
+      'swimmers',
+      'halo',
+      'front reef',
+    ]);
+    const at = (child) => bd.root.children.indexOf(child);
+    check('so the shafts are darkened with the water', at(bd.darkGfx) > at(bd.beamLayer), true);
+    check('but the creatures are drawn OVER the mask', at(bd.swimLayer) > at(bd.darkGfx), true);
+    check('and the halo is over them', at(bd.glowGfx) > at(bd.swimLayer), true);
+    check('but under the near reef', at(bd.frontLayer) > at(bd.glowGfx), true);
+
+    check('as many shafts as the config asks for', bd.beams.length, Math.round(light.beamCount));
+    check(
+      'and the light ADDS rather than painting over',
+      [bd.glowGfx.blendMode, bd.beamLayer.children[0].children[0].blendMode],
+      ['add', 'add'],
+    );
+
+    /**
+     * The sway -- and what is NOT asserted is as much of the point: the shafts' geometry is built once, in `layout`,
+     * so the only thing moving per frame is a rotation and an alpha.
+     */
+    const rot0 = bd.beams.map((b) => b.holder.rotation);
+    const alpha0 = bd.beams.map((b) => b.holder.alpha);
+    for (let i = 0; i < 300; i++) bd.update(DT);
+    const rot1 = bd.beams.map((b) => b.holder.rotation);
+    check('every shaft has moved', rot1.every((r, i) => r !== rot0[i]), true);
+    check(
+      'and none has left the arc it was given',
+      rot1.every((r, i) => Math.abs(r - bd.beams[i].lean) <= light.beamSway + 1e-9),
+      true,
+    );
+    check('and every one has changed brightness', bd.beams.every((b, i) => b.holder.alpha !== alpha0[i]), true);
+    check(
+      'within the pulse the config asks for',
+      bd.beams.every((b) => Math.abs(b.holder.alpha - light.beamAlpha) <= light.beamAlpha * light.beamPulse + 1e-9),
+      true,
+    );
   }
 
   // ---------------------------------------------------------------------------------------------

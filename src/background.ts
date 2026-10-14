@@ -388,6 +388,17 @@ function toCss(colour: number): string {
 }
 
 /**
+ * `rgba()` for a gradient stop -- the alpha-aware sibling of `toCss`.
+ *
+ * `toCss` returns an opaque `#rrggbb` and cannot say "this end is invisible", which is exactly what a fade needs. It
+ * lived privately in `src/main.ts` while main was the only caller; the menu's deep-sea lighting made a third, so it is
+ * here now, beside the function it is the variant of.
+ */
+export function rgba(colour: number, alpha: number): string {
+  return `rgba(${(colour >> 16) & 255},${(colour >> 8) & 255},${colour & 255},${alpha})`;
+}
+
+/**
  * The water colour function, exposed for probes.
  *
  * Exported so a test can assert on the REAL implementation rather than a copy of its arithmetic. An

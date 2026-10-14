@@ -1,5 +1,5 @@
 import { Application, FillGradient, Graphics } from 'pixi.js';
-import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, waterColourForTest } from './background';
+import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, rgba, waterColourForTest } from './background';
 import { tuning } from './config';
 import { LEVEL, LEVELS, START_LEVEL_ID, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
 import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, isBossKind, LURE_PROBE, paintHazards, setReducedFlash, warmAnimations, type HazardKind } from './hazards';
@@ -4404,17 +4404,6 @@ async function boot(): Promise<void> {
 }
 
 void boot();
-
-/**
- * `rgba()` for a gradient stop.
- *
- * `toCss` in `background.ts` returns an opaque `#rrggbb` and cannot say "this end is invisible", which is exactly
- * what a fade needs. Written here rather than added to that file because the two have different jobs: that one
- * names a colour, this one names a colour AT AN OPACITY.
- */
-function rgba(colour: number, alpha: number): string {
-  return `rgba(${(colour >> 16) & 255},${(colour >> 8) & 255},${colour & 255},${alpha})`;
-}
 
 /**
  * A tiny deterministic PRNG, for the screen cracks.

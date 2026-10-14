@@ -1505,6 +1505,45 @@ export interface Mechanisms {
       exitSeconds: number;
       fadeSeconds: number;
     };
+    /**
+     * The deep-sea lighting over the menu's water: a halo at the top, light shafts, and a mask that takes the bottom
+     * to black.
+     *
+     * Three colours and a pile of fractions. What the numbers do not say is WHERE each piece is drawn, and that is
+     * half of the effect -- see the layer order in `src/menuBackdrop.ts`, and the config's own note on why the mask
+     * covers the water rather than the whole scene.
+     */
+    lighting: {
+      glowColour: number;
+      glowCentreY: number;
+      glowRadius: number;
+      glowAlpha: number;
+      glowMidOffset: number;
+      glowMidAlpha: number;
+
+      beamColour: number;
+      beamCount: number;
+      beamWidth: number;
+      beamHeight: number;
+      beamTop: number;
+      beamFirstX: number;
+      beamSpread: number;
+      beamLean: number;
+      beamPitch: number;
+      beamNarrow: number;
+      beamAlpha: number;
+      beamFadeMidOffset: number;
+      beamFadeMidAlpha: number;
+      beamSway: number;
+      beamSwaySeconds: number;
+      beamPulse: number;
+      beamPulseSeconds: number;
+
+      darknessColour: number;
+      darknessTopAlpha: number;
+      darknessMidOffset: number;
+      darknessMidAlpha: number;
+    };
   };
   /**
    * Obstacles: what is in the water that is neither food nor threat, but scenery you have to answer.
@@ -2866,6 +2905,41 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['exitSeconds', 'seconds'],
     ['fadeSeconds', 'seconds'],
   ].map(([key, describe]) => ({ path: `menu.backdrop.${key}`, check: anyNumber, describe: describe as string })),
+  /**
+   * The deep-sea lighting, the same way -- except for the three COLOURS, which are out of the loop.
+   *
+   * `isColour` is a different check from `anyNumber`, and the loop's whole point is that every row in it is the same
+   * kind of thing; folding a colour in would make one row the odd one out in a list nobody would think to read twice.
+   */
+  { path: 'menu.lighting.glowColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'menu.lighting.beamColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'menu.lighting.darknessColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  ...[
+    ['glowCentreY', 'a fraction of the screen height; negative is above the top'],
+    ['glowRadius', 'a fraction of the screen'],
+    ['glowAlpha', 'an opacity'],
+    ['glowMidOffset', 'a fraction along the gradient'],
+    ['glowMidAlpha', 'an opacity'],
+    ['beamCount', 'a count of beams'],
+    ['beamWidth', 'a fraction of the lane width'],
+    ['beamHeight', 'a fraction of the screen height'],
+    ['beamTop', 'a fraction of the screen height; negative is above the top'],
+    ['beamFirstX', 'a fraction of the lane width'],
+    ['beamSpread', 'a fraction of the lane width'],
+    ['beamLean', 'radians'],
+    ['beamPitch', 'radians'],
+    ['beamNarrow', 'a fraction of the beam width'],
+    ['beamAlpha', 'an opacity'],
+    ['beamFadeMidOffset', 'a fraction along the beam'],
+    ['beamFadeMidAlpha', 'a fraction'],
+    ['beamSway', 'radians'],
+    ['beamSwaySeconds', 'seconds'],
+    ['beamPulse', 'an opacity'],
+    ['beamPulseSeconds', 'seconds'],
+    ['darknessTopAlpha', 'an opacity'],
+    ['darknessMidOffset', 'a fraction of the screen height'],
+    ['darknessMidAlpha', 'an opacity'],
+  ].map(([key, describe]) => ({ path: `menu.lighting.${key}`, check: anyNumber, describe: describe as string })),
   ...[
     'levelSelectedFill',
     'levelSelectedStroke',

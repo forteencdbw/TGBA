@@ -1,4 +1,5 @@
-import { Container, Graphics } from 'pixi.js';
+import { Container, FillGradient, Graphics } from 'pixi.js';
+import { rgba } from './background';
 import { mech } from './config';
 import { advanceTurn, commitFacing, HazardField, paintHazards, type Hazard, type HazardKind } from './hazards';
 import { ObstacleField, paintObstacles } from './obstacles';
@@ -151,6 +152,29 @@ export class MenuBackdrop {
    * `src/background.ts` clips the game's own lane the same way.
    */
   private readonly maskShape = new Graphics();
+  /**
+   * The deep-sea light, in three pieces -- and WHERE they sit in the stack is half of the effect.
+   *
+   *     back coral  ->  shafts  ->  [darkness]  ->  swimmers  ->  [halo]  ->  front coral
+   *
+   * So the mask covers the WATER: the back reef and the shafts go black with depth, while the creatures and the front
+   * reef are drawn over it and stay fully lit. The halo then goes over the creatures, because it is the light from the
+   * surface washing the whole scene, but under the front reef, which is nearer to the eye than the light is.
+   *
+   * The shafts are UNDER the mask rather than over it, and that is worth a sentence because it is a coin toss that was
+   * settled by looking: over the mask, the low tails of four shafts add up into a haze across the middle of the water,
+   * and the picture stops being a lit top over a black bottom. Under it, the dark is dark.
+   *
+   * The reference this came from puts the mask over the entire scene. It does not here, and the reason is a
+   * measurement rather than a taste: the mask is 0.85 opaque at 65% of the way down, and the creatures are born from
+   * 14% to 86% -- so covering them would mean a third of the fish fading out as they swam, and the starfish and
+   * urchins, whose whole band is the bottom third, would never be seen at all.
+   */
+  private readonly darkGfx = new Graphics();
+  private readonly beamLayer = new Container();
+  private readonly glowGfx = new Graphics();
+  /** One entry per shaft: the lean it sways around, and which way it starts. */
+  private readonly beams: { holder: Container; lean: number; phase: number }[] = [];
   private readonly swimmers = new HazardField();
   private readonly backBed = new ObstacleField();
   private readonly frontBed = new ObstacleField();
@@ -171,9 +195,17 @@ export class MenuBackdrop {
     this.backLayer.addChild(this.backGfx);
     this.swimLayer.addChild(this.swimGfx);
     this.frontLayer.addChild(this.frontGfx);
-    this.root.addChild(this.backLayer, this.swimLayer, this.frontLayer);
+    this.root.addChild(this.backLayer, this.beamLayer, this.darkGfx, this.swimLayer, this.glowGfx, this.frontLayer);
     this.root.scale.set(1, -1);
     this.root.mask = this.maskShape;
+    /**
+     * LIGHT ADDS.
+     *
+     * `add` is what makes the halo and the shafts read as light rather than as pale paint: where two shafts cross, the
+     * result is brighter than either -- which is the one thing plain alpha blending cannot say, because it can only
+     * ever move a pixel toward the colour on top of it. The shafts' own Graphics carry it too; see `buildLight`.
+     */
+    this.glowGfx.blendMode = 'add';
   }
 
   /**
@@ -203,6 +235,138 @@ export class MenuBackdrop {
     const cfg = mech.menu.backdrop;
     this.bed(this.backBed, cfg.backCoralCount, cfg.backCoralHalfWidth, cfg.backCoralBottom);
     this.bed(this.frontBed, cfg.frontCoralCount, cfg.frontCoralHalfWidth, cfg.frontCoralBottom);
+    this.buildLight();
+  }
+
+  /**
+   * Build the deep-sea light: the darkness, the halo, and the shafts.
+   *
+   * EVERY ONE OF THEM IS STATIC GEOMETRY, rebuilt only here, on a resize. What moves is four rotations and four
+   * alphas -- see `update` -- so none of this costs anything per frame.
+   *
+   * The gradients are `FillGradient` rather than generated textures, which is the project's one way of doing a
+   * gradient (the game's water and its vignette use the same). The reference this came from builds three Canvas
+   * textures instead; that would be the only `document.createElement` in `src/`, and it would put this effect out of
+   * reach of every probe, because a probe has no `document`.
+   */
+  private buildLight(): void {
+    const cfg = mech.menu.lighting;
+    const lane = this.width;
+    const height = this.height;
+
+    /**
+     * THE DARKNESS -- and the stops are written UPSIDE DOWN on purpose.
+     *
+     * This whole container has `scale.y = -1`, so a gradient's local y runs from the bottom of the lane (0) to the
+     * top (1), which is the opposite of the screen. So the opaque stop is at 0 and the clear one at 1.
+     */
+    this.darkGfx.clear();
+    this.darkGfx.rect(0, 0, lane, height).fill({
+      fill: new FillGradient({
+        start: { x: 0, y: 0 },
+        end: { x: 0, y: 1 },
+        colorStops: [
+          { offset: 0, color: rgba(cfg.darknessColour, 1) },
+          { offset: cfg.darknessMidOffset, color: rgba(cfg.darknessColour, cfg.darknessMidAlpha) },
+          { offset: 1, color: rgba(cfg.darknessColour, cfg.darknessTopAlpha) },
+        ],
+        textureSpace: 'local',
+      }),
+    });
+
+    /**
+     * THE HALO. A radial whose centre is ABOVE the top of the lane, which is what makes it read as light coming down
+     * from a surface that is off screen rather than as a bright patch painted on the water.
+     */
+    this.glowGfx.clear();
+    this.glowGfx.rect(0, 0, lane, height).fill({
+      fill: new FillGradient({
+        type: 'radial',
+        center: { x: 0.5, y: cfg.glowCentreY },
+        innerRadius: 0,
+        outerCenter: { x: 0.5, y: cfg.glowCentreY },
+        outerRadius: cfg.glowRadius,
+        colorStops: [
+          { offset: 0, color: rgba(cfg.glowColour, cfg.glowAlpha) },
+          { offset: cfg.glowMidOffset, color: rgba(cfg.glowColour, cfg.glowMidAlpha) },
+          { offset: 1, color: rgba(cfg.glowColour, 0) },
+        ],
+        textureSpace: 'local',
+      }),
+    });
+
+    // -------------------------------------------------------------------------------------------
+    // THE SHAFTS.
+    // -------------------------------------------------------------------------------------------
+    for (const child of this.beamLayer.removeChildren()) child.destroy({ children: true });
+    this.beams.length = 0;
+
+    const count = Math.max(1, Math.round(cfg.beamCount));
+    const beamWidth = lane * cfg.beamWidth;
+    const beamHeight = height * cfg.beamHeight;
+    const halfTop = (beamWidth * cfg.beamNarrow) / 2;
+    const halfBottom = beamWidth / 2;
+    /**
+     * HOW MANY SLICES A SHAFT IS CUT INTO.
+     *
+     * A shaft has to fade in TWO directions at once -- soft at its left and right edges, gone by its bottom -- and a
+     * gradient is one-dimensional, so a texture is the obvious answer and the one this refuses to use. Slicing the
+     * shaft and giving each slice its own alpha gets both fades out of the one-dimensional thing: the horizontal ramp
+     * is a single shared gradient, and the vertical one is the slice's own opacity. Sixty steps are past where the
+     * bands show, and the geometry is only built when the window changes.
+     */
+    const slices = 60;
+    /**
+     * ONE gradient for every slice of every shaft.
+     *
+     * `textureSpace: 'local'` is what makes that safe: the ramp is measured against the bounds of whatever is being
+     * filled, so one instance gives each slice its own left-to-right fade rather than one long ramp sliced up.
+     */
+    const edge = new FillGradient({
+      start: { x: 0, y: 0 },
+      end: { x: 1, y: 0 },
+      colorStops: [
+        { offset: 0, color: rgba(cfg.beamColour, 0) },
+        { offset: 0.5, color: rgba(cfg.beamColour, 1) },
+        { offset: 1, color: rgba(cfg.beamColour, 0) },
+      ],
+      textureSpace: 'local',
+    });
+    const mid = Math.max(0.001, cfg.beamFadeMidOffset);
+    /** How much of the shaft is left at `t` of the way down it: full, then the mid value, then nothing. */
+    const fadeAt = (t: number): number => {
+      if (t >= 1) return 0;
+      if (t <= mid) return 1 + (cfg.beamFadeMidAlpha - 1) * (t / mid);
+      return cfg.beamFadeMidAlpha * (1 - (t - mid) / (1 - mid));
+    };
+
+    for (let i = 0; i < count; i++) {
+      const holder = new Container();
+      holder.position.set(lane * (cfg.beamFirstX + i * cfg.beamSpread), height * cfg.beamTop);
+      const lean = cfg.beamLean + i * cfg.beamPitch;
+      holder.rotation = lean;
+      const gfx = new Graphics();
+      gfx.blendMode = 'add';
+      for (let s = 0; s < slices; s++) {
+        const t0 = s / slices;
+        const t1 = (s + 1) / slices;
+        const w0 = halfTop + (halfBottom - halfTop) * t0;
+        const w1 = halfTop + (halfBottom - halfTop) * t1;
+        /**
+         * Local +y is UP here, for the same reason the gradient is upside down: the shaft goes DOWNWARD from its
+         * anchor, which is a negative y in this container's space.
+         */
+        const y0 = -t0 * beamHeight;
+        const y1 = -t1 * beamHeight;
+        gfx.poly([-w0, y0, w0, y0, w1, y1, -w1, y1]).fill({
+          fill: edge,
+          alpha: fadeAt((t0 + t1) / 2),
+        });
+      }
+      holder.addChild(gfx);
+      this.beamLayer.addChild(holder);
+      this.beams.push({ holder, lean, phase: i });
+    }
   }
 
   /** One row of corals, evenly spaced with a little jitter so it does not read as a fence. */
@@ -440,6 +604,23 @@ export class MenuBackdrop {
         this.velocity.delete(h.id);
         this.swimmers.hazards.splice(i, 1);
       }
+    }
+
+    /**
+     * THE SHAFTS SWAY, and this is the only part of the lighting that costs anything per frame: one rotation and one
+     * alpha each, with the geometry left alone.
+     *
+     * Two periods rather than one. A shaft whose brightness and angle share a period reads as a single object rocking;
+     * two that drift in and out of step read as water.
+     *
+     * Off `elapsed`, the menu's own clock, so a menu that is not being updated is a menu where nothing moves.
+     */
+    const light = mech.menu.lighting;
+    const sway = (this.elapsed / Math.max(0.001, light.beamSwaySeconds)) * Math.PI * 2;
+    const pulse = (this.elapsed / Math.max(0.001, light.beamPulseSeconds)) * Math.PI * 2;
+    for (const beam of this.beams) {
+      beam.holder.rotation = beam.lean + Math.sin(sway + beam.phase) * light.beamSway;
+      beam.holder.alpha = light.beamAlpha * (1 + Math.sin(pulse + beam.phase * 1.7) * light.beamPulse);
     }
 
     this.backGfx.clear();
