@@ -61,12 +61,86 @@ def load_pipeline():
     return module
 
 
+def stretch_sides(piece, keep, target):
+    """Widen a pixelated picture to `target` texels by stretching only what is OUTSIDE a kept band.
+
+    WHY THIS EXISTS. A set of pictures that has to be the same size -- three menu buttons, where the
+    lettering is painted on the stone and so cannot be allowed to change scale at all -- cannot be
+    reconciled by cropping or by scaling the whole thing. Scaling the whole thing changes the letters;
+    cropping cannot add width. What CAN move is the ornament around the letters, and that is the one
+    thing this does: the columns in [x0, x1) are copied through untouched, and the two stretches
+    either side are resampled until the total is `target`.
+
+    NEAREST, not LANCZOS, and that is not a quality shortcut. The picture has already been snapped to
+    a palette and a grid; an interpolating filter would invent colours that are not in it and put the
+    edges between texels, which is the one thing the rest of this pipeline spends its time undoing. It
+    is checked: at the ratios this is used at, the output introduces zero new colours and the opaque
+    coverage per column of the stretched regions is unchanged -- so a one-texel coral sprig comes
+    through as a coral sprig.
+
+    The two sides share the change in proportion to their widths, so both are stretched by the same
+    factor. Giving all of it to the wider side would leave the narrower one at a different scale, and
+    the two rims of one plate visibly disagreeing is worse than either being slightly off.
+    """
+    x0, x1 = keep
+    w, h = piece.size
+    if not 0 < x0 < x1 < w:
+        raise SystemExit(f"--keep {x0},{x1} is not a band inside a {w} texel picture")
+    left = piece.crop((0, 0, x0, h))
+    middle = piece.crop((x0, 0, x1, h))
+    right = piece.crop((x1, 0, w, h))
+    extra = target - w
+    sides = left.width + right.width
+    share = extra * (left.width / sides)
+    leftWidth = max(1, round(left.width + share))
+    # The RIGHT side takes the rounding, rather than being rounded from the same `share` as the left: two
+    # independent roundings can sum to one texel off the target, and an operation whose entire purpose is "these
+    # pictures end up the same width" cannot be one texel off. It did, on the first run -- 170 against 169.
+    rightWidth = max(1, target - leftWidth - middle.width)
+    left = left.resize((leftWidth, h), Image.NEAREST)
+    right = right.resize((rightWidth, h), Image.NEAREST)
+    out = Image.new("RGBA", (left.width + middle.width + right.width, h), (0, 0, 0, 0))
+    out.alpha_composite(left, (0, 0))
+    out.alpha_composite(middle, (left.width, 0))
+    out.alpha_composite(right, (left.width + middle.width, 0))
+    factor = (sides + extra) / sides
+    print(f"  stretched: sides {x0}+{w - x1} texels -> {left.width}+{right.width} (x{factor:.2f}), "
+          f"middle {middle.width} texels held, total {out.width}")
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(description="Install one picture at the project's pixel density.")
     parser.add_argument("picture", help="the source PNG")
     parser.add_argument("--name", required=True, help="file name stem; written to src/assets/<name>.png")
     parser.add_argument("--drawn", type=float, default=None, help="the width the game draws it at, in screen px")
     parser.add_argument("--grid", type=int, default=None, help="pixel grid, if you would rather state it")
+    parser.add_argument(
+        "--grid-height",
+        type=int,
+        default=None,
+        help=(
+            "pixelate so the picture is this many TEXELS TALL, the width following the content's own shape. "
+            "THE REASON IT EXISTS, next to `--grid`: a SET of pictures that has to match can only be matched by "
+            "height when the drawings have different plate ratios -- normalise the width and the heights differ, "
+            "and if the lettering is painted on the plate then those height differences ARE letter-size differences."
+        ),
+    )
+    parser.add_argument(
+        "--keep",
+        default=None,
+        help=(
+            "x0,x1 texel columns to hold fixed, with --stretch-to. Everything outside the band is stretched and "
+            "the band is copied through untouched, which is for artwork whose TEXT is part of the picture: the "
+            "lettering cannot be scaled, so the ornament around it is what moves. See `stretch_sides`."
+        ),
+    )
+    parser.add_argument(
+        "--stretch-to",
+        type=int,
+        default=None,
+        help="the texel width to stretch to, with --keep. Only the columns outside --keep change.",
+    )
     parser.add_argument("--colours", type=int, default=COLOURS)
     parser.add_argument("--margin", type=int, default=MARGIN_TEXELS, help="padding in texels")
     parser.add_argument(
@@ -87,14 +161,18 @@ def main():
     )
     arguments = parser.parse_args()
 
-    if arguments.grid is None and arguments.drawn is None:
+    if arguments.grid_height is not None and (arguments.grid is not None or arguments.drawn is not None):
+        raise SystemExit("--grid-height states the height; do not also state --grid or --drawn")
+    if (arguments.keep is None) != (arguments.stretch_to is None):
+        raise SystemExit("--keep and --stretch-to only make sense together: one says what holds, the other how wide")
+    if arguments.grid is None and arguments.drawn is None and arguments.grid_height is None:
         raise SystemExit(
-            "state --drawn (the width the game draws it at, in screen px) or --grid.\n"
+            "state --drawn (the width the game draws it at, in screen px), --grid, or --grid-height.\n"
             f"  grid = drawn / {TARGET_TEXEL_PX}, and drawn = 2 * radius * {LANE_PX} * scale."
         )
-    grid = arguments.grid or round(arguments.drawn / TARGET_TEXEL_PX)
-    if grid < 2:
-        raise SystemExit(f"a grid of {grid} is not a picture")
+    grid = arguments.grid or (round(arguments.drawn / TARGET_TEXEL_PX) if arguments.drawn is not None else None)
+    if arguments.grid_height is not None and arguments.grid_height < 2:
+        raise SystemExit(f"a grid height of {arguments.grid_height} is not a picture")
 
     source = Image.open(arguments.picture).convert("RGBA")
     if arguments.crop:
@@ -116,7 +194,22 @@ def main():
         print(f"  {arguments.picture}: {source.width}x{source.height} -> content {content.width}x{content.height}")
 
     pipeline = load_pipeline()
+    if grid is None:
+        # `--grid-height` is stated in TEXELS and the width follows the cropped content's own shape, which is the
+        # whole point of it: it is the height that has to match across a set, so that is the one that is stated.
+        grid = round(arguments.grid_height * content.width / content.height)
+        if grid < 2:
+            raise SystemExit(f"a grid height of {arguments.grid_height} on a {content.width}x{content.height} crop is not a picture")
     piece, _palette = pipeline.pixelate(content, grid, None, arguments.colours)
+
+    if arguments.stretch_to is not None:
+        try:
+            keep = tuple(int(part) for part in arguments.keep.split(","))
+        except ValueError:
+            raise SystemExit("--keep takes two integers: x0,x1")
+        if len(keep) != 2:
+            raise SystemExit("--keep takes two integers: x0,x1")
+        piece = stretch_sides(piece, keep, arguments.stretch_to)
 
     pad = arguments.margin
     canvas = Image.new("RGBA", (piece.width + pad * 2, piece.height + pad * 2), (0, 0, 0, 0))

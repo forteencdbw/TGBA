@@ -1109,84 +1109,84 @@
     "按钮-图鉴-Hover.png": {
       "frame": {
         "h": 49,
-        "w": 171,
+        "w": 169,
         "x": 2,
         "y": 1493
       },
       "rotated": false,
       "sourceSize": {
         "h": 49,
-        "w": 171
+        "w": 169
       },
       "trimmed": false
     },
     "按钮-图鉴.png": {
       "frame": {
         "h": 49,
-        "w": 171,
-        "x": 177,
+        "w": 169,
+        "x": 175,
         "y": 1493
       },
       "rotated": false,
       "sourceSize": {
         "h": 49,
-        "w": 171
+        "w": 169
       },
       "trimmed": false
     },
     "按钮-开始游戏-Hover.png": {
       "frame": {
         "h": 49,
-        "w": 180,
-        "x": 352,
+        "w": 169,
+        "x": 348,
         "y": 1493
       },
       "rotated": false,
       "sourceSize": {
         "h": 49,
-        "w": 180
+        "w": 169
       },
       "trimmed": false
     },
     "按钮-开始游戏.png": {
       "frame": {
         "h": 49,
-        "w": 180,
-        "x": 536,
+        "w": 169,
+        "x": 521,
         "y": 1493
       },
       "rotated": false,
       "sourceSize": {
         "h": 49,
-        "w": 180
+        "w": 169
       },
       "trimmed": false
     },
     "按钮-设置-Hover.png": {
       "frame": {
         "h": 49,
-        "w": 150,
-        "x": 720,
+        "w": 169,
+        "x": 694,
         "y": 1493
       },
       "rotated": false,
       "sourceSize": {
         "h": 49,
-        "w": 150
+        "w": 169
       },
       "trimmed": false
     },
     "按钮-设置.png": {
       "frame": {
         "h": 49,
-        "w": 150,
-        "x": 874,
+        "w": 169,
+        "x": 867,
         "y": 1493
       },
       "rotated": false,
       "sourceSize": {
         "h": 49,
-        "w": 150
+        "w": 169
       },
       "trimmed": false
     },
@@ -1292,7 +1292,7 @@
       "frame": {
         "h": 48,
         "w": 51,
-        "x": 1028,
+        "x": 1040,
         "y": 1493
       },
       "rotated": false,
@@ -2286,7 +2286,7 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 1083,
+        "x": 1095,
         "y": 1493
       },
       "rotated": false,
@@ -2300,7 +2300,7 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 1157,
+        "x": 1169,
         "y": 1493
       },
       "rotated": false,
@@ -2314,8 +2314,8 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 1231,
-        "y": 1493
+        "x": 743,
+        "y": 1546
       },
       "rotated": false,
       "sourceSize": {
@@ -2328,7 +2328,7 @@
       "frame": {
         "h": 38,
         "w": 70,
-        "x": 743,
+        "x": 817,
         "y": 1546
       },
       "rotated": false,
@@ -3118,28 +3118,28 @@
         "sha256": "a4c12db2a92f4d190622866c083c829ddf92361d81c700d1598feaeef072e04b"
       },
       "按钮-图鉴-Hover.png": {
-        "bytes": 9894,
-        "sha256": "ad7c7d86845879b9bacd7fb48e36e6fff09cf715f348fa0ed930be56f2fb9154"
+        "bytes": 9796,
+        "sha256": "dbfeb524ffb220726521cc59f5b31611f2aef8a0fc97f26c257c41323cb603c7"
       },
       "按钮-图鉴.png": {
-        "bytes": 10583,
-        "sha256": "6be40317c57f270eef8842530c6ee98b886f41950079dbcd755a50ac1163ae34"
+        "bytes": 10500,
+        "sha256": "d91aa7c91ba6373b6657ce71b18b64b5b72922ed7905f7887942976063d6c849"
       },
       "按钮-开始游戏-Hover.png": {
-        "bytes": 11426,
-        "sha256": "7197102952ee50fb42008b0487d25baa94711c62b1e0a7c58d63416086e8490b"
+        "bytes": 10707,
+        "sha256": "100108a764d39d36f09bd342f5c339bb08921fe38b476dd9937839bf41321930"
       },
       "按钮-开始游戏.png": {
-        "bytes": 12572,
-        "sha256": "e94e2bfaf61e0911aa47d320744d55ad2350ebc1124a05b0df4f57bcc8919090"
+        "bytes": 11875,
+        "sha256": "8a86ee7091d430d77b233d87af58bc621c4883ca7043ed6edb8a06f9103250dd"
       },
       "按钮-设置-Hover.png": {
-        "bytes": 9195,
-        "sha256": "605b59952749eaabe943f4bb9e059c1f5fffcb46603c06c29a203c425c0df0fd"
+        "bytes": 9406,
+        "sha256": "c730f23ca500aa44f474e047d0db788d244a87fd67d95ec472fae2fd0edb8dec"
       },
       "按钮-设置.png": {
-        "bytes": 9391,
-        "sha256": "91e30807980c8106ae51eb86301db16794623abbad64f2dd5fcb181e448e68b1"
+        "bytes": 9404,
+        "sha256": "3c5501fdca7636ddc41aa6ee73b82dbd8c712d2ba2aa779fb20d761912438693"
       },
       "木箱.png": {
         "bytes": 5976,
@@ -3598,7 +3598,7 @@
         "sha256": "356ae26b7afe3f17806ecbb04da1fe86f8cf9277039fa881ebc2f6d71739fc33"
       }
     },
-    "textureBytes": 1440456,
+    "textureBytes": 1440462,
     "version": "1.0"
   }
 }
