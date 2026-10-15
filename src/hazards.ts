@@ -422,8 +422,6 @@ export interface Hazard {
    * without knowing how many looks a kind will have.
    */
   variety: number;
-  /** Fish: the bait bubble it is currently fooled by, if any. */
-  baitedUntil: number;
   /** Jellyfish: how much it has been squashed, 0..1, purely comic. */
   squashed: number;
   /** Trash: whether it is latched onto the player, and how long it has held on. */
@@ -623,8 +621,8 @@ export interface Hazard {
    * reason: a state that REPLACES the kind's own motion rather than adding to it.
    *
    * Nothing in this game kills a creature. They are eaten or driven off, and this is the driven-off half: once its
-   * hit points are gone a creature stops chasing, stops being fooled by bait, stops eating, stops being pulled by
-   * the suction field, cannot hurt the player -- and leaves, in one of three directions picked when it decided.
+   * hit points are gone a creature stops chasing, stops eating, stops being pulled by the suction field, cannot hurt
+   * the player -- and leaves, in one of three directions picked when it decided.
    */
   flee: 'up' | 'left' | 'right' | 'down' | 'dead' | null;
   /**
@@ -709,20 +707,11 @@ export const hazardTuning = {
   /** Fish are faster than the player's base speed so they actually catch up. */
   fishSpeedFactor: 0.34,
   fishTurnRate: 0.9,
-  /**
-   * Chance a fish gives up the chase for a bait bubble it crosses.
-   *
-   * Well under half: this is a comedy beat that shows up occasionally, not the usual outcome. If a chase
-   * usually ends with the fish wandering off, the swarm stops being a threat and the joke has eaten the
-   * mechanic.
-   */
   /** How deep inside the lane a side-entering creature must get before its own AI takes over. */
   get insideMarginRatio() {
     return mech.spawning.insideMarginRatio;
   },
 
-  fishBaitChance: 0.25,
-  fishBaitSeconds: 1.6,
   /** Jellyfish drift and bob; they barely move horizontally. */
   jellyBobAmplitude: 0.012,
   /** Trash falls slower than the water and grabs on contact. */
@@ -987,7 +976,7 @@ export interface HazardContext {
    * moves by a measured amount per frame, and what a creature needs is to have moved the same amount.
    */
   cameraRise: number;
-  /** Seconds since the run started, for the bait timers. */
+  /** Seconds since the run started, for the cycles that are timed against the water rather than the creature. */
   elapsed: number;
   /** Whether the player is currently invulnerable, in which case contact must not re-trigger. */
   invulnerable: boolean;
@@ -1139,15 +1128,6 @@ function carryFor(h: Hazard, dt: number, ctx: HazardContext): number {
   return ctx.cameraRise - ctx.driftSpeed * dt;
 }
 function stepFish(field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
-  // The bait timer is the only thing that breaks the chase.
-  if (h.baitedUntil > ctx.elapsed) {
-    // Wander: drift sideways away from the player.
-    h.x += Math.sign(h.x - ctx.playerX) * 6 * dt;
-    h.heading = Math.sign(h.x - ctx.playerX) || h.heading;
-    h.y -= ctx.driftSpeed * 0.5 * dt;
-    return;
-  }
-
   /**
    * Emergence rule 2, made real: the fish only CHASES inside its perception radius.
    *
@@ -1610,17 +1590,8 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
  * (both `h.flee`), the crab's `fired`, the trash bag's grip. Those are verbs; the shove was bookkeeping.
  */
 type ContactEffect = (field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]) => void;
-function contactFish(field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
-  // COMEDY: a fish that crosses a bait bubble gets distracted and loses the player. This is an
-  // OCCASIONAL beat, not the default outcome -- if a chase usually ends in the fish wandering
-  // off, the swarm stops being a threat and the joke replaces the mechanic.
-  if (field.baitEnabled && h.baitedUntil <= ctx.elapsed && Math.random() < hazardTuning.fishBaitChance) {
-    h.baitedUntil = ctx.elapsed + hazardTuning.fishBaitSeconds;
-    field.baits++;
-    effects.push({ kind: 'fish', broke: true });
-    return;
-  }
-  if (ctx.invulnerable || h.baitedUntil > ctx.elapsed) return;
+function contactFish(_field: HazardField, _h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  if (ctx.invulnerable) return;
   effects.push({ kind: 'fish', damage: 1, broke: false });
   return;
 }
@@ -1919,19 +1890,10 @@ export class HazardField {
   }
 
   /**
-   * Whether the fish bait reaction is active.
+   * How many times a trash bag has latched on this run.
    *
-   * Exposed so a probe can assert the CHASE deterministically: the bait beat is a chance by design,
-   * and a test that has to roll the dice reads as a broken mechanic when it loses.
-   */
-  baitEnabled = true;
-
-  /**
-   * How many times a trash bag has latched on this run, and how many times a fish has been baited.
-   *
-   * Counted because both are transient: a grip can be torn off in the same frame it starts, so
-   * sampling a boolean afterwards proves nothing. These are monotonic, so "did it ever happen" is
-   * answerable.
+   * Counted because it is transient: a grip can be torn off in the same frame it starts, so sampling a
+   * boolean afterwards proves nothing. These are monotonic, so "did it ever happen" is answerable.
    */
   grabs = 0;
   /**
@@ -1941,7 +1903,6 @@ export class HazardField {
    * nothing about whether it happened.
    */
   charges = 0;
-  baits = 0;
   /**
    * Grazes landed this run, monotonic like the charge counter beside it.
    *
@@ -2008,7 +1969,6 @@ export class HazardField {
     this.spawnTimer = 0;
     this.grabs = 0;
     this.charges = 0;
-    this.baits = 0;
     this.grazes = 0;
     this.eaten = 0;
     this.splits = 0;
@@ -2734,7 +2694,6 @@ export class HazardField {
             heading: 0,
             // And it keeps its parent's look: two fish that split out of one shoal are still that shoal.
             variety: h.variety,
-            baitedUntil: 0,
             fed: 0,
             digest: hazardTuning.fishDigestSeconds,
             // A child of a school's fish stays in the school, with a state of its own: the spread above would otherwise hand
@@ -2835,7 +2794,6 @@ export class HazardField {
       seed: opts.deterministic ? 0 : Math.random() * 1000,
       heading: 0,
       variety: opts.variety ?? 0,
-      baitedUntil: 0,
       squashed: 0,
       gripping: false,
       gripSeconds: 0,
@@ -4172,7 +4130,7 @@ export interface HazardHitEvent {
  * lane width and the kind's radius fraction.
  */
 type CreatureDraw = (g: Graphics, h: Hazard, r: number, laneWidth: number, elapsed: number) => void;
-function drawFish(g: Graphics, h: Hazard, r: number, _laneWidth: number, elapsed: number): void {
+function drawFish(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
   /**
    * Facing its direction of travel; the tail trails behind.
    *
@@ -4187,12 +4145,7 @@ function drawFish(g: Graphics, h: Hazard, r: number, _laneWidth: number, elapsed
     .lineTo(h.x - dir * r * 2.2, h.y + r * 0.6)
     .closePath()
     .fill({ color: KIND_TUNING.fish.colour, alpha: 0.6 });
-  // A baited fish gets a blank stare: no eye, just a dot.
-  if (h.baitedUntil > elapsed) {
-    g.circle(h.x + dir * r * 0.5, h.y - r * 0.15, r * 0.16).fill({ color: 0xffffff, alpha: 0.9 });
-  } else {
-    g.circle(h.x + dir * r * 0.7, h.y - r * 0.1, r * 0.2).fill({ color: 0x08131f, alpha: 0.9 });
-  }
+  g.circle(h.x + dir * r * 0.7, h.y - r * 0.1, r * 0.2).fill({ color: 0x08131f, alpha: 0.9 });
   return;
 }
 
@@ -4451,7 +4404,7 @@ function drawFoam(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapse
    *
    * That is the point of it: the level's interference is that the player cannot tell at a glance which bubble is
    * theirs. It is deliberately paler and softer-edged than the real one -- a fair version of the trick, because a
-   * decoy that was pixel-identical would be a lie rather than a puzzle.
+   * fake that was pixel-identical would be a lie rather than a puzzle.
    */
   const fc = mech.hazards.foam;
   g.circle(h.x, h.y, r).fill({ color: fc.colour, alpha: fc.alpha });
@@ -5142,12 +5095,6 @@ export function paintHazards(
           h.facingRest = mech.hazardFacing.cooldownSeconds;
         }
         /**
-         * `h.facing` is set on both branches above, and the `?? 1` is unreachable -- it is here only because
-         * `commitFacing` is a CALL and the compiler cannot see through it. `1` is "as drawn", the same fallback
-         * `hazardMirror` uses for a creature that has never been painted.
-         */
-        const facing = h.facing ?? 1;
-        /**
          * A `volleyAligned` picture is NEVER mirrored, and the mirror is not a matter of taste here.
          *
          * A starfish has no front, so there is nothing for `front` to be right about -- but the mirror is not
@@ -5215,26 +5162,6 @@ export function paintHazards(
             alpha: mech.hitFeedback.heavyOutlineAlpha * outline,
             width: Math.max(1, r * mech.hitFeedback.heavyOutlineWidthRatio * (0.6 + outline)),
           });
-        }
-        /**
-         * THE BAITED STARE, which a picture would otherwise quietly delete.
-         *
-         * A baited fish is one that has stopped chasing AND cannot hurt the player (see `stepFish` and
-         * `contactFish`), so "which of these fish are currently lured" is the state of the threat, not a flourish.
-         * The drawn body said it by REPLACING the eye with a blank white dot; a picture arrives with its own eye
-         * already painted in, so the mark has to be laid back over the top or the cue disappears along with the
-         * drawing.
-         *
-         * It follows `facing` rather than re-deriving a direction, because `facing` is the mirror the sprite itself
-         * was given -- a dot placed by a second opinion would sit on the tail of every fish that turned around. The
-         * offsets are fractions of the picture's own width, so a kind drawn larger keeps the mark on its head.
-         */
-        if (h.baitedUntil > elapsed) {
-          // Sizes are fractions of the PICTURE, and they are the drawn version's own proportions: it used `r * 0.16`
-          // for the dot against a `r * 0.2` eye, and `2r × scale` is the picture's width, so that is `size * 0.04`
-          // here. The first attempt was nearly twice this and read as a headlight rather than as a dazed eye.
-          const head = x - facing * 0.35 * size;
-          g.circle(head, y, Math.max(1, size * 0.045)).fill({ color: 0xffffff, alpha: 0.92 });
         }
         if (art.lure) paintLure(g, x, y, r, art.lure, elapsed);
         /**

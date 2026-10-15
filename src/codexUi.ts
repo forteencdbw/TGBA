@@ -823,10 +823,6 @@ export class CodexUi {
         }
         g.stroke({ color: colour, alpha: 0.95, width: stroke });
         break;
-      case 'decoy':
-        g.circle(cx, cy, r * 0.7).fill({ color: colour, alpha: 0.45 });
-        g.circle(cx, cy, r * 1.2).stroke({ color: colour, alpha: 0.75, width: stroke * 0.7 });
-        break;
       case 'vortex':
         // Concentric broken rings rather than arcs: this project has been bitten twice by `Graphics.arc` leaving a
         // stray line back to where the path started, so nothing here draws an arc. A ring plus a gap reads the same.

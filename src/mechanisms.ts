@@ -2065,7 +2065,6 @@ export interface Mechanisms {
    */
   skills: {
     dash: { uses: number; durationSeconds: number; ascentMultiplier: number };
-    decoy: { uses: number; durationSeconds: number; decoyRadiusMeters: number; decoySeconds: number };
     vortex: { uses: number; durationSeconds: number; vortexRadiusMeters: number; vortexPullPerSecond: number };
     stink: { uses: number; durationSeconds: number; stinkRadiusMeters: number };
     shell: { uses: number; durationSeconds: number; invulnerableSeconds: number; shellRadiusMeters: number };
@@ -3624,11 +3623,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'skills.dash.uses', check: wholeNumber, describe: 'a whole number of uses' },
   { path: 'skills.dash.durationSeconds', check: anyNumber, describe: 'seconds; 0 means the effect is instant' },
   { path: 'skills.dash.ascentMultiplier', check: anyNumber, describe: 'an ascent multiplier' },
-
-  { path: 'skills.decoy.uses', check: wholeNumber, describe: 'a whole number of uses' },
-  { path: 'skills.decoy.durationSeconds', check: anyNumber, describe: 'seconds; 0 means the effect is instant' },
-  { path: 'skills.decoy.decoyRadiusMeters', check: anyNumber, describe: 'metres' },
-  { path: 'skills.decoy.decoySeconds', check: anyNumber, describe: 'seconds' },
 
   { path: 'skills.vortex.uses', check: wholeNumber, describe: 'a whole number of uses' },
   { path: 'skills.vortex.durationSeconds', check: anyNumber, describe: 'seconds; 0 means the effect is instant' },

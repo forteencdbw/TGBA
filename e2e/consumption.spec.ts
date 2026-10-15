@@ -66,19 +66,12 @@ const canEatAt = (page: Page, kind: string, volume: number) =>
  * Spawn a hazard on the player and report the outcome, measured INSIDE one page evaluation.
  *
  * ---------------------------------------------------------------------------------------------
- * TWO COIN FLIPS THIS HAS TO TAKE OUT OF THE MEASUREMENT
+ * THE COIN FLIP THIS HAS TO TAKE OUT OF THE MEASUREMENT
  * ---------------------------------------------------------------------------------------------
- * 1. **The bait beat.** `baitEnabled` is on by default and `fishBaitChance` is 0.25, so one fish contact in four is
- *    "the fish got distracted and wandered off" and deals NO damage -- independent of the run's talent, which only
- *    decides who can leave the bait. The result was a spec that failed about a quarter of the time on both projects,
- *    for a reason that has nothing to do with the eating rules it is about. `debugSetBaitEnabled` exists for this and
- *    the run's talent is pinned too (fish-fart fires on the hit that would have landed and leaves bait behind, which
- *    stacks a second distraction on top of the first).
- *
- * 2. **The 0.8-second blink after any hit.** A fish that arrives while the bubble is invulnerable deals nothing, so
- *    whether some stray creature happened to hit the bubble just before the probe decides the result. The field is
- *    cleared and the blink waited out first, with the volume re-pinned every frame -- the bubble keeps eating
- *    collectables on its own, and would otherwise drift across the tier boundary while we wait.
+ * **The 0.8-second blink after any hit.** A fish that arrives while the bubble is invulnerable deals nothing, so
+ * whether some stray creature happened to hit the bubble just before the probe decides the result. The field is
+ * cleared and the blink waited out first, with the volume re-pinned every frame -- the bubble keeps eating
+ * collectables on its own, and would otherwise drift across the tier boundary while we wait.
  */
 const tryEat = (page: Page, kind: 'fish' | 'jelly' | 'trash' | 'crab', volume: number) =>
   page.evaluate(
@@ -88,7 +81,6 @@ const tryEat = (page: Page, kind: 'fish' | 'jelly' | 'trash' | 'crab', volume: n
           game: {
             debugSpawnHazardOnPlayer: (k: string) => void;
             debugSetTalent: (id: string) => string;
-            debugSetBaitEnabled: (on: boolean) => boolean;
             diagnostics: { stats: { hits: number }; invulnerable: number };
             hazardsRef: { hazards: unknown[]; eaten: number };
           };
@@ -97,7 +89,6 @@ const tryEat = (page: Page, kind: 'fish' | 'jelly' | 'trash' | 'crab', volume: n
       }).__GB;
       const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
       g.game.debugSetTalent('soda');
-      g.game.debugSetBaitEnabled(false);
       g.game.hazardsRef.hazards.length = 0;
       let waited = 0;
       while (g.game.diagnostics.invulnerable > 0 && waited < 120) {

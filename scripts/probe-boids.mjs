@@ -588,8 +588,6 @@ try {
     const gap = (reachFull + reachScaled) / 2;
     const damaged = (scale) => {
       const f = new HazardField();
-      // A fish is baited by chance, and a baited one hurts nobody: the chance is switched off so this is not a coin flip.
-      f.baitEnabled = false;
       const h = f.spawnForTest('fish', 0, 0);
       h.scale = scale;
       h.x = LANE * 0.5 + gap;

@@ -250,7 +250,7 @@ class Game {
   /**
    * How many entries have arrived from each edge this run.
    *
-   * Counted rather than sampled, for the same reason the bait and grip counters are: an arrival is over in a frame or
+   * Counted rather than sampled, for the same reason the grip counter is: an arrival is over in a frame or
    * two, so "was anything ever placed outside the lane" is unanswerable from a boolean read afterwards.
    */
 
@@ -1284,7 +1284,6 @@ class Game {
    */
   private talentLabel = '';
   private bossView: { name: string; fraction: number } | null = null;
-  /** The bait bubble a decoy left behind, so it can be drawn and then expire. */
   /** How many skills have been used this run, for the results card. */
   /** When the fish-fart talent can fire again, and how many times it has. */
   /** Which scripted depth events have fired, and the count, so a run does not repeat a beat. */
@@ -1438,19 +1437,6 @@ class Game {
     this.run.player.skillId = null;
     this.run.player.skillAscentBonus = 1;
     this.run.skillActivations = 0;
-    this.run.decoy = null;
-  }
-
-  /**
-   * Test hook: suspend the fish's bait reaction.
-   *
-   * The bait beat is explicitly a chance, so a test that needs to observe the CHASE would otherwise
-   * fail 25% of the time and look like a broken mechanic. Both behaviours are worth asserting, but
-   * not in the same run.
-   */
-  debugSetBaitEnabled(enabled: boolean): boolean {
-    this.run.hazards.baitEnabled = enabled;
-    return this.run.hazards.baitEnabled;
   }
 
   /**
@@ -2394,14 +2380,12 @@ class Game {
       bubbles: this.run.field.bubbles,
       carried: this.run.skill,
       laneWidth: this.camera.viewport.laneWidthMeters,
-      elapsed: this.run.elapsed,
       events: this.run.events,
     });
     if (!used) return false;
-    // Two scalars come back rather than being written through: the invulnerability window is the run's (it takes the
-    // MAX of this and whatever is left), and the decoy's bubble is something the run draws and expires.
+    // The invulnerability window comes back as a value rather than being written through, because it is the run's:
+    // it takes the MAX of this and whatever is already left.
     this.run.invulnerable = Math.max(this.run.invulnerable, used.invulnerableSeconds);
-    if (used.decoy) this.run.decoy = used.decoy;
     if (used.usesLeft <= 0) {
       this.run.skill = null;
       this.skillSlot(false);
@@ -2630,7 +2614,6 @@ class Game {
     if (!carryScore) {
       this.run.skill = null;
       this.run.skillActivations = 0;
-      this.run.decoy = null;
       this.run.xp.reset();
       this.run.mutations = {};
       this.run.picks = [];
@@ -3662,17 +3645,6 @@ private updateBoss(): void {
         laneWidth,
         bulletRadiusMultiplier: this.run.bulletRadiusMultiplier,
       });
-    }
-
-    // The decoy bait bubble, while it lasts. Drawn like a bright collectable, because that is what it
-    // is imitating -- the fish are supposed to fall for it.
-    if (this.run.decoy && this.run.decoy.until > this.run.elapsed) {
-      const r = laneWidth * 0.052;
-      g.circle(this.run.decoy.x, this.run.decoy.y, r).fill({ color: 0xc9ffe8, alpha: 0.4 });
-      g.circle(this.run.decoy.x, this.run.decoy.y, r).stroke({ color: 0x9dffd8, alpha: 0.95, width: r * 0.16 });
-      g.circle(this.run.decoy.x, this.run.decoy.y, r * 1.5).stroke({ color: 0x9dffd8, alpha: 0.3, width: r * 0.08 });
-    } else if (this.run.decoy) {
-      this.run.decoy = null;
     }
 
     // A skill lying in the water: a diamond, distinct from every collectable, with a halo so it

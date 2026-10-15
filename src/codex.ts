@@ -660,7 +660,6 @@ function skillEntry(id: SkillId): CodexEntry {
   ];
   if (act.ascentMultiplier) facts.push({ label: '上升', value: `×${num(act.ascentMultiplier)}` });
   if (act.vortexRadius) facts.push({ label: '半径', value: `${act.vortexRadius} m` });
-  if (act.decoyRadius) facts.push({ label: '半径', value: `${act.decoyRadius} m` });
   if (act.pushRadius) facts.push({ label: '推开半径', value: `${act.pushRadius} m` });
   if (act.invulnerableSeconds) facts.push({ label: '无敌', value: `${num(act.invulnerableSeconds, 1)}s` });
   if (act.clearsSlow) facts.push({ label: '附带', value: '解除减速与抓取' });
@@ -684,9 +683,8 @@ function skillEntry(id: SkillId): CodexEntry {
 /** What each skill is FOR -- the thing its numbers cannot say. */
 const SKILL_NOTES: Partial<Record<SkillId, readonly string[]>> = {
   dash: ['最通用的一条：逃出包围、抢进度、或者单纯从一条追上来的鱼手里跑掉。'],
-  decoy: ['唯一能"清场"的技能：它不是杀死鱼，而是让它们转向。', '用来换一口气，不是用来解决问题——鱼还在。'],
   vortex: ['快速变大的捷径。注意变大本身就招灾：鱼从更远处就会来追你。'],
-  stink: ['专治"被拖拽"和"被减速"这两个拿走你控制权的麻烦。', '它只推垃圾与水母，所以它和诱饵泡不重复。'],
+  stink: ['专治"被拖拽"和"被减速"这两个拿走你控制权的麻烦。', '它只推垃圾与水母。'],
   shell: ['危机保命键：无敌并撞开一切，但不删除任何东西。', '一个会删除危险的壳会是严格更好的爆散，而爆散才是该稀缺的那个。'],
   burst: ['终局爆发的答案：以你为中心向外推开一切。', '同样是推开而不是清掉——直接删除实体，会让终局的密度变得没有意义。'],
 };

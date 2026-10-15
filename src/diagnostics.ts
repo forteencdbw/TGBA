@@ -93,7 +93,6 @@ export function diagnosticsOf(g: GameSnapshot): {
       comedyBeats: number;
       lastBeat: { what: HazardKind; at: number } | null;
       grabs: number;
-      baits: number;
       /** Hazards eaten this run: the food-chain reversal. */
       eaten: number;
       /** Creatures driven off by the gun, and hits that landed without finishing one. */
@@ -342,7 +341,6 @@ export function diagnosticsOf(g: GameSnapshot): {
         lastBeat: g.lastComedyBeat,
         /** Monotonic counters, for transient things a boolean sample would miss. */
         grabs: g.hazards.grabs,
-        baits: g.hazards.baits,
         /**
          * Hazards eaten this run: the food-chain reversal.
          *

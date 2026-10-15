@@ -3,9 +3,8 @@
  *
  * The rule that keeps these from being filler: **each skill answers a specific thing that already
  * annoys you**, and no two answer the same thing. A skill that just "does damage" would be a reskin;
- * these are a dash to escape an encirclement, bait to clear one, a vortex to grow faster, a stink
- * cloud to get a jellyfish or a trash bag off you, a shell to survive a mistake, and a burst to
- * escape the endgame.
+ * these are a dash to escape an encirclement, a vortex to grow faster, a stink cloud to get a
+ * jellyfish or a trash bag off you, a shell to survive a mistake, and a burst to escape the endgame.
  *
  * ONE SLOT. Picking up a skill replaces what you are carrying, which is what forces a decision at
  * the pickup instead of accumulating a toolkit.
@@ -17,7 +16,7 @@ import type { Player } from './player';
 import type { Bubble } from './entities';
 import { saySound, type RunEvent } from './runEvents';
 
-export type SkillId = 'dash' | 'decoy' | 'vortex' | 'stink' | 'shell' | 'burst';
+export type SkillId = 'dash' | 'vortex' | 'stink' | 'shell' | 'burst';
 
 export interface Skill {
   id: SkillId;
@@ -52,17 +51,6 @@ export const SKILLS: readonly Skill[] = [
     },
     get durationSeconds() {
       return mech.skills.dash.durationSeconds;
-    },
-  },
-  {
-    id: 'decoy',
-    name: '诱饵泡',
-    blurb: '扔出假气泡，吸走附近所有的鱼',
-    get uses() {
-      return mech.skills.decoy.uses;
-    },
-    get durationSeconds() {
-      return mech.skills.decoy.durationSeconds;
     },
   },
   {
@@ -130,9 +118,6 @@ export interface SkillActivation {
   /** Collectables within this radius are drawn toward the player. */
   vortexRadius?: number;
   vortexSeconds?: number;
-  /** Fish within this radius are diverted to a decoy. */
-  decoyRadius?: number;
-  decoySeconds?: number;
   /** Hazards of these kinds within this radius are pushed away. */
   pushRadius?: number;
   pushKinds?: HazardKind[];
@@ -144,7 +129,8 @@ export interface SkillActivation {
  * Resolve a skill into its effect.
  *
  * `pushKinds` is explicit per skill rather than "push everything": the stink cloud is the answer to
- * being grabbed or slowed, and a version that also shoved fish around would make the decoy redundant.
+ * being grabbed or slowed, and a version that also shoved fish around would be a second, blunter answer to the
+ * same problem.
  *
  * Every number comes from the skill's own block in the config, including the two durations that used to be
  * literals here (`vortexSeconds: 1.2`, `invulnerableSeconds: 3`): they duplicated `SKILLS[].durationSeconds`, and
@@ -154,8 +140,6 @@ export function activationFor(id: SkillId): SkillActivation {
   switch (id) {
     case 'dash':
       return { id, ascentMultiplier: mech.skills.dash.ascentMultiplier };
-    case 'decoy':
-      return { id, decoyRadius: mech.skills.decoy.decoyRadiusMeters, decoySeconds: mech.skills.decoy.decoySeconds };
     case 'vortex':
       return {
         id,
@@ -196,9 +180,8 @@ export function activationFor(id: SkillId): SkillActivation {
  * The water as using a skill sees it.
  *
  * Nothing here is a callback: the parts of the run a skill CHANGES are handed over by reference (the player, the
- * creatures, the collectables, the carried skill's use count) and the two scalar facts it produces -- how long the
- * bubble is invulnerable, and where the decoy's bait bubble is -- come back as a value. That is what lets a probe use a
- * skill without a game.
+ * creatures, the collectables, the carried skill's use count) and the one scalar fact it produces -- how long the
+ * bubble is invulnerable -- comes back as a value. That is what lets a probe use a skill without a game.
  */
 export interface SkillWorld {
   player: Player;
@@ -207,8 +190,6 @@ export interface SkillWorld {
   /** The carried skill, BY REFERENCE: using one spends a use. The run clears its slot when the count reaches zero. */
   carried: { id: SkillId; uses: number } | null;
   laneWidth: number;
-  /** The run's elapsed seconds, which the bait timers are expressed in. */
-  elapsed: number;
   events: RunEvent[];
 }
 
@@ -216,8 +197,6 @@ export interface SkillWorld {
 export interface SkillUsed {
   /** Seconds of invulnerability it granted, or 0: the run keeps the larger of this and what it already had. */
   invulnerableSeconds: number;
-  /** The bait bubble a decoy left for the run to draw and expire, or null. */
-  decoy: { x: number; y: number; until: number } | null;
   /** Uses left on the carried skill: 0 means it is spent and the run should clear the slot and the button. */
   usesLeft: number;
 }
@@ -233,7 +212,6 @@ export interface SkillUsed {
  *
  * Every effect below is gated on an activation FIELD rather than on the skill's id, which is the property that makes
  * adding a skill a config change: a new row with `pushRadius` and `pushKinds` pushes, and no branch here mentions it.
- * The one id-specific effect is the decoy's bait bubble, and it says so.
  *
  * `null` means nothing was used -- no skill, or none left -- which the caller must not mistake for "used, no effect".
  */
@@ -244,7 +222,6 @@ export function useSkill(world: SkillWorld): SkillUsed | null {
   const laneWidth = world.laneWidth;
   const playerX = world.player.x * laneWidth;
   let invulnerableSeconds = 0;
-  let decoy: SkillUsed['decoy'] = null;
 
   // Lasts of zero mean an instant effect; the player-side timer only takes non-zero ones.
   if (skill.durationSeconds > 0) {
@@ -298,22 +275,7 @@ export function useSkill(world: SkillWorld): SkillUsed | null {
     }
   }
 
-  // Divert fish to a bait bubble. This is the decoy's entire effect: it does not kill anything, it redirects.
-  if (activation.decoyRadius && activation.decoySeconds) {
-    const r = activation.decoyRadius;
-    const baitY = world.player.y + r * 0.35;
-    for (const h of world.hazards.hazards) {
-      if (h.kind !== 'fish') continue;
-      if (Math.hypot(h.x - playerX, h.y - world.player.y) > r) continue;
-      // Baited for the whole duration, and pointed at the bait rather than at the player. Re-using
-      // the existing bait timer means the fish's own chase logic does the work.
-      h.baitedUntil = world.elapsed + activation.decoySeconds;
-      h.y = Math.min(h.y, baitY);
-    }
-    decoy = { x: playerX, y: baitY, until: world.elapsed + activation.decoySeconds };
-  }
-
   world.carried.uses -= 1;
   saySound(world.events, 'skill');
-  return { invulnerableSeconds, decoy, usesLeft: world.carried.uses };
+  return { invulnerableSeconds, usesLeft: world.carried.uses };
 }

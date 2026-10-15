@@ -334,7 +334,6 @@ export class Run {
   hazards = new HazardField();
   talentEffects: TalentEffects = resolveTalent(pickTalent());
   skill: { id: SkillId; name: string; uses: number } | null = null;
-  decoy: { x: number; y: number; until: number } | null = null;
   skillActivations = 0;
   fartReadyAt = 0;
   farts = 0;

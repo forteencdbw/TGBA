@@ -84,7 +84,6 @@ export interface Diagnostics {
     byKind: Record<string, number>;
     comedyBeats: number;
     grabs: number;
-    baits: number;
     /** Hazards EATEN this run: the food-chain reversal. Monotonic, so transient events are answerable. */
     eaten: number;
     /** Creatures DRIVEN OFF by the bullets, and hits that landed without finishing one. Monotonic. */

@@ -923,10 +923,8 @@ test.describe('routes', () => {
           game: {
             debugSpawnHazardOnPlayer: (kind: string) => void;
             debugSetSteadyCruise: () => void;
-            /** Pinned below: the run's talent is rolled, and fish-fart's bait makes fish contacts harmless. */
+            /** Pinned below: the run's talent is rolled, and fish-fart changes what a fish contact does. */
             debugSetTalent: (id: string) => string;
-            /** And the bait beat is on by default, which makes one contact in four deal nothing at all. */
-            debugSetBaitEnabled: (on: boolean) => boolean;
             diagnostics: {
               phase: string;
               stats: { hits: number; ended: number };
@@ -952,16 +950,10 @@ test.describe('routes', () => {
       g.game.debugSetSteadyCruise();
       /**
        * A neutral talent, because the run's own is ROLLED and fish-fart changes what a contact does: it fires on the
-       * hit that would have landed and leaves bait, and a fish crossing bait is distracted into dealing no damage.
-       * Measured with it in play, this test's "contact must hurt" came out 2 hits in 10 contacts.
+       * hit that would have landed and leaves bait behind, which feeds the swarm the escape was meant to get away
+       * from. Measured with it in play, this test's "contact must hurt" came out 2 hits in 10 contacts.
        */
       g.game.debugSetTalent('soda');
-      /**
-       * And the bait beat itself, which is NOT the talent: `baitEnabled` is true by default and gives every fish
-       * contact a 1-in-4 chance of being "the fish wandered off" instead of a hit. A test that counts hits has to
-       * turn that off or it fails a quarter of the time on both projects.
-       */
-      g.game.debugSetBaitEnabled(false);
       const lane = g.game.camera.viewport.laneWidthMeters;
       g.player.x = 0.5;
       g.player.screenY = 0.5;

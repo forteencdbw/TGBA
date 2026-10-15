@@ -136,23 +136,6 @@ try {
     }
   }
 
-  // Decoy: fish within the radius are baited and pushed no higher than the bait; a jelly is not.
-  {
-    const decoy = SKILLS.find((s) => activationFor(s.id).decoyRadius);
-    if (!decoy) {
-      console.log('skip decoy · no skill decoys');
-    } else {
-      const act = activationFor(decoy.id);
-      const w = world({ carried: { id: decoy.id, uses: 1 } });
-      const fish = creature(w, 'fish', 52, 100);
-      const jelly = creature(w, 'jelly', 52, 100);
-      const used = useSkill(w);
-      check(`${decoy.id} · the fish is baited past the run's clock`, [fish.baitedUntil > w.elapsed, jelly.baitedUntil], [true, 0]);
-      check(`${decoy.id} · the fish is held below the bait`, fish.y <= used.decoy.y, true);
-      check(`${decoy.id} · the run is told where the bait is`, [used.decoy.x, used.decoy.until], [w.player.x * LANE, w.elapsed + (act.decoySeconds ?? 0)]);
-    }
-  }
-
   // Invulnerability is REPORTED, not applied: the run takes the max of it and what it has left.
   {
     const shield = SKILLS.find((s) => activationFor(s.id).invulnerableSeconds);
