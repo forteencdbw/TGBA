@@ -5294,22 +5294,44 @@ export function paintHazards(
      * One lookup instead of eighteen cases: see `CREATURE_DRAWING`. Only reached when the creature has no picture.
      */
     CREATURE_DRAWING[h.kind](g, h, r, laneWidth, elapsed);
+
+    /**
+     * And the flash for a body that is a SHAPE, laid over the shape it has just drawn.
+     *
+     * A creature with a picture flashes by its sprite going white -- the art branch above puts a colour matrix on the
+     * sprite -- and that is the right answer for a picture, because a white blob over art is not the art turning
+     * white. A drawn body has no picture and therefore no sprite to filter, so without this it has NO hit feedback
+     * beyond the knockback at all.
+     *
+     * That is not a corner case, which is what this block was deleted on the assumption of (see 2d12911, "every
+     * creature is heading for a picture"). A creature is drawn as a shape for every frame until its animation has
+     * arrived, and that is a window `warmAnimations` exists precisely because it does not always close before the
+     * creature is on screen -- so on any frame where art is late, missing or unloadable, a creature that has just
+     * been shot reads as nothing having happened.
+     *
+     * FULL STRENGTH, not `peakIntensity`: a drawn body has no detail to preserve, and the config says so in both
+     * places that describe this half -- `hitFlash.colour` / `.alpha` / `.radiusScale` are documented as the DRAWN
+     * body's flash, and the boss's own `hitFlashStrength` is held at 1 for the same reason. `peakIntensity` is still
+     * the master switch, so setting it to 0 switches this off with everything else.
+     *
+     * NOT the boss: `drawBoss` flashes from its own dossier already, and stacking this on top would put two whites
+     * on one body.
+     */
+    if (!isBossKind(h.kind) && mech.hitFlash.peakIntensity > 0) {
+      const flash = flashIntensity(elapsed - (h.flashStarted ?? elapsed), 1);
+      if (flash > 0) {
+        const fr = laneWidth * h.radiusFraction * mech.hitFlash.radiusScale;
+        g.ellipse(x, y, fr, fr * 0.85).fill({ color: mech.hitFlash.colour, alpha: mech.hitFlash.alpha * flash });
+      }
+    }
   }
 
   /**
-   * No whole-list ellipse pass here, and no per-shape one either.
+   * No whole-list ellipse pass here any more.
    *
-   * A creature's flash belongs to whatever draws that creature: the sprite's own colour matrix when it has a picture
-   * (the art branch above), and `drawBoss` for the boss's drawn body, which carries its own colour and strength in the
-   * boss dossier because a boss has to read as one slab going white rather than as a shape with a wash on it.
-   *
-   * WHAT IS MISSING, and it is deliberate rather than overlooked: a creature drawn as a SHAPE has no flash. That used
-   * to be a whole-pass white ellipse here, deleted in 2d12911 on the reasoning that every creature was heading for a
-   * picture. It is still true that the only kinds with no `hazardArt` row are trash, vent, foam, rain, rot and oil --
-   * and ALL SIX have `hazards.health` of 0, so not one of them can be shot and none of them can ever be hit. The
-   * window where this could still matter is the frame or two a creature spends drawn as a shape before its animation
-   * arrives, which is not worth a branch that never runs. `hitFlash.colour` / `.alpha` / `.radiusScale` are therefore
-   * unread config keys, and are left in place rather than deleted only so that restoring this is a file edit.
+   * A creature's flash belongs to whatever draws that creature -- the sprite's own colour matrix when it has a
+   * picture, the ellipse just above when it does not -- so there is no second pass over the field that has to agree
+   * with the bodies about where they are.
    */
 }
 
