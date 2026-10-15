@@ -82,14 +82,15 @@ export class RunSummary {
   }
 
   /** Show the panel with a finished run's numbers. */
-  show(run: { score: number; levels: number; total: number; seconds: number; best: number }): void {
+  show(run: { score: number; levels: number; total: number; seconds: number; best: number; debug?: boolean }): void {
     this.open = true;
     this.root.visible = true;
     this.score.text = `${run.score}`;
     const minutes = Math.floor(run.seconds / 60);
     const seconds = Math.floor(run.seconds % 60);
     this.lines.text = [
-      `通关 ${run.levels} / ${run.total} 关`,
+      // The debug level is not one of the total, so "0 / 6" would be a count of something it is not part of.
+      run.debug ? '调试关 · 通关' : `通关 ${run.levels} / ${run.total} 关`,
       `用时 ${minutes}:${String(seconds).padStart(2, '0')}`,
       run.score >= run.best && run.score > 0 ? `★ 新纪录（上次最佳 ${run.best}）` : `最佳得分 ${run.best}`,
       buildLabel(),

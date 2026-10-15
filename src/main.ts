@@ -1,7 +1,7 @@
 import { Application, FillGradient, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, rgba, waterColourForTest } from './background';
 import { tuning } from './config';
-import { LEVEL, LEVELS, START_LEVEL_ID, TIMELINE, installSpawnBlocks, levelIndex, selectLevel, type Level } from './levels';
+import { DEBUG_LEVEL, LEVEL, LEVELS, START_LEVEL_ID, TIMELINE, installSpawnBlocks, isDebugLevel, levelIndex, selectLevel, type Level } from './levels';
 import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, isBossKind, LURE_PROBE, paintHazards, setReducedFlash, warmAnimations, type HazardKind } from './hazards';
 import { paintHitboxes, setDebugHitboxes, isDebugHitboxes } from './hitboxes';
 import { paintBullets, radiusOf } from './bullets';
@@ -401,6 +401,7 @@ class Game {
       this.refreshLevelMenu();
     };
     this.settings.onExit = () => this.exitToMenu();
+    this.settings.onEnterDebugLevel = () => this.enterDebugLevel();
     /**
      * Starting a run now goes through the loader.
      *
@@ -2531,7 +2532,7 @@ class Game {
      * `startRun` without a carry is a fresh run, so it starts from this level; the transition path sets the count itself
      * before calling in. It is the results card's number now that the corner chart is gone.
      */
-    if (!carryScore) this.run.levelsClearedInRun = levelIndex(LEVEL.id);
+    if (!carryScore) this.run.levelsClearedInRun = Math.max(0, levelIndex(LEVEL.id));
     this.run.bossSpawned = false;
     /**
      * A fresh run has no level queued to walk into.
@@ -2723,6 +2724,21 @@ class Game {
     this.banner(`第 ${index + 1} 关  ·  ${LEVEL.name}  ·  分数继承 ${this.run.score.value}`);
   }
 
+  /**
+   * Walk into the debug level from the menu's settings panel.
+   *
+   * The level is switched through `selectLevel`, the call every route into a level uses, and the run starts through the
+   * loader like the start button's does -- so the art is in before the first frame, and `exitToMenu` puts the ladder's
+   * level back afterwards (it re-applies the file's `start`, which is what keeps "start" meaning the level the pills show).
+   * Nothing is written to the save on the way in or the way out: see the debug branch in `defeatBoss`.
+   */
+  private enterDebugLevel(): void {
+    if (this.run.phase !== 'menu') return;
+    selectLevel(DEBUG_LEVEL.id);
+    this.closeSettings();
+    void this.beginWithLoading();
+  }
+
   /** Leave the level and show the main menu. */
   private exitToMenu(): void {
     this.music.stop();
@@ -2737,6 +2753,8 @@ class Game {
      * file's `start` here is what keeps "start" meaning "the level on screen", however far the last run had travelled.
      */
     selectLevel(START_LEVEL_ID);
+    // The pills read `LEVEL`, and it just moved: back from the debug level it is no longer the one they last showed.
+    this.refreshLevelMenu();
     /**
      * The summary panel goes with the run.
      *
@@ -2820,7 +2838,7 @@ class Game {
   private startLevelMusic(): void {
     const bus = audio.musicBus();
     if (bus) this.music.attach(bus.ctx, bus.destination);
-    const track = (mech.audio.music.tracks as Record<string, MusicTrack | undefined>)[LEVEL.id];
+    const track = (mech.audio.music.tracks as Record<string, MusicTrack | undefined>)[LEVEL.looksLike ?? LEVEL.id];
     this.music.setVolume(audio.getVolume() * mech.audio.music.volume);
     this.music.setTrack(track ?? null);
   }
@@ -2988,6 +3006,19 @@ private updateBoss(): void {
      * point at: the message would promise a choice that does not exist. The save is kept whole regardless, so the day
      * the ladder comes back the data it needs is still being written.
      */
+    /**
+     * THE DEBUG LEVEL IS CLEARED AND SETTLED LIKE ANY OTHER, AND LEAVES THE LADDER ALONE.
+     *
+     * It is not in `LEVELS`, so there is nothing for `clear` to record (it would refuse the id) and no "next level" to
+     * walk into -- `LEVELS[levelIndex + 1]` with an index of -1 would be the FIRST level, which is the wrong place to
+     * send somebody who was testing a school. Its run ends here, on the summary card.
+     */
+    if (isDebugLevel(LEVEL)) {
+      this.banner(clearText);
+      this.run.levelsClearedInRun = 0;
+      this.run.runComplete = true;
+      return;
+    }
     this.run.progress.clear(LEVEL.id);
     this.refreshLevelMenu();
     this.banner(clearText);
@@ -3032,6 +3063,7 @@ private updateBoss(): void {
       total: LEVELS.length,
       seconds: this.run.elapsedTotal,
       best: this.run.bestScore,
+      debug: isDebugLevel(LEVEL),
     });
   }
 

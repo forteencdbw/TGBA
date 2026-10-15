@@ -127,6 +127,15 @@ export interface LevelEntry {
    */
   pathDelaySeconds?: number;
   /**
+   * Which Boids school this creature belongs to: the index of the block that made it, which every creature of one block
+   * shares. Absent for everything that is not part of a school.
+   *
+   * A school with this set follows `path` through an invisible leader rather than itself -- see `src/boids.ts` -- so the
+   * `path` an entry carries means "the leader's spline" and `pathDelaySeconds` is absent: nothing waits its turn, the
+   * whole school is born at once.
+   */
+  school?: number;
+  /**
    * Which of the kind's looks every creature in this BLOCK shows.
    *
    * A block is a school: `{ kind: 'fish', count: 6 }` is six fish that arrived together and are one shoal, and a
@@ -269,6 +278,13 @@ export interface SpawnBlock {
    * LENGTH of the string, which is the honest reading of "ten fish, two a second".
    */
   pathSpacingSeconds?: number;
+  /**
+   * Make this block a Boids school: `count` fish that swim as one body behind an invisible leader walking `path`.
+   *
+   * Only for `kind: 'fish'`, and only with a `path` -- the loader refuses anything else, because a school with nothing
+   * to follow is a key that silently does nothing. See `src/boids.ts`, and the config's `hazards.boids` for the numbers.
+   */
+  boids?: boolean;
   at: number;
   kind: SpawnKind;
   count: number;
@@ -384,9 +400,14 @@ export interface Level {
    * to be one hardcoded ramp, which made every level the same sea with different creatures in it.
    */
   palette: LevelPalette;
+  /**
+   * Set only on the debug level: the id of the ladder level whose music it borrows.
+   *
+   * A level is keyed by its id in the audio config, and the debug level has no track of its own. Naming the level it
+   * borrows from, rather than copying that level's track under a second key, keeps one definition of what level 1 sounds like.
+   */
+  looksLike?: string;
 }
-
-/** A level's backdrop image and how it sits in the water. */
 export interface BackdropSpec {
   /** Path under public/, e.g. levels/black-smokers-backdrop.jpg. */
   image: string;
@@ -598,6 +619,7 @@ const DEFAULT_PATH_SPACING_SECONDS = 0.5;
 const BLOCK_KEYS: readonly string[] = [
   'path',
   'pathSpacingSeconds',
+  'boids',
   'at',
   'kind',
   'count',
@@ -735,6 +757,28 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
   const side = isVent ? (pick(node, 'side', where, 'left', VENT_SIDES) as VentSide) : undefined;
   const aim = node['aim'] === undefined ? undefined : (pick(node, 'aim', where, 'up', VENT_AIMS) as VentAim);
 
+  /**
+   * A school needs a fish and a spline, and nothing else may claim to be one.
+   *
+   * Both directions are refused rather than ignored: `boids` on a shark would be a key that does nothing, and a school
+   * with no `path` would have no leader to follow -- each looks like "the school is not working" rather than like a
+   * mistake in the file.
+   */
+  const boidsRaw = node['boids'];
+  if (boidsRaw !== undefined && typeof boidsRaw !== 'boolean') {
+    fail(where, `"boids" is ${JSON.stringify(boidsRaw)}, but it should be true or false.`);
+  }
+  const boids = boidsRaw === true;
+  if (boids && kind !== 'fish') {
+    fail(where, `makes a school of "${kind}", but only fish swim in a Boids school.`);
+  }
+  if (boids && typeof node['path'] !== 'string') {
+    fail(where, 'is a Boids school with no "path": the school follows its path through an invisible leader, so it needs one.');
+  }
+  if (boids && from !== 'top') {
+    fail(where, `is a Boids school arriving from the ${from}: a school is born where its path starts, so it has no edge to arrive from.`);
+  }
+
   return {
     at,
     kind,
@@ -760,6 +804,7 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
     // level finishes parsing), so a typo here is reported once the table is known rather than silently ignored.
     ...(typeof node['path'] === 'string' ? { path: node['path'] } : {}),
     pathSpacingSeconds: optNum(node, 'pathSpacingSeconds', where, DEFAULT_PATH_SPACING_SECONDS, 0.02, 10),
+    ...(boids ? { boids: true } : {}),
     // (a school key used to live here; schools are splines now)
 
     // The vent's own three, absent for everything else. `side` is only ever set for a vent because the checks above
@@ -799,7 +844,7 @@ function blockVarieties(blocks: readonly SpawnBlock[]): Map<SpawnBlock, number> 
   return out;
 }
 
-function expandBlock(block: SpawnBlock, variety = 0): LevelEntry[] {
+function expandBlock(block: SpawnBlock, variety = 0, index = 0): LevelEntry[] {
   const side: Pick<LevelEntry, 'from' | 'enterSpeed' | 'depth'> =
     block.from === 'top' ? {} : { from: block.from, enterSpeed: block.enterSpeed, depth: block.depth };
   /**
@@ -835,6 +880,22 @@ function expandBlock(block: SpawnBlock, variety = 0): LevelEntry[] {
    * Expanded here rather than at spawn time so the whole string exists in the timeline like everything else -- which
    * is authored in metres rather than in frames.
    */
+
+  /**
+   * A BOIDS SCHOOL is `count` fish with no delay between them: they are born together, in a cloud, and the school's
+   * rules do the rest. The `school` number is this block's index, which every fish of the block shares and no other
+   * block's does -- that is what lets the hazard field give them one leader.
+   */
+  if (block.boids) {
+    const n = Math.max(1, block.count);
+    return tag(
+      Array.from({ length: n }, (_, i) => ({
+        ...place.one(block.at, block.kind, block.x, block.sizes?.[i % Math.max(1, block.sizes?.length ?? 1)]),
+        path: block.path as string,
+        school: index,
+      })),
+    );
+  }
 
   if (block.path) {
     const n = Math.max(1, block.count);
@@ -907,7 +968,7 @@ function readLevel(node: Record<string, unknown>, where: string): Level {
 
   const blocks = rawSpawns.map((raw, i) => readBlock(raw, id, i));
   const varieties = blockVarieties(blocks);
-  const entries = blocks.flatMap((block) => expandBlock(block, varieties.get(block))).sort((a, b) => a.at - b.at);
+  const entries = blocks.flatMap((block, i) => expandBlock(block, varieties.get(block), i)).sort((a, b) => a.at - b.at);
   const landmarks = Array.isArray(node['landmarks'])
     ? (node['landmarks'] as { depth: number; label: string }[])
     : undefined;
@@ -997,6 +1058,22 @@ if (node['paths'] !== undefined) {
     };
   }
 }
+
+/**
+ * Every path a block names must exist.
+ *
+ * Checked here because only now is the level's path table known (the blocks were read before it). A name that is not in
+ * it used to fall through to a creature with no spline, which is a string of fish that simply sits at the top of the
+ * screen and drifts -- and for a Boids school, which has nothing but its path to follow, a school with no leader.
+ */
+blocks.forEach((block, i) => {
+  if (block.path && !paths?.[block.path]) {
+    fail(
+      `${where}.spawns[${i}]`,
+      `puts creatures on the path "${block.path}", but this level has no such path. It has: ${Object.keys(paths ?? {}).join(', ') || '(none)'}.`,
+    );
+  }
+});
 
 const rawBoss = node['boss'];
 if (rawBoss === null || typeof rawBoss !== 'object' || Array.isArray(rawBoss)) {
@@ -1134,6 +1211,62 @@ const FILE = readLevels(levelSources());
 export const LEVELS: readonly Level[] = FILE.levels;
 
 /**
+ * The debug level's file, which is NOT one of the numbered levels.
+ *
+ * Its own glob and its own path, outside `config/levels/`, because everything in that directory is a rung of the
+ * progression: the numbers are the unlock order, so a debug level dropped in there would sit on the ladder and be
+ * walked into after the sixth.
+ */
+const DEBUG_LEVEL_FILE = import.meta.glob('../config/debug-level.json5', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
+/**
+ * The debug level: a level in the ordinary format that is not in `LEVELS`.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHAT IT IS FOR, AND WHAT MAKES IT DIFFERENT
+ * ---------------------------------------------------------------------------------------------
+ * A place to put creatures on purpose and watch them: its spawn table is `config/debug-level.json5`, written in the same
+ * blocks every level uses, so what is tested here is the real path rather than a parallel one. It runs as a normal level
+ * -- the same player, the same scroll, the same boss to end it -- and differs in exactly three ways:
+ *
+ *   - it is not in `LEVELS`, so it has no place on the ladder and clearing it unlocks nothing;
+ *   - it has no water of its own: palette, backdrops and music are the FIRST level's (`looksLike`), so it needs no art;
+ *   - the way in is a button in the settings panel, offered from the main menu with the debug switch on.
+ *
+ * The file may not declare a palette or backdrops. They would be overwritten, and a knob that is quietly ignored is the
+ * kind of thing this project does not keep -- the loader says so instead.
+ */
+export const DEBUG_LEVEL: Level = readDebugLevel();
+
+function readDebugLevel(): Level {
+  const sources = Object.entries(DEBUG_LEVEL_FILE);
+  const first = LEVELS[0] as Level;
+  if (sources.length !== 1) {
+    fail('config/debug-level.json5', 'is missing: the debug level is a level in the ordinary format, and it has to be there.');
+  }
+  const [path, text] = sources[0] as [string, string];
+  const file = path.replace('../config/', '');
+  const node = parseLevelFile(path, text);
+  if (node === null || typeof node !== 'object' || Array.isArray(node)) fail(file, 'must be an object: one level.');
+  const fields = node as Record<string, unknown>;
+  for (const key of ['palette', 'backdrop', 'backdrops']) {
+    if (fields[key] !== undefined) {
+      fail(file, `has "${key}", but the debug level has no water of its own: it uses the first level's ("${first.id}"). Remove the key.`);
+    }
+  }
+  const level = readLevel(fields, file);
+  if (LEVELS.some((l) => l.id === level.id)) {
+    fail(file, `is called "${level.id}", which is also a level on the ladder. The debug level needs an id of its own.`);
+  }
+  return { ...level, palette: first.palette, ...(first.backdrops ? { backdrops: first.backdrops } : {}), looksLike: first.id };
+}
+
+/** Whether this is the debug level, which the run treats as an ordinary level that is not on the ladder. */
+export function isDebugLevel(level: Level): boolean {
+  return level === DEBUG_LEVEL;
+}
+
+/**
  * The level a fresh player begins on: the first level of the first file, unless a file says otherwise.
  *
  * `readLevels` guarantees this names a real level (it fails the load otherwise), so the `??` here is the compiler
@@ -1165,7 +1298,7 @@ export function levelIndex(id: string): number {
  *   continuing on the previous level.
  */
 export function selectLevel(id: string): boolean {
-  const level = LEVELS.find((l) => l.id === id);
+  const level = LEVELS.find((l) => l.id === id) ?? (id === DEBUG_LEVEL.id ? DEBUG_LEVEL : undefined);
   if (!level) return false;
   LEVEL = level;
   TIMELINE = level.entries;
@@ -1207,7 +1340,7 @@ export function currentSpawnBlocks(): readonly SpawnBlock[] {
 export function installSpawnBlocks(blocks: readonly unknown[]): number {
   const parsed = blocks.map((raw, i) => readBlock(raw, LEVEL.id, i));
   const varieties = blockVarieties(parsed);
-  const entries = parsed.flatMap((block) => expandBlock(block, varieties.get(block))).sort((a, b) => a.at - b.at);
+  const entries = parsed.flatMap((block, i) => expandBlock(block, varieties.get(block), i)).sort((a, b) => a.at - b.at);
   assertLevelSane({ ...LEVEL, entries, blocks: parsed });
   TIMELINE = entries;
   installedBlocks = parsed;
@@ -1307,6 +1440,7 @@ export function assertLevelSane(level: Level): void {
  * level, so this is the moment to fail.
  */
 for (const level of LEVELS) assertLevelSane(level);
+assertLevelSane(DEBUG_LEVEL);
 
 
 

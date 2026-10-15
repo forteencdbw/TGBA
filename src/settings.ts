@@ -76,6 +76,14 @@ export class SettingsUi {
    * the infinite-health switch.
    */
   private readonly debugButton: Button;
+  /**
+   * The way into the debug level: a level where the creatures under test are placed by `config/debug-level.json5`.
+   *
+   * Offered only from the MENU and only while the debug switch is on -- the same two conditions as the level pills, and for
+   * the same reasons: it is a developer's door, and a panel opened mid-run has a level already under way that this would
+   * silently abandon. See `showsDebugEntry`.
+   */
+  private readonly debugLevelButton: Button;
   private readonly sliderTrack = new Graphics();
   private readonly sliderFill = new Graphics();
   private readonly sliderKnob = new Graphics();
@@ -174,6 +182,8 @@ export class SettingsUi {
    * the same argument. Signalled the same way as its neighbours so the game owns the state and this panel only asks.
    */
   onDebugHitboxes: (on: boolean) => void = () => {};
+  /** Called when the way into the debug level is pressed. The game switches level and starts it. */
+  onEnterDebugLevel: () => void = () => {};
   /** Called when exit-to-menu is pressed. */
   onExit: () => void = () => {};
 
@@ -231,6 +241,10 @@ export class SettingsUi {
     this.cheatButton = this.mkButton('无限血量：关', () => this.setInfiniteHealth(!this.infiniteHealth));
     // Already on at construction, so the label starts in the ON form -- `redraw` keeps it in step from here.
     this.debugButton = this.mkButton('调试模式：开', () => this.setDebugHitboxes(!this.debugHitboxes));
+    this.debugLevelButton = this.mkButton('进入调试关', () => this.onEnterDebugLevel());
+    // Whether it is offered is decided by `syncDebugEntry`; this is its state at construction (in a run: not offered).
+    this.debugLevelButton.bg.visible = false;
+    this.debugLevelButton.label.visible = false;
 
     this.restartButton = this.mkButton('重开本关', () => this.onRestart());
     this.exitButton = this.mkButton('退出到主菜单', () => this.onExit());
@@ -260,6 +274,8 @@ export class SettingsUi {
       this.cheatButton.label,
       this.debugButton.bg,
       this.debugButton.label,
+      this.debugLevelButton.bg,
+      this.debugLevelButton.label,
       this.restartButton.bg,
       this.restartButton.label,
       this.exitButton.bg,
@@ -296,9 +312,42 @@ export class SettingsUi {
    * is what makes it harmless.
    */
   private buttons(): Button[] {
-    return [this.closeButton, this.flashButton, this.cheatButton, this.debugButton, this.restartButton, this.exitButton, this.saveButton, this.cancelButton].filter(
-      (button) => button.bg.visible,
-    );
+    return [
+      this.closeButton,
+      this.flashButton,
+      this.cheatButton,
+      this.debugButton,
+      this.debugLevelButton,
+      this.restartButton,
+      this.exitButton,
+      this.saveButton,
+      this.cancelButton,
+    ].filter((button) => button.bg.visible);
+  }
+
+  /**
+   * Whether the way into the debug level is on the panel: opened from the menu, with the debug switch on.
+   *
+   * The switch is half of it because the debug level is the debug tools' own destination -- the hitbox overlay and the
+   * level ladder are already behind that switch, and a player who has it off has told the game they do not want any of it.
+   */
+  private get showsDebugEntry(): boolean {
+    return !this.inRun && this.debugHitboxes;
+  }
+
+  /**
+   * Show or hide the debug-level button to match `showsDebugEntry`, and say whether that changed anything.
+   *
+   * A hidden button is also disarmed: its rectangle outlives its visibility (see `buttons`), and a press that landed where
+   * it WOULD be must not fire a door nobody can see.
+   */
+  private syncDebugEntry(): boolean {
+    const shown = this.showsDebugEntry;
+    const changed = this.debugLevelButton.bg.visible !== shown;
+    this.debugLevelButton.bg.visible = shown;
+    this.debugLevelButton.label.visible = shown;
+    this.debugLevelButton.pressed = false;
+    return changed;
   }
 
   private onPressOf(button: Button): () => void {
@@ -327,6 +376,7 @@ export class SettingsUi {
       // landed where the button WOULD be would fire a control nobody can see.
       button.pressed = false;
     }
+    this.syncDebugEntry();
     if (this.lastViewport) this.layout(this.lastViewport);
   }
 
@@ -368,6 +418,8 @@ export class SettingsUi {
     this.debugHitboxes = on;
     this.debugButton.label.text = on ? '调试模式：开' : '调试模式：关';
     this.debugButton.label.style.fill = on ? 0xffd479 : 0xeaf9ff;
+    // The debug level's door is behind this switch, and a row appearing or going changes the panel's height.
+    if (this.syncDebugEntry() && this.lastViewport) this.layout(this.lastViewport);
     this.redraw();
     if (notify) this.onDebugHitboxes(on);
   }
@@ -468,7 +520,9 @@ export class SettingsUi {
      */
     const lowerRows = this.inRun
       ? [this.cheatButton, this.debugButton, this.restartButton, this.exitButton]
-      : [this.cheatButton, this.debugButton];
+      : this.showsDebugEntry
+        ? [this.cheatButton, this.debugButton, this.debugLevelButton]
+        : [this.cheatButton, this.debugButton];
 
     /**
      * The level block, and its height in DESIGN PIXELS -- which is the same unit as `ROW` above.
@@ -486,8 +540,8 @@ export class SettingsUi {
     /**
      * And it sits AFTER the toggle rows rather than between them, which is only possible because the level row and
      * restart/exit never appear together: the row is offered to a panel opened from the menu and the other two to one
-     * opened during a run, so the stack is either `cheat, debug, restart, exit` or `cheat, debug, pills`. Putting it
-     * last keeps the height and the placement a single list to walk.
+     * opened during a run, so the stack is either `cheat, debug, restart, exit` or `cheat, debug, debug level, pills`.
+     * Putting it last keeps the height and the placement a single list to walk.
      */
     const stackBottom =
       ROW.cheatsRow +
@@ -767,7 +821,7 @@ export class SettingsUi {
           color: b.pressed ? 0x2a4a6b : danger ? 0x33202c : primary ? 0x1d3c58 : 0x16293f,
           alpha: 0.95,
         })
-        .stroke({ color: b.pressed ? 0x9fe4ff : danger ? 0xd88a9a : 0x5fa8cc, alpha: 0.7, width: 1.2 * s });
+        .stroke({ color: b.pressed ? 0x9fe4ff : danger ? 0xd88a9a : b === this.debugLevelButton ? 0xffb46b : 0x5fa8cc, alpha: 0.7, width: 1.2 * s });
     }
 
     this.drawLevelRow(s);
@@ -983,6 +1037,8 @@ export class SettingsUi {
      * no restart button on the screen. This is the flag that says which reading is true.
      */
     inRun: boolean;
+    /** Whether the way into the debug level is offered: the same kind of flag as `inRun`, for the same reason. */
+    debugEntry: boolean;
     /** The level row as offered, with its label -- the same shape the main menu used to report. */
     levels: { id: string; label: string; locked: boolean; selected: boolean; rect: { x: number; y: number; w: number; h: number } }[];
     buttons: Record<string, { x: number; y: number; w: number; h: number }>;
@@ -992,6 +1048,7 @@ export class SettingsUi {
       panel: { ...this.panelRect },
       slider: { ...this.slider },
       inRun: this.inRun,
+      debugEntry: this.showsDebugEntry,
       levels: this.levels.map((level, i) => ({
         id: level.id,
         label: level.name,
@@ -1004,6 +1061,7 @@ export class SettingsUi {
         flash: rectOf(this.flashButton),
         cheat: rectOf(this.cheatButton),
         debug: rectOf(this.debugButton),
+        debugLevel: rectOf(this.debugLevelButton),
         restart: rectOf(this.restartButton),
         exit: rectOf(this.exitButton),
         save: rectOf(this.saveButton),

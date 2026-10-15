@@ -1,4 +1,5 @@
 import { EntityField } from './entities';
+import { seedMember } from './boids';
 import { HazardField, ventX, type Hazard, type HazardKind, type SpawnOptions } from './hazards';
 import { isObstacleKind, ObstacleField } from './obstacles';
 import { mech } from './mechanisms';
@@ -132,6 +133,23 @@ export function placeEntry(
    * line. Seeding it part-way along instead meant most of a string simply appeared in the middle of its own path.
    */
   const pathSpec = entry.path ? LEVEL.paths?.[entry.path] : undefined;
+  /**
+   * A BOIDS fish does not carry the spline; its school's invisible leader does.
+   *
+   * The first member to be placed makes the school (`joinSchool`) and the rest find it by the block's number, so the whole
+   * block shares one leader that is stepped once a frame. The fish is born in a cloud round the leader, at the leader's
+   * velocity, and has no `path` of its own: that is what keeps `advanceKind` from walking it along the curve as well.
+   */
+  if (entry.school !== undefined && pathSpec) {
+    const school = world.hazards.joinSchool(entry.school, pathSpec, spawnY, laneWidth, view.max - view.min);
+    const seed = seedMember(school, laneWidth);
+    const hazard = world.hazards.spawnAt(entry.kind as HazardKind, seed.x, seed.y, {
+      boid: { school: entry.school, vx: seed.vx, vy: seed.vy },
+      ...(entry.variety !== undefined ? { variety: entry.variety } : {}),
+    });
+    world.hazards.hazards.push(hazard);
+    return { ...record, x: +seed.x.toFixed(1), worldY: +seed.y.toFixed(1) };
+  }
   const path: Hazard['path'] = pathSpec
     ? {
         points: pathSpec.points,

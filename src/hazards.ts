@@ -32,6 +32,8 @@ import { animationFrameAt, animationSeconds, assetTextureNow, isYFlipped, loadAn
 import { mech, tuning } from './config';
 import type { BossDossier } from './mechanisms';
 import { hazardMass } from './consumption';
+import { advanceLeader, createSchool, steerSchool, type BoidState, type School } from './boids';
+import { pathPoint } from './spline';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
 export type HazardKind =
   | 'fish'
@@ -536,6 +538,14 @@ export interface Hazard {
    * one spline in memory.
    */
   path: { points: readonly { x: number; y: number }[]; seconds: number; elapsed: number; startX: number; startY: number } | null;
+  /**
+   * A member of a Boids school, or null.
+   *
+   * Set only for a block that says `boids: true`. Such a fish swims by the school's rules (`src/boids.ts`) and by nothing
+   * else -- not `stepFish`'s chase, not a spline of its own: the spline belongs to the school's invisible leader, which is
+   * why `path` stays null here even though the block named one.
+   */
+  boid: BoidState | null;
   /** LEVEL 6's foam: how long it has left before it breaks up. */
   foamLife: number;
   /** Seconds left of a zapper's discharge ring, and its cooldown. Both per instance: a shoal does not fire in unison. */
@@ -937,31 +947,7 @@ export function hazardHealth(kind: HazardKind): number {
  */
 const FLEE_DIRECTIONS = ['up', 'left', 'right'] as const;
 
-/**
- * A point on a Catmull-Rom spline through `points`, at `t` in 0..1.
- *
- * Catmull-Rom rather than a Bézier chain because it INTERPOLATES: the curve passes exactly through every waypoint, which
- * is what "move along these points" means. A Bézier would only be pulled toward them, so an author asking for a fish to
- * pass the middle of the screen would get one that passed near it.
- */
-function pathPoint(points: readonly { x: number; y: number }[], t: number): { x: number; y: number } {
-  const n = points.length;
-  if (n === 0) return { x: 0, y: 0 };
-  if (n === 1) return points[0]!;
-  const span = (n - 1) * Math.min(1, Math.max(0, t));
-  const i = Math.min(n - 2, Math.floor(span));
-  const u = span - i;
-  // The four control points, clamped at the ends: a path that is not closed has to borrow its neighbours' reflections.
-  const p0 = points[Math.max(0, i - 1)]!;
-  const p1 = points[i]!;
-  const p2 = points[i + 1]!;
-  const p3 = points[Math.min(n - 1, i + 2)]!;
-  const u2 = u * u;
-  const u3 = u2 * u;
-  const axis = (a: number, b: number, c: number, d: number): number =>
-    0.5 * (2 * b + (c - a) * u + (2 * a - 5 * b + 4 * c - d) * u2 + (-a + 3 * b - 3 * c + d) * u3);
-  return { x: axis(p0.x, p1.x, p2.x, p3.x), y: axis(p0.y, p1.y, p2.y, p3.y) };
-}
+/** The spline a creature on a path walks is `pathPoint`, in `src/spline.ts` -- shared with the leader of a school. */
 
 export interface HazardContext {
   /** Visible world y range, so spawns appear just above the top of the screen. */
@@ -1049,6 +1035,8 @@ export interface SpawnOptions {
   entry?: Hazard['entry'];
   /** The spline it follows, if a level put it on one. */
   path?: Hazard['path'];
+  /** Its place in a Boids school, if its block said `boids: true`. The caller seeds the velocity; see `src/boids.ts`. */
+  boid?: BoidState;
   /**
    * Which of the kind's looks to show. A level hands down its own block number, so a BLOCK is one variety.
    *
@@ -1836,6 +1824,35 @@ export class HazardField {
   hazards: Hazard[] = [];
 
   /**
+   * The live Boids schools, by the id their block gave them.
+   *
+   * Kept on the field rather than on a member because a school is the one thing its fifty fish share: one leader, one
+   * spline, stepped ONCE a frame -- stepped per member it would run fifty times as fast.
+   */
+  readonly schools = new Map<number, School>();
+
+  /**
+   * The school with this id, made if it is the first of its members to be placed.
+   *
+   * `startY` and the screen height are the placement's: the path's `y` is a fraction of a screen measured from where the
+   * school was put, exactly as for a creature on a path.
+   */
+  joinSchool(
+    id: number,
+    path: { points: readonly { x: number; y: number }[]; seconds: number },
+    startY: number,
+    laneWidth: number,
+    screen: number,
+  ): School {
+    let school = this.schools.get(id);
+    if (!school) {
+      school = createSchool(id, path, startY, laneWidth, screen);
+      this.schools.set(id, school);
+    }
+    return school;
+  }
+
+  /**
    * Whether the fish bait reaction is active.
    *
    * Exposed so a probe can assert the CHASE deterministically: the bait beat is a chance by design,
@@ -1916,6 +1933,7 @@ export class HazardField {
 
   reset(): void {
     this.hazards = [];
+    this.schools.clear();
     // The queues go with the creatures they describe: a pending spark or outline belongs to a body that no longer exists,
     // and carrying it into the next level would flash something that was never hit.
     this.hitEvents.length = 0;
@@ -2186,6 +2204,33 @@ export class HazardField {
      */
     if (ctx.suction) this.applySuction(dt, ctx);
 
+    /**
+     * THE SCHOOLS DECIDE BEFORE ANY MEMBER MOVES, and each decides once.
+     *
+     * Two passes for the reason the menu backdrop's schools use two: the leader and every member's velocity have to be the
+     * same moment's, and the integration -- which is each fish's own `advanceKind` below -- has to happen after, so a fish
+     * that is leaving or being shoved overrides what the school wanted. A school whose members are all gone is dropped
+     * here, which is also what stops a finished level's schools accumulating in the map.
+     */
+    if (this.schools.size) {
+      const groups = new Map<number, Hazard[]>();
+      for (const h of this.hazards) {
+        if (!h.boid || h.flee || h.deadSince !== undefined) continue;
+        const list = groups.get(h.boid.school);
+        if (list) list.push(h);
+        else groups.set(h.boid.school, [h]);
+      }
+      const screen = ctx.max - ctx.min;
+      for (const [id, school] of this.schools) {
+        const members = groups.get(id);
+        if (!members) {
+          this.schools.delete(id);
+          continue;
+        }
+        advanceLeader(school, dt, ctx.laneWidth, screen);
+        steerSchool(members, school, dt, ctx.laneWidth);
+      }
+    }
     for (const h of this.hazards) {
       /**
        * PER-FRAME STATE TICKS HERE, not inside `advance`.
@@ -2599,6 +2644,9 @@ export class HazardField {
             baitedUntil: 0,
             fed: 0,
             digest: hazardTuning.fishDigestSeconds,
+            // A child of a school's fish stays in the school, with a state of its own: the spread above would otherwise hand
+            // both fish the SAME velocity object, and steering one would steer the other.
+            boid: h.boid ? { school: h.boid.school, vx: h.boid.vx, vy: h.boid.vy } : null,
           });
         }
         break;
@@ -2731,6 +2779,7 @@ export class HazardField {
       counterRest: 0,
       volleySpin: headStart * Math.random() * Math.PI * 2,
       path: opts.path ?? null,
+      boid: opts.boid ?? null,
     };
   }
 
@@ -2998,7 +3047,7 @@ export class HazardField {
      * supposed to sweep across the screen instead turns and dives. Guns stay on -- a fish that shoots while it weaves is
      * still the shape the level asked for, plus pressure.
      */
-    const charger = h.path ? undefined : mech.charges.chargers[h.kind];
+    const charger = h.path || h.boid ? undefined : mech.charges.chargers[h.kind];
     if (charger) {
       h.chargeRest = Math.max(0, h.chargeRest - dt);
       const dist = Math.hypot(ctx.playerX - h.x, ctx.playerY - h.y);
@@ -3091,6 +3140,20 @@ export class HazardField {
       return;
     }
 
+    /**
+     * A member of a Boids school swims by the school's rules and nothing else.
+     *
+     * The velocity was decided this frame by `steerSchool`, before any fish moved; this only spends it. Placed after the
+     * states that REPLACE a creature's motion (leaving, a lunge) so those still win, and before the per-kind table so
+     * `stepFish`'s chase never runs -- the school does not look at the player. Returning here also skips the lane clamp
+     * below, which is right for the same reason it is skipped for a path: a school enters from beyond the edge and leaves
+     * past the other one.
+     */
+    if (h.boid) {
+      h.x += h.boid.vx * dt;
+      h.y += h.boid.vy * dt;
+      return;
+    }
     /**
      * One lookup instead of eighteen cases: see `CREATURES` for why, and for what is deliberately still here.
      */

@@ -893,6 +893,30 @@ export interface Mechanisms {
     /** How visible a creature is while it leaves, 0..1. The same drawing, dimmed, rather than a second palette. */
     fleeAlpha: number;
     /**
+     * The super-school's Boids: how a block with `boids: true` swims. See the config's note at `hazards.boids`.
+     *
+     * Every length is a lane fraction and every rate is per second, so the same numbers are the same school on every
+     * display.
+     */
+    boids: {
+      /** Radius of the cloud a school is born in, around its leader's first point. */
+      spawnSpread: number;
+      /** How far a fish sees its neighbours, for alignment and cohesion. */
+      neighbourRadius: number;
+      /** Neighbours closer than this push apart. */
+      separationRadius: number;
+      separationAccel: number;
+      alignmentRate: number;
+      cohesionAccel: number;
+      /** The pull toward the invisible leader: a spring, and a damper on the velocity difference. */
+      leaderSpring: number;
+      leaderDamp: number;
+      minSpeed: number;
+      maxSpeed: number;
+      /** The cap on the sum of all four, so a crowd cannot fling a fish. */
+      maxAccel: number;
+    };
+    /**
      * The crab, one block.
      *
      * The first creature to be grouped this way -- see the config's note at `hazards.crab`. Its four numbers used to be
@@ -2738,6 +2762,30 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.contactDamage', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0 && n <= 400), describe: 'an object of hazard kind to the hit points it costs the player, e.g. { fish: 20, whale: 35 }; defence comes straight out of these' },
   { path: 'hazards.fleeScreensPerSecond', check: anyNumber, describe: 'screen heights per second; 0.9 is about a second to leave the screen' },
   { path: 'hazards.fleeAlpha', check: anyNumber, describe: 'an opacity for a creature that is leaving' },
+  /**
+   * The Boids school. One row per key, each with the unit it is in -- they are all lane fractions or per-second rates, and
+   * a rate read as a length (or the reverse) is the mistake a bare `anyNumber` would let through. The boot checks below the
+   * table refuse the combinations that make the school meaningless.
+   */
+  ...(
+    [
+      ['spawnSpread', 'a fraction of the lane width, the radius of the cloud a school is born in'],
+      ['neighbourRadius', 'a fraction of the lane width, how far a fish sees its neighbours'],
+      ['separationRadius', 'a fraction of the lane width; closer neighbours push apart'],
+      ['separationAccel', 'lane widths per second squared'],
+      ['alignmentRate', 'per second; how fast velocity is pulled toward the neighbours\' average'],
+      ['cohesionAccel', 'lane widths per second squared'],
+      ['leaderSpring', 'per second squared; how hard the invisible leader pulls'],
+      ['leaderDamp', 'per second; how hard the leader\'s velocity is matched'],
+      ['minSpeed', 'lane widths per second; a school never hovers'],
+      ['maxSpeed', 'lane widths per second'],
+      ['maxAccel', 'lane widths per second squared; the cap on the sum of all four forces'],
+    ] as const
+  ).map(([key, describe]) => ({
+    path: `hazards.boids.${key}`,
+    check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0,
+    describe: `${describe}; 0 or more`,
+  })),
   /** The crab: one row per key of its own block, for the reason the config gives at `hazards.crab`. */
   { path: 'hazards.crab.armDistanceMeters', check: anyNumber, describe: 'metres of 0 or more; the distance at which the fuse is lit' },
   { path: 'hazards.crab.fuseSeconds', check: anyNumber, describe: 'seconds' },
@@ -3785,6 +3833,23 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
   if (unknownShooters.length) {
     fail(`enemyBullets.shooters names something that is not a hazard kind: ${unknownShooters.join(', ')}`);
   }
+}
+
+/**
+ * The Boids numbers must describe a school that can exist.
+ *
+ * Each is range-checked on its own by its rule; these are the relations BETWEEN them, which a per-key rule cannot see:
+ * a floor above the ceiling is a speed no fish can have, a push radius wider than the view makes alignment and cohesion
+ * act on fish the separation has already flung apart, and a zero ceiling is a school that never moves.
+ */
+{
+  const b = mech.hazards.boids;
+  if (b.minSpeed > b.maxSpeed) fail(`hazards.boids.minSpeed (${b.minSpeed}) is above maxSpeed (${b.maxSpeed})`);
+  if (!(b.maxSpeed > 0)) fail('hazards.boids.maxSpeed must be above 0, or the school never moves');
+  if (b.separationRadius > b.neighbourRadius) {
+    fail(`hazards.boids.separationRadius (${b.separationRadius}) is wider than neighbourRadius (${b.neighbourRadius})`);
+  }
+  if (!(b.maxAccel > 0)) fail('hazards.boids.maxAccel must be above 0, or no force can ever act');
 }
 
 /**
