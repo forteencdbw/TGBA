@@ -20,7 +20,8 @@ import type { CodexDetail, CodexUi } from './codexUi';
 import { defaultBubbleType, hasVerb, ROUTES } from './bubbleTypes';
 import { sayBanner, sayResults, sayScore, saySkillSlot, saySound, saySplash } from './runEvents';
 import { LevelUpUi } from './levelup';
-import { applyMutationPassives, rollMutationChoices, type Mutation } from './mutations';
+import { growthView } from './growth';
+import { applyMutationPassives, pickMutationCard, rollMutationChoices, type Mutation } from './mutations';
 import { bubbleLook, bubbleShake, bubbleStateColor, bubbleSwell } from './bubbleLook';
 import { gainRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName } from './rage';
 import { mech } from './mechanisms';
@@ -506,6 +507,10 @@ class Game {
     stage.on('pointerup', (e) => {
       this.menu.pointerHovers = e.pointerType !== 'touch';
       this.handlePointerUp(e.pointerId);
+    });
+    stage.on('wheel', (e) => {
+      // The pause panel's card window is the only thing that listens to the wheel.
+      this.settings.handleWheel(e.global.x, e.global.y, e.deltaY);
     });
     stage.on('pointerupoutside', (e) => this.handlePointerUp(e.pointerId));
     stage.on('pointercancel', (e) => this.handlePointerUp(e.pointerId));
@@ -2439,15 +2444,14 @@ class Game {
     if (this.run.phase !== 'levelup' || !this.levelup.open) return;
     const choice: Mutation | null = this.levelup.choiceAt(index);
     if (!choice) return;
-    choice.apply(this.run);
     /**
-     * Re-derive every multiplier from the counts the apply just changed.
+     * Apply the card, log it, and re-derive every multiplier from the counts it just changed.
      *
      * The stacking cards only bump their COUNT -- the number they move is computed, never edited, so it
-     * can never disagree with the count (see `applyMutationPassives`). Without this call the picked card
+     * can never disagree with the count (see `applyMutationPassives`). Without the re-derive the picked card
      * would not land until the next `startRun` folded it in.
      */
-    applyMutationPassives(this.run);
+    pickMutationCard(this.run, choice);
     /**
      * A route card changes the FORM, not just the counts: the new verbs have to reach the touch layer on this
      * frame, or the panel closes on a bubble whose buttons it does not have yet.
@@ -2629,6 +2633,7 @@ class Game {
       this.run.decoy = null;
       this.run.xp.reset();
       this.run.mutations = {};
+      this.run.picks = [];
       /**
        * A fresh run is the BASE bubble again: no route, no route cards owed, the growth palette. A carried run
        * (the walk into the next level) keeps its route and its form -- the identity the player picked is the
@@ -2712,6 +2717,8 @@ class Game {
       this.touch.releaseAll();
     }
     this.settings.setInRun(!fromMenu);
+    // The run's growth, as of this pause -- or nothing from the menu, where there is no run to describe.
+    this.settings.setGrowth(fromMenu ? null : growthView(this.run));
     this.settings.setVolume(audio.getVolume());
     this.settings.setOpen(true);
   }

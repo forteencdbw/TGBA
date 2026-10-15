@@ -3925,7 +3925,7 @@
       "everyJitter": 0.6,
       // 和背景那套同一个意思：最大那颗的直径占屏宽的比例。两边默认相同，但**不是一个旋钮**——
       // 界面上的气泡在标题前面，可以比水里的更显眼，不该逼着它们一起改。
-      "size": 0.041,
+      "size": 0.011,
       // 上升速度（占屏高/秒）与它的抖动，以及加速度。比水里的略快：它们是从石头里挤出来的。
       "speed": 0.055,
       "speedJitter": 0.8,
@@ -3981,6 +3981,45 @@
       "idleFill": 0x0a1a29,
       "idleStroke": 0x4f86a8,
       "idleTextColour": 0x9fc4d8,
+    },
+
+    // 成长段：局内暂停时，面板顶部（标题之下、音量之前）列出这一局到目前为止拿到的所有成长。
+    // 只在**局内**暂停时出现；从主菜单打开的设置面板没有这一段（那时没有一局）。实现见 `src/growth.ts` 和 `src/settings.ts`。
+    //
+    // 上半是**七项当前数值**（血上限、枪管、射速、伤害、护甲、转向、升速），读的是模拟正在用的那些字段，所以天赋的份也算在内；
+    // 下半是**拿过的卡**：路线和技能在最上（路线先，技能按拿的顺序），其余突变按**第一次拿到**的顺序，同一张拿多次合成一行写 ×次数。
+    // 每行名字下面小字是卡自己的说明，原样复用三选一面板上的那句，所以两边不会说法不一致。
+    //
+    // 卡片列表放在一个**可拖动滚动**的窗口里（手指或鼠标按住往上拖）。面板在局内会变高（见 `panelMaxHeightRatio`），
+    // 窗口拿剩下的高度，不超过 `windowMaxHeight`，也不低于 `windowMinHeight`——屏幕太矮时窗口会比想要的小，靠滚动补。
+    "growth": {
+      // 局内面板最高占屏高的多少。从主菜单打开的面板不看这个，仍是原来的 0.66。
+      "panelMaxHeightRatio": 0.92,
+      // 卡片窗口的高度范围，设计像素。一张卡（名字 + 说明）约 36，所以 300 ≈ 8 张。
+      "windowMaxHeight": 300,
+      "windowMinHeight": 96,
+      // 字号。
+      "headingSize": 13,
+      "statSize": 13,
+      "nameSize": 14,
+      "blurbSize": 12,
+      // 同一张卡的名字行和说明行之间、两张卡之间、两个分组之间的间距，设计像素。
+      "blurbGap": 2,
+      "lineGap": 8,
+      "groupGap": 12,
+      // 颜色。
+      "headingColour": 0x8fd6ff,
+      "statLabelColour": 0x9fc4d8,
+      "statValueColour": 0xeafcff,
+      "groupColour": 0x8fd6ff,
+      "nameColour": 0xeafcff,
+      "countColour": 0xffd479,
+      "noteColour": 0x6fe3ff,
+      "blurbColour": 0x9fc4d8,
+      "windowFill": 0x0a1a29,
+      "windowStroke": 0x4f86a8,
+      // 一张都还没拿时窗口里写的话。
+      "emptyText": "还没有拿到任何突变"
     },
   },
 

@@ -325,6 +325,28 @@ const ROUTE_CARDS: readonly Mutation[] = ROUTES.map((route) => ({
 }));
 
 /**
+ * A card by its id -- pool, skill and route cards alike -- or undefined for an id no card has.
+ *
+ * For the growth readout, which has the log's ids and needs each card's name and blurb. The cards are the single source of
+ * both, so the readout cannot describe a card differently from the panel that offered it.
+ */
+export function mutationCard(id: string): Mutation | undefined {
+  return POOL.find((m) => m.id === id) ?? ROUTE_CARDS.find((m) => m.id === id);
+}
+
+/**
+ * Take a card: apply it, write it in the run's log, and re-derive the passives.
+ *
+ * The one place a pick lands, so there is no way to take a card without it appearing in `run.picks` -- which is what the
+ * pause panel's growth section reads.
+ */
+export function pickMutationCard(run: Run, card: Mutation): void {
+  card.apply(run);
+  run.picks.push(card.id);
+  applyMutationPassives(run);
+}
+
+/**
  * Draw `count` distinct cards, uniformly, from everything legal for this run right now.
  *
  * Fewer than asked for when the pool is thin (late run, everything else capped); always at least one,

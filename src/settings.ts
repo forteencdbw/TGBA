@@ -2,6 +2,7 @@ import { Container, Graphics, Text } from 'pixi.js';
 import { mech } from './mechanisms';
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
+import type { GrowthView } from './growth';
 
 /**
  * The settings button and the pause panel it opens.
@@ -151,6 +152,31 @@ export class SettingsUi {
   private pressedPill = -1;
   private readonly levelRow = new Graphics();
 
+  /**
+   * The growth section: what this run has become, in text. See `src/growth.ts` for what is in it and why.
+   *
+   * IN A RUN ONLY, like restart and exit: the panel opened from the menu has no run to describe, and `setGrowth(null)` is
+   * how the game says so. The section is a heading, the seven numbers in two columns, and a window of card lines the
+   * player drags up and down -- all in the same Pixi tree as the rest of the panel and hit-tested by hand, like it.
+   */
+  private growth: GrowthView | null = null;
+  private readonly growthLayer = new Container();
+  private readonly growthHeading: Text;
+  private readonly growthWindowBg = new Graphics();
+  /** The card lines, in one container that is moved under a fixed mask: that movement IS the scrolling. */
+  private readonly growthContent = new Container();
+  private readonly growthMask = new Graphics();
+  /** The scrollbar's thumb, drawn only when there is more than the window can show. */
+  private readonly growthBar = new Graphics();
+  /** The window's rectangle in screen pixels, from the last layout; zero-sized when the section is not shown. */
+  private growthWindow = { x: 0, y: 0, w: 0, h: 0 };
+  /** The height of everything in the window, in screen pixels, and how far it is scrolled. */
+  private growthContentHeight = 0;
+  private growthScroll = 0;
+  /** The pointer dragging the window, and where its last y was; null when nobody is. */
+  private growthPointer: number | null = null;
+  private growthLastY = 0;
+
   /** Called when the player taps a level that is selectable. */
   onPickLevel: (levelId: string) => void = () => {};
 
@@ -228,8 +254,14 @@ export class SettingsUi {
     this.sliderFill.eventMode = 'none';
     this.sliderKnob.eventMode = 'none';
     this.levelRow.eventMode = 'none';
+    this.growthLayer.eventMode = 'none';
+    this.growthWindowBg.eventMode = 'none';
+    this.growthContent.eventMode = 'none';
+    this.growthMask.eventMode = 'none';
+    this.growthBar.eventMode = 'none';
 
     this.title = mkText('设置 / SETTINGS', 0xeaf9ff, 22);
+    this.growthHeading = mkText('成长 / GROWTH', mech.settings.growth.headingColour, mech.settings.growth.headingSize);
     this.volumeLabel = mkText('', 0xbfe9ff, 15);
     this.closeButton = this.mkButton('×', () => this.setOpen(false));
 
@@ -266,9 +298,16 @@ export class SettingsUi {
     this.saveButton = this.mkButton('保存', () => this.setOpen(false));
     this.cancelButton = this.mkButton('取消', () => this.setOpen(false));
 
+    this.growthContent.mask = this.growthMask;
     this.panel.addChild(
       this.panelBg,
       this.levelRow,
+      this.growthLayer,
+      this.growthWindowBg,
+      this.growthContent,
+      this.growthMask,
+      this.growthBar,
+      this.growthHeading,
       this.title,
       this.volumeLabel,
       this.sliderTrack,
@@ -403,6 +442,9 @@ export class SettingsUi {
     this.scrim.visible = open;
     this.gear.visible = !open;
     this.sliderPointer = null;
+    this.growthPointer = null;
+    // Every opening starts at the top: what the player scrolled to last time was a different run state.
+    if (open && !wasOpen) this.setGrowthScroll(0);
     for (const b of this.buttons()) b.pressed = false;
     this.redraw();
     if (open && !wasOpen) this.onOpen();
@@ -517,6 +559,23 @@ export class SettingsUi {
     const w = Math.min(viewport.laneWidthPx * 0.86, 420 * s);
 
     /**
+     * The growth section, when there is one: where it sits and how much it pushes the rest of the panel down.
+     *
+     * It goes between the title and the volume, so every row below it moves by `GROWTH_SHIFT` -- the section's own height --
+     * and the panel is that much taller. The card window is the part that gives: it takes the height the panel has left under
+     * its cap (`growth.panelMaxHeightRatio`), between `windowMinHeight` and `windowMaxHeight`, and scrolls for the rest.
+     */
+    const gcfg = mech.settings.growth;
+    const showGrowth = this.inRun && this.growth !== null;
+    const GROWTH = { heading: 64, statsTop: 82, statRows: 4, statRowH: 20, windowGap: 8, bottomGap: 14 };
+    const growthFixed = GROWTH.statsTop + GROWTH.statRows * GROWTH.statRowH + GROWTH.windowGap;
+    /**
+     * How far every row below moves down, with a window of height `windowH`: the section's bottom edge, less the 62 design pixels
+     * the volume row already had between the title and its own label (the label is centred at 78 and about 20 tall).
+     */
+    const growthShift = (windowH: number): number => (showGrowth ? growthFixed + windowH + GROWTH.bottomGap - 62 : 0);
+
+    /**
      * The panel's rows, in DESIGN PIXELS below the panel's top edge.
      *
      * They live here rather than in `config/mechanics.json5` and that is deliberate: every number in this file is a
@@ -529,7 +588,7 @@ export class SettingsUi {
      * over the bottom of "作弊 / CHEATS" -- the label was drawn first and the background covered it. The screenshot is
      * what caught it, which is why the rows are checked against each other rather than trusted.
      */
-    const ROW = {
+    const ROW0 = {
       volumeLabel: 78,
       slider: 112,
       accessLabel: 156,
@@ -539,6 +598,7 @@ export class SettingsUi {
       rowHeight: 42,
       rowGap: 10,
     };
+    let ROW = ROW0;
 
     /**
      * The rows under the `作弊 / CHEATS` heading, in the order they are stacked: the cheat itself, the debug toggle,
@@ -581,11 +641,34 @@ export class SettingsUi {
      * opened during a run, so the stack is either `cheat, debug, restart, exit` or `cheat, debug, debug level, pills`.
      * Putting it last keeps the height and the placement a single list to walk.
      */
-    const stackBottom =
-      ROW.cheatsRow +
-      (ROW.rowHeight + ROW.rowGap) * (lowerRows.length - 1) +
-      ROW.rowHeight +
-      (levelBlock > 0 ? levelBlock + ROW.rowGap : 0);
+    const stackBottomFor = (r: typeof ROW0): number =>
+      r.cheatsRow + (r.rowHeight + r.rowGap) * (lowerRows.length - 1) + r.rowHeight + (levelBlock > 0 ? levelBlock + r.rowGap : 0);
+    const panelTall = (shift: number): number => stackBottomFor(ROW0) + shift + ROW0.rowGap + ROW0.rowHeight + 24;
+
+    /**
+     * The card window's height, from what is left.
+     *
+     * The panel's cap in a run is the growth setting's; from the menu it is the old 0.66. Whatever the stack needs without any
+     * window is the fixed part, and the window gets the rest, clamped. When even the minimum does not fit, the panel is as
+     * tall as it needs to be and no taller than the screen: a short screen gets a panel that fills it.
+     */
+    const capPx = viewport.height * (showGrowth ? gcfg.panelMaxHeightRatio : 0.66);
+    // The content is built first: the window is as tall as it needs to be, up to what the panel has left.
+    const contentPx = showGrowth ? this.buildGrowthContent(w - 48 * s, s) : 0;
+    const windowH = showGrowth
+      ? Math.max(gcfg.windowMinHeight, Math.min(gcfg.windowMaxHeight, capPx / s - panelTall(growthShift(0)), contentPx / s))
+      : 0;
+    const shift = growthShift(windowH);
+    ROW = {
+      ...ROW0,
+      volumeLabel: ROW0.volumeLabel + shift,
+      slider: ROW0.slider + shift,
+      accessLabel: ROW0.accessLabel + shift,
+      accessRow: ROW0.accessRow + shift,
+      cheatsLabel: ROW0.cheatsLabel + shift,
+      cheatsRow: ROW0.cheatsRow + shift,
+    };
+    const stackBottom = stackBottomFor(ROW);
 
     /**
      * The panel is as tall as its row stack needs and no taller.
@@ -598,7 +681,9 @@ export class SettingsUi {
      *
      * `viewport.height * 0.66` is still the cap, so a short screen gets a panel that fits on it at all.
      */
-    const h = Math.min(viewport.height * 0.66, (stackBottom + ROW.rowGap + ROW.rowHeight + 24) * s);
+    const h = showGrowth
+      ? Math.min(viewport.height, (stackBottom + ROW.rowGap + ROW.rowHeight + 24) * s)
+      : Math.min(viewport.height * 0.66, (stackBottom + ROW.rowGap + ROW.rowHeight + 24) * s);
     this.panelRect = {
       x: (viewport.width - w) / 2,
       y: (viewport.height - h) / 2,
@@ -610,6 +695,8 @@ export class SettingsUi {
     this.title.anchor.set(0.5, 0);
     this.title.x = this.panelRect.x + w / 2;
     this.title.y = this.panelRect.y + 20 * s;
+
+    this.layoutGrowth(showGrowth, windowH, GROWTH, s, contentPx);
 
     // Volume, near the top: it is the only setting, so it gets the prominent slot.
     this.volumeLabel.scale.set(s);
@@ -685,6 +772,182 @@ export class SettingsUi {
 
     this.buildStatic();
     this.redraw();
+  }
+
+  /**
+   * Tell the panel what the run has become, or `null` when there is no run (the menu's panel).
+   *
+   * Called by the game when it opens the panel, with a fresh `growthView`: the section is a snapshot of the moment of the
+   * pause, and nothing changes while the panel is up.
+   */
+  setGrowth(view: GrowthView | null): void {
+    this.growth = view;
+    this.growthScroll = 0;
+    if (this.lastViewport) this.layout(this.lastViewport);
+  }
+
+  /** Place the growth section, or take it off: its heading, the stat columns, and the window of card lines. */
+  private layoutGrowth(
+    show: boolean,
+    windowH: number,
+    G: { heading: number; statsTop: number; statRows: number; statRowH: number; windowGap: number },
+    s: number,
+    contentPx: number,
+  ): void {
+    for (const child of this.growthLayer.removeChildren()) child.destroy();
+    this.growthHeading.visible = show;
+    this.growthWindowBg.visible = show;
+    this.growthContent.visible = show;
+    this.growthMask.visible = show;
+    this.growthBar.visible = show;
+    if (!show || !this.growth) {
+      this.growthContentHeight = 0;
+      this.growthWindow = { x: 0, y: 0, w: 0, h: 0 };
+      this.growthWindowBg.clear();
+      this.growthMask.clear();
+      this.growthBar.clear();
+      return;
+    }
+    const cfg = mech.settings.growth;
+    const p = this.panelRect;
+    const left = p.x + 24 * s;
+    const width = p.w - 48 * s;
+
+    this.growthHeading.scale.set(s);
+    this.growthHeading.anchor.set(0, 0.5);
+    this.growthHeading.x = left;
+    this.growthHeading.y = p.y + G.heading * s;
+
+    // The seven numbers, two columns: label on the left of its column, value right-aligned to the column's edge.
+    const colW = (width - 16 * s) / 2;
+    this.growth.stats.forEach((stat, i) => {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const x = left + col * (colW + 16 * s);
+      const y = p.y + (G.statsTop + row * G.statRowH) * s;
+      const label = mkText(stat.label, cfg.statLabelColour, cfg.statSize);
+      label.scale.set(s);
+      label.x = x;
+      label.y = y;
+      const value = mkText(stat.value, cfg.statValueColour, cfg.statSize);
+      value.scale.set(s);
+      value.anchor.set(1, 0);
+      value.x = x + colW;
+      value.y = y;
+      this.growthLayer.addChild(label, value);
+    });
+
+    const top = p.y + (G.statsTop + G.statRows * G.statRowH + G.windowGap) * s;
+    this.growthWindow = { x: left, y: top, w: width, h: windowH * s };
+
+    this.growthContentHeight = contentPx;
+
+    const win = this.growthWindow;
+    this.growthWindowBg.clear();
+    this.growthWindowBg
+      .roundRect(win.x, win.y, win.w, win.h, 10 * s)
+      .fill({ color: cfg.windowFill, alpha: 0.95 })
+      .stroke({ color: cfg.windowStroke, alpha: 0.7, width: Math.max(1, 1.2 * s) });
+    this.growthMask.clear();
+    this.growthMask.roundRect(win.x + 1, win.y + 1, win.w - 2, win.h - 2, 9 * s).fill({ color: 0xffffff });
+    this.setGrowthScroll(this.growthScroll);
+  }
+
+  /**
+   * Build the card lines into the scrolling container and return their total height in screen pixels.
+   *
+   * Its own step, and BEFORE the panel is sized, because the window's height follows the content: a run with two cards gets
+   * a short window and not a tall empty one. Each line is laid out under the one before with its own height as the text
+   * measured it -- a blurb that wraps takes two lines and the next card starts under both.
+   */
+  private buildGrowthContent(width: number, s: number): number {
+    for (const child of this.growthContent.removeChildren()) child.destroy();
+    if (!this.growth) return 0;
+    const cfg = mech.settings.growth;
+    const pad = 8 * s;
+    const textW = (width - pad * 2) / s;
+    let y = pad;
+    const add = (text: Text, x = pad): void => {
+      text.scale.set(s);
+      text.x = x;
+      text.y = y;
+      this.growthContent.addChild(text);
+      y += text.height;
+    };
+    if (this.growth.groups.length === 0) {
+      add(mkWrapped(cfg.emptyText, cfg.blurbColour, cfg.blurbSize, textW));
+    }
+    this.growth.groups.forEach((group, gi) => {
+      if (gi > 0) y += cfg.groupGap * s;
+      add(mkText(group.title, cfg.groupColour, cfg.headingSize));
+      y += cfg.blurbGap * s;
+      group.lines.forEach((line, li) => {
+        if (li > 0) y += cfg.lineGap * s;
+        // The name, then its count and note in their own colours on the same line, then the blurb under it.
+        const name = mkText(line.name, cfg.nameColour, cfg.nameSize);
+        name.scale.set(s);
+        name.x = pad;
+        name.y = y;
+        this.growthContent.addChild(name);
+        let after = pad + name.width + 6 * s;
+        if (line.count !== null && line.count > 1) {
+          const count = mkText(`×${line.count}`, cfg.countColour, cfg.nameSize);
+          count.scale.set(s);
+          count.x = after;
+          count.y = y;
+          this.growthContent.addChild(count);
+          after += count.width + 6 * s;
+        }
+        if (line.note !== null) {
+          const note = mkText(`[${line.note}]`, cfg.noteColour, cfg.blurbSize);
+          note.scale.set(s);
+          note.x = after;
+          note.y = y + (name.height - note.height) / 2;
+          this.growthContent.addChild(note);
+        }
+        y += name.height + cfg.blurbGap * s;
+        add(mkWrapped(line.blurb, cfg.blurbColour, cfg.blurbSize, textW));
+      });
+    });
+    return y + pad;
+  }
+
+  /** How far the window can scroll, in screen pixels: the part of the content that does not fit. */
+  private get growthScrollMax(): number {
+    return Math.max(0, this.growthContentHeight - this.growthWindow.h);
+  }
+
+  /** Scroll the window to `offset`, held between the top and the end of the content. */
+  private setGrowthScroll(offset: number): void {
+    this.growthScroll = Math.min(this.growthScrollMax, Math.max(0, offset));
+    this.growthContent.x = this.growthWindow.x;
+    this.growthContent.y = this.growthWindow.y - this.growthScroll;
+    this.drawGrowthBar();
+  }
+
+  /** The scrollbar: a thin thumb along the window's right edge, as tall as the share of the content that is in view. */
+  private drawGrowthBar(): void {
+    this.growthBar.clear();
+    const max = this.growthScrollMax;
+    const win = this.growthWindow;
+    if (max <= 0 || win.h <= 0) return;
+    const width = Math.max(2, 3 * this.scale);
+    const track = win.h - 12 * this.scale;
+    const thumb = Math.max(20 * this.scale, track * (win.h / this.growthContentHeight));
+    const y = win.y + 6 * this.scale + (track - thumb) * (this.growthScroll / max);
+    this.growthBar
+      .roundRect(win.x + win.w - width - 4 * this.scale, y, width, thumb, width / 2)
+      .fill({ color: mech.settings.growth.windowStroke, alpha: 0.9 });
+  }
+
+  /**
+   * The mouse wheel over the card window scrolls it. Returns whether it was used, so the page can keep the wheel for itself
+   * everywhere else.
+   */
+  handleWheel(x: number, y: number, deltaY: number): boolean {
+    if (!this.open || this.growthWindow.h <= 0 || !this.inRect(x, y, this.growthWindow)) return false;
+    this.setGrowthScroll(this.growthScroll + deltaY);
+    return true;
   }
 
   /**
@@ -1031,6 +1294,12 @@ export class SettingsUi {
       this.sliderPointer = pointerId;
       this.moveSlider(x);
     }
+    // A press inside the card window starts a drag-scroll. Nothing in the window is a button, so there is no tap to tell
+    // apart from the drag: the press just takes hold of the content.
+    if (this.growthWindow.h > 0 && this.inRect(x, y, this.growthWindow)) {
+      this.growthPointer = pointerId;
+      this.growthLastY = y;
+    }
     this.draw(1);
     return true;
   }
@@ -1046,6 +1315,11 @@ export class SettingsUi {
       this.pressedPill = -1;
     }
     if (this.sliderPointer === pointerId) this.moveSlider(x);
+    // The content follows the finger: dragging up moves it up, which is scrolling DOWN the list.
+    if (this.growthPointer === pointerId) {
+      this.setGrowthScroll(this.growthScroll - (y - this.growthLastY));
+      this.growthLastY = y;
+    }
     this.draw(1);
     return true;
   }
@@ -1053,6 +1327,7 @@ export class SettingsUi {
   handlePointerUp(pointerId: number, x: number, y: number): boolean {
     if (!this.open) return false;
     if (this.sliderPointer === pointerId) this.sliderPointer = null;
+    if (this.growthPointer === pointerId) this.growthPointer = null;
     for (const b of this.buttons()) {
       const wasPressed = b.pressed;
       b.pressed = false;
@@ -1102,8 +1377,17 @@ export class SettingsUi {
     /** The level row as offered, with its label -- the same shape the main menu used to report. */
     levels: { id: string; label: string; locked: boolean; selected: boolean; rect: { x: number; y: number; w: number; h: number } }[];
     buttons: Record<string, { x: number; y: number; w: number; h: number }>;
+    /** The growth section: whether it is shown, its card window, and how much there is to scroll. Zero-sized when not shown. */
+    growth: { shown: boolean; window: { x: number; y: number; w: number; h: number }; contentHeight: number; scroll: number; scrollMax: number };
   } {
     return {
+      growth: {
+        shown: this.growthWindow.h > 0,
+        window: { ...this.growthWindow },
+        contentHeight: this.growthContentHeight,
+        scroll: this.growthScroll,
+        scrollMax: this.growthScrollMax,
+      },
       gear: { ...this.gearCircle },
       panel: { ...this.panelRect },
       slider: { ...this.slider },
@@ -1135,6 +1419,16 @@ export class SettingsUi {
   get sliderValue(): number {
     return this.volume;
   }
+}
+
+/** Wrapped panel text: a Chinese line has no spaces to break at, so it must be allowed to break anywhere. */
+function mkWrapped(text: string, colour: number, size: number, width: number): Text {
+  const label = mkText(text, colour, size);
+  label.style.wordWrap = true;
+  label.style.breakWords = true;
+  label.style.wordWrapWidth = width;
+  label.style.fontWeight = 'normal';
+  return label;
 }
 
 function rectOf(b: Button): { x: number; y: number; w: number; h: number } {

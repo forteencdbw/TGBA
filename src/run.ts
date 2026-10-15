@@ -260,6 +260,16 @@ export class Run {
    * the level transition's fresh talent. See `src/mutations.ts`.
    */
   mutations: Record<string, number> = {};
+  /**
+   * Every card the run has taken, by card id, in the order they were taken -- the history `mutations` cannot give.
+   *
+   * `mutations` is the counts the passives are derived from, and it only holds the stacking cards: the gun row, the rate
+   * tier, a skill, a route and a heal each change some other field and are not in it. This is the one list that has every
+   * pick, so the pause panel's growth section can say what the run has become. It has the SAME lifecycle as `mutations`
+   * (a walk into the next level keeps it, only a death clears it), and it is written in one place only:
+   * `pickMutationCard` in `src/mutations.ts`.
+   */
+  picks: string[] = [];
   /** Bullet damage multiplier from stacked 突变 · 子弹伤害 picks. Re-derived, never edited directly. */
   bulletDamageMultiplier = 1;
   /** Extra hit-invulnerability seconds from stacked 突变 · 受击无敌 picks. */

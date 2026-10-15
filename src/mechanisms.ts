@@ -1509,6 +1509,33 @@ export interface Mechanisms {
       idleStroke: number;
       idleTextColour: number;
     };
+    /** The pause panel's growth section (in a run only). See `src/growth.ts`. */
+    growth: {
+      /** How tall the panel may be IN A RUN, as a fraction of the screen. The menu's panel keeps its own cap. */
+      panelMaxHeightRatio: number;
+      /** The card window's height range in design pixels: it takes what the panel has left, between these. */
+      windowMaxHeight: number;
+      windowMinHeight: number;
+      headingSize: number;
+      statSize: number;
+      nameSize: number;
+      blurbSize: number;
+      blurbGap: number;
+      lineGap: number;
+      groupGap: number;
+      headingColour: number;
+      statLabelColour: number;
+      statValueColour: number;
+      groupColour: number;
+      nameColour: number;
+      countColour: number;
+      noteColour: number;
+      blurbColour: number;
+      windowFill: number;
+      windowStroke: number;
+      /** What the window says before any card has been taken. */
+      emptyText: string;
+    };
   };
   /**
    * The main menu: three stone buttons, the title, and the water behind them.
@@ -2350,6 +2377,20 @@ const APPEARANCE_RULES: { key: string; what: string; ok: (v: unknown) => boolean
   { key: 'innerRing', what: 'true or false', ok: (v) => typeof v === 'boolean' },
   { key: 'name', what: 'the stage name shown on the HUD', ok: (v) => typeof v === 'string' && v.length > 0 },
 ];
+
+/** The growth section's colours, as one list: validated and converted from the same place. */
+const GROWTH_COLOURS = [
+  'headingColour',
+  'statLabelColour',
+  'statValueColour',
+  'groupColour',
+  'nameColour',
+  'countColour',
+  'noteColour',
+  'blurbColour',
+  'windowFill',
+  'windowStroke',
+] as const;
 
 /**
  * The codex page's colours, as one list.
@@ -3328,6 +3369,24 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     check: isColour,
     describe: 'a colour, either 0xrrggbb or "#rrggbb"',
   })),
+  { path: 'settings.growth.panelMaxHeightRatio', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0.5 && v <= 1, describe: 'a fraction of the screen height, 0.5 to 1' },
+  { path: 'settings.growth.windowMaxHeight', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 40, describe: 'design pixels, at least 40' },
+  { path: 'settings.growth.windowMinHeight', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 40, describe: 'design pixels, at least 40' },
+  ...[
+    ['headingSize', 'a font size'],
+    ['statSize', 'a font size'],
+    ['nameSize', 'a font size'],
+    ['blurbSize', 'a font size'],
+    ['blurbGap', 'design pixels'],
+    ['lineGap', 'design pixels'],
+    ['groupGap', 'design pixels'],
+  ].map(([key, describe]) => ({ path: `settings.growth.${key}`, check: anyNumber, describe: describe as string })),
+  ...GROWTH_COLOURS.map((key) => ({
+    path: `settings.growth.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
+  })),
+  { path: 'settings.growth.emptyText', check: (v) => typeof v === 'string' && v.length > 0, describe: 'a non-empty string' },
   { path: 'audio.clearSting.notes', check: (v) => Array.isArray(v) && v.length >= 1 && v.every((n) => typeof n === 'number' && Number.isFinite(n)), describe: 'a non-empty list of semitone offsets from the track root' },
   { path: 'audio.clearSting.gapSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'audio.clearHoldSeconds', check: anyNumber, describe: 'seconds' },
@@ -4012,6 +4071,12 @@ for (const [where, get, set] of [
   ['obstacles.netRimColor', () => mech.obstacles.netRimColor, (v: number) => (mech.obstacles.netRimColor = v)],
 ] as const) {
   set(normaliseColour(get() as string | number, where));
+}
+
+/** The pause panel's growth section's colours, converted from the same list the validation uses. */
+{
+  const bag = mech.settings.growth as unknown as Record<string, string | number>;
+  for (const key of GROWTH_COLOURS) bag[key] = normaliseColour(bag[key]!, `settings.growth.${key}`);
 }
 
 /**
