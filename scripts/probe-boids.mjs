@@ -271,15 +271,73 @@ try {
     // the school is long. (Before the leader waited, the centre was 0.66 of a lane from it by halfway, and growing.)
     atMost('swim · the school is not left behind: its centre is within its own length of the leader (lane widths)', Math.abs(s6.cx - s6.leaderX) / LANE, s6.length / LANE);
     atLeast('shape · length over width halfway along', s6.length / s6.width, 1.5);
+    // The reported bug: a long stream at the start that was one lump by the end. Three quarters along, still a stream.
+    atLeast('shape · and still a stream three quarters along, as the school is leaving (length over width)', s9.length / s9.width, 2.5);
 
     check('end · every fish left the water by itself', field.hazards.length, 0);
     // A school is dropped with its last fish: nothing keeps it alive, so a finished level's schools do not pile up.
     field.update(dt, ctxFor(LANE * 0.5, 400, t));
     check('end · and the school was dropped with it', field.schools.size, 0);
     atMost('end · within a minute', t, 60);
-    // The leader waits for its school, so the crossing takes at least the path's seconds -- but not forever.
-    atLeast('wait · the crossing took at least the path\'s seconds', t, SECONDS * 0.99);
+    // The leader waits for a school that has fallen behind and hurries to take the front back, so the crossing is the path's
+    // seconds give or take -- but not forever, and not a fraction of it.
+    atLeast('wait · the crossing took about the path\'s seconds (at least 80%)', t, SECONDS * 0.8);
     atMost('wait · and no more than twice as long (seconds)', t, SECONDS * 2);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The leader walks at a constant speed, and does not stop where the path ends.
+  // ---------------------------------------------------------------------------------------------
+  {
+    const path = DEBUG_LEVEL.paths['back-high'];
+    const keep = cfg.wobbleAmplitude;
+    cfg.wobbleAmplitude = 0;
+    const school = boidsModule.createSchool(1, path, 400, LANE, 800);
+    const speeds = [];
+    const dt = 1 / 60;
+    while (!school.finished && speeds.length < 100000) {
+      boidsModule.advanceLeader(school, dt, LANE, 800);
+      if (school.elapsed > dt * 3 && !school.finished) speeds.push(Math.hypot(school.vx, school.vy));
+    }
+    const mean = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+    // Without the arc-length walk the same path's speed ranged over a factor of two as the curve's parameter bunched up.
+    atMost('leader · constant speed along a curved path: the widest departure from the mean (share of it)', Math.max(...speeds.map((v) => Math.abs(v - mean))) / mean, 0.05);
+    const parked = { x: school.x, y: school.y };
+    for (let i = 0; i < 60; i++) boidsModule.advanceLeader(school, dt, LANE, 800);
+    atLeast('leader · after the path ends it goes on out of the picture, not parked (lane widths in a second)', Math.hypot(school.x - parked.x, school.y - parked.y) / LANE, 0.1);
+    atLeast('leader · at the speed it arrived with (metres per second)', Math.hypot(school.vx, school.vy), mean * 0.9);
+    cfg.wobbleAmplitude = keep;
+  }
+
+  // A school longer than the screen, and a long crossing, for a level that wants "this school has been going a long time".
+  {
+    const base = seedEntries[0];
+    const keepSeconds = DEBUG_LEVEL.paths.straight.seconds;
+    DEBUG_LEVEL.paths.straight.seconds = 20;
+    const random = Math.random;
+    Math.random = seeded(15);
+    const world = { field: new EntityField(), obstacles: new ObstacleField(), hazards: new HazardField(), playerRadiusFraction: 0.08 };
+    for (let i = 0; i < 200; i++) placeEntry({ ...base, schoolSize: 200, schoolIndex: i }, VIEW.max, VIEW, LANE, world);
+    Math.random = random;
+    const field = world.hazards;
+    let widest = 0;
+    let ratioLate = 0;
+    const dt = 1 / 30;
+    for (let t = 0; t < 30 && field.hazards.length > 100; t += dt) {
+      field.update(dt, ctxFor(LANE * 0.5, 400, t));
+      const fish = field.hazards.filter((h) => h.boid);
+      if (fish.length < 150) break;
+      const xs = fish.map((h) => h.x).sort((a, b) => a - b);
+      const ys = fish.map((h) => h.y);
+      const extent = (xs[Math.floor(0.98 * (xs.length - 1))] - xs[Math.floor(0.02 * (xs.length - 1))]) / LANE;
+      widest = Math.max(widest, extent);
+      const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+      const wid = Math.sqrt(ys.reduce((a, b) => a + (b - my) ** 2, 0) / ys.length) / LANE;
+      if (t > 8) ratioLate = extent / (4 * wid);
+    }
+    DEBUG_LEVEL.paths.straight.seconds = keepSeconds;
+    atLeast('long · a school of 200 is longer than the screen is wide at some point (lane widths)', widest, 1.2);
+    atLeast('long · and well into a 20 second crossing it is still a stream, not a lump (length over width, a lump is about 1)', ratioLate, 2.0);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -421,7 +479,7 @@ try {
       atLeast('back · alignment: the school goes one way halfway along (polarisation)', mid.polarisation, 0.8);
       atLeast('back · and it is a stream (length in lane widths)', mid.length / LANE, 0.3);
       check('back · every fish left by itself, and the school was dropped with the last', [field.back.fishCount, field.back.schools.size], [0, 0]);
-      atLeast('back · the crossing took at least the path\'s seconds', t, SECONDS * 0.99);
+      atLeast('back · the crossing took about the path\'s seconds (at least 80%)', t, SECONDS * 0.8);
       atMost('back · and not forever (seconds)', t, SECONDS * 3);
     }
 

@@ -2322,7 +2322,7 @@
       // **聚合横向比纵向强多少**：聚合是朝邻居的重心拉，这里把"垂直于邻居前进方向"的那一半放大这么多倍。
       // 1 = 各个方向一样，鱼群是个圆；越大鱼群越被压成顺着前进方向的长带。全靠邻居（邻居的前进方向是它们的平均速度），
       // 没有领队、没有固定的点——上一版用弹簧拉向领队来做长条，而朝一个点的弹簧就是整群同一帧一起转的原因。
-      "cohesionAcrossRatio": 2.5,
+      "cohesionAcrossRatio": 4,
 
       // **领队的影响**：
       //   `leaderReach`   领队影响多远内的鱼（泳道比例）。半径内的鱼把速度往"领队的速度 × 自己的速度系数"拉，
@@ -2337,19 +2337,21 @@
       "leaderReach": 0.25,
       "leaderSteer": 4,
       "leaderTether": 0.9,
-      "tetherAccel": 1.0,
-      //   `leaderWantFish` / `leaderAllowAhead` / `leaderWaitFloor`  **领队待在鱼群的最前端**。它只管半径内的鱼，所以：
+      "tetherAccel": 0.5,
+      //   `leaderWantFish` / `leaderAllowAhead` / `leaderWaitFloor` / `leaderCatchUp`  **领队待在鱼群的最前端**。
+      //                   领队沿路径**匀速**走（速度 = 路径长度 / `path.seconds`），走到终点不停，继续往外走。
+      //                   它只管半径内的鱼，所以：
       //                   · 它自己一路走远，半径里很快一条鱼都没有，鱼群就靠惯性直线冲出去——在拐弯处就是直接冲出路径。
-      //                     所以半径内的真鱼少于 `leaderWantFish` 条时它放慢；
-      //                   · 它退进鱼群里，**它前面的鱼**就够不着领队、前面又没有邻居可以跟，鱼群最前面反而最后转弯。
-      //                     所以它前面的真鱼多于 `leaderAllowAhead` 条时它也放慢，让鱼群的前端追上来。
-      //                   放慢到最多自己步速的 `leaderWaitFloor`。结果是领队始终在鱼群前端；代价是走完整条路的时间
-      //                   比 `path.seconds` 长，取决于鱼群。
+      //                     所以半径内的真鱼少于 `leaderWantFish` 条时它放慢，放慢到最多自己步速的 `leaderWaitFloor`；
+      //                   · 比它快的鱼会超过它。**它前面的鱼**够不着领队、前面又没有邻居可以跟，鱼群最前面反而最后转弯。
+      //                     所以它前面的真鱼多于 `leaderAllowAhead` 条时它加速去追，最多到自己步速的 `leaderCatchUp` 倍。
+      //                   结果是领队始终在鱼群前端；走完整条路的时间会因鱼群而和 `path.seconds` 有出入。
       "leaderAllowAhead": 6,
       "leaderWantFish": 8,
       "leaderWaitFloor": 0.25,
+      "leaderCatchUp": 1.6,
 
-      // 游速的下限和上限，lane/秒。**有下限**：鱼不会悬停，而群在领队停下之后（样条走完）也要继续游着散去。
+      // 游速的下限和上限，lane/秒。**有下限**：鱼不会悬停，群走出路径之后也要继续游着散去。
       "minSpeed": 0.04,
       "maxSpeed": 0.45,
 

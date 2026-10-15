@@ -112,6 +112,11 @@ export interface School {
   id: number;
   /** The level's own waypoints, by reference: a hundred members on one path still share one spline. */
   points: readonly { x: number; y: number }[];
+  /**
+   * How far along the spline's LENGTH each of its equal steps of parameter is, 0..1 (see `arcTable`). It is what makes the
+   * leader walk at a constant speed: a Catmull-Rom curve is not drawn at a constant speed by its own parameter.
+   */
+  arc: readonly number[];
   seconds: number;
   /** Seconds since the school was placed. */
   elapsed: number;
@@ -142,6 +147,42 @@ export interface School {
   seeded: number;
 }
 
+const ARC_STEPS = 256;
+
+/**
+ * The spline's length, tabulated: entry `i` is how far along the length (0..1) the curve is at parameter `i / ARC_STEPS`.
+ *
+ * Measured in the water's own metres (x in lane widths times the lane, y in screens times the screen) so a bend that is long
+ * on the glass is long here. A path of zero length (every point the same) gets a straight ramp rather than a division by zero.
+ */
+function arcTable(points: readonly { x: number; y: number }[], laneWidth: number, screen: number): number[] {
+  const cumulative = [0];
+  let total = 0;
+  let last = pathPoint(points, 0);
+  for (let i = 1; i <= ARC_STEPS; i++) {
+    const p = pathPoint(points, i / ARC_STEPS);
+    total += Math.hypot((p.x - last.x) * laneWidth, (p.y - last.y) * screen);
+    cumulative.push(total);
+    last = p;
+  }
+  return cumulative.map((v, i) => (total > 1e-9 ? v / total : i / ARC_STEPS));
+}
+
+/** The spline parameter at which `fraction` of its length has been walked: the inverse of `arcTable`, interpolated. */
+function paramAt(arc: readonly number[], fraction: number): number {
+  const f = Math.max(0, Math.min(1, fraction));
+  let lo = 0;
+  let hi = ARC_STEPS;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (arc[mid]! <= f) lo = mid;
+    else hi = mid;
+  }
+  const span = arc[hi]! - arc[lo]!;
+  const within = span > 1e-12 ? (f - arc[lo]!) / span : 0;
+  return (lo + within) / ARC_STEPS;
+}
+
 /**
  * The leader's place at a moment of the spline, in the water's metres. Same coordinates as a pathed creature, plus the
  * snaking: a sideways offset along the spline's own normal, from two sines of unrelated periods so it never repeats
@@ -149,11 +190,14 @@ export interface School {
  * where it leaves.
  */
 function leaderAt(
-  school: Pick<School, 'points' | 'startY' | 'seconds' | 'wobblePhase'>,
-  t: number,
+  school: Pick<School, 'points' | 'arc' | 'startY' | 'seconds' | 'wobblePhase'>,
+  clockT: number,
   laneWidth: number,
   screen: number,
 ): { x: number; y: number } {
+  // `clockT` is how far through its TIME the leader is; the spline is walked by LENGTH, so the leader's speed is the path's
+  // length over its seconds the whole way and does not rise and fall with the curve's own parameter.
+  const t = paramAt(school.arc, clockT);
   const p = pathPoint(school.points, t);
   let x = p.x * laneWidth;
   let y = school.startY + p.y * screen;
@@ -166,9 +210,9 @@ function leaderAt(
     const ty = (b.y - a.y) * screen;
     const len = Math.hypot(tx, ty);
     if (len > 1e-6) {
-      const clock = (t * school.seconds * 2 * Math.PI) / Math.max(0.1, cfg.wobbleSeconds);
+      const clock = (clockT * school.seconds * 2 * Math.PI) / Math.max(0.1, cfg.wobbleSeconds);
       const noise = 0.6 * Math.sin(clock + school.wobblePhase) + 0.4 * Math.sin(clock * 2.7 + school.wobblePhase * 1.9);
-      const fade = Math.min(1, t / 0.15, (1 - t) / 0.15);
+      const fade = Math.min(1, clockT / 0.15, (1 - clockT) / 0.15);
       const amount = noise * Math.max(0, fade) * cfg.wobbleAmplitude * laneWidth;
       x += (-ty / len) * amount;
       y += (tx / len) * amount;
@@ -195,6 +239,7 @@ export function createSchool(
   const school: School = {
     id,
     points: path.points,
+    arc: arcTable(path.points, laneWidth, screen),
     seconds,
     elapsed: 0,
     startY,
@@ -272,40 +317,49 @@ export function seedMember(
 }
 
 /**
- * Walk the leader along the spline. It stops at the end rather than leaving: see `steerSchool` for how the school goes.
+ * Walk the leader along the spline, at a constant speed, and on out of the picture when the spline ends.
  *
  * THE LEADER STAYS AT THE FRONT OF ITS SCHOOL. It only steers the fish inside its reach, so it has to be where it can steer
  * the ones that matter:
  *   - if it walked away from the school it would soon have nobody in reach, and the school would go on in a straight line
- *     on its momentum -- on a bend, straight off the path. So it slows when fewer than `leaderWantFish` real fish are in reach.
+ *     on its momentum -- on a bend, straight off the path. So it slows when fewer than `leaderWantFish` real fish are in reach,
+ *     down to `leaderWaitFloor` of its own pace.
  *   - if it fell back into the school, the fish AHEAD of it would be out of its reach and have no neighbours in front to
- *     follow: the front of the school would be the last part to turn, which is backwards. So it slows when more than
- *     `leaderAllowAhead` real fish are ahead of it, and lets the school's front come back to it.
- * Either way the pace drops to at least `leaderWaitFloor` of its own. The path takes as long as the school takes, which is
- * never less than `seconds`.
+ *     follow: the front of the school would be the last part to turn, which is backwards. So it speeds up when more than
+ *     `leaderAllowAhead` real fish are ahead of it, up to `leaderCatchUp` times its own pace, and takes the front back.
+ *     (It used to SLOW here and let the front come back, which only worked while the leader happened to outrun its fish: with
+ *     the leader at a constant speed the fish that are faster than it pass it, and slowing then lets them get further away.)
  */
 export function advanceLeader(school: School, dt: number, laneWidth: number, screen: number): void {
   if (dt <= 0) return;
-  if (school.finished) return;
+  if (school.finished) {
+    // The leader does not stop where the path ends: it goes on out of the picture at the speed it arrived with. A leader
+    // that parked would show every fish in its reach a velocity of zero, and the school would slow and bunch round it --
+    // which is what a school leaving the screen must not do.
+    school.x += school.vx * dt;
+    school.y += school.vy * dt;
+    return;
+  }
   const cfg = mech.hazards.boids;
   const reachPace = Math.min(1, school.inReach / Math.max(1, cfg.leaderWantFish));
-  const aheadPace = school.ahead <= cfg.leaderAllowAhead ? 1 : cfg.leaderAllowAhead / school.ahead;
-  const pace = Math.max(cfg.leaderWaitFloor, Math.min(reachPace, aheadPace));
+  const pace =
+    school.ahead > cfg.leaderAllowAhead
+      ? Math.min(cfg.leaderCatchUp, 1 + (school.ahead - cfg.leaderAllowAhead) / Math.max(1, cfg.leaderAllowAhead))
+      : Math.max(cfg.leaderWaitFloor, reachPace);
   school.elapsed += dt * pace;
   const t = Math.min(1, school.elapsed / school.seconds);
   const at = leaderAt(school, t, laneWidth, screen);
-  school.vx = (at.x - school.x) / dt;
-  school.vy = (at.y - school.y) / dt;
+  if (t >= 1) {
+    // The step that reaches the end is usually a short one (the clock is clamped), so the velocity read from it would be
+    // low: the last full step's velocity is kept instead, and the leader sets off with it next frame.
+    school.finished = true;
+  } else {
+    school.vx = (at.x - school.x) / dt;
+    school.vy = (at.y - school.y) / dt;
+  }
   school.x = at.x;
   school.y = at.y;
   setDirection(school);
-  if (t >= 1) {
-    school.finished = true;
-    // The leader parks, but its heading is kept: a school leaves the way it was going, and `dirX` is what its fish are
-    // measured against.
-    school.vx = 0;
-    school.vy = 0;
-  }
 }
 
 /**

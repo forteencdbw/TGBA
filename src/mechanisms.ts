@@ -922,6 +922,8 @@ export interface Mechanisms {
       leaderWantFish: number;
       leaderAllowAhead: number;
       leaderWaitFloor: number;
+      /** The most the leader speeds up, as a multiple of its own pace, to take the front back when fish have got ahead of it. */
+      leaderCatchUp: number;
       minSpeed: number;
       maxSpeed: number;
       /** The cap on the sum of all four, so a crowd cannot fling a fish. */
@@ -2855,7 +2857,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.boids.back.tint', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.boids.neighbours', check: (v) => wholeNumber(v) && (v as number) >= 1 && (v as number) <= 30, describe: 'a whole number from 1 to 30: how many of the nearest fish alignment and cohesion listen to' },
   { path: 'hazards.boids.cohesionAcrossRatio', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 20, describe: 'a ratio from 1 (round) to 20: how much harder cohesion pulls across the neighbours\' heading than along it' },
-  { path: 'hazards.boids.leaderAllowAhead', check: (v) => wholeNumber(v) && (v as number) >= 0, describe: 'a whole number of real fish that may be ahead of the leader before it slows to let the school\'s front catch up' },
+  { path: 'hazards.boids.leaderAllowAhead', check: (v) => wholeNumber(v) && (v as number) >= 0, describe: 'a whole number of real fish that may be ahead of the leader before it speeds up to take the front back' },
+  { path: 'hazards.boids.leaderCatchUp', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 4, describe: 'a multiple from 1 (never speeds up) to 4: the most the leader speeds up, as a multiple of its own pace' },
   { path: 'hazards.boids.leaderWantFish', check: (v) => wholeNumber(v) && (v as number) >= 1, describe: 'a whole number of real fish the leader needs in reach to walk at full pace' },
   /** The crab: one row per key of its own block, for the reason the config gives at `hazards.crab`. */
   { path: 'hazards.crab.armDistanceMeters', check: anyNumber, describe: 'metres of 0 or more; the distance at which the fuse is lit' },
