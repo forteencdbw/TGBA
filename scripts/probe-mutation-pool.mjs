@@ -27,7 +27,7 @@ const check = (label, got, want) => {
 const server = await createServer({ root, server: { middlewareMode: true }, logLevel: 'error' });
 try {
   const { Run } = await server.ssrLoadModule('/src/run.ts');
-  const { rollMutationChoices, applyMutationPassives } = await server.ssrLoadModule('/src/mutations.ts');
+  const { rollMutationChoices, applyMutationPassives, mutationCard, pickMutationCard } = await server.ssrLoadModule('/src/mutations.ts');
   const { mech } = await server.ssrLoadModule('/src/mechanisms.ts');
 
   const NEW_CARDS = ['sizeDamage', 'speedDamage'];
@@ -90,6 +90,18 @@ try {
   }
 
   /**
+   * A ROUTE-LOCKED card, pinned the opposite way round from `NEW_CARDS` above.
+   *
+   * 追踪弹 is a gun card, so it belongs to the one route whose entire statement is the gun -- which means the
+   * property worth testing is that it appears THERE AND NOWHERE ELSE. Writing `routes: 'all'` by mistake would show
+   * up as a card quietly offered to a 吞噬 run, and nothing else in the suite would notice.
+   */
+  {
+    const drawn = Object.fromEntries(ROUTES.map((route) => [route, seenOn(route).has('homing')]));
+    check('homing · 只在弹幕路线出', ROUTES.map((r) => drawn[r]), [false, false, true]);
+  }
+
+  /**
    * The two new cards actually reach the run's fields.
    *
    * This is here rather than in the damage probe because the damage probe supplies the RATES itself -- it tests the
@@ -112,6 +124,27 @@ try {
     const fresh = new Run();
     applyMutationPassives(fresh);
     check('没拿卡 · 两个速率都是 0', [fresh.bulletSizeDamageRate, fresh.bulletSpeedDamageRate], [0, 0]);
+  }
+
+  /**
+   * The 追踪弹 card actually lands on the run, and lands only once.
+   *
+   * Both halves of it are wiring a compiler cannot see: `available` looks the id up in `run.picks` as a STRING, and
+   * `apply` writes a field by name. A misspelling on either side typechecks -- and produces a card that can be taken
+   * for ever, or one that does nothing at all.
+   */
+  {
+    const run = new Run();
+    run.pickRoute('barrage');
+    const card = mutationCard('homing');
+    check('homing · 卡在池子里', !!card, true);
+    check('homing · 拿之前抽得到', card.available(run), true);
+    pickMutationCard(run, card);
+    check('homing · 概率写进 run', round(run.bulletHomingChance), round(mech.bullets.homing.chance));
+    check('homing · 记进 picks', run.picks.includes('homing'), true);
+    check('homing · 拿过就不再出现', card.available(run), false);
+    // A brand new run is an ordinary gun again: the chance is cleared alongside `picks`, and this is what says so.
+    check('homing · 新一局是普通枪', new Run().bulletHomingChance, 0);
   }
 } finally {
   await server.close();

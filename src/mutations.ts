@@ -277,6 +277,30 @@ const POOL: readonly Mutation[] = [
     },
   },
   {
+    id: 'homing',
+    name: `追踪弹 ${Math.round(mech.bullets.homing.chance * 100)}%`,
+    blurb: '三成的子弹自己找泡泡上方的敌人；找不到就划一道弧飞出屏幕',
+    /**
+     * THE BARRAGE ROUTE'S, because it is a gun card and that route's whole statement is the gun: its `controls` list
+     * adds no button, and its cards widen what the weapon IS rather than what else the bubble can do. A tracking
+     * round is that sentence exactly. The cost of the lock is real and deliberate -- a run that took one of the
+     * other two routes at the first level-up never sees this card at all.
+     */
+    routes: 'barrage',
+    /**
+     * ONCE, and the gate is the run's own log rather than a new flag.
+     *
+     * `available` is asked on every draw, and `run.picks` already holds every id this run has taken -- so "have I
+     * got this one" is answerable with no new state to keep in step, and nothing to remember to clear when the run
+     * restarts. A stacking version would have to be a count in `run.mutations`, which is precisely what makes a
+     * card stackable; this one must not appear twice in a mandatory pick.
+     */
+    available: (run) => !run.picks.includes('homing'),
+    apply: (run) => {
+      run.bulletHomingChance = mech.bullets.homing.chance;
+    },
+  },
+  {
     id: 'sizeDamage',
     name: '越大伤害越高',
     blurb: '子弹胀大多少就多打多少，可叠加——要飞得久才吃得到',

@@ -299,6 +299,22 @@ export class Run {
    */
   bulletSizeDamageRate = 0;
   bulletSpeedDamageRate = 0;
+  /**
+   * The chance a round leaves the muzzle TRACKING, from the 弹幕路线 · 追踪弹 card. 0 is an ordinary gun.
+   *
+   * A number rather than a flag because the card is a probability, and the run is what owns it -- the bullet module
+   * rolls it, but "how often do my rounds track" is a fact about the run's picks, like the rate tier above it.
+   */
+  bulletHomingChance = 0;
+  /**
+   * The gun's dice, replaceable.
+   *
+   * A field rather than `Math.random` called in `src/bullets.ts`, so a probe can hand the module a source of its
+   * own and get the same rounds twice. That module had no randomness in it AT ALL until homing arrived, and
+   * `scripts/probe-bullet-damage.mjs` compares its entire output against a golden run -- the seam is what keeps
+   * that comparison meaningful instead of turning it into a distribution.
+   */
+  bulletRandom: () => number = Math.random;
   /** Burst radius multiplier from stacked 沸腾路线 · 爆破半径 picks. */
   burstRadiusMultiplier = 1;
   /** Rage decay multiplier from stacked 沸腾路线 · 余温 picks: below 1 means the heat lingers. */
@@ -511,6 +527,16 @@ export class Run {
        */
       sizeDamageRate: this.bulletSizeDamageRate,
       speedDamageRate: this.bulletSpeedDamageRate,
+      /**
+       * The tracking round's three inputs: where the bubble is, how often a round should track, and the dice.
+       *
+       * `playerY` is passed as the raw world metre the player is at -- the same number a hazard's `y` is measured
+       * in -- because the homing rule is a plain comparison against it and any conversion here would be a second
+       * place for that comparison to be got wrong.
+       */
+      playerY: this.player.y,
+      homingChance: this.bulletHomingChance,
+      random: this.bulletRandom,
       hazards: this.hazards,
       obstacles: this.obstacles,
     });

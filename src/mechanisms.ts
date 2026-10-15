@@ -1118,6 +1118,29 @@ export interface Mechanisms {
     alpha: number;
     rimColour: number;
     rimAlpha: number;
+    /**
+     * The homing round: the one card that changes how a round FLIES rather than how hard it hits.
+     *
+     * The whole feature is one dice roll at birth, so `chance` is the card; the rest are the steering. `steerPerSecond`
+     * is the turn rate -- the single number that decides whether this reads as a tracker or as a homing missile that
+     * cannot miss -- and `arcPerSecond` is what a round does when it has nothing to chase, which is also the only
+     * thing that tells a homing round apart from an ordinary one before it reaches anything.
+     *
+     * The three colours are separate from the round's own because the player has to be able to tell, at the muzzle,
+     * which rounds are going to curve. See `src/bullets.ts` for the rules and `config/mechanics.json5` for why each
+     * number is what it is.
+     */
+    homing: {
+      chance: number;
+      lateralMaxPerSecond: number;
+      steerPerSecond: number;
+      approachPerSecond: number;
+      arcPerSecond: number;
+      rangeMarginMeters: number;
+      colour: number;
+      rimColour: number;
+      imageTint: number;
+    };
   };
   /**
    * The player's own bubble art.
@@ -3007,6 +3030,17 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'bullets.rimAlpha', check: anyNumber, describe: 'an opacity' },
   ...(['colour', 'rimColour'] as const).map((key) => ({
     path: `bullets.${key}`,
+    check: isColour,
+    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
+  })),
+  { path: 'bullets.homing.chance', check: anyNumber, describe: 'a probability, 0 to 1' },
+  { path: 'bullets.homing.lateralMaxPerSecond', check: anyNumber, describe: 'lane widths per second' },
+  { path: 'bullets.homing.steerPerSecond', check: anyNumber, describe: 'lane widths per second squared' },
+  { path: 'bullets.homing.approachPerSecond', check: anyNumber, describe: 'a rate, per second' },
+  { path: 'bullets.homing.arcPerSecond', check: anyNumber, describe: 'lane widths per second squared' },
+  { path: 'bullets.homing.rangeMarginMeters', check: anyNumber, describe: 'metres' },
+  ...(['colour', 'rimColour', 'imageTint'] as const).map((key) => ({
+    path: `bullets.homing.${key}`,
     check: isColour,
     describe: 'a colour, either 0xrrggbb or "#rrggbb"',
   })),

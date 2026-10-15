@@ -245,7 +245,7 @@ test.describe('routes', () => {
       'the draw right after the pick must contain one of the route\'s own cards',
     ).toBe(true);
     expect(
-      first.cards.some((c) => c && (c.id.startsWith('route:') || c.id === 'rage' || c.id === 'burstRadius' || c.id === 'simmer' || c.id === 'bulletSpeed' || c.id === 'bulletRadius' || c.id === 'bulletRange')),
+      first.cards.some((c) => c && (c.id.startsWith('route:') || c.id === 'rage' || c.id === 'burstRadius' || c.id === 'simmer' || c.id === 'bulletSpeed' || c.id === 'bulletRadius' || c.id === 'bulletRange' || c.id === 'homing')),
       'and never a card from the other two routes',
     ).toBe(false);
 

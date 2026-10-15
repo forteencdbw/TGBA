@@ -1,6 +1,6 @@
 import { Graphics } from 'pixi.js';
 import { mech } from './config';
-import { boxDistance, hazardBoxFractions, hazardSizeFraction, type HazardField } from './hazards';
+import { boxDistance, hazardBoxFractions, hazardSizeFraction, type Hazard, type HazardField } from './hazards';
 import type { ObstacleField } from './obstacles';
 
 /**
@@ -31,13 +31,53 @@ export interface Bullet {
   x: number;
   y: number;
   /**
-   * Seconds in flight. The only state a round has beyond where it is.
+   * Seconds in flight. The only state a round has beyond where it is, until it is a homing round.
    *
    * It decides everything else about the round: how fast it is going, how big it is, and when it expires. That is
    * deliberate -- speed and radius used to be fields set at birth, and a round cannot both remember its own speed
    * and be accelerating.
    */
   age: number;
+  /**
+   * Set only on a round that left the muzzle TRACKING, and absent on every other round -- including every round in
+   * a run that never took the card, which is what keeps the ordinary gun exactly as cheap as it was.
+   *
+   * Optional rather than always-present because a round that is not homing has no target, no sideways speed and no
+   * arc, and three fields of nothing on every round would be the ordinary case paying for the special one. It is
+   * also what lets the two bullet probes keep building rounds as bare `{ x, y, age }` literals.
+   */
+  homing?: HomingState;
+}
+
+/**
+ * What a round is doing when it is NOT flying straight: what it is chasing, and how fast it is sliding sideways.
+ *
+ * This is genuinely accumulated state rather than a function of `age`, unlike speed and radius -- a sideways speed
+ * cannot be derived from how long the round has been alive, only from where the target has been. See `steerHoming`.
+ */
+export interface HomingState {
+  /**
+   * The creature this round is chasing, held BY ID rather than by reference.
+   *
+   * A reference would be a round pointing at an object the hazard field has already dropped from its list, and
+   * "is this still alive" would then be unanswerable -- eaten, driven off and quietly retired all look the same
+   * from a dangling pointer. The id is re-resolved against the live list every frame, so a round whose target is
+   * gone finds that out on the next frame and acts on it.
+   *
+   * `null` means the round is in the ARC: it had nothing to chase when it was born, or it lost what it had and
+   * could not find another. It stays there -- the arc is not a wait, it is the rest of the round's flight.
+   */
+  targetId: number | null;
+  /** Sideways speed, metres per second. Positive is right. */
+  vx: number;
+  /**
+   * Which way the round curves while it is in the arc: -1 left, +1 right.
+   *
+   * Decided on ENTERING the arc rather than at birth, so it is random at the moment it stops chasing -- which is
+   * the moment it is visible. Rolling at birth would have meant the direction was chosen before the player could
+   * see anything, and re-rolled later anyway for every round that lost its target.
+   */
+  side: 1 | -1;
 }
 
 /**
@@ -189,8 +229,160 @@ export interface BulletContext {
   speedMultiplier: number;
   radiusMultiplier: number;
   lifeMultiplier: number;
+  /**
+   * Where the bubble is, in world metres up the lane. `+y` is up, the same metres a hazard's `y` is in.
+   *
+   * Only the vertical half is needed, which is the whole shape of the homing rule: a target qualifies by being
+   * ABOVE the player, and how far off to the side it is does not enter the decision at all. See `pickTarget`.
+   *
+   * Handed in rather than read from a player this module does not have -- this field has never known where the
+   * bubble is, and the one rule that needs to is better served by being told than by being given the player.
+   */
+  playerY: number;
+  /**
+   * The chance a round is born tracking, from the run's own picks. 0 for every run that never took the card, which
+   * is what makes the roll below cost nothing and the ordinary gun unchanged.
+   */
+  homingChance: number;
+  /**
+   * The dice this field rolls: the birth roll, the target draw, and which way an arc curves.
+   *
+   * Injected rather than `Math.random` called in place, because a bullet module with a hidden random source cannot
+   * be asked what it did. This file was the one place in the game with NO randomness in it at all, and
+   * `scripts/probe-bullet-damage.mjs` compares its whole output against a golden run -- a probe can only keep doing
+   * that if it can hand in a source of its own.
+   */
+  random: () => number;
   hazards: HazardField;
   obstacles: ObstacleField;
+}
+
+/**
+ * Whether the gun may aim at this creature at all: the same one-line test the collision loop below uses.
+ *
+ * Kept as a named function because it is now asked in two places -- "may this round hit it" and "may this round
+ * CHASE it" -- and those two must never disagree. A round that chased something it then flew through would be the
+ * most visible bug this feature could have.
+ */
+function targetable(h: Hazard): boolean {
+  // Not shootable, or already leaving: a creature driven off is on its way out and must not be re-engaged.
+  return h.maxHealth > 0 && !h.flee;
+}
+
+/**
+ * Pick a creature for a round to chase, or null when there is nothing a round is allowed to want.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * THE THREE QUESTIONS, AND WHY EACH ONE IS THERE
+ * ---------------------------------------------------------------------------------------------
+ *   - ABOVE THE PLAYER. `h.y > ctx.playerY`, a strict half-plane: `+y` is up, so "above" is simply a larger `y`,
+ *     and how far to the left or right the creature is does not matter. This is the design's rule written the only
+ *     way it can be written -- a creature the bubble has already swum past is not something the gun reaches back
+ *     for, and that is what makes taking a shot worth waiting for.
+ *   - ON THE SCREEN. Between the visible bounds the caller passes in, which already carry the spawn margin the
+ *     hazard field uses, plus this feature's own offset. A round sent at something the player cannot see would
+ *     curve for no reason the player can read.
+ *   - AIMABLE. `targetable` above.
+ *
+ * Then UNIFORMLY at random among what is left. Not the nearest, and not weighted by distance: the card's promise is
+ * "追踪弹", and a round that always took the closest thing would be an aiming assist rather than a different
+ * weapon. Which one it picks is also per ROUND rather than per volley, so two rounds born together may chase two
+ * different creatures or the same one -- both are the roll being honest.
+ */
+function pickTarget(ctx: BulletContext): number | null {
+  const margin = mech.bullets.homing.rangeMarginMeters;
+  const min = ctx.min - margin;
+  const max = ctx.max + margin;
+  const eligible: Hazard[] = [];
+  for (const h of ctx.hazards.hazards) {
+    if (h.y <= ctx.playerY) continue;
+    if (h.y < min || h.y > max) continue;
+    if (!targetable(h)) continue;
+    eligible.push(h);
+  }
+  if (eligible.length === 0) return null;
+  return eligible[Math.floor(ctx.random() * eligible.length)]!.id;
+}
+
+/** Which way an arc curves. See `HomingState.side` for why this is decided on entering the arc and not at birth. */
+function arcSide(ctx: BulletContext): 1 | -1 {
+  return ctx.random() < 0.5 ? -1 : 1;
+}
+
+/**
+ * Move a tracking round sideways, toward whatever it is chasing.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * WHAT IT DOES NOT DO, WHICH IS THE DESIGN
+ * ---------------------------------------------------------------------------------------------
+ * It never touches `y`. The round's climb is `speedOf` and nothing else, so a tracking round does not slow down,
+ * does not speed up and cannot turn around and come back down -- it slides toward its target WHILE it climbs, and
+ * the curve the player sees is the two added together. That is also why nothing about range, lifetime or recycling
+ * had to change to add this: those are all questions about `y`.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * THE TWO REGIMES, AND WHY THEY ARE ONE RULE
+ * ---------------------------------------------------------------------------------------------
+ * With a target: aim the sideways speed at a value proportional to how far off to the side the target is, capped,
+ * and get there no faster than the turn rate allows. Far away it saturates and slides at full speed; close in it
+ * eases off by itself. The proportion is what stops a round wobbling back and forth across a target it has already
+ * reached -- a bang-bang "always accelerate toward it" has no way to stop.
+ *
+ * Without one: a constant sideways acceleration in the arc's own direction, which from a standing start is an arc
+ * and from an existing sideways speed is a wider one. Same integration, one term swapped, so "it lost its target"
+ * needs no separate state and no separate motion.
+ */
+function steerHoming(b: Bullet, dt: number, ctx: BulletContext): void {
+  const h = b.homing!;
+  const cfg = mech.bullets.homing;
+  /**
+   * The three lateral numbers are in LANE WIDTHS, like every other speed in this config, so they are converted here
+   * the same way `speedOf` converts its own -- one multiplication by the lane width, at the point of use. Getting
+   * this wrong is invisible to the compiler and shows up only as a round that slides at 0.55 metres per second.
+   */
+  const lateralMax = cfg.lateralMaxPerSecond * ctx.laneWidth;
+  const steerMax = cfg.steerPerSecond * ctx.laneWidth;
+  const arcAccel = cfg.arcPerSecond * ctx.laneWidth;
+
+  let target: Hazard | undefined;
+  if (h.targetId !== null) {
+    const found = ctx.hazards.hazards.find((x) => x.id === h.targetId);
+    if (found && targetable(found)) {
+      target = found;
+    } else {
+      /**
+       * THE TARGET IS GONE -- shot away, swallowed, driven off, or retired off the screen.
+       *
+       * One re-draw, using the bubble's position NOW rather than the one it had when the round was fired, because
+       * the question is still "what is above me", and the player has climbed since. Failing that, the round drops
+       * into the arc for the rest of its life: there is nothing to wait for, and a round that kept re-checking
+       * would be one the player watches fly straight and cannot explain.
+       */
+      h.targetId = pickTarget(ctx);
+      if (h.targetId === null) h.side = arcSide(ctx);
+      else target = ctx.hazards.hazards.find((x) => x.id === h.targetId);
+    }
+  }
+
+  /**
+   * The lateral speed the round is aiming for, then the fastest legal way to it.
+   *
+   * `approachPerSecond` is a rate against DISTANCE, not against time: the further off to the side the target is, the
+   * harder the round slides, up to `lateralMaxPerSecond`. `steerPerSecond` is the ceiling on how fast that sideways
+   * speed may CHANGE, and it is the turn rate -- the one number that decides whether this looks like something
+   * tracking or something that simply hits.
+   *
+   * With no target the aim point is simply the arc's own direction at full sideways speed, so the same two lines
+   * carry the round out of the screen. `Math.max(dt, ...)` rather than a bare divide: a zero step is a legal thing
+   * for a probe to hand in, and it must not arrive here as a NaN that outlives the frame.
+   */
+  const want = target
+    ? Math.max(-lateralMax, Math.min(lateralMax, (target.x - b.x) * cfg.approachPerSecond))
+    : h.side * lateralMax;
+  const accel = target ? (want - h.vx) / Math.max(dt, 1e-6) : h.side * arcAccel;
+  const capped = Math.max(-steerMax, Math.min(steerMax, accel));
+  h.vx = Math.max(-lateralMax, Math.min(lateralMax, h.vx + capped * dt));
+  b.x += h.vx * dt;
 }
 
 export class BulletField {
@@ -280,6 +472,15 @@ export class BulletField {
       b.age += dt;
       // `cameraRise` first: a round is on the screen, so the camera's climb must not be added to how fast it flies.
       b.y += ctx.cameraRise + speedOf(b, ctx.laneWidth, ctx.speedMultiplier) * dt;
+      /**
+       * Sideways, AFTER the climb, and only for a round that is tracking.
+       *
+       * After, because the climb is what a round always does and the slide is what this one does on top of it --
+       * and because a round that has just been recycled by the climb below should not also be moved sideways first.
+       * `steerHoming` re-resolves the target against the live list, so a creature that died this frame is already
+       * gone by the time this runs.
+       */
+      if (b.homing) steerHoming(b, dt, ctx);
       // Recomputed per round per frame: the hitbox and the drawing read the same value, so a round that has grown
       // is a round that hits from further away, which is the mechanic rather than a side effect.
       const radius = radiusOf(b, ctx.laneWidth, ctx.radiusMultiplier);
@@ -297,8 +498,9 @@ export class BulletField {
 
       if (!spent) {
         for (const h of ctx.hazards.hazards) {
-          // Not shootable, or already leaving: the round passes through rather than being eaten by it.
-          if (h.maxHealth <= 0 || h.flee) continue;
+          // Not shootable, or already leaving: the round passes through rather than being eaten by it. The same test
+          // `pickTarget` uses to decide what a round is allowed to chase -- see the note on `targetable`.
+          if (!targetable(h)) continue;
           const reach = radius + ctx.laneWidth * hazardSizeFraction(h.kind, h.scale);
           const dx = h.x - b.x;
           const dy = h.y - b.y;
@@ -354,15 +556,36 @@ export class BulletField {
      * Simultaneous rather than alternating: an upgrade that fired the same number of rounds from two places would be
      * a WIDER gun, and this is meant to be a stronger one. The caller decides how many muzzles there are.
      *
-     * A round is born with nothing but a position and an age of zero: its speed and its size are both functions of
-     * that age (`speedOf`, `radiusOf`), so there is no launch state to get wrong here.
+     * A round is born with a position and an age of zero: its speed and its size are both functions of that age
+     * (`speedOf`, `radiusOf`), so there is no launch state to get wrong here.
+     *
+     * ---------------------------------------------------------------------------------------------
+     * THE ONE THING DECIDED AT BIRTH
+     * ---------------------------------------------------------------------------------------------
+     * Whether this round tracks. The roll is PER ROUND and not per volley, which is the whole reason the property
+     * lives on the bullet instead of on the gun: a two-row gun rolling one dice for both rounds would always fire
+     * two of a kind, and the card's 30% would be a property of the volley rather than of the round. Rolling here
+     * means one tick can put a tracking round and a straight one in the water side by side, which is what the
+     * player is meant to see.
+     *
+     * The target is drawn NOW, from where the bubble is at this instant, and the arc's direction is only rolled if
+     * there was nothing to draw -- see `HomingState.side`.
      */
     for (const muzzle of ctx.muzzles) {
-      this.bullets.push({
+      const bullet: Bullet = {
         x: muzzle.x,
         y: muzzle.y,
         age: 0,
-      });
+      };
+      if (ctx.homingChance > 0 && ctx.random() < ctx.homingChance) {
+        const targetId = pickTarget(ctx);
+        bullet.homing = {
+          targetId,
+          vx: 0,
+          side: targetId === null ? arcSide(ctx) : 1,
+        };
+      }
+      this.bullets.push(bullet);
       this.fired++;
     }
   }
@@ -383,8 +606,16 @@ export function paintBullets(g: Graphics, field: BulletField, laneWidth: number,
     // same function, so a bullet that looks fat is a bullet that hits from further away.
     const r = radiusOf(b, laneWidth, radiusMultiplier);
     const fade = Math.max(0.18, 1 - b.age / life);
-    g.circle(b.x, b.y, r).fill({ color: cfg.colour, alpha: cfg.alpha * fade });
-    g.circle(b.x, b.y, r).stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha * fade, width: Math.max(1, r * 0.45) });
+    /**
+     * A tracking round is drawn in its own colours, from the muzzle.
+     *
+     * This is the one thing about homing that is visible BEFORE the round does anything: until it curves, a tracking
+     * round and a straight one are the same dot doing the same thing, and at a third of the rounds that is most of
+     * the screen. The colour is the tell; the curve and the arc are the confirmation.
+     */
+    const look = b.homing ? cfg.homing : cfg;
+    g.circle(b.x, b.y, r).fill({ color: look.colour, alpha: cfg.alpha * fade });
+    g.circle(b.x, b.y, r).stroke({ color: look.rimColour, alpha: cfg.rimAlpha * fade, width: Math.max(1, r * 0.45) });
   }
 }
 

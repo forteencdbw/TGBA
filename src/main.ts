@@ -2635,6 +2635,13 @@ class Game {
       this.run.mutations = {};
       this.run.picks = [];
       /**
+       * The tracking chance goes with `picks` and NOT with the gun rows above, for a reason worth keeping straight:
+       * `available` for that card reads `run.picks`, so a run whose picks are empty must not still be firing
+       * tracking rounds -- the card would be offered again and the second pick would do nothing. Both halves are
+       * cleared here, together, which is the only way they can be cleared.
+       */
+      this.run.bulletHomingChance = 0;
+      /**
        * A fresh run is the BASE bubble again: no route, no route cards owed, the growth palette. A carried run
        * (the walk into the next level) keeps its route and its form -- the identity the player picked is the
        * run's, not the level's.
@@ -3906,7 +3913,9 @@ private updateBoss(): void {
       sprite.x = bullet.x;
       sprite.y = bullet.y;
       sprite.alpha = cfg.imageAlpha;
-      sprite.tint = cfg.imageTint;
+      // A tracking round is tinted apart, for the same reason the dots are drawn apart: with the art on, the tint is
+      // the only channel left that says which of these rounds is going to curve.
+      sprite.tint = bullet.homing ? cfg.homing.imageTint : cfg.imageTint;
       const scale = radiusOf(bullet, laneWidth, radiusMultiplier) * scalePerMetre;
       // The world is Y-flipped, so the sprite's own Y is negative to keep the picture upright; see the bubble.
       sprite.scale.set(scale, -Math.abs(scale));
