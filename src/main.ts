@@ -399,13 +399,13 @@ class Game {
       setReducedFlash(on);
     };
     /**
-     * The debug switch, which is two things because the game reads it in two places: the overlay's module flag, and the
-     * level ladder on the menu (see `refreshLevelMenu`). The flag lives in `src/hitboxes.ts` beside the drawing it
-     * controls, which is the same arrangement `setReducedFlash` uses.
+     * The two debug switches, which are separate: debug mode (the level ladder on the menu, see `refreshLevelMenu`, and the
+     * way into the debug level) and the collision boxes (the overlay's module flag). The flag lives in `src/hitboxes.ts`
+     * beside the drawing it controls, which is the same arrangement `setReducedFlash` uses.
      */
-    this.settings.onDebugHitboxes = (on) => {
+    this.settings.onDebugMode = () => this.refreshLevelMenu();
+    this.settings.onShowHitboxes = (on) => {
       setDebugHitboxes(on);
-      this.refreshLevelMenu();
     };
     this.settings.onExit = () => this.exitToMenu();
     this.settings.onEnterDebugLevel = () => this.enterDebugLevel();
@@ -453,13 +453,13 @@ class Game {
      * is the one call that decides what the row shows.
      */
     /**
-     * The debug default, pushed from the panel into the drawing module.
+     * The collision-box default, pushed from the panel into the drawing module.
      *
      * The panel is where the default is WRITTEN (its switch starts at ON) and the module flag is what the drawing reads,
-     * so this is the one line that keeps the two from being two copies of the same decision. It runs before the first
-     * `refreshLevelMenu`, because that call is what decides whether the level ladder is on the menu at all.
+     * so this is the one line that keeps the two from being two copies of the same decision. (Debug mode needs no such
+     * line: `refreshLevelMenu` reads the panel directly.)
      */
-    setDebugHitboxes(this.settings.debugHitboxesOn);
+    setDebugHitboxes(this.settings.showHitboxesOn);
 
     /**
      * The levels, from the progress store rather than from `LEVELS`.
@@ -2829,12 +2829,12 @@ class Game {
    * need to double as a progress display.
    *
    * The row lives in the SETTINGS PANEL now rather than on the menu, so this hands the list to `SettingsUi`. That also
-   * means it can be called while the panel is open -- it is, every time the debug switch in it is flipped -- which is
+   * means it can be called while the panel is open -- it is, every time the debug-mode switch in it is flipped -- which is
    * why `setLevels` lays the panel out again rather than only drawing again: the number of ROWS is part of the panel's
    * height, and the switch that changes it is inside the thing being resized.
    */
   private refreshLevelMenu(): void {
-    if (!isDebugHitboxes()) {
+    if (!this.settings.debugModeOn) {
       this.settings.setLevels([]);
       return;
     }

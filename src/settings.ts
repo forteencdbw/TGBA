@@ -69,13 +69,20 @@ export class SettingsUi {
   private readonly cheatLabel: Text;
   private readonly cheatButton: Button;
   /**
-   * The debug toggle, in the cheat section.
+   * The debug-mode toggle, in the cheat section.
    *
-   * It is a cheat by behaviour rather than by name -- it unlocks every level and draws information the game otherwise
-   * keeps hidden -- but it is not one by INTENT, so it has its own row and its own label rather than being folded into
-   * the infinite-health switch.
+   * It is a cheat by behaviour rather than by name -- it unlocks every level and opens the way into the debug level -- but
+   * it is not one by INTENT, so it has its own label rather than being folded into the infinite-health switch.
    */
   private readonly debugButton: Button;
+  /**
+   * Whether the collision boxes are drawn: its own switch, beside debug mode and not part of it.
+   *
+   * It used to BE debug mode -- one toggle that drew the boxes and showed the level ladder -- and the two are different
+   * questions: somebody tuning a hitbox wants the lines with the ladder off, and somebody walking the ladder does not want
+   * a screen full of red. It shares a row with the debug-mode toggle so the panel does not grow a row for it.
+   */
+  private readonly hitboxButton: Button;
   /**
    * The way into the debug level: a level where the creatures under test are placed by `config/debug-level.json5`.
    *
@@ -176,12 +183,14 @@ export class SettingsUi {
    */
   onReducedFlash: (on: boolean) => void = () => {};
   /**
-   * The debug switch: the hitbox overlay, and free level selection.
+   * The debug-mode switch: free level selection, and the way into the debug level.
    *
    * Defaults to ON and is NOT persisted, like every other switch here -- see the note on the cheat toggle, which is
    * the same argument. Signalled the same way as its neighbours so the game owns the state and this panel only asks.
    */
-  onDebugHitboxes: (on: boolean) => void = () => {};
+  onDebugMode: (on: boolean) => void = () => {};
+  /** The collision-box switch: whether the overlay that outlines every hitbox is drawn. Defaults to ON, not persisted. */
+  onShowHitboxes: (on: boolean) => void = () => {};
   /** Called when the way into the debug level is pressed. The game switches level and starts it. */
   onEnterDebugLevel: () => void = () => {};
   /** Called when exit-to-menu is pressed. */
@@ -196,7 +205,9 @@ export class SettingsUi {
   /** Whether the cheat is on. Kept here so the panel can draw its own state, and not persisted. */
   private infiniteHealth = false;
   /** Whether the debug overlay is on. Defaults ON, and resets to that on every load. */
-  private debugHitboxes = true;
+  private debugMode = true;
+  /** Whether the collision boxes are drawn. Defaults ON, and resets to that on every load. */
+  private showHitboxes = true;
   /** Whether the reduced-flash setting is on, likewise. */
   private reducedFlash = false;
   /** The pointer dragging the slider, or null. */
@@ -240,7 +251,8 @@ export class SettingsUi {
     this.cheatLabel = mkText('作弊 / CHEATS', 0xffb46b, 13);
     this.cheatButton = this.mkButton('无限血量：关', () => this.setInfiniteHealth(!this.infiniteHealth));
     // Already on at construction, so the label starts in the ON form -- `redraw` keeps it in step from here.
-    this.debugButton = this.mkButton('调试模式：开', () => this.setDebugHitboxes(!this.debugHitboxes));
+    this.debugButton = this.mkButton('调试模式：开', () => this.setDebugMode(!this.debugMode));
+    this.hitboxButton = this.mkButton('碰撞盒：开', () => this.setShowHitboxes(!this.showHitboxes));
     this.debugLevelButton = this.mkButton('进入调试关', () => this.onEnterDebugLevel());
     // Whether it is offered is decided by `syncDebugEntry`; this is its state at construction (in a run: not offered).
     this.debugLevelButton.bg.visible = false;
@@ -274,6 +286,8 @@ export class SettingsUi {
       this.cheatButton.label,
       this.debugButton.bg,
       this.debugButton.label,
+      this.hitboxButton.bg,
+      this.hitboxButton.label,
       this.debugLevelButton.bg,
       this.debugLevelButton.label,
       this.restartButton.bg,
@@ -317,6 +331,7 @@ export class SettingsUi {
       this.flashButton,
       this.cheatButton,
       this.debugButton,
+      this.hitboxButton,
       this.debugLevelButton,
       this.restartButton,
       this.exitButton,
@@ -332,7 +347,7 @@ export class SettingsUi {
    * level ladder are already behind that switch, and a player who has it off has told the game they do not want any of it.
    */
   private get showsDebugEntry(): boolean {
-    return !this.inRun && this.debugHitboxes;
+    return !this.inRun && this.debugMode;
   }
 
   /**
@@ -409,24 +424,42 @@ export class SettingsUi {
   }
 
   /**
-   * Turn the debug overlay on or off, and with it free level selection.
+   * Turn debug mode on or off: free level selection, and the way into the debug level.
    *
    * The same shape as `setInfiniteHealth`, and for the same reason: one place that sets the state, redraws and tells
    * the game, so the button and a probe cannot take different paths.
    */
-  setDebugHitboxes(on: boolean, notify = true): void {
-    this.debugHitboxes = on;
+  setDebugMode(on: boolean, notify = true): void {
+    this.debugMode = on;
     this.debugButton.label.text = on ? '调试模式：开' : '调试模式：关';
     this.debugButton.label.style.fill = on ? 0xffd479 : 0xeaf9ff;
     // The debug level's door is behind this switch, and a row appearing or going changes the panel's height.
     if (this.syncDebugEntry() && this.lastViewport) this.layout(this.lastViewport);
     this.redraw();
-    if (notify) this.onDebugHitboxes(on);
+    if (notify) this.onDebugMode(on);
   }
 
-  /** Whether the debug overlay is on, as the panel shows it. */
-  get debugHitboxesOn(): boolean {
-    return this.debugHitboxes;
+  /** Whether debug mode is on, as the panel shows it. */
+  get debugModeOn(): boolean {
+    return this.debugMode;
+  }
+
+  /**
+   * Turn the collision-box overlay on or off.
+   *
+   * One place that sets the state, redraws and tells the game, like the switches around it.
+   */
+  setShowHitboxes(on: boolean, notify = true): void {
+    this.showHitboxes = on;
+    this.hitboxButton.label.text = on ? '碰撞盒：开' : '碰撞盒：关';
+    this.hitboxButton.label.style.fill = on ? 0xffd479 : 0xeaf9ff;
+    this.redraw();
+    if (notify) this.onShowHitboxes(on);
+  }
+
+  /** Whether the collision boxes are drawn, as the panel shows it. */
+  get showHitboxesOn(): boolean {
+    return this.showHitboxes;
   }
 
   /** Whether the cheat is on, as the panel shows it. */
@@ -518,11 +551,16 @@ export class SettingsUi {
      * 重开本关 and 退出到主菜单 are the RUN's. There is no level to restart and no menu to exit to when the panel was
      * opened FROM the menu, which is the one thing `setInRun` decides -- so they are the two rows that come and go.
      */
-    const lowerRows = this.inRun
-      ? [this.cheatButton, this.debugButton, this.restartButton, this.exitButton]
+    /**
+     * Each entry is one ROW, and a row may hold two buttons side by side: debug mode and the collision boxes share one, so
+     * the panel does not grow a row for the second switch (in a run the stack was already as tall as its cap allows).
+     */
+    const modeRow = [this.debugButton, this.hitboxButton];
+    const lowerRows: Button[][] = this.inRun
+      ? [[this.cheatButton], modeRow, [this.restartButton], [this.exitButton]]
       : this.showsDebugEntry
-        ? [this.cheatButton, this.debugButton, this.debugLevelButton]
-        : [this.cheatButton, this.debugButton];
+        ? [[this.cheatButton], modeRow, [this.debugLevelButton]]
+        : [[this.cheatButton], modeRow];
 
     /**
      * The level block, and its height in DESIGN PIXELS -- which is the same unit as `ROW` above.
@@ -615,8 +653,10 @@ export class SettingsUi {
      */
     const rowStep = rowH + ROW.rowGap * s;
     let nextRowY = this.panelRect.y + ROW.cheatsRow * s;
-    lowerRows.forEach((button) => {
-      this.place(button, rowX, nextRowY, rowW, rowH, s);
+    const pairGap = 12 * s;
+    lowerRows.forEach((row) => {
+      const each = (rowW - pairGap * (row.length - 1)) / row.length;
+      row.forEach((button, i) => this.place(button, rowX + i * (each + pairGap), nextRowY, each, rowH, s));
       nextRowY += rowStep;
     });
     /**
@@ -626,7 +666,16 @@ export class SettingsUi {
      * handed the row's own left edge and width, so the pills line up with the toggle above them -- which is the whole
      * reason the panel computes `rowW` once.
      */
-    if (levelRows > 0) this.placeLevelRow(rowX, nextRowY, rowW, levelCfg, s);
+    if (levelRows > 0) {
+      this.placeLevelRow(rowX, nextRowY, rowW, levelCfg, s);
+    } else {
+      /**
+       * No row now means no rectangles, and that has to be said: they outlive a layout that does not place them. Opened from
+       * the menu the panel placed them; then the run started and `setInRun` laid it out again WITHOUT the row -- and the
+       * pills were still drawn, at the old place, behind 重开本关 and 退出到主菜单.
+       */
+      this.levelRects = [];
+    }
 
     const gap = 12 * s;
     const halfW = (rowW - gap) / 2;
@@ -798,8 +847,17 @@ export class SettingsUi {
         b.bg.clear();
         b.bg
           .roundRect(b.x, b.y, b.w, b.h, 10 * s)
-          .fill({ color: this.debugHitboxes ? 0x4a3418 : 0x16293f, alpha: 0.95 })
-          .stroke({ color: this.debugHitboxes ? 0xffb46b : 0x5fa8cc, alpha: 0.8, width: 1.2 * s });
+          .fill({ color: this.debugMode ? 0x4a3418 : 0x16293f, alpha: 0.95 })
+          .stroke({ color: this.debugMode ? 0xffb46b : 0x5fa8cc, alpha: 0.8, width: 1.2 * s });
+        continue;
+      }
+      // The collision-box switch wears the same amber: it is a developer's view, like the one beside it.
+      if (b === this.hitboxButton) {
+        b.bg.clear();
+        b.bg
+          .roundRect(b.x, b.y, b.w, b.h, 10 * s)
+          .fill({ color: this.showHitboxes ? 0x4a3418 : 0x16293f, alpha: 0.95 })
+          .stroke({ color: this.showHitboxes ? 0xffb46b : 0x5fa8cc, alpha: 0.8, width: 1.2 * s });
         continue;
       }
       /**
@@ -854,6 +912,8 @@ export class SettingsUi {
     for (const [i, label] of this.levelLabels.entries()) {
       const level = this.levels[i];
       if (!level) continue;
+      // A name with no pill under it is not shown: its text is a child of the panel like any other, and stays where it was.
+      label.visible = this.levelRects[i] !== undefined;
       const want = level.selected ? cfg.selectedTextColour : cfg.idleTextColour;
       if (label.style.fill !== want) label.style.fill = want;
     }
@@ -1061,6 +1121,7 @@ export class SettingsUi {
         flash: rectOf(this.flashButton),
         cheat: rectOf(this.cheatButton),
         debug: rectOf(this.debugButton),
+        hitboxes: rectOf(this.hitboxButton),
         debugLevel: rectOf(this.debugLevelButton),
         restart: rectOf(this.restartButton),
         exit: rectOf(this.exitButton),
