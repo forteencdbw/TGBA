@@ -97,10 +97,10 @@ function outlineBox(g: Graphics, x: number, y: number, halfW: number, halfH: num
  * to; a vent is neither and has its own case.
  */
 function outlineHazard(g: Graphics, h: Hazard, laneWidth: number): void {
-  const box = hazardBoxFractions(h.kind, h.variety);
+  const box = hazardBoxFractions(h.kind, h.variety, h.scale);
   if (box) outlineBox(g, h.x, h.y, box.halfW * laneWidth, box.halfH * laneWidth);
   // The circle the no-art kinds collide as, at the size the multiplier leaves it.
-  else outlineCircle(g, h.x, h.y, laneWidth * hazardSizeFraction(h.kind));
+  else outlineCircle(g, h.x, h.y, laneWidth * hazardSizeFraction(h.kind, h.scale));
 }
 
 /**
@@ -213,9 +213,9 @@ export function paintHitboxes(g: Graphics, s: HitboxScene): void {
   // --- the near-miss rings, which are a second and larger circle around the same test --------------------
   for (const h of s.hazards.hazards) {
     if (!grazeLive(h)) continue;
-    const reach = s.playerRadius + s.laneWidth * hazardSizeFraction(h.kind);
+    const reach = s.playerRadius + s.laneWidth * hazardSizeFraction(h.kind, h.scale);
     const extra = reach * (mech.graze.radiusMultiplier - 1);
-    const box = hazardBoxFractions(h.kind, h.variety);
+    const box = hazardBoxFractions(h.kind, h.variety, h.scale);
     if (box) {
       // The box pushed out by the same `extra` the collision pushes it out by, so the dashed band is the band.
       outlineBox(g, h.x, h.y, box.halfW * s.laneWidth + extra, box.halfH * s.laneWidth + extra);

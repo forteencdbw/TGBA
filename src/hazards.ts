@@ -32,7 +32,7 @@ import { animationFrameAt, animationSeconds, assetTextureNow, isYFlipped, loadAn
 import { mech, tuning } from './config';
 import type { BossDossier } from './mechanisms';
 import { hazardMass } from './consumption';
-import { advanceLeader, createSchool, steerSchool, type BoidState, type School } from './boids';
+import { advanceDecor, advanceLeader, createSchool, steerSchool, type BoidState, type School } from './boids';
 import { pathPoint } from './spline';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
 export type HazardKind =
@@ -386,6 +386,15 @@ export interface Hazard {
   y: number;
   /** Radius in metres of the lane, matching how collectables are measured relative to the player. */
   radiusFraction: number;
+  /**
+   * This creature's own size multiplier, 1 for nearly everything.
+   *
+   * It scales the DRAWING and the HITBOX together -- `hazardSizeFraction` and `hazardBoxFractions` both take it -- so a
+   * creature that is drawn smaller is also hit smaller, by the bubble, by a round and by the overlay. That is the whole
+   * reason it is a field of the creature and not a number in the painter: the school's fish are 60% of an ordinary
+   * fish, and "what you see is what can hit you" has to survive that.
+   */
+  scale: number;
   /** Per-instance randomness so a group does not move in lockstep. */
   phase: number;
   seed: number;
@@ -1035,8 +1044,10 @@ export interface SpawnOptions {
   entry?: Hazard['entry'];
   /** The spline it follows, if a level put it on one. */
   path?: Hazard['path'];
-  /** Its place in a Boids school, if its block said `boids: true`. The caller seeds the velocity; see `src/boids.ts`. */
+  /** Its place in a Boids school, if its block said `boids: true`. The caller seeds it; see `seedMember` in `src/boids.ts`. */
   boid?: BoidState;
+  /** Its size multiplier, which scales both the picture and the hitbox. Absent means 1. */
+  scale?: number;
   /**
    * Which of the kind's looks to show. A level hands down its own block number, so a BLOCK is one variety.
    *
@@ -1843,10 +1854,12 @@ export class HazardField {
     startY: number,
     laneWidth: number,
     screen: number,
+    variety: number,
+    decorCount: number,
   ): School {
     let school = this.schools.get(id);
     if (!school) {
-      school = createSchool(id, path, startY, laneWidth, screen);
+      school = createSchool(id, path, startY, laneWidth, screen, variety, decorCount);
       this.schools.set(id, school);
     }
     return school;
@@ -2223,12 +2236,18 @@ export class HazardField {
       const screen = ctx.max - ctx.min;
       for (const [id, school] of this.schools) {
         const members = groups.get(id);
-        if (!members) {
+        /**
+         * A school with no real fish left is still a school while its background swims on: the decor does not care that
+         * the fish in front of it were shot. It is dropped when BOTH are gone, which is what stops a finished level's
+         * schools accumulating in the map.
+         */
+        if (!members && school.decor.length === 0) {
           this.schools.delete(id);
           continue;
         }
         advanceLeader(school, dt, ctx.laneWidth, screen);
-        steerSchool(members, school, dt, ctx.laneWidth);
+        if (members) steerSchool(members, school, dt, ctx.laneWidth);
+        advanceDecor(school, dt, ctx.laneWidth, { min: ctx.min, max: ctx.max });
       }
     }
     for (const h of this.hazards) {
@@ -2332,7 +2351,7 @@ export class HazardField {
     for (const h of this.hazards) {
       // `hazardSizeFraction` rather than `h.radiusFraction`: the per-kind hitbox multiplier is part of the COLLISION
       // size, and this is the loop that decides both the touch and the graze band around it.
-      const r = ctx.laneWidth * hazardSizeFraction(h.kind);
+      const r = ctx.laneWidth * hazardSizeFraction(h.kind, h.scale);
       const dx = h.x - ctx.playerX;
       const dy = h.y - ctx.playerY;
       const reach = playerR + r;
@@ -2347,7 +2366,7 @@ export class HazardField {
        *      as well. A square would be easier to write and would be a different game (it covers its corners).
        */
       const shape = CONTACT_SHAPES[h.kind];
-      const box = shape ? null : hazardBoxFractions(h.kind, h.variety);
+      const box = shape ? null : hazardBoxFractions(h.kind, h.variety, h.scale);
       const touching = shape
         ? shape(h, ctx)
         : box
@@ -2646,7 +2665,7 @@ export class HazardField {
             digest: hazardTuning.fishDigestSeconds,
             // A child of a school's fish stays in the school, with a state of its own: the spread above would otherwise hand
             // both fish the SAME velocity object, and steering one would steer the other.
-            boid: h.boid ? { school: h.boid.school, vx: h.boid.vx, vy: h.boid.vy } : null,
+            boid: h.boid ? { ...h.boid } : null,
           });
         }
         break;
@@ -2729,6 +2748,7 @@ export class HazardField {
       x,
       y,
       radiusFraction,
+      scale: opts.scale ?? 1,
       /**
        * A vent's cycle starts at ZERO, unlike everything else.
        *
@@ -3523,8 +3543,8 @@ export function warmAnimations(): Promise<void[]> {
  * range-checked, so a negative multiplier is a legal file, and "this creature cannot touch you" is a legible outcome
  * while a box with inverted extents is not. The overlay draws it as nothing, so it is visible rather than mysterious.
  */
-export function hazardSizeFraction(kind: HazardKind): number {
-  return KIND_TUNING[kind].radius * Math.max(0, mech.hazards.hitboxScale[kind] ?? 1);
+export function hazardSizeFraction(kind: HazardKind, scale = 1): number {
+  return KIND_TUNING[kind].radius * Math.max(0, mech.hazards.hitboxScale[kind] ?? 1) * scale;
 }
 
 /**
@@ -3557,8 +3577,12 @@ export function hazardSizeFraction(kind: HazardKind): number {
  * @returns half-extents in LANE FRACTIONS, or null when there is no art. Null means "use the circle": a square is not
  *   a circle, so the fallback has to be the shape the DRAWING falls back to (a dot of `hazardSizeFraction`), or the
  *   two would disagree exactly when something has gone wrong.
+ *
+ * `scale` is the creature's own size multiplier (`Hazard.scale`, 1 for nearly everything): it is applied HERE, in the one
+ * function every collision and every outline asks, so a fish drawn at 60% is also hit at 60% by the bubble, by a round
+ * and by the overlay -- there is no second place for the two to disagree.
  */
-export function hazardBoxFractions(kind: HazardKind, variety: number): { halfW: number; halfH: number } | null {
+export function hazardBoxFractions(kind: HazardKind, variety: number, scale = 1): { halfW: number; halfH: number } | null {
   const art = mech.hazardArt[kind];
   if (!art) return null;
   const variants = art.variants;
@@ -3570,7 +3594,7 @@ export function hazardBoxFractions(kind: HazardKind, variety: number): { halfW: 
   const texture = animation ? (animationTextures(move)?.[0] ?? null) : assetTextureNow(move);
   if (!texture || !(texture.width > 0) || !(texture.height > 0)) return null;
 
-  const halfW = hazardSizeFraction(kind) * (variant?.scale ?? art.scale ?? 1);
+  const halfW = hazardSizeFraction(kind, scale) * (variant?.scale ?? art.scale ?? 1);
   return { halfW, halfH: halfW * (texture.height / texture.width) };
 }
 
@@ -3658,7 +3682,7 @@ export function advanceTurn(h: Hazard, dt: number): void {
   if (h.turn.left <= 0) delete h.turn;
 }
 
-function hazardArtState(name: string, elapsed: number): Texture | null {
+export function hazardArtState(name: string, elapsed: number): Texture | null {
   const animation = mech.animations[name];
   if (animation) {
     const frames = animationTextures(name);
@@ -3854,6 +3878,20 @@ export function hazardArtPose(h: Hazard, art: HazardArtEntry, telegraphSeconds: 
  * second belongs to nothing.
  */
 const ART_SPRITE_TTL_SECONDS = 1;
+
+/**
+ * The colour a school's fish is multiplied by: white up close, `depthTint` at full depth, mixed by `depthDim`.
+ *
+ * Brightness rather than size or opacity -- size would have to move the hitbox with it, and an opacity low enough to read
+ * as far makes the creature read as a ghost you can pass through. A multiply keeps the pixel edges and the silhouette.
+ */
+export function depthTint(d: number): number {
+  const cfg = mech.hazards.boids;
+  const t = Math.max(0, Math.min(1, d)) * Math.max(0, Math.min(1, cfg.depthDim));
+  const tint = cfg.depthTint;
+  const mix = (shift: number): number => Math.round(255 + (((tint >> shift) & 255) - 255) * t);
+  return (mix(16) << 16) | (mix(8) << 8) | mix(0);
+}
 
 function pruneArtSprites(): void {
   if (ART_SPRITES.size === 0) return;
@@ -4802,7 +4840,7 @@ export function paintHazards(
     // A creature is in exactly one of the two passes, so nothing is drawn twice and nothing is missed. A dead one is in
     // the FIRST pass: it is still part of what is happening, not something on its way out (see `isDeparting`).
     if (which === 'leaving' ? !isDeparting(h) : isDeparting(h)) continue;
-    const r = laneWidth * h.radiusFraction;
+    const r = laneWidth * h.radiusFraction * h.scale;
     const x = h.x;
     const y = h.y;
     /**
@@ -4944,6 +4982,9 @@ export function paintHazards(
         sprite.x = x;
         sprite.y = y;
         sprite.alpha = art.alpha * (h.flee && !dying ? mech.hazards.fleeAlpha : 1);
+        // A school's far fish are dimmed toward a cold grey-blue, by how far they are. Everything else is drawn as it is
+        // -- and the tint is written for EVERY creature, because a pooled sprite keeps whatever tint it last had.
+        sprite.tint = h.boid ? depthTint(h.boid.d) : 0xffffff;
         // The world is Y-flipped, so the picture's own Y is negative to keep it upright -- see the player bubble.
         /**
          * Upright in BOTH places, because the flip is asked of the parent chain rather than assumed.

@@ -917,6 +917,32 @@ export interface Mechanisms {
       maxSpeed: number;
       /** The cap on the sum of all four, so a crowd cannot fling a fish. */
       maxAccel: number;
+      /** A real fish's size relative to an ordinary one: the picture AND the hitbox. */
+      scale: number;
+      /** Each fish's own share of the leader's speed: 1 +/- this. */
+      speedJitter: number;
+      /** The half-width of the band across the stream the fish's own places are drawn from, as a lane fraction. */
+      bandHalfWidth: number;
+      /** The leader's sideways snaking: its largest offset (lane fraction) and its main period. */
+      wobbleAmplitude: number;
+      wobbleSeconds: number;
+      /** Depth: how thick the school is for separation (lane fraction), how far the far ones are dimmed, and to what. */
+      depthRange: number;
+      depthDim: number;
+      depthTint: number;
+      /** The harmless background fish. */
+      decor: {
+        scale: number;
+        alpha: number;
+        tint: number;
+        alongSpread: number;
+        bandHalfWidth: number;
+        follow: number;
+        followJitter: number;
+        breatheAmplitude: number;
+        breatheSeconds: number;
+        exitMargin: number;
+      };
     };
     /**
      * The crab, one block.
@@ -2783,12 +2809,38 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
       ['minSpeed', 'lane widths per second; a school never hovers'],
       ['maxSpeed', 'lane widths per second'],
       ['maxAccel', 'lane widths per second squared; the cap on the sum of all four forces'],
+      ['speedJitter', "a fraction of the leader's speed; 0 makes every fish identical"],
+      ['bandHalfWidth', 'a fraction of the lane width, half the band across the stream'],
+      ['wobbleAmplitude', 'a fraction of the lane width; 0 disables the snaking'],
+      ['wobbleSeconds', 'seconds, the main period of the snaking'],
+      ['depthRange', 'a fraction of the lane width, the thickness of the school in depth'],
     ] as const
   ).map(([key, describe]) => ({
     path: `hazards.boids.${key}`,
     check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0,
     describe: `${describe}; 0 or more`,
   })),
+  { path: 'hazards.boids.scale', check: (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 2, describe: 'a size multiplier above 0, up to 2; 1 is an ordinary fish' },
+  { path: 'hazards.boids.depthDim', check: (v) => typeof v === 'number' && v >= 0 && v <= 1, describe: 'a fraction from 0 (no dimming) to 1' },
+  { path: 'hazards.boids.depthTint', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  ...(
+    [
+      ['scale', 'a size multiplier above 0, up to 2'],
+      ['alpha', 'an opacity'],
+      ['alongSpread', 'a fraction of the lane width, how long the background is'],
+      ['bandHalfWidth', 'a fraction of the lane width, half how wide the background is'],
+      ['follow', 'per second; how fast a background fish closes on its place'],
+      ['followJitter', 'a fraction of `follow`, 0 to 1'],
+      ['breatheAmplitude', 'a fraction of the lane width'],
+      ['breatheSeconds', 'seconds, above 0'],
+      ['exitMargin', 'a fraction of the lane width'],
+    ] as const
+  ).map(([key, describe]) => ({
+    path: `hazards.boids.decor.${key}`,
+    check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0,
+    describe: `${describe}; 0 or more`,
+  })),
+  { path: 'hazards.boids.decor.tint', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   /** The crab: one row per key of its own block, for the reason the config gives at `hazards.crab`. */
   { path: 'hazards.crab.armDistanceMeters', check: anyNumber, describe: 'metres of 0 or more; the distance at which the fuse is lit' },
   { path: 'hazards.crab.fuseSeconds', check: anyNumber, describe: 'seconds' },
@@ -3853,6 +3905,9 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
     fail(`hazards.boids.separationRadius (${b.separationRadius}) is wider than neighbourRadius (${b.neighbourRadius})`);
   }
   if (!(b.maxAccel > 0)) fail('hazards.boids.maxAccel must be above 0, or no force can ever act');
+  if (!(b.decor.breatheSeconds > 0)) fail('hazards.boids.decor.breatheSeconds must be above 0: it is a period');
+  if (!(b.wobbleSeconds > 0)) fail('hazards.boids.wobbleSeconds must be above 0: it is a period');
+  if (b.decor.followJitter > 1) fail(`hazards.boids.decor.followJitter (${b.decor.followJitter}) is above 1: a fish would follow backwards`);
   if (b.leaderCrossSpring < b.leaderSpring) {
     fail(`hazards.boids.leaderCrossSpring (${b.leaderCrossSpring}) is below leaderSpring (${b.leaderSpring}): the school would be wider than it is long`);
   }

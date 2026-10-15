@@ -53,16 +53,17 @@
   },
 
   spawns: [
-    // --- 超大鱼群：50 条同种小鱼，遵循 Boids（`hazards.boids`），沿 `straight` 游过去 ---
+    // --- 超大鱼群：120 条同种小鱼，遵循 Boids（`hazards.boids`），沿 `straight` 游过去 ---
     // `boids: true` 必须配 `kind: 'fish'` 和 `path`。样条驱动的是一个**看不见的领队**，鱼自己涌出队形：
-    // 它们不追你也不躲你，但每一条都是真的鱼——会碰伤你，能被打。
-    { at: 60, kind: 'fish', count: 50, path: 'straight', boids: true },
+    // 它们不追你也不躲你，但每一条都是真的鱼——会碰伤你，能被打（画面缩到普通小鱼的 60%，碰撞盒一起缩）。
+    // `backdropFish` 是后面**无害的装饰鱼**的数量：没有碰撞盒、打不到，只让群看起来是几百条。
+    { at: 60, kind: 'fish', count: 120, backdropFish: 160, path: 'straight', boids: true },
 
     // --- 对照：同一条路上的一串普通小鱼（每条各走各的曲线，没有队形） ---
     { at: 330, kind: 'fish', count: 10, path: 'straight', pathSpacingSeconds: 0.5 },
 
     // --- 再来一群，换个品种（同一块是同一个品种，相邻两块自动不同） ---
-    { at: 480, kind: 'fish', count: 50, path: 'straight', boids: true },
+    { at: 480, kind: 'fish', count: 120, backdropFish: 160, path: 'straight', boids: true },
 
     // --- 别的敌人：想试哪个就取消注释 ---
     // { at: 700, kind: 'shark', x: 0.5 },

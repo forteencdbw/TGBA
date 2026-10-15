@@ -25,6 +25,7 @@ import { bubbleLook, bubbleShake, bubbleStateColor, bubbleSwell } from './bubble
 import { gainRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName } from './rage';
 import { mech } from './mechanisms';
 import { suctionRadiusFraction } from './suction';
+import { SchoolDecor } from './schoolDecor';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
 import { Sprite } from 'pixi.js';
@@ -153,6 +154,12 @@ class Game {
    * bubble.
    */
   private readonly leaving = new Graphics();
+  /**
+   * The harmless background fish of the schools, in a layer of their own that is added BEFORE `pickups` -- the hazard
+   * painter inserts its sprites just in front of that layer, so everything it draws lands after this one and the
+   * background stays behind the fish that can hurt you. See `src/schoolDecor.ts`.
+   */
+  private readonly schoolDecor = new SchoolDecor();
   private readonly bubble = new Graphics();
   /** The loading page: the backdrop, the bar and the numbers, over everything. See `src/loading.ts`. */
   private readonly loading = new LoadingScreen();
@@ -331,7 +338,7 @@ class Game {
   constructor(readonly app: Application) {
     this.run.nominalSeconds = nominalScrollSeconds(LEVEL);
 
-    this.scene.world.addChild(this.pickups, this.leaving, this.burstWave, this.bubble, this.particles);
+    this.scene.world.addChild(this.schoolDecor.root, this.pickups, this.leaving, this.burstWave, this.bubble, this.particles);
     // Last in the world container, so the overlay is over every creature, round and pick-up in it.
     this.scene.world.addChild(this.hitboxOverlay);
     // Over the water and under the HUD: a spark is part of the scene, not a readout.
@@ -1367,6 +1374,11 @@ class Game {
   /** Test hook: the hazard list, so a probe can inspect positions and states. */
   get hazardsRef(): HazardField {
     return this.run.hazards;
+  }
+
+  /** Test hook: the schools' background fish, so a probe can count the sprites and check where their layer sits. */
+  get schoolDecorRef(): SchoolDecor {
+    return this.schoolDecor;
   }
 
   /**
@@ -3479,6 +3491,7 @@ private updateBoss(): void {
     // source of truth on purpose: a marker that promised food while the collision delivered a hit would be the
     // worst bug this feature could have, because it would punish the player for trusting what they saw.
     paintHazards(g, this.run.hazards, laneWidth, this.run.elapsed, (kind) => this.run.canSwallow(kind), 'in-play', this.run.player.x * laneWidth);
+    this.schoolDecor.paint(this.run.hazards, laneWidth);
 
     /**
      * The ones on their way out, in their own pass so they can be dimmed as a whole.

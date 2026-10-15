@@ -141,10 +141,19 @@ export function placeEntry(
    * velocity, and has no `path` of its own: that is what keeps `advanceKind` from walking it along the curve as well.
    */
   if (entry.school !== undefined && pathSpec) {
-    const school = world.hazards.joinSchool(entry.school, pathSpec, spawnY, laneWidth, view.max - view.min);
-    const seed = seedMember(school, laneWidth);
+    const school = world.hazards.joinSchool(
+      entry.school,
+      pathSpec,
+      spawnY,
+      laneWidth,
+      view.max - view.min,
+      entry.variety ?? 0,
+      entry.schoolDecor ?? 0,
+    );
+    const seed = seedMember(school, laneWidth, entry.schoolSize ?? 1);
     const hazard = world.hazards.spawnAt(entry.kind as HazardKind, seed.x, seed.y, {
-      boid: { school: entry.school, vx: seed.vx, vy: seed.vy },
+      boid: { school: entry.school, ...seed.boid },
+      scale: mech.hazards.boids.scale,
       ...(entry.variety !== undefined ? { variety: entry.variety } : {}),
     });
     world.hazards.hazards.push(hazard);

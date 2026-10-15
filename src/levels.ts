@@ -136,6 +136,16 @@ export interface LevelEntry {
    */
   school?: number;
   /**
+   * For a creature of a Boids school: how many real fish the block makes and which of them this is, 0-based.
+   *
+   * The index is the fish's place in the order it is placed, which decides its fixed depth (see `seedMember` in
+   * `src/boids.ts`); the size is what spreads those depths evenly. Absent for everything that is not part of a school.
+   */
+  schoolSize?: number;
+  schoolIndex?: number;
+  /** How many harmless background fish the school brings. Carried on every entry; the first one placed makes them. */
+  schoolDecor?: number;
+  /**
    * Which of the kind's looks every creature in this BLOCK shows.
    *
    * A block is a school: `{ kind: 'fish', count: 6 }` is six fish that arrived together and are one shoal, and a
@@ -285,6 +295,13 @@ export interface SpawnBlock {
    * to follow is a key that silently does nothing. See `src/boids.ts`, and the config's `hazards.boids` for the numbers.
    */
   boids?: boolean;
+  /**
+   * How many harmless background fish the school brings, on top of its `count` real ones. Only with `boids: true`.
+   *
+   * Not creatures: no hitbox, nothing shoots them, they feel no force (see `src/boids.ts`). They are there so that a
+   * school reads as hundreds, and what they look like is `hazards.boids.decor`.
+   */
+  backdropFish?: number;
   at: number;
   kind: SpawnKind;
   count: number;
@@ -620,6 +637,7 @@ const BLOCK_KEYS: readonly string[] = [
   'path',
   'pathSpacingSeconds',
   'boids',
+  'backdropFish',
   'at',
   'kind',
   'count',
@@ -775,6 +793,9 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
   if (boids && typeof node['path'] !== 'string') {
     fail(where, 'is a Boids school with no "path": the school follows its path through an invisible leader, so it needs one.');
   }
+  if (!boids && node['backdropFish'] !== undefined) {
+    fail(where, 'has "backdropFish", which is the background of a Boids school: it needs "boids: true", or it would do nothing.');
+  }
   if (boids && from !== 'top') {
     fail(where, `is a Boids school arriving from the ${from}: a school is born where its path starts, so it has no edge to arrive from.`);
   }
@@ -804,7 +825,7 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
     // level finishes parsing), so a typo here is reported once the table is known rather than silently ignored.
     ...(typeof node['path'] === 'string' ? { path: node['path'] } : {}),
     pathSpacingSeconds: optNum(node, 'pathSpacingSeconds', where, DEFAULT_PATH_SPACING_SECONDS, 0.02, 10),
-    ...(boids ? { boids: true } : {}),
+    ...(boids ? { boids: true, backdropFish: Math.round(optNum(node, 'backdropFish', where, 0, 0, 1000)) } : {}),
     // (a school key used to live here; schools are splines now)
 
     // The vent's own three, absent for everything else. `side` is only ever set for a vent because the checks above
@@ -893,6 +914,9 @@ function expandBlock(block: SpawnBlock, variety = 0, index = 0): LevelEntry[] {
         ...place.one(block.at, block.kind, block.x, block.sizes?.[i % Math.max(1, block.sizes?.length ?? 1)]),
         path: block.path as string,
         school: index,
+        schoolSize: n,
+        schoolIndex: i,
+        schoolDecor: block.backdropFish ?? 0,
       })),
     );
   }

@@ -292,7 +292,7 @@ export class BulletField {
         for (const h of ctx.hazards.hazards) {
           // Not shootable, or already leaving: the round passes through rather than being eaten by it.
           if (h.maxHealth <= 0 || h.flee) continue;
-          const reach = radius + ctx.laneWidth * hazardSizeFraction(h.kind);
+          const reach = radius + ctx.laneWidth * hazardSizeFraction(h.kind, h.scale);
           const dx = h.x - b.x;
           const dy = h.y - b.y;
           /**
@@ -302,7 +302,7 @@ export class BulletField {
            * gun that used a different hitbox from the one that kills you would be two games, and the one the player
            * can see would be the wrong one. See `hazardBoxFractions`.
            */
-          const box = hazardBoxFractions(h.kind, h.variety);
+          const box = hazardBoxFractions(h.kind, h.variety, h.scale);
           const inReach = box
             ? boxDistance(b.x, b.y, h.x, h.y, box.halfW * ctx.laneWidth, box.halfH * ctx.laneWidth) <= radius
             : dx * dx + dy * dy <= reach * reach;
