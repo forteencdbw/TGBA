@@ -7,6 +7,7 @@ import type { Viewport } from './viewport';
 import { buildLabel } from './version';
 import { MenuBackdrop } from './menuBackdrop';
 import { UiBubbles } from './menuDrift';
+import { Caustics } from './caustics';
 
 /**
  * Where the bubbles come out of each picture, as a fraction of its box.
@@ -216,6 +217,11 @@ export class MainMenu {
    * `UiBubbles`, which is a different class from the water's field for exactly those reasons.
    */
   private readonly uiBubbles = new UiBubbles();
+  /**
+   * The light on the title: a filter ON the title rather than a layer over it, because Pixi will not `add` a masked
+   * layer. See `Caustics`, which records the measurements that settled it.
+   */
+  private readonly caustics = new Caustics();
   /** Whether `onBackdropExit` has already been fired for the exit now running. */
   private exitReported = false;
 
@@ -235,6 +241,7 @@ export class MainMenu {
       this.title.texture = texture;
       this.applyTitleSize();
     });
+    this.caustics.attach(this.title);
 
     /**
      * The button pictures arrive the same way, and the same reason applies: the one load that brings them is what puts
@@ -268,6 +275,9 @@ export class MainMenu {
      *
      * The bubbles come LAST, over the stones they come out of -- a vent drawn behind an opaque plaque would spend its
      * first half-second invisible.
+     *
+     * The caustics are not in this list: they are a filter on the title, so they are drawn wherever the title is --
+     * and under the bubbles for free, which is right: a bubble in front of the stone is in front of the light on it.
      */
     this.root.addChild(
       // The opaque screen first, then the water's contents, then the interface. The backdrop's own root is a
@@ -443,6 +453,9 @@ export class MainMenu {
     ];
     this.uiBubbles.setSpouts(spouts);
     this.uiBubbles.setScreen(viewport.width, viewport.height);
+    // The light needs the title's SIZE and the scale -- not its position: the shader measures from the corner of the
+    // area it filters, which is the title.
+    this.caustics.layout({ w: this.titleWidth, h: this.titleHeight }, s);
 
     this.versionLine.scale.set(s);
     this.versionLine.anchor.set(0.5, 1);
@@ -510,6 +523,7 @@ export class MainMenu {
 
   update(dt: number): void {
     this.updateBackdrop(dt);
+    this.caustics.update(dt);
     this.uiBubbles.update(dt);
     this.uiBubbles.draw();
     if (!this.exitReported && this.backdrop.finished) {

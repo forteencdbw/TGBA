@@ -1651,6 +1651,26 @@ export interface Mechanisms {
      * The SPOUTS' positions are not here: where a vent sits on a picture is a fact about that picture, like its
      * aspect, and it lives beside the picture in `src/menu.ts`.
      */
+    /**
+     * The caustics on the title: a cell net, mirrored into a tile and drifting over the stone.
+     *
+     * See `src/caustics.ts` for why it is mirrored rather than repeated and why there are two layers.
+     */
+    caustics: {
+      /**
+       * How wide one tile is drawn, in design pixels -- which IS the cell size, since the picture's cells are a fixed
+       * fraction of its width. Moving it moves the cells, at the cost of a pixel picture being scaled off its grid.
+       */
+      tileWidth: number;
+      /** Drift per second, as a fraction of the TITLE BOX's own width and height, so it survives a resize. */
+      driftX: number;
+      driftY: number;
+      crossDriftX: number;
+      crossDriftY: number;
+      alpha: number;
+      /** The second layer's opacity, as a fraction of the first's. */
+      crossAlpha: number;
+    };
     uiBubbles: {
       everySeconds: number;
       everyJitter: number;
@@ -3125,6 +3145,15 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['alpha', 'an opacity'],
   ].map(([key, describe]) => ({ path: `menu.uiBubbles.${key}`, check: anyNumber, describe: describe as string })),
   { path: 'menu.uiBubbles.tint', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  ...[
+    ['tileWidth', 'design pixels'],
+    ['driftX', 'a fraction of the box width per second'],
+    ['driftY', 'a fraction of the box height per second'],
+    ['crossDriftX', 'a fraction of the box width per second'],
+    ['crossDriftY', 'a fraction of the box height per second'],
+    ['alpha', 'an opacity'],
+    ['crossAlpha', "a fraction of the first layer's opacity"],
+  ].map(([key, describe]) => ({ path: `menu.caustics.${key}`, check: anyNumber, describe: describe as string })),
   ...[
     ['perRow', 'how many pills fit on a row'],
     ['maxRowWidthRatio', 'a fraction of the panel content width'],
