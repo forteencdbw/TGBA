@@ -22,7 +22,8 @@ import { pathPoint } from './spline';
  *   separation   neighbours closer than `separationRadius` push apart, harder the closer they are
  *   alignment    the velocity is pulled toward the neighbours' average
  *   cohesion     the position is pulled toward the neighbours' centroid
- *   leader       a spring on the position and a damper on the velocity, toward the leader
+ *   leader       a spring on the position and a damper on the velocity, toward the leader -- a stiffer spring across the
+ *                leader's heading than along it, which is what makes the school long rather than round
  *
  * They are ACCELERATIONS, summed and then capped at `maxAccel`, and the speed is clamped between a floor and a ceiling.
  * Written as accelerations rather than as "desired velocity minus velocity" steering because the numbers read as what
@@ -61,6 +62,9 @@ export interface School {
   y: number;
   vx: number;
   vy: number;
+  /** The way the leader is travelling, as a unit vector: what "along" and "across" are measured against. */
+  dirX: number;
+  dirY: number;
   /** Set once the leader has reached the end of the spline, where it stops. */
   finished: boolean;
 }
@@ -85,7 +89,7 @@ export function createSchool(
   screen: number,
 ): School {
   const seconds = Math.max(0.1, path.seconds);
-  const school: School = { id, points: path.points, seconds, elapsed: 0, startY, x: 0, y: 0, vx: 0, vy: 0, finished: false };
+  const school: School = { id, points: path.points, seconds, elapsed: 0, startY, x: 0, y: 0, vx: 0, vy: 0, dirX: -1, dirY: 0, finished: false };
   const here = leaderAt(school, 0, laneWidth, screen);
   // The speed the curve starts at, measured over a hundredth of its length: the derivative, without writing one out.
   const eps = 0.01;
@@ -94,7 +98,17 @@ export function createSchool(
   school.y = here.y;
   school.vx = (ahead.x - here.x) / (eps * seconds);
   school.vy = (ahead.y - here.y) / (eps * seconds);
+  setDirection(school);
   return school;
+}
+
+/** Remember which way the leader is going, so a stopped leader keeps the heading it had instead of losing its axis. */
+function setDirection(school: School): void {
+  const speed = Math.hypot(school.vx, school.vy);
+  if (speed > 1e-6) {
+    school.dirX = school.vx / speed;
+    school.dirY = school.vy / speed;
+  }
 }
 
 /**
@@ -124,6 +138,7 @@ export function advanceLeader(school: School, dt: number, laneWidth: number, scr
   school.vy = (at.y - school.y) / dt;
   school.x = at.x;
   school.y = at.y;
+  setDirection(school);
   if (t >= 1) {
     school.finished = true;
     school.vx = 0;
@@ -192,9 +207,21 @@ export function steerSchool(members: readonly Hazard[], school: School, dt: numb
       }
     }
 
-    // Leader: a spring on the position, a damper on the velocity.
-    let ax = cfg.leaderSpring * (school.x - a.x) + cfg.leaderDamp * (school.vx - boid.vx);
-    let ay = cfg.leaderSpring * (school.y - a.y) + cfg.leaderDamp * (school.vy - boid.vy);
+    /**
+     * Leader: a spring on the position, a damper on the velocity -- and the spring is TWO springs.
+     *
+     * The offset from the leader is split along the leader's heading and across it, and the across half is pulled harder
+     * (`leaderCrossSpring` against `leaderSpring`). That is the whole of the school's SHAPE: a stiff cross spring and a
+     * soft along spring make the cloud a stream, long in the direction it is going and narrow across it, where one
+     * spring for both makes the round ball the first version was. Separation still keeps the fish apart inside it.
+     */
+    const offX = school.x - a.x;
+    const offY = school.y - a.y;
+    const along = offX * school.dirX + offY * school.dirY;
+    const acrossX = offX - along * school.dirX;
+    const acrossY = offY - along * school.dirY;
+    let ax = cfg.leaderSpring * along * school.dirX + cfg.leaderCrossSpring * acrossX + cfg.leaderDamp * (school.vx - boid.vx);
+    let ay = cfg.leaderSpring * along * school.dirY + cfg.leaderCrossSpring * acrossY + cfg.leaderDamp * (school.vy - boid.vy);
     ax += sepX;
     ay += sepY;
     if (seen > 0) {

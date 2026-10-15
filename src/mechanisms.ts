@@ -910,6 +910,8 @@ export interface Mechanisms {
       cohesionAccel: number;
       /** The pull toward the invisible leader: a spring, and a damper on the velocity difference. */
       leaderSpring: number;
+      /** The same spring measured ACROSS the leader's heading; above `leaderSpring` it makes the school long. */
+      leaderCrossSpring: number;
       leaderDamp: number;
       minSpeed: number;
       maxSpeed: number;
@@ -2775,7 +2777,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
       ['separationAccel', 'lane widths per second squared'],
       ['alignmentRate', 'per second; how fast velocity is pulled toward the neighbours\' average'],
       ['cohesionAccel', 'lane widths per second squared'],
-      ['leaderSpring', 'per second squared; how hard the invisible leader pulls'],
+      ['leaderSpring', 'per second squared; how hard the invisible leader pulls ALONG its heading'],
+      ['leaderCrossSpring', 'per second squared; how hard it pulls ACROSS its heading -- above leaderSpring the school is long'],
       ['leaderDamp', 'per second; how hard the leader\'s velocity is matched'],
       ['minSpeed', 'lane widths per second; a school never hovers'],
       ['maxSpeed', 'lane widths per second'],
@@ -3850,6 +3853,9 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
     fail(`hazards.boids.separationRadius (${b.separationRadius}) is wider than neighbourRadius (${b.neighbourRadius})`);
   }
   if (!(b.maxAccel > 0)) fail('hazards.boids.maxAccel must be above 0, or no force can ever act');
+  if (b.leaderCrossSpring < b.leaderSpring) {
+    fail(`hazards.boids.leaderCrossSpring (${b.leaderCrossSpring}) is below leaderSpring (${b.leaderSpring}): the school would be wider than it is long`);
+  }
 }
 
 /**

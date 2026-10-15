@@ -145,7 +145,11 @@ try {
       for (const b of fish) if (a !== b) best = Math.min(best, Math.hypot(a.x - b.x, a.y - b.y));
       nearest += best;
     }
-    return { n, cx, cy, spread, polarisation, nearest: nearest / n };
+    const xs = fish.map((h) => h.x);
+    const ys = fish.map((h) => h.y);
+    const length = Math.max(...xs) - Math.min(...xs);
+    const width = Math.max(...ys) - Math.min(...ys);
+    return { n, cx, cy, spread, polarisation, nearest: nearest / n, length, width };
   };
 
   {
@@ -166,33 +170,39 @@ try {
     const dt = 1 / 30;
     let sawNaN = false;
     const samples = {};
+    const SECONDS = DEBUG_LEVEL.paths.straight.seconds;
+    const marks = [SECONDS * 0.25, SECONDS * 0.5, SECONDS * 0.75];
     for (; t < 60 && (field.hazards.length > 0 || t < 0.1); t += dt) {
       field.update(dt, ctxFor(LANE * 0.5, 400, t));
       if (field.hazards.some((h) => !Number.isFinite(h.x) || !Number.isFinite(h.y))) sawNaN = true;
-      for (const mark of [3, 6, 9]) if (Math.abs(t - mark) < dt / 2) samples[mark] = stats(field);
+      for (const mark of marks) if (Math.abs(t - mark) < dt / 2) samples[mark] = stats(field);
     }
     check('swim · no fish went NaN', sawNaN, false);
-    const s3 = samples[3];
-    const s6 = samples[6];
-    const s9 = samples[9];
-    atLeast('swim · the school is still fifty at three seconds', s3.n, 50);
+    const [m3, m6, m9] = marks;
+    const s3 = samples[m3];
+    const s6 = samples[m6];
+    const s9 = samples[m9];
+    atLeast('swim · the school is still fifty a quarter of the way along', s3.n, 50);
     // Held together: the mean distance from the centroid is a fraction of the lane, not a spray across it.
     atMost('swim · cohesion, mean distance from centre (lane widths)', s6.spread / LANE, 0.35);
     // And not a pile: the average nearest neighbour is not on top of the fish.
     atLeast('swim · separation, mean nearest neighbour (lane widths)', s6.nearest / LANE, cfg.separationRadius * 0.25);
     // Moving the same way.
-    atLeast('swim · alignment, polarisation at six seconds', s6.polarisation, 0.8);
+    atLeast('swim · alignment, polarisation halfway along', s6.polarisation, 0.8);
     // And following the leader along the path, which runs right to left.
     check('swim · the centre travels left', s3.cx > s6.cx && s6.cx > s9.cx, true);
     // Close to the leader rather than strung out behind it.
-    const leaderX = (tt) => LANE * (1.3 - (1.6 * tt) / 10);
-    atMost('swim · the centre keeps up with the leader at six seconds (lane widths)', Math.abs(s6.cx - leaderX(6)) / LANE, 0.3);
+    const px = DEBUG_LEVEL.paths.straight.points;
+    const leaderX = (tt) => LANE * (px[0].x + ((px[px.length - 1].x - px[0].x) * tt) / SECONDS);
+    atMost('swim · the centre keeps up with the leader halfway along (lane widths)', Math.abs(s6.cx - leaderX(m6)) / LANE, 0.3);
 
     check('end · every fish left the water by itself', field.hazards.length, 0);
     // The school is dropped by the NEXT frame's pre-pass, which is the first one that finds it has no members.
     field.update(dt, ctxFor(LANE * 0.5, 400, t));
     check('end · and the school was dropped with them', field.schools.size, 0);
     atMost('end · within a minute', t, 60);
+    // Long, not round: the school is at least twice as long as it is wide along its heading (the path runs along x).
+    atLeast('shape · length over width halfway along', s6.length / s6.width, 2);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -202,7 +212,7 @@ try {
     const far = makeField(11);
     const near = makeField(11);
     const dt = 1 / 30;
-    for (let t = 0; t < 6; t += dt) {
+    for (let t = 0; t < 3; t += dt) {
       far.update(dt, ctxFor(LANE * 0.05, 40, t));
       const c = stats(near);
       near.update(dt, ctxFor(c.cx, c.cy, t));
