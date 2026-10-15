@@ -134,6 +134,12 @@ export interface BulletContext {
   max: number;
   laneWidth: number;
   /**
+   * How far the camera rose this frame, in metres. A round flies in SCREEN terms -- its speed is what the player sees it
+   * do -- so each frame it is moved this much with the camera before its own travel is added. Without it a round's
+   * on-screen speed would be its speed minus the level's scroll, and would change when the scroll was retuned.
+   */
+  cameraRise: number;
+  /**
    * Where rounds appear, in world metres: one muzzle, or one per gun row.
    *
    * A rim point rather than the centre, so the player sees a round leave the bubble rather than appear inside it.
@@ -272,7 +278,8 @@ export class BulletField {
        * age 0, so it moves at exactly the launch speed rather than at the speed it will have after one step.
        */
       b.age += dt;
-      b.y += speedOf(b, ctx.laneWidth, ctx.speedMultiplier) * dt;
+      // `cameraRise` first: a round is on the screen, so the camera's climb must not be added to how fast it flies.
+      b.y += ctx.cameraRise + speedOf(b, ctx.laneWidth, ctx.speedMultiplier) * dt;
       // Recomputed per round per frame: the hitbox and the drawing read the same value, so a round that has grown
       // is a round that hits from further away, which is the mechanic rather than a side effect.
       const radius = radiusOf(b, ctx.laneWidth, ctx.radiusMultiplier);

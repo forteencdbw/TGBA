@@ -50,6 +50,7 @@ try {
       min: 0,
       max: 800,
       laneWidth: LANE,
+      cameraRise: 0,
       muzzles: [],
       armed: false,
       perSecond: 0,

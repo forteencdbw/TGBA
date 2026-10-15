@@ -43,6 +43,9 @@
   },
 
   scrollSpeed: 34,
+  // 生物在**屏幕上**的下落速度（米/秒）。以前它和 scrollSpeed 是同一个数：改关卡节奏会连带改每条鱼的速度。
+  // 现在 scrollSpeed 只管关卡推进（时间线、进度、背景视差），生物的速度只看这个。写的是这一关原来的数值，所以屏幕上没变。
+  driftSpeed: 34,
   playerLeadLimit: 130,
   landmarks: [
     { depth: 1350, label: '阳光层' },

@@ -22,6 +22,9 @@
 
   // 30 米/秒 × 40 秒。想多留点时间看就把 scrollLength 加大（BOSS 的 `at` 必须小于它）。
   scrollSpeed: 30,
+  // 生物在**屏幕上**的下落速度（米/秒）。以前它和 scrollSpeed 是同一个数：改关卡节奏会连带改每条鱼的速度。
+  // 现在 scrollSpeed 只管关卡推进（时间线、进度、背景视差），生物的速度只看这个。写的是这一关原来的数值，所以屏幕上没变。
+  driftSpeed: 30,
   scrollLength: 1200,
   playerLeadLimit: 110,
 

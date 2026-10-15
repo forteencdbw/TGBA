@@ -203,6 +203,15 @@ export class Run {
   progress = new Progression();
   field = new EntityField();
   scrolled = 0;
+  /**
+   * How far the camera rose THIS frame, in metres. The game writes it where it advances `scrolled`; it is 0 whenever the
+   * camera is still (the intro, the ending, a probe that never sets it).
+   *
+   * Creatures and rounds are on the SCREEN, so each of them needs to be given this much back or the camera's climb would
+   * drag them down the glass: see `carryFor` in hazards.ts. Kept here, next to `scrolled`, because it is the same fact
+   * differentiated, and passed down to the three simulations that need it.
+   */
+  cameraRise = 0;
   timelineEmitted = 0;
   spawnLog: SpawnRecord[] = [];
   spawnedBySide: Record<EntrySide, number> = { top: 0, left: 0, right: 0, bottom: 0 };
@@ -456,6 +465,7 @@ export class Run {
       min,
       max,
       laneWidth,
+      cameraRise: this.cameraRise,
       muzzles,
       /**
        * Firing is a PLAYING-phase act, and one the bubble type can refuse.
@@ -594,6 +604,7 @@ export class Run {
       min,
       max,
       laneWidth,
+      cameraRise: this.cameraRise,
       playerX: this.player.x * laneWidth,
       playerY: this.player.y,
       playerRadius,
@@ -836,8 +847,10 @@ this.sound('slow');
       playerX: this.player.x * laneWidth,
       playerY: this.player.y,
       playerRadiusFraction: stageRadiusFraction(this.stage.stage, this.player.volume),
-      // The level's scroll, not the player's speed: hazards approach because the WORLD moves now.
-      descentSpeed: LEVEL.scrollSpeed,
+      // The level's own number for how fast its creatures fall down the screen. Not the scroll speed: the camera's climb is
+      // the level's progress and nothing a creature does depends on it (it is handed back through `cameraRise`).
+      driftSpeed: LEVEL.driftSpeed,
+      cameraRise: this.cameraRise,
       elapsed: this.elapsed,
       invulnerable: this.invulnerable > 0,
       // Struggling is "actively steering", which is the intuitive way to tear free of a trash bag. Was a speed

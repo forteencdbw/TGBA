@@ -349,6 +349,21 @@ export interface Level {
    * have different pacings.
    */
   scrollSpeed: number;
+  /**
+   * How fast the water's creatures move on the SCREEN, in metres per second: the one number their downward drift is
+   * measured in.
+   *
+   * It used to be `scrollSpeed` as well. The camera's rise and the creatures' drift were the same variable, so a
+   * level's pace and its creatures' speed could not be set apart: halving `scrollSpeed` halved how fast every fish fell
+   * (measured: -45 -> -22.5 m/s) and stopping it froze them where they were. Now the scroll is the level's PROGRESS --
+   * which part of the timeline is due, the depth readout, the backdrop's parallax -- and nothing a creature does depends
+   * on it. See `HazardField.update`, which carries each creature along with the camera so that this is true.
+   *
+   * Written as a number in every level rather than defaulted to `scrollSpeed`: a default that copies the other field is the
+   * coupling again, with a quieter name. The six levels carry today's numbers, so nothing on screen changed when it
+   * was introduced.
+   */
+  driftSpeed: number;
   /** The scripted content, in any order: it is sorted by `at` when the level loads. */
   entries: readonly LevelEntry[];
   /** The blocks the entries were expanded from, kept so a test can prove the file and the timeline agree. */
@@ -660,7 +675,7 @@ const BLOCK_KEYS: readonly string[] = [
   'startDelaySeconds',
 ];
 
-const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'palette', 'paths', 'backdrop', 'backdrops', 'spawns'];
+const LEVEL_KEYS: readonly string[] = ['id', 'name', 'scrollLength', 'scrollSpeed', 'driftSpeed', 'playerLeadLimit', 'landmarks', 'boss', 'palette', 'paths', 'backdrop', 'backdrops', 'spawns'];
 
 /** Throw with the offending place named, so a typo in the file is a message rather than a mystery. */
 function fail(where: string, message: string): never {
@@ -1156,6 +1171,9 @@ const boss: BossSpec = {
     name,
     scrollLength,
     scrollSpeed: reqNum(node, 'scrollSpeed', `${where} (level "${id}")`, 0.001, 10000),
+    // 0 is allowed -- creatures that hold still on the screen are a legitimate thing to ask for (a probe does) -- but it must
+    // be written: see the field's note on why there is no default.
+    driftSpeed: reqNum(node, 'driftSpeed', `${where} (level "${id}")`, 0, 10000),
     ...(node['playerLeadLimit'] === undefined
       ? {}
       : { playerLeadLimit: optNum(node, 'playerLeadLimit', `${where} (level "${id}")`, 0, 0, 10000) }),

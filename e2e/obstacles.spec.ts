@@ -243,7 +243,7 @@ test.describe('obstacles', () => {
                 debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
                 diagnostics: { obstacles: { broken: number }; stats: { hits: number }; slow: { factor: number } };
                 hazardsRef: { hazards: unknown[] };
-                levelRef: { scrollSpeed: number };
+                levelRef: { scrollSpeed: number; driftSpeed: number };
                 obstaclesRef: { obstacles: unknown[] };
               };
               player: { volume: number; x: number; screenY: number };
@@ -252,11 +252,16 @@ test.describe('obstacles', () => {
           const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
           const scroll = g.game.levelRef.scrollSpeed;
+
+          const drift = g.game.levelRef.driftSpeed;
           g.game.levelRef.scrollSpeed = 0;
+          // The creatures' drift is the level's own number now, not the camera's: freezing the water means freezing both.
+          g.game.levelRef.driftSpeed = 0;
           /**
            * Start from an EMPTY field.
            *
-           * esolvePlayer stops at the first obstacle it touches, so anything left over from an earlier probe is
+           * 
+esolvePlayer stops at the first obstacle it touches, so anything left over from an earlier probe is
            * not just scenery -- it is the thing being measured. A wall left standing on the player from the wall
            * probe below made the net probe report a net that took thirty seconds to tear and cost five hit points,
            * because the contact resolving every frame was the WALL.
@@ -278,6 +283,7 @@ test.describe('obstacles', () => {
             slowest = Math.min(slowest, g.game.diagnostics.slow.factor);
           }
           g.game.levelRef.scrollSpeed = scroll;
+          g.game.levelRef.driftSpeed = drift;
           return {
             hits: g.game.diagnostics.stats.hits - hitsBefore,
             broke: g.game.diagnostics.obstacles.broken - brokeBefore,
@@ -316,7 +322,7 @@ test.describe('obstacles', () => {
             debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
             diagnostics: { obstacles: { broken: number }; stats: { hits: number }; gameSeconds: number; slow: { factor: number } };
             hazardsRef: { hazards: unknown[] };
-            levelRef: { scrollSpeed: number };
+            levelRef: { scrollSpeed: number; driftSpeed: number };
             obstaclesRef: { obstacles: unknown[] };
           };
           player: { volume: number; x: number; screenY: number };
@@ -325,7 +331,11 @@ test.describe('obstacles', () => {
       const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
       const scroll = g.game.levelRef.scrollSpeed;
+
+      const drift = g.game.levelRef.driftSpeed;
       g.game.levelRef.scrollSpeed = 0;
+      // The creatures' drift is the level's own number now, not the camera's: freezing the water means freezing both.
+      g.game.levelRef.driftSpeed = 0;
       // Same empty field, for the same reason -- and here it is the difference between measuring the net and
       // measuring whatever the wall probe left standing.
       g.game.obstaclesRef.obstacles.length = 0;
@@ -349,6 +359,7 @@ test.describe('obstacles', () => {
         if (g.game.diagnostics.slow.factor < 1) draggingFrames++;
       }
       g.game.levelRef.scrollSpeed = scroll;
+      g.game.levelRef.driftSpeed = drift;
       return {
         frames,
         draggingFrames,

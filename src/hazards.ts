@@ -968,14 +968,24 @@ export interface HazardContext {
   playerY: number;
   playerRadiusFraction: number;
   /**
-   * How fast the WORLD is moving past the player, in m/s: the level's scroll speed.
+   * How fast the water's creatures fall down the SCREEN, in m/s: the level's `driftSpeed`.
    *
-   * This replaced the player's ascent speed as the reference for hazard motion. With free movement the
-   * player may be stationary, so "how fast is this thing approaching me" is a property of the level, not
-   * of the player. Hazard speeds are still expressed as fractions of it, so the approach rate stays
-   * proportional however the level's pace is retuned.
+   * This replaced the player's ascent speed as the reference for hazard motion, and then (when the scroll was decoupled
+   * from gameplay) the level's SCROLL speed as well. With free movement the player may be stationary, so "how fast is this
+   * thing approaching me" is a property of the level, not of the player -- and now it is a property of the level's own
+   * `driftSpeed`, not of how fast the camera happens to climb. Hazard speeds are still expressed as fractions of it, so the
+   * approach rate stays proportional however the level's pace is retuned.
    */
-  descentSpeed: number;
+  driftSpeed: number;
+  /**
+   * How far the camera rose THIS step, in metres: the level's scroll speed times `dt`, or 0 while the camera is still.
+   *
+   * The world is a fixed frame and the camera climbs through it, so anything left alone slides down the screen at the
+   * scroll speed. A creature is not part of the scenery, so `update` hands it this much back -- see `carryFor` for which
+   * creatures get all of it and which get all but their own drift. It is a distance and not a speed because the camera
+   * moves by a measured amount per frame, and what a creature needs is to have moved the same amount.
+   */
+  cameraRise: number;
   /** Seconds since the run started, for the bait timers. */
   elapsed: number;
   /** Whether the player is currently invulnerable, in which case contact must not re-trigger. */
@@ -1092,13 +1102,48 @@ export interface SpawnOptions {
  * radius that grows with the player, and a zapper's discharge counts on the field's `charges`.
  */
 type CreatureStep = (field: HazardField, h: Hazard, dt: number, ctx: HazardContext) => void;
+
+/**
+ * What a creature is "of the world" for: the kinds that are SCENERY or weather rather than something alive, and so stay
+ * where the level put them while the camera climbs past. The field rises into them, which is the whole of their motion.
+ * (The boss is separate: it does not move with the water either, but it holds a position relative to the player on its own.)
+ */
+const WORLD_BOUND_KINDS: readonly HazardKind[] = ['vent', 'mineral', 'foam', 'rain'];
+
+/**
+ * How far to move a creature, before its own step runs, so that the camera's rise does not leak into its motion.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * THE RULE
+ * ---------------------------------------------------------------------------------------------
+ * Positions are world metres and the camera climbs through them, so a creature that is left alone slides down the screen
+ * at the scroll speed. Everything alive moves in SCREEN terms instead, and this is where that is made true:
+ *
+ *   - ORDINARY creatures get `rise - driftSpeed * dt`. Their own step then subtracts `driftSpeed * factor * dt`, so on the
+ *     screen they fall at `driftSpeed * (1 + factor)` -- the `1 +` being the old "the current carries everything down"
+ *     term, now a number of its own. When a level's `driftSpeed` equals its `scrollSpeed` (the six levels were written so)
+ *     this is exactly 0 and nothing moves differently from before.
+ *   - SCREEN-BOUND creatures get the whole `rise`, which is "stay put on the glass" before their own motion is added:
+ *       a Boids fish (the school decides its velocity, and that velocity is a screen velocity),
+ *       a creature on a path (the spline is a shape drawn on the screen -- see `Hazard.path`),
+ *       a creature in a lunge (it aims at where the player IS on the screen, and holds station while it winds up),
+ *       a creature that is leaving (a straight line out, which has nothing to do with the water).
+ *   - WORLD-BOUND things (scenery, weather) and the boss get nothing: the scenery is the level, and the boss tracks the
+ *     player by itself.
+ */
+function carryFor(h: Hazard, dt: number, ctx: HazardContext): number {
+  if (isBossKind(h.kind) || WORLD_BOUND_KINDS.includes(h.kind)) return 0;
+  if (h.flee === 'dead') return 0;
+  if (h.boid || h.path || h.charge || h.flee) return ctx.cameraRise;
+  return ctx.cameraRise - ctx.driftSpeed * dt;
+}
 function stepFish(field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
   // The bait timer is the only thing that breaks the chase.
   if (h.baitedUntil > ctx.elapsed) {
     // Wander: drift sideways away from the player.
     h.x += Math.sign(h.x - ctx.playerX) * 6 * dt;
     h.heading = Math.sign(h.x - ctx.playerX) || h.heading;
-    h.y -= ctx.descentSpeed * 0.5 * dt;
+    h.y -= ctx.driftSpeed * 0.5 * dt;
     return;
   }
 
@@ -1119,7 +1164,7 @@ function stepFish(field: HazardField, h: Hazard, dt: number, ctx: HazardContext)
     // The DRIFT is what says which way it is going here, not the player -- this branch is the one that does not
     // converge, and it is most of the fish on screen at any moment.
     if (sway !== 0) h.heading = Math.sign(sway);
-    h.y -= ctx.descentSpeed * 0.42 * dt;
+    h.y -= ctx.driftSpeed * 0.42 * dt;
     return;
   }
 
@@ -1128,14 +1173,14 @@ function stepFish(field: HazardField, h: Hazard, dt: number, ctx: HazardContext)
   const steer = Math.max(-1, Math.min(1, dx / Math.max(1, ctx.laneWidth * 0.25)));
   h.x += steer * ctx.laneWidth * hazardTuning.fishSpeedFactor * dt;
   if (steer !== 0) h.heading = Math.sign(steer);
-  h.y -= ctx.descentSpeed * 0.55 * dt;
+  h.y -= ctx.driftSpeed * 0.55 * dt;
   return;
 }
 function stepJelly(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
   // Drifts down slowly and bobs. It is an obstacle, not a pursuer.
   const bob = Math.sin(h.phase * 1.4 + h.seed) * hazardTuning.jellyBobAmplitude * ctx.laneWidth;
   h.x += (Math.cos(h.phase * 0.7) * 0.4 + bob * 0.02) * 6 * dt;
-  h.y -= ctx.descentSpeed * 0.3 * dt;
+  h.y -= ctx.driftSpeed * 0.3 * dt;
   h.squashed = Math.max(0, h.squashed - dt * 2.2);
   return;
 }
@@ -1145,7 +1190,7 @@ function stepTrash(_field: HazardField, h: Hazard, dt: number, ctx: HazardContex
     h.x = ctx.playerX;
     h.y = ctx.playerY;
   } else {
-    h.y -= ctx.descentSpeed * hazardTuning.trashSpeedFactor * dt;
+    h.y -= ctx.driftSpeed * hazardTuning.trashSpeedFactor * dt;
     h.x += Math.sin(h.phase * 1.1 + h.seed) * 4 * dt;
   }
   return;
@@ -1154,7 +1199,7 @@ function stepCrab(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext
   // Two-phase: it drifts harmlessly until the player enters its reach, THEN telegraphs. See
   // `armed`. Firing on a fuse that ran from spawn would mean the visible arc never coincides
   // with the player being close enough to care.
-  h.y -= ctx.descentSpeed * 0.18 * dt;
+  h.y -= ctx.driftSpeed * 0.18 * dt;
   const proximity = h.y < ctx.playerY + hazardTuning.crabArmDistanceMeters;
   if (!h.armed && proximity) {
     h.armed = true;
@@ -1171,7 +1216,7 @@ function stepUrchin(_field: HazardField, h: Hazard, dt: number, ctx: HazardConte
    *
    * It sinks faster than a crab, so it clears the water instead of accumulating into a wall of spines.
    */
-  h.y -= ctx.descentSpeed * 0.26 * dt;
+  h.y -= ctx.driftSpeed * 0.26 * dt;
   h.x += Math.sin(h.phase * 0.8 + h.seed) * 2.5 * dt;
   return;
 }
@@ -1185,7 +1230,7 @@ function stepUrchin(_field: HazardField, h: Hazard, dt: number, ctx: HazardConte
  * longer than a skirmisher); the wobble is cosmetic and lives here.
  */
 function stepGunner(h: Hazard, dt: number, ctx: HazardContext, driftFactor: number, wobble: number): void {
-  h.y -= ctx.descentSpeed * driftFactor * dt;
+  h.y -= ctx.driftSpeed * driftFactor * dt;
   h.x += Math.sin(h.phase * 0.8 + h.seed) * wobble * dt;
 }
 
@@ -1236,7 +1281,7 @@ function stepBombfish(_field: HazardField, h: Hazard, dt: number, ctx: HazardCon
     h.y += (dy / gap) * step * dt;
   }
   // The current still drags it down; the hunt is on top of that, not instead of it.
-  h.y -= ctx.descentSpeed * 0.15 * dt;
+  h.y -= ctx.driftSpeed * 0.15 * dt;
   if (h.blastFuse === null && gap <= cfg.armMeters) h.blastFuse = cfg.fuseSeconds;
   return;
 }
@@ -1356,7 +1401,7 @@ function stepShrimp(_field: HazardField, h: Hazard, dt: number, ctx: HazardConte
    */
   const cfg = mech.hazards.shrimp;
   h.x += h.seed % 2 < 1 ? -ctx.laneWidth * cfg.driftSpeedFactor * dt : ctx.laneWidth * cfg.driftSpeedFactor * dt;
-  h.y -= ctx.descentSpeed * 0.25 * dt;
+  h.y -= ctx.driftSpeed * 0.25 * dt;
   return;
 }
 function stepAngler(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
@@ -1385,7 +1430,7 @@ function stepAngler(_field: HazardField, h: Hazard, dt: number, ctx: HazardConte
       hitPlayer: false,
     };
   }
-  h.y -= ctx.descentSpeed * cfg.driftFactor * dt;
+  h.y -= ctx.driftSpeed * cfg.driftFactor * dt;
   return;
 }
 function stepTorpedo(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
@@ -1413,7 +1458,7 @@ function stepTorpedo(_field: HazardField, h: Hazard, dt: number, ctx: HazardCont
     h.x += (dx / len) * seek * dt;
     h.y += (dy / len) * seek * dt;
   } else {
-    h.y -= ctx.descentSpeed * 0.3 * dt;
+    h.y -= ctx.driftSpeed * 0.3 * dt;
   }
   return;
 }
@@ -1428,7 +1473,7 @@ function stepZapper(_field: HazardField, h: Hazard, dt: number, ctx: HazardConte
   // The drift below is deliberately the jellyfish drift, so a shoal of them reads as jellyfish.
   if (h.dischargeRest > 0) h.dischargeRest -= dt;
   if (h.discharge > 0) h.discharge -= dt;
-  h.y -= ctx.descentSpeed * 0.28 * dt;
+  h.y -= ctx.driftSpeed * 0.28 * dt;
   h.x += Math.sin(h.phase * 0.7 + h.seed) * 2.4 * dt;
   return;
 }
@@ -1442,7 +1487,7 @@ function stepFoam(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext
    */
   h.foamLife -= dt;
   if (h.foamLife <= 0) h.flee = 'up';
-  h.y -= ctx.descentSpeed * 0.6 * dt;
+  h.y -= ctx.driftSpeed * 0.6 * dt;
   h.x += Math.sin(h.phase * 0.9 + h.seed) * 3.2 * dt;
   return;
 }
@@ -1465,7 +1510,7 @@ function stepEel(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext)
    * touched: a sine weave of this amplitude makes its heading obvious a second ahead, which is what turns
    * "my controls stopped working" from an ambush into something the player walked into.
    */
-  h.y -= ctx.descentSpeed * 0.3 * dt;
+  h.y -= ctx.driftSpeed * 0.3 * dt;
   h.x += Math.sin(h.phase * 2.6 + h.seed) * ctx.laneWidth * 0.055 * dt;
   /**
    * The discharge pose's own clock.
@@ -2250,6 +2295,14 @@ export class HazardField {
           school.inReach = Number.POSITIVE_INFINITY;
           school.ahead = 0;
         }
+        // The school is on the screen like its fish: the leader's path is anchored to where it began, and everything that is
+        // placed relative to the camera has to follow the camera. Moving `y` as well as `startY` keeps the leader's own
+        // velocity (read from how far it moved) the path's and not the camera's.
+        if (ctx.cameraRise !== 0) {
+          school.startY += ctx.cameraRise;
+          school.y += ctx.cameraRise;
+          for (const d of school.decor) d.y += ctx.cameraRise;
+        }
         advanceLeader(school, dt, ctx.laneWidth, screen);
         if (members) steerSchool(members, school, dt, ctx.laneWidth);
         advanceDecor(school, members ?? [], dt, ctx.laneWidth, { min: ctx.min, max: ctx.max });
@@ -2270,6 +2323,23 @@ export class HazardField {
        * charge, for a path follower and for a creature that is leaving, and a creature turns in all three of those.
        */
       advanceTurn(h, dt);
+      /**
+       * THE CAMERA'S RISE, handed back before the creature moves.
+       *
+       * A creature's own motion is measured on the SCREEN (it falls at the level's `driftSpeed` times its own factor), but
+       * the field stores world positions and the camera climbs through them. Without this a creature would slide down the
+       * glass at the scroll speed on top of its own motion, which is the coupling this exists to remove. See `carryFor`.
+       */
+      const carry = carryFor(h, dt, ctx);
+      if (carry !== 0) {
+        h.y += carry;
+        // Positions the creature's motion is SET from rather than added to: a path's anchor, and a lunge's two ends.
+        if (h.path) h.path.startY += carry;
+        if (h.charge) {
+          h.charge.fromY += carry;
+          h.charge.toY += carry;
+        }
+      }
       /**
        * NOT the death clock, which is `tickDeaths`'s and runs from the frame loop.
        *
@@ -2928,7 +2998,7 @@ export class HazardField {
      * it once". A flash is a property of the BODY, so it belongs with the body's clock, not with whichever behaviour happens
      * to be running this frame.
      */
-    const base = ctx.descentSpeed;
+    const base = ctx.driftSpeed;
 
     /**
      * DRIVEN OFF: out in one direction, and nothing else.
@@ -2971,10 +3041,10 @@ export class HazardField {
      * chase the player while still off-screen (so it would turn round and leave), and a `bottom` entry would be
      * fighting the kind's own descent -- the two together would leave it hanging below the screen for ever.
      *
-     * The `bottom` case is the one that needs explaining. `base` is the current: everything in the water descends at
-     * that rate relative to the player, so to rise into view from behind, a creature has to swim UP faster than the
-     * scroll. That is why the entry speed is a speed rather than a distance, and why the config's default (45
-     * against a scroll of 25) has to have real headroom.
+     * The `bottom` case is the one that needs explaining. `base` is the creatures' drift: everything in the water falls at
+     * that rate down the screen, so to rise into view from behind, a creature has to swim UP faster than the
+     * drift. That is why the entry speed is a speed rather than a distance, and why the config's default (45
+     * against a drift of 25) has to have real headroom.
      */
     if (h.entry) {
       const margin = ctx.laneWidth * hazardTuning.insideMarginRatio;
@@ -3026,9 +3096,9 @@ export class HazardField {
       const window = chargeWindow(h.kind);
       h.charge.elapsed += dt;
       if (h.charge.elapsed < window.telegraphSeconds) {
-        // Winding up: it holds station while the current carries it down with everything else. It does NOT reposition:
-        // the lunge begins wherever it happens to be standing (see the commit below for why).
-        h.y -= base * dt;
+        // Winding up: it holds station ON THE SCREEN (`carryFor` gives a charging creature the camera's whole rise, and its
+        // curve's two ends the same, so nothing here moves). It does NOT reposition: the lunge begins wherever it happens
+        // to be standing (see the commit below for why).
         return;
       }
       const t = Math.min(1, (h.charge.elapsed - window.telegraphSeconds) / Math.max(0.05, window.travelSeconds));

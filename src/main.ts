@@ -2010,8 +2010,13 @@ class Game {
      * Placed during 'playing' only. During the intro the level has not begun, and during the ending it
      * is over -- emitting content in either would drop hazards onto a player with no control.
      */
+    // Recomputed every frame, so a phase where the camera holds still hands the simulations a rise of 0 and not the last one.
+    this.run.cameraRise = 0;
     if (this.run.phase === 'playing' || this.run.phase === 'burst') {
+      const before = this.run.scrolled;
       this.run.scrolled = Math.min(LEVEL.scrollLength, this.run.scrolled + LEVEL.scrollSpeed * dt);
+      // The distance actually travelled: the clamp at the level's end means the last frame may be short, or nothing at all.
+      this.run.cameraRise = this.run.scrolled - before;
       this.camera.setScroll(this.run.scrolled);
       this.run.player.syncToCamera(this.camera.y, viewport.visibleDepthMeters);
       if (this.run.phase === 'playing') {

@@ -301,7 +301,7 @@ test.describe('screen captures @screenshots', () => {
             debugSpawnObstacleOnPlayer: (kind: string, ahead: number) => void;
             obstaclesRef: { obstacles: { kind: string; x: number; y: number; healthFraction: number }[] };
             camera: { viewport: { laneWidthMeters: number } };
-            levelRef: { scrollSpeed: number };
+            levelRef: { scrollSpeed: number; driftSpeed: number };
           };
           player: { x: number; screenY: number; volume: number };
         };
@@ -310,6 +310,7 @@ test.describe('screen captures @screenshots', () => {
 
       // Freeze the water: otherwise the pair sweeps past in half a second and the capture is of empty sea.
       g.game.levelRef.scrollSpeed = 0;
+      g.game.levelRef.driftSpeed = 0;
       g.player.volume = 6;
       g.player.x = 0.5;
       // Low on the screen, because both obstacles are placed ABOVE the player and the top of the canvas is where

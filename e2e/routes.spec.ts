@@ -392,7 +392,7 @@ test.describe('routes', () => {
             };
             hazardsRef: { hazards: unknown[] };
             obstaclesRef: { obstacles: unknown[] };
-            levelRef: { scrollSpeed: number };
+            levelRef: { scrollSpeed: number; driftSpeed: number };
             camera: { viewport: { laneWidthMeters: number } };
           };
           player: { x: number; screenY: number; volume: number };
@@ -407,7 +407,10 @@ test.describe('routes', () => {
        * mistake produced a net that "took twelve seconds to tear".
        */
       const scroll = g.game.levelRef.scrollSpeed;
+      const drift = g.game.levelRef.driftSpeed;
       g.game.levelRef.scrollSpeed = 0;
+      // The creatures' drift is the level's own number now, not the camera's: freezing the water means freezing both.
+      g.game.levelRef.driftSpeed = 0;
       const lane = g.game.camera.viewport.laneWidthMeters;
       g.player.x = 0.5;
       g.player.screenY = 0.5;
@@ -479,6 +482,7 @@ test.describe('routes', () => {
         wasCharging: holding.charging,
       };
       g.game.levelRef.scrollSpeed = scroll;
+      g.game.levelRef.driftSpeed = drift;
       return out;
     });
 
@@ -765,7 +769,7 @@ test.describe('routes', () => {
             };
             hazardsRef: { hazards: unknown[] };
             obstaclesRef: { obstacles: unknown[] };
-            levelRef: { scrollSpeed: number };
+            levelRef: { scrollSpeed: number; driftSpeed: number };
           };
           player: { x: number; screenY: number; volume: number };
         };
@@ -793,7 +797,10 @@ test.describe('routes', () => {
        * obstacles". The scroll is frozen so the wall stays on the player instead of being carried away.
        */
       const scroll = g.game.levelRef.scrollSpeed;
+      const drift = g.game.levelRef.driftSpeed;
       g.game.levelRef.scrollSpeed = 0;
+      // The creatures' drift is the level's own number now, not the camera's: freezing the water means freezing both.
+      g.game.levelRef.driftSpeed = 0;
       g.game.obstaclesRef.obstacles.length = 0;
       g.game.hazardsRef.hazards.length = 0;
       g.game.debugGrantRageForTest(100);
@@ -823,6 +830,7 @@ test.describe('routes', () => {
       }
       const afterCrate = { overloaded: g.game.diagnostics.rage.overloaded, obstacles: g.game.obstaclesRef.obstacles.length };
       g.game.levelRef.scrollSpeed = scroll;
+      g.game.levelRef.driftSpeed = drift;
       return { beforeBurst, afterBurst, beforeSmash, afterSmash, afterCrate };
     });
 
@@ -927,7 +935,7 @@ test.describe('routes', () => {
               gameSeconds: number;
             };
             hazardsRef: { hazards: { x: number; y: number }[] };
-            levelRef: { scrollSpeed: number };
+            levelRef: { scrollSpeed: number; driftSpeed: number };
             camera: { viewport: { laneWidthMeters: number } };
           };
           player: { x: number; y: number; screenY: number; volume: number };
@@ -937,7 +945,10 @@ test.describe('routes', () => {
 
       // Frozen water, so the creatures stay on the bubble instead of being carried away.
       const scroll = g.game.levelRef.scrollSpeed;
+      const drift = g.game.levelRef.driftSpeed;
       g.game.levelRef.scrollSpeed = 0;
+      // The creatures' drift is the level's own number now, not the camera's: freezing the water means freezing both.
+      g.game.levelRef.driftSpeed = 0;
       g.game.debugSetSteadyCruise();
       /**
        * A neutral talent, because the run's own is ROLLED and fish-fart changes what a contact does: it fires on the
@@ -983,6 +994,7 @@ test.describe('routes', () => {
         phase: g.game.diagnostics.phase,
       };
       g.game.levelRef.scrollSpeed = scroll;
+      g.game.levelRef.driftSpeed = drift;
       return out;
     });
 

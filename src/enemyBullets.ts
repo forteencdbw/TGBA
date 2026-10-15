@@ -78,6 +78,8 @@ export interface EnemyBulletContext {
   min: number;
   max: number;
   laneWidth: number;
+  /** How far the camera rose this frame, in metres: the round is on the screen and moves with it. See `BulletContext`. */
+  cameraRise: number;
   /** The player, in world metres. */
   playerX: number;
   playerY: number;
@@ -194,7 +196,9 @@ export class EnemyBulletField {
       const b = this.bullets[i]!;
       b.age += dt;
       b.x += b.vx * dt;
-      b.y += b.vy * dt;
+      // `cameraRise` first, like the player's rounds: a round is on the screen, aimed at where the player WAS on it, so the
+      // camera's climb must not push it below the player while it flies.
+      b.y += ctx.cameraRise + b.vy * dt;
       // THIS round's radius, copied at spawn -- a big round blocks, hits and grazes big.
       const radius = ctx.laneWidth * b.radiusRatio;
 

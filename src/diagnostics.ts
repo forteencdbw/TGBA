@@ -77,6 +77,7 @@ export function diagnosticsOf(g: GameSnapshot): {
       name: string;
       scrollLength: number;
       scrollSpeed: number;
+      driftSpeed: number;
       scrolled: number;
       entriesEmitted: number;
       entriesTotal: number;
@@ -307,6 +308,7 @@ export function diagnosticsOf(g: GameSnapshot): {
         name: LEVEL.name,
         scrollLength: LEVEL.scrollLength,
         scrollSpeed: LEVEL.scrollSpeed,
+        driftSpeed: LEVEL.driftSpeed,
         /** How far the level has scrolled, and so how far through it the camera is. */
         scrolled: +g.scrolled.toFixed(2),
         /** Entries emitted so far, and the total, so progress through the TIMELINE is observable. */
