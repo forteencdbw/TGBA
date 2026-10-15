@@ -1,6 +1,6 @@
 import { EntityField } from './entities';
 import { seedMember } from './boids';
-import { HazardField, ventX, type Hazard, type HazardKind, type SpawnOptions } from './hazards';
+import { HazardField, KIND_TUNING, ventX, type Hazard, type HazardKind, type SpawnOptions } from './hazards';
 import { isObstacleKind, ObstacleField } from './obstacles';
 import { mech } from './mechanisms';
 import { LEVEL, type EntrySide, type LevelEntry } from './levels';
@@ -140,16 +140,27 @@ export function placeEntry(
    * block shares one leader that is stepped once a frame. The fish is born in a cloud round the leader, at the leader's
    * velocity, and has no `path` of its own: that is what keeps `advanceKind` from walking it along the curve as well.
    */
-  if (entry.school !== undefined && pathSpec) {
-    const school = world.hazards.joinSchool(
+  if (entry.school !== undefined && pathSpec && entry.layer === 'back') {
+    /**
+     * A BACKGROUND school's fish are not hazards: they go to the back-school field, which has no hitbox and nothing that reads it.
+     * Placed by the same loop and the same birth rules as a foreground school (a cloud behind an invisible leader, facing the
+     * way it is going), so the two layers cannot drift apart in how they begin.
+     */
+    const fish = world.hazards.back.place(
       entry.school,
       pathSpec,
       spawnY,
       laneWidth,
       view.max - view.min,
       entry.variety ?? 0,
-      entry.schoolDecor ?? 0,
+      entry.distance ?? 0,
+      entry.schoolSize ?? 1,
+      KIND_TUNING.fish.radius,
     );
+    return { ...record, x: +fish.x.toFixed(1), worldY: +fish.y.toFixed(1) };
+  }
+  if (entry.school !== undefined && pathSpec) {
+    const school = world.hazards.joinSchool(entry.school, pathSpec, spawnY, laneWidth, view.max - view.min);
     const seed = seedMember(school, laneWidth, entry.schoolSize ?? 1);
     // Facing the school's way from the first frame: a fish placed with no heading is drawn facing left (the picture as it was
     // drawn), which is the wrong way for a school going right and would turn round on its first step.

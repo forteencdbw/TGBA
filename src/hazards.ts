@@ -32,7 +32,8 @@ import { animationFrameAt, animationSeconds, assetTextureNow, isYFlipped, loadAn
 import { mech, tuning } from './config';
 import type { BossDossier } from './mechanisms';
 import { hazardMass } from './consumption';
-import { advanceDecor, advanceLeader, createSchool, steerSchool, type BoidState, type School } from './boids';
+import { advanceLeader, createSchool, steerSchool, type BoidState, type School } from './boids';
+import { BackSchools } from './backSchools';
 import { pathPoint } from './spline';
 import { pullSpeedFraction, suctionRadiusFraction } from './suction';
 export type HazardKind =
@@ -1888,6 +1889,14 @@ export class HazardField {
   readonly schools = new Map<number, School>();
 
   /**
+   * The background schools: the same simulation with no hitbox, held here because their lifetime is this field's.
+   *
+   * NOT in `hazards`, which is the whole point -- everything that asks what is in the water (contact, rounds, eating, the
+   * outlines, the codex) walks that list, so a fish that is not in it cannot be touched by any of them. See `src/backSchools.ts`.
+   */
+  readonly back = new BackSchools();
+
+  /**
    * The school with this id, made if it is the first of its members to be placed.
    *
    * `startY` and the screen height are the placement's: the path's `y` is a fraction of a screen measured from where the
@@ -1899,12 +1908,10 @@ export class HazardField {
     startY: number,
     laneWidth: number,
     screen: number,
-    variety: number,
-    decorCount: number,
   ): School {
     let school = this.schools.get(id);
     if (!school) {
-      school = createSchool(id, path, startY, laneWidth, screen, variety, decorCount);
+      school = createSchool(id, path, startY, laneWidth, screen);
       this.schools.set(id, school);
     }
     return school;
@@ -1992,6 +1999,7 @@ export class HazardField {
   reset(): void {
     this.hazards = [];
     this.schools.clear();
+    this.back.reset();
     // The queues go with the creatures they describe: a pending spark or outline belongs to a body that no longer exists,
     // and carrying it into the next level would flash something that was never hit.
     this.hitEvents.length = 0;
@@ -2281,33 +2289,23 @@ export class HazardField {
       const screen = ctx.max - ctx.min;
       for (const [id, school] of this.schools) {
         const members = groups.get(id);
-        /**
-         * A school with no real fish left is still a school while its background swims on: the decor does not care that
-         * the fish in front of it were shot. It is dropped when BOTH are gone, which is what stops a finished level's
-         * schools accumulating in the map.
-         */
-        if (!members && school.decor.length === 0) {
+        if (!members) {
           this.schools.delete(id);
           continue;
         }
-        // Nobody to wait for means the leader walks at its own pace.
-        if (!members) {
-          school.inReach = Number.POSITIVE_INFINITY;
-          school.ahead = 0;
-        }
-        // The school is on the screen like its fish: the leader's path is anchored to where it began, and everything that is
-        // placed relative to the camera has to follow the camera. Moving `y` as well as `startY` keeps the leader's own
-        // velocity (read from how far it moved) the path's and not the camera's.
+        // The school is on the screen like its fish: the leader's path is anchored to where it began, and the anchor has to
+        // follow the camera. Moving `y` as well as `startY` keeps the leader's own velocity (read from how far it moved) the
+        // path's and not the camera's.
         if (ctx.cameraRise !== 0) {
           school.startY += ctx.cameraRise;
           school.y += ctx.cameraRise;
-          for (const d of school.decor) d.y += ctx.cameraRise;
         }
         advanceLeader(school, dt, ctx.laneWidth, screen);
-        if (members) steerSchool(members, school, dt, ctx.laneWidth);
-        advanceDecor(school, members ?? [], dt, ctx.laneWidth, { min: ctx.min, max: ctx.max });
+        steerSchool(members, school, dt, ctx.laneWidth);
       }
     }
+    // The background schools step on the same frame, with the same context, and nothing in them can reach anything above.
+    this.back.update(dt, ctx.laneWidth, ctx.min, ctx.max, ctx.cameraRise);
     for (const h of this.hazards) {
       /**
        * PER-FRAME STATE TICKS HERE, not inside `advance`.

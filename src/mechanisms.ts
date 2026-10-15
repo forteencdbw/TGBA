@@ -937,21 +937,19 @@ export interface Mechanisms {
       depthRange: number;
       depthDim: number;
       depthTint: number;
-      /** The harmless background fish. */
-      decor: {
-        scale: number;
-        alpha: number;
+      /**
+       * Background schools (`layer: 'back'`): what a block's `distance` -- 0 near, 1 far -- turns into. Each pair is the value at
+       * distance 0 and at distance 1, and everything between is a straight line; none of them changes how the school MOVES.
+       */
+      back: {
+        /** Size relative to an ordinary fish, at the near end and the far end. */
+        scaleNear: number;
+        scaleFar: number;
+        /** How much of `tint` the sprite is multiplied by, 0..1, at the near end and the far end. */
+        dimNear: number;
+        dimFar: number;
+        /** The cold colour the far end is multiplied toward. */
         tint: number;
-        /** How many of the nearest real fish a background fish swims with. */
-        neighbours: number;
-        alongSpread: number;
-        bandHalfWidth: number;
-        follow: number;
-        followJitter: number;
-        breatheAmplitude: number;
-        breatheSeconds: number;
-        exitMargin: number;
-        unfoldSeconds: number;
       };
     };
     /**
@@ -2836,28 +2834,29 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.boids.depthTint', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   ...(
     [
-      ['scale', 'a size multiplier above 0, up to 2'],
-      ['alpha', 'an opacity'],
-      ['alongSpread', 'a fraction of the lane width, how long the background is'],
-      ['bandHalfWidth', 'a fraction of the lane width, half how wide the background is'],
-      ['follow', 'per second; how fast a background fish closes on its place'],
-      ['followJitter', 'a fraction of `follow`, 0 to 1'],
-      ['breatheAmplitude', 'a fraction of the lane width'],
-      ['breatheSeconds', 'seconds, above 0'],
-      ['exitMargin', 'a fraction of the lane width'],
-      ['unfoldSeconds', 'seconds the background takes to fan out from its birth cloud into the school; 0 = at once'],
+      ['scaleNear', 'a size multiplier above 0, up to 2: how big a fish at distance 0 is'],
+      ['scaleFar', 'a size multiplier above 0, up to 2: how big a fish at distance 1 is'],
     ] as const
   ).map(([key, describe]) => ({
-    path: `hazards.boids.decor.${key}`,
-    check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0,
-    describe: `${describe}; 0 or more`,
+    path: `hazards.boids.back.${key}`,
+    check: (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 2,
+    describe,
   })),
-  { path: 'hazards.boids.decor.tint', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  ...(
+    [
+      ['dimNear', 'a fraction from 0 to 1: how far toward `tint` a fish at distance 0 is'],
+      ['dimFar', 'a fraction from 0 to 1: how far toward `tint` a fish at distance 1 is'],
+    ] as const
+  ).map(([key, describe]) => ({
+    path: `hazards.boids.back.${key}`,
+    check: (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1,
+    describe,
+  })),
+  { path: 'hazards.boids.back.tint', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.boids.neighbours', check: (v) => wholeNumber(v) && (v as number) >= 1 && (v as number) <= 30, describe: 'a whole number from 1 to 30: how many of the nearest fish alignment and cohesion listen to' },
   { path: 'hazards.boids.cohesionAcrossRatio', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 20, describe: 'a ratio from 1 (round) to 20: how much harder cohesion pulls across the neighbours\' heading than along it' },
   { path: 'hazards.boids.leaderAllowAhead', check: (v) => wholeNumber(v) && (v as number) >= 0, describe: 'a whole number of real fish that may be ahead of the leader before it slows to let the school\'s front catch up' },
   { path: 'hazards.boids.leaderWantFish', check: (v) => wholeNumber(v) && (v as number) >= 1, describe: 'a whole number of real fish the leader needs in reach to walk at full pace' },
-  { path: 'hazards.boids.decor.neighbours', check: (v) => wholeNumber(v) && (v as number) >= 1 && (v as number) <= 20, describe: 'a whole number from 1 to 20: how many of the nearest real fish a background fish swims with' },
   /** The crab: one row per key of its own block, for the reason the config gives at `hazards.crab`. */
   { path: 'hazards.crab.armDistanceMeters', check: anyNumber, describe: 'metres of 0 or more; the distance at which the fuse is lit' },
   { path: 'hazards.crab.fuseSeconds', check: anyNumber, describe: 'seconds' },
@@ -3922,9 +3921,9 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
     fail(`hazards.boids.separationRadius (${b.separationRadius}) is wider than neighbourRadius (${b.neighbourRadius})`);
   }
   if (!(b.maxAccel > 0)) fail('hazards.boids.maxAccel must be above 0, or no force can ever act');
-  if (!(b.decor.breatheSeconds > 0)) fail('hazards.boids.decor.breatheSeconds must be above 0: it is a period');
   if (!(b.wobbleSeconds > 0)) fail('hazards.boids.wobbleSeconds must be above 0: it is a period');
-  if (b.decor.followJitter > 1) fail(`hazards.boids.decor.followJitter (${b.decor.followJitter}) is above 1: a fish would follow backwards`);
+  if (b.back.scaleFar > b.back.scaleNear) fail(`hazards.boids.back.scaleFar (${b.back.scaleFar}) is above scaleNear (${b.back.scaleNear}): a far fish would be bigger than a near one`);
+  if (b.back.dimFar < b.back.dimNear) fail(`hazards.boids.back.dimFar (${b.back.dimFar}) is below dimNear (${b.back.dimNear}): a far fish would be brighter than a near one`);
   if (!(b.leaderWaitFloor > 0) || b.leaderWaitFloor > 1) fail(`hazards.boids.leaderWaitFloor (${b.leaderWaitFloor}) must be above 0 and at most 1: at 0 the leader would stop for good the moment it lost its school`);
   if (!(b.leaderReach > 0)) fail('hazards.boids.leaderReach must be above 0, or the leader reaches no fish and the school does not follow it');
   if (b.leaderTether < b.leaderReach) {

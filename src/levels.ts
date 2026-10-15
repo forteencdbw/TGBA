@@ -143,8 +143,13 @@ export interface LevelEntry {
    */
   schoolSize?: number;
   schoolIndex?: number;
-  /** How many harmless background fish the school brings. Carried on every entry; the first one placed makes them. */
-  schoolDecor?: number;
+  /**
+   * Which layer the school swims in. Absent means the foreground; `'back'` is a background school, which `placeEntry` hands to
+   * `HazardField.back` instead of making hazards, so it has no hitbox. Carried on every entry of the block.
+   */
+  layer?: 'back';
+  /** For a background school: how far away it is, 0 (near) to 1 (far). Present exactly when `layer` is. */
+  distance?: number;
   /**
    * Which of the kind's looks every creature in this BLOCK shows.
    *
@@ -296,12 +301,19 @@ export interface SpawnBlock {
    */
   boids?: boolean;
   /**
-   * How many harmless background fish the school brings, on top of its `count` real ones. Only with `boids: true`.
+   * Which layer a Boids school swims in: `'front'` (the default) is the hazards the player fights, and `'back'` is the same
+   * simulation as pictures -- no hitbox, nothing shoots them, nothing eats them -- drawn behind everything else.
    *
-   * Not creatures: no hitbox, nothing shoots them, they feel no force (see `src/boids.ts`). They are there so that a
-   * school reads as hundreds, and what they look like is `hazards.boids.decor`.
+   * A background school is a school, so it needs `boids: true`; and it needs a `distance`. The order background schools come
+   * on in is the order of their `at`, like everything else in the file.
    */
-  backdropFish?: number;
+  layer?: 'front' | 'back';
+  /**
+   * How far away a background school is: 0 is as near as the foreground, 1 is as far as anything goes. It decides how big and how
+   * dim the school is, between the ends the config gives at `hazards.boids.back`, and NOTHING else: how fast the school crosses
+   * is its path's. Required with `layer: 'back'` and refused without it.
+   */
+  distance?: number;
   at: number;
   kind: SpawnKind;
   count: number;
@@ -652,7 +664,8 @@ const BLOCK_KEYS: readonly string[] = [
   'path',
   'pathSpacingSeconds',
   'boids',
-  'backdropFish',
+  'layer',
+  'distance',
   'at',
   'kind',
   'count',
@@ -808,8 +821,23 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
   if (boids && typeof node['path'] !== 'string') {
     fail(where, 'is a Boids school with no "path": the school follows its path through an invisible leader, so it needs one.');
   }
-  if (!boids && node['backdropFish'] !== undefined) {
-    fail(where, 'has "backdropFish", which is the background of a Boids school: it needs "boids: true", or it would do nothing.');
+  /**
+   * The background layer, and its one number.
+   *
+   * Both directions are refused rather than ignored, for the reason every rule here is: a `distance` on a foreground school
+   * would be a key that does nothing, and a background school with no `distance` would be drawn at a depth the author never
+   * chose. A background school is a Boids school -- the layer is a way of drawing and not a way of moving -- so it needs the
+   * flag too.
+   */
+  const layer = pick(node, 'layer', where, 'front', ['front', 'back']) as 'front' | 'back';
+  if (layer === 'back' && !boids) {
+    fail(where, 'is on layer "back" but is not a Boids school: only a school can be in the background. Add boids: true (with a path).');
+  }
+  if (layer === 'back' && node['distance'] === undefined) {
+    fail(where, 'is on layer "back" with no "distance": 0 is as near as the foreground and 1 is as far as it goes, and it decides the size and the dimming.');
+  }
+  if (layer === 'front' && node['distance'] !== undefined) {
+    fail(where, 'has "distance", which is how far away a BACKGROUND school is. Add layer: "back", or it would do nothing.');
   }
   if (boids && from !== 'top') {
     fail(where, `is a Boids school arriving from the ${from}: a school is born where its path starts, so it has no edge to arrive from.`);
@@ -840,7 +868,8 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
     // level finishes parsing), so a typo here is reported once the table is known rather than silently ignored.
     ...(typeof node['path'] === 'string' ? { path: node['path'] } : {}),
     pathSpacingSeconds: optNum(node, 'pathSpacingSeconds', where, DEFAULT_PATH_SPACING_SECONDS, 0.02, 10),
-    ...(boids ? { boids: true, backdropFish: Math.round(optNum(node, 'backdropFish', where, 0, 0, 1000)) } : {}),
+    ...(boids ? { boids: true } : {}),
+    ...(layer === 'back' ? { layer: 'back' as const, distance: reqNum(node, 'distance', where, 0, 1) } : {}),
     // (a school key used to live here; schools are splines now)
 
     // The vent's own three, absent for everything else. `side` is only ever set for a vent because the checks above
@@ -931,7 +960,7 @@ function expandBlock(block: SpawnBlock, variety = 0, index = 0): LevelEntry[] {
         school: index,
         schoolSize: n,
         schoolIndex: i,
-        schoolDecor: block.backdropFish ?? 0,
+        ...(block.layer === 'back' ? { layer: 'back' as const, distance: block.distance as number } : {}),
       })),
     );
   }

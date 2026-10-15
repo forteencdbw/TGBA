@@ -40,8 +40,7 @@
     // 一条直线：从屏幕右边外面，平着游到左边外面。
     //
     // 坐标和别的关一样：`x` 是泳道比例（>1 / <0 是屏幕外），`y` 是屏幕比例、相对出生点（顶边），负值朝下。
-    // **世界在往下卷**，所以一条在世界里水平的线，在屏幕上看是**慢慢往下斜**的：`seconds: 6.5` 时下沉约四分之一屏。
-    // 想让它在屏幕上看起来更平，就把 `seconds` 调短，或者把终点的 `y` 写得比起点高一点。
+    // 路径走的是**屏幕**：世界卷动不会再把它往下带，所以这条线在屏幕上就是水平的。
     //
     // 起点和终点都在屏幕外，所以鱼群是游进来、游出去的，不会凭空出现。终点比起点多出去一截：鱼群有一个泳道长，
     // 领队到了终点，队尾还在屏幕里，所以终点要远到让队尾也是**游**出去的，而不是被领队停下来拽出去。
@@ -52,26 +51,62 @@
         { x: -0.7, y: -0.12 }
       ],
       seconds: 6.5
+    },
+
+    // 三条给背景鱼群用的路：高、中、低三个高度，方向交替，轻轻起伏。背景鱼群各走各的路，所以不会叠成一坨。
+    // 终点离泳道边缘 0.7 个泳道，和上面那条一样远：领队停在终点，鱼群会在它周围打转，终点太近的话队尾出不去。
+    // 背景鱼群走得比前景慢一点（`seconds` 大）：远处的东西看起来动得慢——但这是**路径**写的，`distance` 不会改游速。
+    'back-high': {
+      points: [
+        { x: -0.7, y: -0.1 },
+        { x: 0.5, y: -0.2 },
+        { x: 1.7, y: -0.14 }
+      ],
+      seconds: 12
+    },
+    'back-mid': {
+      points: [
+        { x: 1.4, y: -0.42 },
+        { x: 0.6, y: -0.52 },
+        { x: -0.7, y: -0.46 }
+      ],
+      seconds: 10.5
+    },
+    'back-low': {
+      points: [
+        { x: -0.7, y: -0.72 },
+        { x: 0.5, y: -0.64 },
+        { x: 1.7, y: -0.72 }
+      ],
+      seconds: 9
     }
   },
 
   spawns: [
-    // --- 超大鱼群：120 条同种小鱼，遵循 Boids（`hazards.boids`），沿 `straight` 游过去 ---
+    // --- 背景鱼群：先有好几群鱼从远处游过，让玩家有心理准备 ---
+    // `layer: 'back'` 配 `boids: true`、`path` 和 `distance`（0 近 ~ 1 远）。它们是**同一套 Boids**，但没有碰撞盒：
+    // 子弹穿过去、碰不到、吃不到。画在最后面（背景图之上、所有生物之下）；`distance` 越大越小、越暗、越冷
+    // （两端的值在 config/mechanics.json5 的 `hazards.boids.back`）。出场顺序就是 `at` 的顺序。
+    { at: 30, kind: 'fish', count: 120, path: 'back-high', boids: true, layer: 'back', distance: 0.9 },
+    { at: 105, kind: 'fish', count: 100, path: 'back-mid', boids: true, layer: 'back', distance: 0.65 },
+    { at: 180, kind: 'fish', count: 80, path: 'back-low', boids: true, layer: 'back', distance: 0.4 },
+
+    // --- 然后前景的一群：120 条同种小鱼，遵循 Boids（`hazards.boids`），沿 `straight` 游过去 ---
     // `boids: true` 必须配 `kind: 'fish'` 和 `path`。样条驱动的是一个**看不见的领队**，鱼自己涌出队形：
     // 它们不追你也不躲你，但每一条都是真的鱼——会碰伤你，能被打（画面缩到普通小鱼的 60%，碰撞盒一起缩）。
-    // `backdropFish` 是后面**无害的装饰鱼**的数量：没有碰撞盒、打不到，只让群看起来是几百条。
-    { at: 60, kind: 'fish', count: 120, backdropFish: 160, path: 'straight', boids: true },
+    { at: 330, kind: 'fish', count: 120, path: 'straight', boids: true },
 
     // --- 对照：同一条路上的一串普通小鱼（每条各走各的曲线，没有队形） ---
-    { at: 330, kind: 'fish', count: 10, path: 'straight', pathSpacingSeconds: 0.5 },
+    { at: 520, kind: 'fish', count: 10, path: 'straight', pathSpacingSeconds: 0.5 },
 
-    // --- 再来一群，换个品种（同一块是同一个品种，相邻两块自动不同） ---
-    { at: 480, kind: 'fish', count: 120, backdropFish: 160, path: 'straight', boids: true },
+    // --- 再来一群前景，换个品种（同一块是同一个品种，相邻两块自动不同），后面跟一群近的背景 ---
+    { at: 640, kind: 'fish', count: 90, path: 'back-mid', boids: true, layer: 'back', distance: 0.15 },
+    { at: 700, kind: 'fish', count: 120, path: 'straight', boids: true },
 
     // --- 别的敌人：想试哪个就取消注释 ---
-    // { at: 700, kind: 'shark', x: 0.5 },
-    // { at: 700, kind: 'jelly', x: 0.2 },
-    // { at: 700, kind: 'crab', x: 0.8 },
+    // { at: 900, kind: 'shark', x: 0.5 },
+    // { at: 900, kind: 'jelly', x: 0.2 },
+    // { at: 900, kind: 'crab', x: 0.8 },
 
     // 一点吃的，免得一直小着
     { at: 30, span: 500, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.4, 0.5, 0.35] }

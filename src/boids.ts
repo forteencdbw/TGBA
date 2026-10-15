@@ -17,13 +17,16 @@ import { pathPoint } from './spline';
  * so the school's route is the level's route however many of it are gone.
  *
  * ---------------------------------------------------------------------------------------------
- * TWO KINDS OF FISH IN ONE SCHOOL
+ * TWO LAYERS, ONE SIMULATION
  * ---------------------------------------------------------------------------------------------
- * The REAL ones are `Hazard`s: they hurt, can be shot, and are steered by the four forces below. Behind them swim the
- * DECOR fish, which are not hazards at all -- no hitbox, nothing shoots them, they exert no force and feel none -- and
- * which are only there so that a school reads as hundreds. A decor fish is a point that chases a place relative to the
- * leader, so a hundred and sixty of them cost one multiply-add each. They belong to the school (`School.decor`) and are
- * drawn by `src/schoolDecor.ts`.
+ * A school in the FOREGROUND is made of `Hazard`s: they hurt, can be shot, and live in the hazard field. A school in the
+ * BACKGROUND (`layer: 'back'` in the level) is the same simulation over `BackFish`, which are not hazards at all -- no
+ * hitbox, nothing shoots them, nothing eats them, nothing in the game reads them -- and which are drawn behind everything
+ * (see `src/backSchools.ts`). Both are steered by `steerSchool`, which only asks of a fish what a `Flocker` has.
+ *
+ * There used to be a third thing, a cloud of "decor" fish that followed the real fish nearest to them. It made one school
+ * look like several hundred, and it was tied to a school that could be shot: a background that belongs to a foreground
+ * cannot be authored on its own. A background school is a school.
  *
  * ---------------------------------------------------------------------------------------------
  * THE FOUR FORCES (real fish)
@@ -88,29 +91,20 @@ export interface BoidState {
 }
 
 /**
- * One background fish: it swims with the real fish nearest to it, and keeps its own place relative to them.
+ * What `steerSchool` needs of a fish, and all it touches.
  *
- * Not a hazard and not simulated beyond that -- no forces, nothing shoots it. What it follows is the nearest few REAL
- * fish (`decor.neighbours`), not the leader, so a turn reaches the background by the same route it reaches the rest of the
- * school: from the front, fish to fish.
+ * A `Hazard` is one (the foreground school) and a `BackFish` is one (the background school), so the same forces steer both and
+ * a change to the flocking is a change to both. `flee` is written, not just read: a school whose leader has parked retires the
+ * fish that have left the lane by marking them as leaving, and each owner removes those in its own way.
  */
-export interface DecorFish {
+export interface Flocker {
   x: number;
   y: number;
-  /** Its velocity in metres per second: it takes the average of the real fish round it, and keeps it when there are none. */
-  vx: number;
-  vy: number;
-  /** The place it keeps relative to the real fish round it, as lane fractions along and across THEIR heading. */
-  along: number;
-  across: number;
-  /** Its own phase and the two breathing frequencies (rad/s), so no two move together. */
-  phase: number;
-  freqA: number;
-  freqB: number;
-  /** How fast it closes on its place, 1/s: `decor.follow` with its own jitter. */
-  follow: number;
-  /** Its own tail-animation offset in seconds, so the tails are not in step. */
-  clock: number;
+  seed: number;
+  heading: number;
+  radiusFraction: number;
+  flee: Hazard['flee'];
+  boid: BoidState | null;
 }
 
 /** The invisible leader of one school, and the spline it walks. */
@@ -119,8 +113,6 @@ export interface School {
   /** The level's own waypoints, by reference: a hundred members on one path still share one spline. */
   points: readonly { x: number; y: number }[];
   seconds: number;
-  /** Which of the fish's looks this school shows -- the block's `variety`, so the decor matches the real fish. */
-  variety: number;
   /** Seconds since the school was placed. */
   elapsed: number;
   /** The water's height at the moment the school was placed: the path's `y` is measured from here. */
@@ -146,12 +138,8 @@ export interface School {
   inReach: number;
   /** How many real fish were AHEAD of the leader (along its heading) on the last step: the other thing it waits on. */
   ahead: number;
-  /** How many real fish have been seeded, which is how `seedMember` knows which depth is next. */
+  /** How many fish have been seeded, which is how `seedMember` knows which depth is next. */
   seeded: number;
-  /** The background fish. */
-  decor: DecorFish[];
-  /** Seconds since the leader parked, which keeps the background's clock (its tails, its breathing) running. */
-  exitElapsed: number;
 }
 
 /**
@@ -195,8 +183,6 @@ function leaderAt(
  * Moving from the start matters: a school born with its leader at rest would have its first fish pulled to a stationary
  * point while the leader accelerated away from them, and the school would be strung out behind it for its first seconds.
  *
- * The decor fish are made here too, already standing on their places: a decor fish that had to swim to its place would
- * be seen arriving from the leader's own point, which is a puff of fish out of nothing.
  */
 export function createSchool(
   id: number,
@@ -204,15 +190,12 @@ export function createSchool(
   startY: number,
   laneWidth: number,
   screen: number,
-  variety: number,
-  decorCount: number,
 ): School {
   const seconds = Math.max(0.1, path.seconds);
   const school: School = {
     id,
     points: path.points,
     seconds,
-    variety,
     elapsed: 0,
     startY,
     x: 0,
@@ -226,8 +209,6 @@ export function createSchool(
     inReach: Number.POSITIVE_INFINITY,
     ahead: 0,
     seeded: 0,
-    decor: [],
-    exitElapsed: 0,
   };
   const here = leaderAt(school, 0, laneWidth, screen);
   // The speed the curve starts at, measured over a hundredth of its length: the derivative, without writing one out.
@@ -239,27 +220,6 @@ export function createSchool(
   school.vy = (ahead.y - here.y) / (eps * seconds);
   setDirection(school);
 
-  const decor = mech.hazards.boids.decor;
-  for (let i = 0; i < decorCount; i++) {
-    // Born in a cloud round the leader, like the real fish -- NOT on its place in the finished school, which reaches half a
-    // lane ahead of the leader and was on the screen before the leader was.
-    const bornRadius = mech.hazards.boids.spawnSpread * laneWidth * Math.sqrt(Math.random());
-    const bornAngle = Math.random() * Math.PI * 2;
-    const fish: DecorFish = {
-      x: school.x + Math.cos(bornAngle) * bornRadius,
-      y: school.y + Math.sin(bornAngle) * bornRadius,
-      vx: school.vx,
-      vy: school.vy,
-      along: (Math.random() - 0.5) * decor.alongSpread,
-      across: (Math.random() * 2 - 1) * decor.bandHalfWidth,
-      phase: Math.random() * Math.PI * 2,
-      freqA: (Math.PI * 2) / (decor.breatheSeconds * (0.7 + Math.random() * 0.6)),
-      freqB: (Math.PI * 2) / (decor.breatheSeconds * (0.7 + Math.random() * 0.6)),
-      follow: decor.follow * (1 + (Math.random() * 2 - 1) * decor.followJitter),
-      clock: Math.random() * 4,
-    };
-    school.decor.push(fish);
-  }
   return school;
 }
 
@@ -326,10 +286,7 @@ export function seedMember(
  */
 export function advanceLeader(school: School, dt: number, laneWidth: number, screen: number): void {
   if (dt <= 0) return;
-  if (school.finished) {
-    school.exitElapsed += dt;
-    return;
-  }
+  if (school.finished) return;
   const cfg = mech.hazards.boids;
   const reachPace = Math.min(1, school.inReach / Math.max(1, cfg.leaderWantFish));
   const aheadPace = school.ahead <= cfg.leaderAllowAhead ? 1 : cfg.leaderAllowAhead / school.ahead;
@@ -344,122 +301,19 @@ export function advanceLeader(school: School, dt: number, laneWidth: number, scr
   setDirection(school);
   if (t >= 1) {
     school.finished = true;
-    school.exitElapsed = 0;
-    // The leader parks, but its heading is kept: a school leaves the way it was going, and `dirX` is what the fish and the
-    // background are measured against.
+    // The leader parks, but its heading is kept: a school leaves the way it was going, and `dirX` is what its fish are
+    // measured against.
     school.vx = 0;
     school.vy = 0;
   }
 }
 
 /**
- * Move every background fish, and retire the ones that have left.
- *
- * Each one finds the `decor.neighbours` real fish nearest to it and does two things with them:
- *   - takes their AVERAGE VELOCITY (by `follow`, per second), so it swims where they swim -- and turns when they turn,
- *     which is after the front of the school has, not at the moment the leader does;
- *   - keeps its own place relative to their average position, along and across the way they are going.
- * Moving at their velocity and correcting toward the place, rather than only chasing the place, is what keeps it from
- * trailing behind by the speed over `follow`: a fish that only chases always lags.
- *
- * THE UNFOLDING: the place is blended in over `unfoldSeconds`. At 0 the fish is simply among the real ones -- inside the
- * cloud the school is born in, which is off the screen -- and at 1 it is on its own place round them, half a lane ahead
- * and behind. Without the blend the front of the school was on the screen before the leader had arrived: fish out of nothing.
- * Smoothstep, so the fan-out starts and ends gently rather than as a burst.
- *
- * With no real fish left (all shot, or all gone) a background fish keeps the velocity it had. It is retired the way a real one
- * is: once the leader has parked and it is out past the lane, or once it has sunk out of the vertical band the hazard field
- * itself culls on.
- *
- * Cost: each background fish looks at every real fish once -- 160 x 120 = 19,200 distance tests for a school of the debug
- * level, a fraction of a millisecond.
- */
-export function advanceDecor(
-  school: School,
-  members: readonly Hazard[],
-  dt: number,
-  laneWidth: number,
-  view: { min: number; max: number },
-): void {
-  if (school.decor.length === 0 || dt <= 0) return;
-  const cfg = mech.hazards.boids.decor;
-  const margin = laneWidth * cfg.exitMargin;
-  const want = Math.max(1, Math.round(cfg.neighbours));
-  const clock = school.elapsed + school.exitElapsed;
-  const raw = cfg.unfoldSeconds > 0 ? Math.min(1, clock / cfg.unfoldSeconds) : 1;
-  const unfold = raw * raw * (3 - 2 * raw);
-  // The nearest few, kept as parallel small arrays so a frame allocates nothing.
-  const nearD = new Array<number>(want);
-  const nearI = new Array<number>(want);
-  school.decor = school.decor.filter((fish) => {
-    let found = 0;
-    for (let i = 0; i < members.length; i++) {
-      const m = members[i]!;
-      const d = (m.x - fish.x) ** 2 + (m.y - fish.y) ** 2;
-      if (found < want) {
-        let at = found++;
-        while (at > 0 && nearD[at - 1]! > d) {
-          nearD[at] = nearD[at - 1]!;
-          nearI[at] = nearI[at - 1]!;
-          at--;
-        }
-        nearD[at] = d;
-        nearI[at] = i;
-      } else if (d < nearD[want - 1]!) {
-        let at = want - 1;
-        while (at > 0 && nearD[at - 1]! > d) {
-          nearD[at] = nearD[at - 1]!;
-          nearI[at] = nearI[at - 1]!;
-          at--;
-        }
-        nearD[at] = d;
-        nearI[at] = i;
-      }
-    }
-    if (found > 0) {
-      let px = 0;
-      let py = 0;
-      let vx = 0;
-      let vy = 0;
-      for (let k = 0; k < found; k++) {
-        const m = members[nearI[k]!]!;
-        px += m.x;
-        py += m.y;
-        vx += m.boid!.vx;
-        vy += m.boid!.vy;
-      }
-      px /= found;
-      py /= found;
-      vx /= found;
-      vy /= found;
-      const speed = Math.hypot(vx, vy);
-      const dx = speed > 1e-6 ? vx / speed : school.dirX;
-      const dy = speed > 1e-6 ? vy / speed : school.dirY;
-      const along = (fish.along + cfg.breatheAmplitude * Math.sin(clock * fish.freqA + fish.phase)) * laneWidth * unfold;
-      const across = (fish.across + cfg.breatheAmplitude * Math.cos(clock * fish.freqB + fish.phase * 1.7)) * laneWidth * unfold;
-      const k = 1 - Math.exp(-fish.follow * dt);
-      fish.vx += (vx - fish.vx) * k;
-      fish.vy += (vy - fish.vy) * k;
-      const tx = px + dx * along - dy * across;
-      const ty = py + dy * along + dx * across;
-      fish.x += fish.vx * dt + (tx - fish.x) * k;
-      fish.y += fish.vy * dt + (ty - fish.y) * k;
-    } else {
-      fish.x += fish.vx * dt;
-      fish.y += fish.vy * dt;
-    }
-    if (fish.y < view.min - 80 || fish.y > view.max + 120) return false;
-    if (school.finished && (fish.x < -margin || fish.x > laneWidth + margin)) return false;
-    return true;
-  });
-}
-
-/**
  * Steer every member of one school for this frame, and retire the ones that have left.
  *
- * Writes the new VELOCITY into each member (`h.boid`) and its `heading`; moving the fish is the hazard field's, which
- * integrates it in `advanceKind` AFTER the states that override a creature's motion (leaving, a recoil), so a shot fish
- * is still shoved and still driven off and the school does not fight it.
+ * Writes the new VELOCITY into each member (`h.boid`) and its `heading`; moving the fish is the owner's. For hazards that is
+ * the hazard field, which integrates it in `advanceKind` AFTER the states that override a creature's motion (leaving, a
+ * recoil), so a shot fish is still shoved and still driven off and the school does not fight it.
  *
  * `members` is every live, un-fled member: the caller has already left the rest out, so a fish that has been driven off
  * is neither pulled back into the school nor counted as a neighbour.
@@ -467,14 +321,14 @@ export function advanceDecor(
  * O(n^2) over the school -- 14,400 distance tests at 120 fish, which is a fraction of a millisecond and cheaper than the
  * sprites they drive.
  */
-export function steerSchool(members: readonly Hazard[], school: School, dt: number, laneWidth: number): void {
+export function steerSchool(members: readonly Flocker[], school: School, dt: number, laneWidth: number): void {
   const cfg = mech.hazards.boids;
   const neighbourR = cfg.neighbourRadius * laneWidth;
   const neighbourSq = neighbourR * neighbourR;
   // Alignment and cohesion look at the K NEAREST fish, not at every fish within a distance -- see the header's note on why.
   const want = Math.max(1, Math.round(cfg.neighbours));
   const nearD = new Float64Array(want);
-  const nearB = new Array<Hazard>(want);
+  const nearB = new Array<Flocker>(want);
   const separationR = cfg.separationRadius * laneWidth;
   const separationSq = separationR * separationR;
   const maxSpeed = cfg.maxSpeed * laneWidth;
