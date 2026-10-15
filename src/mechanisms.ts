@@ -1732,6 +1732,23 @@ export interface Mechanisms {
       alpha: number;
       /** The second layer's opacity, as a fraction of the first's. */
       crossAlpha: number;
+      /** The colour the veins are drawn in -- the light itself. */
+      lightColor: number;
+      /**
+       * How far the flow warp moves a point, as a fraction of a tile's width; the wavelength of its ripples, as a fraction of
+       * a tile; and the seconds one of its phases takes to go round (the four run at unrelated multiples of it).
+       */
+      warpAmount: number;
+      warpWavelength: number;
+      warpSeconds: number;
+      /** How far the breathing stretch pulls (0.2 = 20% longer along its axis and 20% shorter across) and its period in seconds. */
+      breatheAmount: number;
+      breatheSeconds: number;
+      /** The stretch axis of each layer, in degrees from the horizontal. */
+      axisDegrees: number;
+      crossAxisDegrees: number;
+      /** The second layer's deformation clocks, as a fraction of the first's rate. */
+      crossSpeedRatio: number;
     };
     uiBubbles: {
       everySeconds: number;
@@ -3275,7 +3292,16 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['crossDriftY', 'a fraction of the box height per second'],
     ['alpha', 'an opacity'],
     ['crossAlpha', "a fraction of the first layer's opacity"],
+    ['axisDegrees', 'degrees from the horizontal'],
+    ['crossAxisDegrees', 'degrees from the horizontal'],
   ].map(([key, describe]) => ({ path: `menu.caustics.${key}`, check: anyNumber, describe: describe as string })),
+  { path: 'menu.caustics.lightColor', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'menu.caustics.warpAmount', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 0.2, describe: 'a fraction of a tile, 0 to 0.2: how far the flow warp moves a point (0 turns it off)' },
+  { path: 'menu.caustics.warpWavelength', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0.05 && v <= 2, describe: 'a fraction of a tile, 0.05 to 2: the wavelength of the warp ripples' },
+  { path: 'menu.caustics.warpSeconds', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0.5 && v <= 120, describe: 'seconds, 0.5 to 120: how long a warp phase takes to go round' },
+  { path: 'menu.caustics.breatheAmount', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 0.8, describe: 'a fraction, 0 to 0.8: how far the breathing stretch pulls (0 turns it off)' },
+  { path: 'menu.caustics.breatheSeconds', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0.5 && v <= 120, describe: 'seconds, 0.5 to 120: one breath of the stretch' },
+  { path: 'menu.caustics.crossSpeedRatio', check: (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 4, describe: "a ratio above 0, up to 4: the second layer's deformation rate as a share of the first's" },
   ...[
     ['perRow', 'how many pills fit on a row'],
     ['maxRowWidthRatio', 'a fraction of the panel content width'],
