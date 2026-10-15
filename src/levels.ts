@@ -1097,6 +1097,25 @@ blocks.forEach((block, i) => {
       `puts creatures on the path "${block.path}", but this level has no such path. It has: ${Object.keys(paths ?? {}).join(', ') || '(none)'}.`,
     );
   }
+  /**
+   * A school must be BORN off the screen.
+   *
+   * Its fish are born in a cloud of `hazards.boids.spawnSpread` round the first point of the path (a lane fraction), and a
+   * cloud that overlaps the lane is a school that appears out of nothing in front of the player. The path may start beyond
+   * either side of the lane by more than the cloud's radius, or above the top of the screen by a fifth of a screen -- which
+   * is a conservative reading of the cloud's radius in screens, since a screen is 433 to 781 metres tall and the cloud is
+   * about 65. Everything else is refused, with the point named, rather than left to pop in.
+   */
+  if (block.boids && block.path) {
+    const p0 = paths?.[block.path]?.points[0];
+    const spread = mech.hazards.boids.spawnSpread;
+    if (p0 && !(p0.x < -spread || p0.x > 1 + spread || p0.y >= 0.2)) {
+      fail(
+        `${where}.spawns[${i}]`,
+        `is a Boids school on the path "${block.path}", whose first point (x ${p0.x}, y ${p0.y}) is inside the screen: the school is born in a cloud of ${spread} lane widths round it, so it would appear out of nothing. Start the path beyond either side (x below ${-spread} or above ${1 + spread}) or above the top (y of 0.2 or more).`,
+      );
+    }
+  }
 });
 
 const rawBoss = node['boss'];

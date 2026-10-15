@@ -942,6 +942,7 @@ export interface Mechanisms {
         breatheAmplitude: number;
         breatheSeconds: number;
         exitMargin: number;
+        unfoldSeconds: number;
       };
     };
     /**
@@ -2834,6 +2835,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
       ['breatheAmplitude', 'a fraction of the lane width'],
       ['breatheSeconds', 'seconds, above 0'],
       ['exitMargin', 'a fraction of the lane width'],
+      ['unfoldSeconds', 'seconds the background takes to fan out from its birth cloud into the school; 0 = at once'],
     ] as const
   ).map(([key, describe]) => ({
     path: `hazards.boids.decor.${key}`,

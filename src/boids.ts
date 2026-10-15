@@ -80,6 +80,9 @@ export interface DecorFish {
   /** The place it wants, as lane fractions along and across the leader's heading. */
   along: number;
   across: number;
+  /** Where it is BORN, as a metre offset from the leader: a small cloud, like the real fish's. Faded out as it unfolds. */
+  bornX: number;
+  bornY: number;
   /** Its own phase and the two breathing frequencies (rad/s), so no two move together. */
   phase: number;
   freqA: number;
@@ -209,9 +212,15 @@ export function createSchool(
 
   const decor = mech.hazards.boids.decor;
   for (let i = 0; i < decorCount; i++) {
+    // Born in a cloud round the leader, like the real fish -- NOT on its place in the finished school, which reaches half a
+    // lane ahead of the leader and was on the screen before the leader was.
+    const bornRadius = mech.hazards.boids.spawnSpread * laneWidth * Math.sqrt(Math.random());
+    const bornAngle = Math.random() * Math.PI * 2;
     const fish: DecorFish = {
       x: 0,
       y: 0,
+      bornX: Math.cos(bornAngle) * bornRadius,
+      bornY: Math.sin(bornAngle) * bornRadius,
       along: (Math.random() - 0.5) * decor.alongSpread,
       across: (Math.random() * 2 - 1) * decor.bandHalfWidth,
       phase: Math.random() * Math.PI * 2,
@@ -312,11 +321,21 @@ function decorTarget(school: School, fish: DecorFish, laneWidth: number): { x: n
   const decor = mech.hazards.boids.decor;
   const clock = school.elapsed + school.exitElapsed;
   const carry = school.finished ? school.exitSpeed * school.exitElapsed : 0;
-  const along = (fish.along + decor.breatheAmplitude * Math.sin(clock * fish.freqA + fish.phase)) * laneWidth + carry;
-  const across = (fish.across + decor.breatheAmplitude * Math.cos(clock * fish.freqB + fish.phase * 1.7)) * laneWidth;
+  /**
+   * THE UNFOLDING: the school's shape is blended in from a small cloud over `unfoldSeconds`.
+   *
+   * At 0 every decor fish is at its birth offset from the leader -- inside the cloud the real fish are born in, which is off
+   * the screen -- and at 1 it is on its own place in the finished school. Without the blend the front of the school, which
+   * reaches half a lane ahead of the leader, was already on the screen when the leader had not yet arrived: fish out of
+   * nothing. Smoothstep, so the fan-out starts and ends gently rather than as a burst.
+   */
+  const raw = decor.unfoldSeconds > 0 ? Math.min(1, clock / decor.unfoldSeconds) : 1;
+  const u = raw * raw * (3 - 2 * raw);
+  const along = (fish.along + decor.breatheAmplitude * Math.sin(clock * fish.freqA + fish.phase)) * laneWidth * u + carry;
+  const across = (fish.across + decor.breatheAmplitude * Math.cos(clock * fish.freqB + fish.phase * 1.7)) * laneWidth * u;
   return {
-    x: school.x + school.dirX * along - school.dirY * across,
-    y: school.y + school.dirY * along + school.dirX * across,
+    x: school.x + school.dirX * along - school.dirY * across + fish.bornX * (1 - u),
+    y: school.y + school.dirY * along + school.dirX * across + fish.bornY * (1 - u),
   };
 }
 
@@ -469,8 +488,15 @@ export function steerSchool(members: readonly Hazard[], school: School, dt: numb
       boid.vy = heading.y * minSpeed;
     }
 
-    // Which way it is drawn facing: the way it is swimming, once it is swimming sideways enough to say.
-    if (Math.abs(boid.vx) > 0.01 * laneWidth) a.heading = Math.sign(boid.vx);
+    /**
+     * Which way it is drawn facing: the way the SCHOOL is going, and not the way this fish happens to be moving this frame.
+     *
+     * It used to be the fish's own velocity, and a fish born inside the dense cloud is thrown about by separation for the
+     * first moments -- enough to send some of them backward for a few frames, which flipped the picture round to face the
+     * leader. A fish in a school faces the school's way; `dirX` only changes when the leader itself turns, and then the
+     * whole school turns with it.
+     */
+    if (Math.abs(school.dirX) > 0.05) a.heading = Math.sign(school.dirX);
 
     /**
      * THE SCHOOL LEAVES BY THE SIDE ONCE THE LEADER HAS STOPPED.

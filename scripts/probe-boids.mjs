@@ -99,6 +99,13 @@ try {
   refuses('boids that is not a boolean', { at: 10, kind: 'fish', count: 3, path: 'straight', boids: 'yes' });
   refuses('a background without a school', { at: 10, kind: 'fish', count: 3, path: 'straight', backdropFish: 50 });
   refuses('a negative background', { at: 10, kind: 'fish', count: 3, path: 'straight', boids: true, backdropFish: -1 });
+  // The refusal of a school born on the screen happens when a level FILE is read, so it is asserted against the real
+  // file's own numbers here and exercised the other way round by hand (move the debug path's first point into the lane and
+  // the page refuses to load, naming the path).
+  check('loader · the debug level\'s school path starts off the screen', (() => {
+    const p0 = DEBUG_LEVEL.paths.straight.points[0];
+    return p0.x < -mech.hazards.boids.spawnSpread || p0.x > 1 + mech.hazards.boids.spawnSpread || p0.y >= 0.2;
+  })(), true);
   check('loader · a good school is accepted', installSpawnBlocks([{ at: 10, kind: 'fish', count: 7, path: 'straight', boids: true, backdropFish: 5 }]), 7);
   selectLevel(LEVELS[0].id);
 
@@ -197,7 +204,9 @@ try {
     // The background.
     check('background · 160 decor fish', leaderStart.decor.length, 160);
     check('background · none of them is a hazard', [fish.length, fish.some((h) => h.kind !== 'fish')], [120, false]);
-    check('background · standing on their places at birth, not at the leader', leaderStart.decor.some((d) => Math.hypot(d.x - leaderStart.x, d.y - leaderStart.y) > 0.1 * LANE), true);
+    check('background · born in the leader\'s cloud, not on its place in the finished school', leaderStart.decor.every((d) => Math.hypot(d.x - leaderStart.x, d.y - leaderStart.y) <= cfg.spawnSpread * LANE + 1e-6), true);
+    check('background · and every one of them is off the screen at birth', leaderStart.decor.every((d) => d.x > LANE), true);
+    check('facing · every real fish faces the way the school goes from its first frame', fish.every((h) => h.heading === Math.sign(leaderStart.dirX)), true);
 
     let t = 0;
     const dt = 1 / 30;
@@ -206,8 +215,27 @@ try {
     const SECONDS = DEBUG_LEVEL.paths.straight.seconds;
     const marks = [SECONDS * 0.25, SECONDS * 0.5, SECONDS * 0.75];
     let decorEver = 0;
+    // Nothing teleports and nothing turns round: the biggest single-frame step of any fish or decor fish, and every
+    // heading any real fish had while the school was swimming.
+    let biggestStep = 0;
+    const headings = new Set();
+    const lastAt = new Map();
     for (; t < 60 && (field.hazards.length > 0 || t < 0.1); t += dt) {
       field.update(dt, ctxFor(LANE * 0.5, 400, t));
+      for (const h of field.hazards) {
+        if (!h.boid) continue;
+        headings.add(h.heading);
+        const last = lastAt.get(h);
+        if (last) biggestStep = Math.max(biggestStep, Math.hypot(h.x - last.x, h.y - last.y));
+        lastAt.set(h, { x: h.x, y: h.y });
+      }
+      for (const s of field.schools.values()) {
+        for (const d of s.decor) {
+          const last = lastAt.get(d);
+          if (last) biggestStep = Math.max(biggestStep, Math.hypot(d.x - last.x, d.y - last.y));
+          lastAt.set(d, { x: d.x, y: d.y });
+        }
+      }
       if (field.hazards.some((h) => !Number.isFinite(h.x) || !Number.isFinite(h.y))) sawNaN = true;
       for (const s of field.schools.values()) {
         if (s.decor.some((d) => !Number.isFinite(d.x) || !Number.isFinite(d.y))) sawNaN = true;
@@ -216,6 +244,10 @@ try {
       for (const mark of marks) if (Math.abs(t - mark) < dt / 2) samples[mark] = stats(field);
     }
     check('swim · nothing went NaN', sawNaN, false);
+    // 0.8 lane widths a second is the fastest a fish may go (`maxSpeed`), so a frame at 30 fps is under 0.03 of a lane; a
+    // fish that pops into view or snaps to a place would show as a step many times that.
+    atMost('swim · no fish or decor fish jumps in a frame (lane widths)', biggestStep / LANE, 0.06);
+    check('facing · no real fish ever turned round: the only heading was the school\'s', [...headings], [Math.sign(boidsModule.createSchool(1, DEBUG_LEVEL.paths.straight, 400, LANE, 800, 0, 0).dirX)]);
     const [m3, m6, m9] = marks;
     const s3 = samples[m3];
     const s6 = samples[m6];

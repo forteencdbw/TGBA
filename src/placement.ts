@@ -151,11 +151,15 @@ export function placeEntry(
       entry.schoolDecor ?? 0,
     );
     const seed = seedMember(school, laneWidth, entry.schoolSize ?? 1);
+    // Facing the school's way from the first frame: a fish placed with no heading is drawn facing left (the picture as it was
+    // drawn), which is the wrong way for a school going right and would turn round on its first step.
+    const facing = Math.abs(school.dirX) > 0.05 ? Math.sign(school.dirX) : 0;
     const hazard = world.hazards.spawnAt(entry.kind as HazardKind, seed.x, seed.y, {
       boid: { school: entry.school, ...seed.boid },
       scale: mech.hazards.boids.scale,
       ...(entry.variety !== undefined ? { variety: entry.variety } : {}),
     });
+    hazard.heading = facing;
     world.hazards.hazards.push(hazard);
     return { ...record, x: +seed.x.toFixed(1), worldY: +seed.y.toFixed(1) };
   }

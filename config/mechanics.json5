@@ -2304,7 +2304,7 @@
       // 真鱼画出来约 0.082 个泳道宽（0.136 × `scale`），所以这个值比它小一点：鱼互相有重叠但看得出每一条
       // （实测 120 条：最近邻居平均间距约 0.03 个泳道宽）。**很敏感**：0.07 时群铺开到 1.1×0.5 个泳道，太稀；
       // 0.05 时缩成 0.4×0.3 的一团。动它之前先用 `scripts/probe-boids.mjs` 看形状检查。
-      "separationRadius": 0.062,
+      "separationRadius": 0.08,
 
       // **三条规则的强度**（还有领队的弹簧和阻尼，在下面）。
       //   `separationAccel`  分离的最大加速度，lane/秒²
@@ -2322,7 +2322,7 @@
       // 沿着弹簧越软、横向越硬，鱼带越长越细；两根一样硬就是个圆。
       // 横向不许比纵向软（启动时检查）——那是一个横着的群，不是一个在游的群。
       "leaderSpring": 0.1,
-      "leaderCrossSpring": 4,
+      "leaderCrossSpring": 10,
       "leaderDamp": 1.6,
 
       // 游速的下限和上限，lane/秒。**有下限**：鱼不会悬停，而群在领队停下之后（样条走完）也要继续游着散去。
@@ -2370,6 +2370,9 @@
       //   `followJitter`     每条的 `follow` 各浮动多少，所以拖尾参差不齐
       //   `breatheAmplitude` `breatheSeconds`  自己位置上的慢摆动（泳道比例，主周期秒）
       //   `exitMargin`       领队停下后，鱼游出泳道这么远（泳道比例）就收掉
+      //   `unfoldSeconds`    **出生后多久展开成最终的形状**。装饰鱼和真鱼一样，出生在领队周围一小团里（在画外），
+      //                      然后用这么多秒从那一团平滑地散开成"沿前进方向铺 `alongSpread`、横向 `bandHalfWidth`"。
+      //                      没有它，领队前方半个泳道的那部分背景鱼出生时就在屏幕里，比领队先"冒"出来。0 = 一出生就在最终位置（会冒）。
       "decor": {
         "scale": 0.4,
         "alpha": 0.5,
@@ -2380,7 +2383,8 @@
         "followJitter": 0.4,
         "breatheAmplitude": 0.05,
         "breatheSeconds": 3.5,
-        "exitMargin": 0.3
+        "exitMargin": 0.3,
+        "unfoldSeconds": 3
       }
     },
 
