@@ -3506,16 +3506,35 @@ function heavyOutlineIntensity(h: Hazard, elapsed: number): number {
  * program when it is constructed, which needs a canvas, so constructing one at the top level made this whole module
  * unloadable outside a browser -- `import('./hazards')` under Node threw `document is not defined` before a single line of
  * the simulation could be reached. Nothing else in this file touches the GPU until something is drawn.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * ONE FILTER PER SPRITE, WHICH IT WAS NOT
+ * ---------------------------------------------------------------------------------------------
+ * This used to hand out a single module-level instance to every creature, on the reasoning that the matrix is rewritten
+ * on each call so the last writer must be the one being drawn. It is not: a `ColorMatrixFilter` carries its matrix as
+ * STATE, so N sprites holding the same object all render with whichever matrix was assigned LAST -- the strength of
+ * whichever flashing creature happened to be painted last in the pass. On a screen where a gun is being held down that
+ * is almost always the fish whose flash is already spent, so every creature's flash was dragged to nearly nothing and
+ * the whole effect read as absent. A boss is usually the only thing flashing on screen and therefore its own last
+ * writer, which is exactly why it was the one creature whose flash still looked right.
+ *
+ * The fix is one instance per sprite, made when the sprite is made and kept for as long as the pool keeps it. A
+ * `WeakMap` rather than a `Map` because the pool has a sweep of its own and a second collection keyed by id would be a
+ * second thing to remember to sweep.
  */
-let WHITE_OUT: ColorMatrixFilter | null = null;
+const SPRITE_FLASH = new WeakMap<Sprite, ColorMatrixFilter>();
 
-function whiteOutFilter(strength: number): ColorMatrixFilter {
-  if (!WHITE_OUT) WHITE_OUT = new ColorMatrixFilter();
+function whiteOutFilter(sprite: Sprite, strength: number): ColorMatrixFilter {
+  let filter = SPRITE_FLASH.get(sprite);
+  if (!filter) {
+    filter = new ColorMatrixFilter();
+    SPRITE_FLASH.set(sprite, filter);
+  }
   const s = Math.max(0, Math.min(1, strength));
   const keep = 1 - s;
   // Rows: R', G', B' each take `keep` of their own channel and add `s`; alpha passes through untouched.
-  WHITE_OUT.matrix = [keep, 0, 0, 0, s, 0, keep, 0, 0, s, 0, 0, keep, 0, s, 0, 0, 0, 1, 0];
-  return WHITE_OUT;
+  filter.matrix = [keep, 0, 0, 0, s, 0, keep, 0, 0, s, 0, 0, keep, 0, s, 0, 0, 0, 1, 0];
+  return filter;
 }
 
 /**
@@ -5180,7 +5199,8 @@ export function paintHazards(
          * value that rises and falls. `spriteFlashScale` is the kind's own dimmer, which is how the boss asks for a quarter
          * of the flash its creatures get without the mechanism knowing what a boss is.
          */
-        const flash = flashIntensity(elapsed - (h.flashStarted ?? elapsed), mech.hitFlash.peakIntensity * (art.spriteFlashScale ?? 1));        sprite.filters = flash > 0 ? [whiteOutFilter(flash)] : [];
+        const flash = flashIntensity(elapsed - (h.flashStarted ?? elapsed), mech.hitFlash.peakIntensity * (art.spriteFlashScale ?? 1));
+        sprite.filters = flash > 0 ? [whiteOutFilter(sprite, flash)] : [];
         /**
          * A HEAVY hit's outline, drawn by the PAINTER rather than as a filter.
          *
@@ -5277,11 +5297,19 @@ export function paintHazards(
   }
 
   /**
-   * No ellipse pass here any more.
+   * No whole-list ellipse pass here, and no per-shape one either.
    *
-   * The flash for a creature is the SPRITE turning white (see the art branch above, which puts a colour matrix on the sprite
-   * while it flashes). The ellipse was a stand-in for creatures drawn as shapes; every creature is heading for a picture, and
-   * a white blob over a picture is not the picture turning white.
+   * A creature's flash belongs to whatever draws that creature: the sprite's own colour matrix when it has a picture
+   * (the art branch above), and `drawBoss` for the boss's drawn body, which carries its own colour and strength in the
+   * boss dossier because a boss has to read as one slab going white rather than as a shape with a wash on it.
+   *
+   * WHAT IS MISSING, and it is deliberate rather than overlooked: a creature drawn as a SHAPE has no flash. That used
+   * to be a whole-pass white ellipse here, deleted in 2d12911 on the reasoning that every creature was heading for a
+   * picture. It is still true that the only kinds with no `hazardArt` row are trash, vent, foam, rain, rot and oil --
+   * and ALL SIX have `hazards.health` of 0, so not one of them can be shot and none of them can ever be hit. The
+   * window where this could still matter is the frame or two a creature spends drawn as a shape before its animation
+   * arrives, which is not worth a branch that never runs. `hitFlash.colour` / `.alpha` / `.radiusScale` are therefore
+   * unread config keys, and are left in place rather than deleted only so that restoring this is a file edit.
    */
 }
 
