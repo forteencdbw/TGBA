@@ -2,7 +2,7 @@ import type { Text } from 'pixi.js';
 import type { Camera } from './background';
 import type { BulletField } from './bullets';
 import type { BubbleType, RouteId } from './bubbleTypes';
-import type { CodexUi } from './codexUi';
+import type { CodexDetail, CodexUi } from './codexUi';
 import type { EnemyBulletField } from './enemyBullets';
 import type { EntityField } from './entities';
 import type { HazardField, HazardKind } from './hazards';
@@ -136,7 +136,10 @@ export interface GameSnapshot {
   popups: NumberPopups;
   damagePopups: NumberPopups;
   finishBanner: Text;
-  codex: CodexUi;
+  /** Null until the codex has been loaded: it is not even in the page while `menu.codexEnabled` is off. */
+  codex: CodexUi | null;
+  /** The codex's coverage figures, or null while it is not loaded. See `codexDetail`. */
+  codexDetail: (() => CodexDetail) | null;
   splash: number;
   audioMuted: boolean;
   fps: number;

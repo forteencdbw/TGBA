@@ -29,6 +29,21 @@ import { BASE_TYPE, formForRoute, ROUTES, type ControlId, type Route, type Route
  */
 
 /** The five tabs, in the order they are shown. */
+/**
+ * What a card says for content the game has and this page was never written for.
+ *
+ * The page is switched off and not being iterated (`menu.codexEnabled`), so its prose tables are no longer `Record`s the
+ * compiler checks for completeness: a new creature, skill, talent, route or control simply has no row, and its card reads
+ * "未收录" instead of stopping the build. Writing the missing rows is the debt to pay when the page is reopened.
+ */
+const UNLISTED = '未收录';
+const UNLISTED_NOTE = '（暂未收录这一条的说明）';
+
+/** A control's name on a card, or its id when the page has no word for it yet. */
+function controlLabel(id: ControlId): string {
+  return CONTROL_LABELS[id] ?? id;
+}
+
 export type CodexCategory = 'enemy' | 'environment' | 'bubble' | 'skill' | 'talent';
 
 export const CODEX_CATEGORIES: readonly { id: CodexCategory; label: string }[] = [
@@ -342,7 +357,7 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
   return {
     id: `enemy:${kind}`,
     category: 'enemy',
-    name: HAZARD_NAMES[kind],
+    name: HAZARD_NAMES[kind] ?? `${kind}（${UNLISTED}）`,
     tagline,
     facts: [
       // The tier is stated as BOTH the rung and the volume it needs, because "第 3 档" means nothing until you have
@@ -376,7 +391,7 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
  * prints one. The HUD names STAGES and SKILLS; a fish is only ever a shape. So these exist for this page alone, and
  * that is why they live beside the prose instead of in the table the drawing code reads.
  */
-const HAZARD_NAMES: Record<HazardKind, string> = {
+const HAZARD_NAMES: Partial<Record<HazardKind, string>> = {
   fish: '小鱼',
   tuna: '金枪鱼',
   whale: '座头鲸',
@@ -391,8 +406,8 @@ const HAZARD_NAMES: Record<HazardKind, string> = {
   eel: '电鳗',
   boss: 'BOSS',
   // 六个 BOSS，一关一只。名字和 config/levels/*.json5 里 `boss.name` 是同一个 —— 关卡文件决定"这一关的 BOSS
-  // 叫什么"（那是关卡的声音），而这张表要有每一行只是因为它是 `Record<HazardKind, ...>`：**编译器就是清单**。
-  // 目前图鉴只列旧的那一只（`boss`），这六行是清单完整性，不是六张新卡片。
+  // 叫什么"（那是关卡的声音）。目前图鉴只列旧的那一只（`boss`），这六行不是六张新卡片。
+  // **这张表不再是编译器强制的清单**（图鉴暂不迭代，见 `menu.codexEnabled`）：新增的生物没有这一行，卡片显示"未收录"。
   'boss-crab': '烟囱蟹王',
   'boss-octopus': '寄居沉船章鱼',
   'boss-jelly': '冠冕水母',
@@ -492,7 +507,7 @@ const ENVIRONMENT: readonly CodexEntry[] = [
  * Here rather than in `bubbleTypes.ts` because it is card text -- the type descriptor deals in ids, and the one
  * place that has to turn an id into a word for a reader is this page.
  */
-const CONTROL_LABELS: Record<ControlId, string> = {
+const CONTROL_LABELS: Partial<Record<ControlId, string>> = {
   skill: '技能',
   suction: '吸附',
   spit: '喷吐',
@@ -521,7 +536,7 @@ const BASE_PROSE: { tagline: string; glyph: CodexGlyph; notes: readonly string[]
  * The route cards' prose. The FACTS beside each are derived from the running config by `routeFacts` below --
  * the same numbers the game uses, so the page cannot describe a route the game no longer has.
  */
-const ROUTE_PROSE: Record<RouteId, { glyph: CodexGlyph; notes: readonly string[] }> = {
+const ROUTE_PROSE: Partial<Record<RouteId, { glyph: CodexGlyph; notes: readonly string[] }>> = {
   devour: {
     glyph: 'suction',
     notes: [
@@ -557,7 +572,7 @@ const ROUTE_PROSE: Record<RouteId, { glyph: CodexGlyph; notes: readonly string[]
  */
 function routeFacts(route: Route): readonly CodexFact[] {
   const form = formForRoute(route);
-  const facts: CodexFact[] = [{ label: '按钮', value: form.controls.map((c) => CONTROL_LABELS[c]).join(' · ') }];
+  const facts: CodexFact[] = [{ label: '按钮', value: form.controls.map(controlLabel).join(' · ') }];
   const pool = mech.mutation.pool;
   if (route.id === 'devour') {
     facts.push(
@@ -589,7 +604,7 @@ function routeFacts(route: Route): readonly CodexFact[] {
  */
 function baseFacts(): readonly CodexFact[] {
   return [
-    { label: '按钮', value: BASE_TYPE.controls.map((c) => CONTROL_LABELS[c]).join(' · ') },
+    { label: '按钮', value: BASE_TYPE.controls.map(controlLabel).join(' · ') },
     { label: '吞噬', value: '没有：碰到敌人不会被吞掉，而是挨打——吃是路线的事' },
     { label: '颜色', value: `随成长阶段：${mech.stages.appearance.map((a) => a.name).join(' → ')}` },
     { label: '成长', value: `吸收 ${mech.stages.absorbToStage2} / ${mech.stages.absorbToStage3} 颗晋升 · 速度 ${mech.stages.speedMultiplier.map((m) => `×${num(m)}`).join(' → ')}` },
@@ -620,8 +635,7 @@ function bubbleCards(): readonly CodexEntry[] {
     },
   ];
   for (const route of ROUTES) {
-    const prose = ROUTE_PROSE[route.id];
-    if (!prose) throw new Error(`codex: no prose for route "${route.id}" -- add it to ROUTE_PROSE`);
+    const prose = ROUTE_PROSE[route.id] ?? { glyph: 'player' as const, notes: [UNLISTED_NOTE] };
     out.push({
       id: `bubble:${route.id}`,
       category: 'bubble',
@@ -662,13 +676,13 @@ function skillEntry(id: SkillId): CodexEntry {
      * player has already read.
      */
     facts,
-    notes: SKILL_NOTES[id],
+    notes: SKILL_NOTES[id] ?? [UNLISTED_NOTE],
     icon: { kind: 'glyph', glyph: id },
   };
 }
 
 /** What each skill is FOR -- the thing its numbers cannot say. */
-const SKILL_NOTES: Record<SkillId, readonly string[]> = {
+const SKILL_NOTES: Partial<Record<SkillId, readonly string[]>> = {
   dash: ['最通用的一条：逃出包围、抢进度、或者单纯从一条追上来的鱼手里跑掉。'],
   decoy: ['唯一能"清场"的技能：它不是杀死鱼，而是让它们转向。', '用来换一口气，不是用来解决问题——鱼还在。'],
   vortex: ['快速变大的捷径。注意变大本身就招灾：鱼从更远处就会来追你。'],
@@ -690,12 +704,12 @@ function talentEntry(id: TalentId): CodexEntry {
       { label: '收益', value: talent.upside },
       { label: '反噬', value: talent.downside },
     ],
-    notes: TALENT_NOTES[id],
+    notes: TALENT_NOTES[id] ?? [UNLISTED_NOTE],
     icon: { kind: 'glyph', glyph: id },
   };
 }
 
-const TALENT_NOTES: Record<TalentId, readonly string[]> = {
+const TALENT_NOTES: Partial<Record<TalentId, readonly string[]>> = {
   'fish-fart': ['它是反射不是技能：被打到才触发，所以没法主动用。', '冷却就是它和"护盾"的区别——没有冷却的话，走进鱼群里就永远不会死。'],
   soda: [`上升 ×${num(mech.talents.soda.ascentMultiplier)}，横向操控 ×${num(mech.talents.soda.steerPenalty)}。`, '更快，也更难控——这是同一个设计里的两个方向，不是一笔好交易。'],
   silt: [`出生体积 ×${num(mech.talents.silt.startVolume, 1)}，受击减免 ${mech.talents.silt.defense} 点。`, '一开始就更结实，但块头大也更容易被优先锁定。'],

@@ -44,6 +44,15 @@ const BUTTONS = [
   { id: 'settings', picture: '按钮-设置', spout: { x: 0.14, y: 0.55 } },
 ] as const;
 
+/**
+ * The stones the menu actually builds: all of `BUTTONS` except the codex's when `menu.codexEnabled` is off. Everything
+ * downstream (the layout, the hit rectangles, the bubble spouts) already reads `this.buttons`, so two stones are laid out
+ * as two and nothing needs to know one is missing.
+ */
+function shippedButtons(): readonly (typeof BUTTONS)[number][] {
+  return BUTTONS.filter((button) => button.id !== 'codex' || mech.menu.codexEnabled);
+}
+
 type ButtonId = (typeof BUTTONS)[number]['id'];
 
 /**
@@ -125,7 +134,7 @@ export class MainMenu {
    *
    * The sprite is placed by its CENTRE, so a state whose art is a pixel or two shorter does not move the button.
    */
-  private readonly buttons: MenuButton[] = BUTTONS.map((button) => ({
+  private readonly buttons: MenuButton[] = shippedButtons().map((button) => ({
     id: button.id,
     picture: button.picture,
     sprite: new Sprite(),
@@ -613,7 +622,10 @@ export class MainMenu {
     settings: { x: number; y: number; w: number; h: number };
     states: Record<ButtonId, ButtonState>;
   } {
-    const [startButton, codexButton, settingsButton] = this.buttons;
+    const byId = (id: ButtonId) => this.buttons.find((button) => button.id === id);
+    const startButton = byId('start');
+    const codexButton = byId('codex');
+    const settingsButton = byId('settings');
     const rectOf = (button: MenuButton | undefined) => ({ ...(button?.rect ?? { x: 0, y: 0, w: 0, h: 0 }) });
     return {
       button: rectOf(startButton),

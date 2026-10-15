@@ -16,7 +16,7 @@ import { audio, type SoundEvent } from './audio';
 import { NumberPopups } from './numberPopups';
 import { massFromEating } from './consumption';
 import { MainMenu } from './menu';
-import { CodexUi } from './codexUi';
+import type { CodexDetail, CodexUi } from './codexUi';
 import { defaultBubbleType, hasVerb, ROUTES } from './bubbleTypes';
 import { sayBanner, sayResults, sayScore, saySkillSlot, saySound, saySplash } from './runEvents';
 import { LevelUpUi } from './levelup';
@@ -127,13 +127,20 @@ class Game {
    * first layout reads the level's name and length off the row it is handed.
    */
   /**
-   * The codex page.
+   * The codex page, or null while its module has not been loaded -- which is every run of the shipped game.
+   *
+   * SWITCHED OFF, NOT DELETED (`menu.codexEnabled`). The page is unfinished and not being iterated, so nothing in the game
+   * reaches it: the menu builds no button for it, and its module (with every card's prose) is a separate chunk that is
+   * fetched only if something asks -- the button when the flag is on, or a test hook. See `loadCodex`.
    *
    * Its own screen rather than a panel over the menu, for the same reason the menu is its own screen: it is a place
    * the player goes, not an interruption of the water. Its layout is re-run by `layout()` on resize and it draws
    * nothing per frame -- see `CodexUi`.
    */
-  private readonly codex = new CodexUi();
+  private codex: CodexUi | null = null;
+  /** The coverage figures for the diagnostics readout, once the module is in. See `codexDetail` in `src/codexUi.ts`. */
+  private codexDetailFn: (() => CodexDetail) | null = null;
+  private codexLoading: Promise<CodexUi> | null = null;
 
   /** Everything drawn in world metres: collectables, the bubble, and its trailing micro-bubbles. */
   private readonly pickups = new Graphics();
@@ -374,7 +381,7 @@ class Game {
      * The pages the menu opens from itself -- the codex and the summary -- are after it for the same reason: they cover
      * the menu they were reached from.
      */
-    this.app.stage.addChild(this.loading.root, this.levelup.root, this.menu.root, this.settings.root, this.codex.root, this.summary.root);
+    this.app.stage.addChild(this.loading.root, this.levelup.root, this.menu.root, this.settings.root, this.summary.root);
     this.levelup.onPick = (index) => this.pickMutation(index);
     this.summary.onMenu = () => this.exitToMenu();
     this.settings.setVolume(audio.getVolume());
@@ -419,7 +426,9 @@ class Game {
     this.menu.onStart = () => {
       void this.beginWithLoading();
     };
-    this.menu.onCodex = () => this.enterCodex();
+    this.menu.onCodex = () => {
+      this.enterCodex().catch((error: unknown) => console.error('codex: could not be opened', error));
+    };
     /**
      * The menu's own settings button, which opens the SAME panel the gear opens.
      *
@@ -447,7 +456,6 @@ class Game {
       this.run.progress.select(levelId);
       this.refreshLevelMenu();
     };
-    this.codex.onBack = () => this.exitCodex();
     /**
      * The menu is handed nothing to draw but levels -- there is no character select any more. `refreshLevelMenu`
      * is the one call that decides what the row shows.
@@ -612,7 +620,7 @@ class Game {
     // The codex swallows every press while it is open: it is a full screen, and a tap in its margin landing in the
     // water would steer a bubble nobody can see.
     if (this.run.phase === 'codex') {
-      this.codex.handlePointerDown(x, y);
+      this.codex?.handlePointerDown(x, y);
       return;
     }
     /**
@@ -747,17 +755,17 @@ class Game {
     return LURE_PROBE.slice(-3);
   }
 
-  /** Test hooks for the codex's preview: its state, a card's rect, and its own pointer path. */
+  /** Test hooks for the codex's preview: its state, a card's rect, and its own pointer path. All need it opened first. */
   get codexStateRef(): { visible: readonly string[] } {
-    return this.codex.state;
+    return this.loadedCodex().state;
   }
 
   codexCardRectRef(id: string): { x: number; y: number; w: number; h: number } | null {
-    return this.codex.cardRectForTest(id);
+    return this.loadedCodex().cardRectForTest(id);
   }
 
   get codexPreviewRef(): boolean {
-    return this.codex.previewForTest;
+    return this.loadedCodex().previewForTest;
   }
 
   handlePointerDownRef(id: number, x: number, y: number): void {
@@ -766,11 +774,11 @@ class Game {
 
   /** Test hook: turn the codex page. */
   codexNextPageRef(): void {
-    this.codex.nextPageForTest();
+    this.loadedCodex().nextPageForTest();
   }
 
-  openCodexRef(): void {
-    this.debugOpenCodexForTest();
+  openCodexRef(): Promise<void> {
+    return this.debugOpenCodexForTest();
   }
 
   /**
@@ -1002,12 +1010,15 @@ class Game {
    * one way this feature can fail to be reachable.
    */
   get codexRef(): CodexUi {
-    return this.codex;
+    return this.loadedCodex();
   }
 
-  /** Test hook: open the codex as the menu button does. */
-  debugOpenCodexForTest(): void {
-    this.enterCodex();
+  /**
+   * Test hook: open the codex as the menu button does -- and the way in while the button is switched off, since it loads
+   * the module itself. Resolves once the page is up.
+   */
+  debugOpenCodexForTest(): Promise<void> {
+    return this.enterCodex();
   }
 
   /**
@@ -1511,7 +1522,7 @@ class Game {
     this.settings.layout(viewport);
     this.levelup.layout(viewport);
     this.menu.layout(viewport);
-    this.codex.layout(viewport);
+    this.codex?.layout(viewport);
     // The loading page is sized in the canvas's own pixels rather than in the play area's: it is a page, not a HUD.
     this.loading.layout(screenW, screenH);
 
@@ -2889,9 +2900,13 @@ class Game {
    * should be able to open while a fuse is burning. The pause panel is where "I need to look something up" belongs,
    * and it already freezes the simulation.
    */
-  private enterCodex(): void {
+  private async enterCodex(): Promise<void> {
+    const codex = await this.loadCodex();
+    // The module may take a moment to arrive the first time; if the menu was left in that moment, do not pull the player
+    // out of whatever they went on to.
+    if (this.run.phase !== 'menu') return;
     this.run.phase = 'codex';
-    this.codex.show();
+    codex.show();
     /**
      * A card is painted ONCE, and a creature whose picture is not in memory at that moment is drawn as its code body
      * instead. The loading screen fetches everything on the way into a RUN -- but the book is reachable straight from
@@ -2908,8 +2923,34 @@ class Game {
     void preloadAssets(allAssetNames(), () => {})
       .then(() => warmAnimations())
       .then(() => {
-        if (this.run.phase === 'codex') this.codex.refresh();
+        if (this.run.phase === 'codex') codex.refresh();
       });
+  }
+
+  /**
+   * Fetch the codex module, build the page and put it on the stage -- once.
+   *
+   * A dynamic `import()` so the page and its prose are a separate chunk that the shipped game never downloads. It goes in
+   * the stage just under the summary page, which is where the static version put it: above the menu it was reached from.
+   */
+  private loadCodex(): Promise<CodexUi> {
+    this.codexLoading ??= import('./codexUi').then((module) => {
+      const codex = new module.CodexUi();
+      codex.onBack = () => this.exitCodex();
+      const stage = this.app.stage;
+      stage.addChildAt(codex.root, stage.getChildIndex(this.summary.root));
+      codex.layout(this.camera.viewport);
+      this.codex = codex;
+      this.codexDetailFn = () => module.codexDetail(codex);
+      return codex;
+    });
+    return this.codexLoading;
+  }
+
+  /** The codex page for a test hook, which must have opened it first: there is no page to read before that. */
+  private loadedCodex(): CodexUi {
+    if (!this.codex) throw new Error('codex: not loaded -- call openCodexRef() first (it is switched off, see menu.codexEnabled)');
+    return this.codex;
   }
 
   /**
@@ -3418,7 +3459,7 @@ private updateBoss(): void {
     if (inMenu) this.menu.update(dt);
     else if (menuPage) this.menu.updateBackdrop(dt);
     // The codex draws nothing per frame: a tab press, a page turn and a resize each schedule their own redraw.
-    this.codex.root.visible = this.run.phase === 'codex';
+    if (this.codex) this.codex.root.visible = this.run.phase === 'codex';
     /**
      * The loading page shows for exactly as long as the phase says, rather than being turned on and off by the loader.
      *
@@ -4170,6 +4211,7 @@ private updateBoss(): void {
       damagePopups: this.damagePopups,
       finishBanner: this.finishBanner,
       codex: this.codex,
+      codexDetail: this.codexDetailFn,
       splash: this.splash,
       audioMuted: this.audioMuted,
       fps: this.fps,

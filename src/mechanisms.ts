@@ -1532,6 +1532,11 @@ export interface Mechanisms {
      */
     buttonHeight: number;
     buttonGap: number;
+    /**
+     * Whether the menu has a codex stone at all. False (the shipped value) builds no such button AND never loads the codex
+     * module: it is switched off, not deleted, and nothing the game does depends on it. See `Game.loadCodex`.
+     */
+    codexEnabled: boolean;
     /** How far down the whole stone moves while pressed, in design pixels. */
     buttonPressDrop: number;
     /**
@@ -3131,6 +3136,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   })),
   { path: 'menu.buttonHeight', check: anyNumber, describe: 'the shared height of the three stones, in design pixels' },
   { path: 'menu.buttonGap', check: anyNumber, describe: 'design pixels' },
+  { path: 'menu.codexEnabled', check: (v) => typeof v === 'boolean', describe: 'true or false: whether the main menu has a codex button (false also keeps the codex module from loading)' },
   { path: 'menu.buttonPressDrop', check: anyNumber, describe: 'design pixels' },
   { path: 'menu.groupCentreRatio', check: anyNumber, describe: 'a fraction of the screen height' },
   { path: 'menu.titleWidthRatio', check: anyNumber, describe: 'a fraction of the lane width' },

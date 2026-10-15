@@ -87,7 +87,16 @@ const geometry = (page: Page) =>
 const openCodex = (page: Page) =>
   page.evaluate(() => (window as unknown as { __GB: { game: { debugOpenCodexForTest: () => void } } }).__GB.game.debugOpenCodexForTest());
 
-test.describe('the codex', () => {
+/**
+ * SKIPPED while the codex is switched off (`menu.codexEnabled` is false): the menu has no button for it, its module is not
+ * loaded, and its coverage is no longer a compile-time rule -- a creature, skill or talent with no card text reads "未收录"
+ * rather than failing the build, so the "every one has a card" test below would fail for reasons that are now by design.
+ *
+ * To bring the page back: set `menu.codexEnabled` to true, write the missing prose rows in `src/codex.ts`, then change
+ * `test.describe.skip` below to `test.describe`. Note `diagnostics.codex` is now `{ enabled, loaded, open, detail }` and the
+ * figures these tests read (`category`, `entryIds`, `gameHazards`, ...) are under `detail`, which is null until it is loaded.
+ */
+test.describe.skip('the codex', () => {
   test('opens from the menu button, and the back button returns to the menu', async ({ page }) => {
     await boot(page);
 

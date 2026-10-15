@@ -407,7 +407,8 @@ test.describe('screen captures @screenshots', () => {
     // turn to it.
     ['bubble', 'codex-bubble-devour'],
   ] as const) {
-    test(`the codex, on the ${tab} tab @screenshots`, async ({ page }, testInfo) => {
+    // Skipped while the codex is switched off -- see the note on `test.describe.skip` in codex.spec.ts.
+    test.skip(`the codex, on the ${tab} tab @screenshots`, async ({ page }, testInfo) => {
       await boot(page);
       await page.evaluate(async (which) => {
         const g = (window as unknown as {
@@ -439,7 +440,7 @@ test.describe('screen captures @screenshots', () => {
    * The tab now documents the base bubble and every route, and the point of the capture is that page two is
    * reachable by a reader: a tab that listed only the base would look exactly the same on page one.
    */
-  test('the codex, on the routes page @screenshots', async ({ page }, testInfo) => {
+  test.skip('the codex, on the routes page @screenshots', async ({ page }, testInfo) => {
     await boot(page);
     await page.evaluate(async () => {
       const g = (window as unknown as {

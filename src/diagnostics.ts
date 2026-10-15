@@ -1,17 +1,15 @@
+import type { CodexDetail } from './codexUi';
 import type { GameSnapshot } from './snapshot';
 import { audio } from './audio';
 import { bubbleLook } from './bubbleLook';
-import { BASE_TYPE, hasControl, ROUTES } from './bubbleTypes';
-import { CODEX_CATEGORIES, codexEntries, entriesFor } from './codex';
-import { KIND_TUNING, type HazardKind } from './hazards';
+import { hasControl } from './bubbleTypes';
+import type { HazardKind } from './hazards';
 import type { LateralAuthority } from './lateral';
 import { LEVEL, TIMELINE, currentSpawnBlocks, secondsPerScreenSeries } from './levels';
 import { mech } from './mechanisms';
 import { rageFraction, rageStageName } from './rage';
-import { SKILLS } from './skills';
 import { stageName, stageRadiusFraction, type StageAppearance } from './stages';
 import { suctionRadiusFraction } from './suction';
-import { TALENTS } from './talents';
 import { buildLabel, GIT_DIRTY, GIT_HASH, APP_VERSION } from './version';
 
 /**
@@ -39,33 +37,17 @@ export function diagnosticsOf(g: GameSnapshot): {
      */
     build: { version: string; hash: string; dirty: boolean; label: string };
     /**
-     * The codex page: whether it is open, and what it is showing.
+     * The codex page: whether it is switched on, loaded and open, and -- once loaded -- what it is showing.
      *
-     * `entries` is the count PER CATEGORY as the game's own data reports it, which is what a probe needs to assert
-     * that every creature, skill and talent has somewhere to be read about.
+     * `detail` is null while the module is not loaded, which is every run of the shipped game (`menu.codexEnabled` is off and
+     * the module is never fetched), so this readout does not pull the codex into the page either. Its figures come from
+     * `codexDetail` in `src/codexUi.ts`.
      */
     codex: {
+      enabled: boolean;
+      loaded: boolean;
       open: boolean;
-      category: string;
-      page: number;
-      pages: number;
-      total: number;
-      visible: readonly string[];
-      entries: Record<string, number>;
-      /** Every entry id the page has, so a probe can check coverage against the game's own lists below. */
-      entryIds: readonly string[];
-      /**
-       * What the GAME actually has, from the modules that define it.
-       *
-       * Read from `KIND_TUNING`, `SKILLS` and `TALENTS` rather than from the codex, which is the whole point: a
-       * creature added to the game but not to the codex shows up as a difference between these and `entryIds`, and
-       * that is a failing test rather than a page nobody notices is out of date.
-       */
-      gameHazards: readonly string[];
-      gameSkills: readonly string[];
-      gameTalents: readonly string[];
-      /** The bubble types the game offers, so the codex's coverage of them is checkable. */
-      gameRoutes: readonly string[];
+      detail: CodexDetail | null;
     };
     frames: number;
     elapsed: number;
@@ -274,25 +256,10 @@ export function diagnosticsOf(g: GameSnapshot): {
     return {
       build: { version: APP_VERSION, hash: GIT_HASH, dirty: GIT_DIRTY, label: buildLabel() },
       codex: {
+        enabled: mech.menu.codexEnabled,
+        loaded: g.codex !== null,
         open: g.phase === 'codex',
-        category: g.codex.state.category,
-        page: g.codex.state.page,
-        pages: g.codex.state.pages,
-        total: g.codex.state.total,
-        visible: g.codex.state.visible,
-        entries: Object.fromEntries(CODEX_CATEGORIES.map((c) => [c.id, entriesFor(c.id).length])),
-        entryIds: codexEntries().map((e) => e.id),
-        gameHazards: Object.keys(KIND_TUNING),
-        gameSkills: SKILLS.map((s) => s.id),
-        gameTalents: TALENTS.map((t) => t.id),
-        /**
-         * The forms the codex's bubble page must cover: the base bubble and every route.
-         *
-         * From `BASE_TYPE` and `ROUTES` -- what the game actually has -- rather than from the codex, which is
-         * the whole point: a route added to the game but not to the codex shows up as a difference between this
-         * and `entryIds`, and that is a failing test rather than a page nobody notices is out of date.
-         */
-        gameRoutes: [BASE_TYPE.id, ...ROUTES.map((r) => r.id)],
+        detail: g.codexDetail ? g.codexDetail() : null,
       },
       frames: g.frameCount,
       elapsed: g.elapsed,

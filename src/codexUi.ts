@@ -1,12 +1,16 @@
 import { CanvasTextMetrics, Container, Graphics, Text } from 'pixi.js';
 import { makeLabel } from './background';
 import { mech } from './mechanisms';
+import { BASE_TYPE, ROUTES } from './bubbleTypes';
 import { HazardField, KIND_TUNING, paintHazards, type HazardKind } from './hazards';
+import { SKILLS } from './skills';
+import { TALENTS } from './talents';
 import { ObstacleField, paintObstacles } from './obstacles';
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
 import {
   CODEX_CATEGORIES,
+  codexEntries,
   entriesFor,
   iconColour,
   pageCount,
@@ -959,3 +963,44 @@ function inside(rect: Rect, x: number, y: number): boolean {
   return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
 }
 
+
+/**
+ * What the codex shows and what the game has, for the diagnostics readout and the (currently skipped) coverage spec.
+ *
+ * Lives HERE and not in `diagnostics.ts` so the readout does not import the codex: this module is only ever loaded when
+ * `menu.codexEnabled` is on, and a static import from the diagnostics would put it, and every card's prose, back into the
+ * first screen's bundle. `Game.codexDetail` hands the readout this function once the module has loaded.
+ *
+ * The `game*` lists are read from the modules that DEFINE the content rather than from the codex, so a creature, skill,
+ * talent or route the game has and the book does not shows up as a difference against `entryIds`.
+ */
+export interface CodexDetail {
+  category: string;
+  page: number;
+  pages: number;
+  total: number;
+  visible: readonly string[];
+  entries: Record<string, number>;
+  entryIds: readonly string[];
+  gameHazards: readonly string[];
+  gameSkills: readonly string[];
+  gameTalents: readonly string[];
+  gameRoutes: readonly string[];
+}
+
+export function codexDetail(ui: CodexUi): CodexDetail {
+  const state = ui.state;
+  return {
+    category: state.category,
+    page: state.page,
+    pages: state.pages,
+    total: state.total,
+    visible: state.visible,
+    entries: Object.fromEntries(CODEX_CATEGORIES.map((c) => [c.id, entriesFor(c.id).length])),
+    entryIds: codexEntries().map((e) => e.id),
+    gameHazards: Object.keys(KIND_TUNING),
+    gameSkills: SKILLS.map((s) => s.id),
+    gameTalents: TALENTS.map((t) => t.id),
+    gameRoutes: [BASE_TYPE.id, ...ROUTES.map((r) => r.id)],
+  };
+}
