@@ -1595,10 +1595,22 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
  *
  * `contactPlain` is shared by seven kinds on purpose and not by accident: being ordinary contact damage is the rule for
  * a negative food below its tier, and the consequence that makes it interesting is INSIDE (see `stomachEffect`).
+ *
+ * ---------------------------------------------------------------------------------------------
+ * CONTACT DOES NOT MOVE THE CREATURE
+ * ---------------------------------------------------------------------------------------------
+ * Most of these used to end by shoving their own body clear -- `h.y -= r * 2`, "so one cannot immediately re-hit".
+ * That shove was never the anti-repeat rule it claimed to be: the invulnerability window is (`ctx.invulnerable`, and
+ * `Run.takeHit` behind it). What it actually did was displace the creature, and the more committed the creature's own
+ * motion, the worse that read -- the anglerfish lunges at the player and was knocked off its own curve by the bubble
+ * it had just bitten, which looks like the bite being deflected rather than landing.
+ *
+ * So a touch is now exactly "the player pays and is briefly untouchable", and nothing more. A creature that moves
+ * BECAUSE of the contact still says so itself, per kind and deliberately: the foam breaking up, the grit being spent
+ * (both `h.flee`), the crab's `fired`, the trash bag's grip. Those are verbs; the shove was bookkeeping.
  */
 type ContactEffect = (field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]) => void;
 function contactFish(field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
-  const r = ctx.laneWidth * h.radiusFraction;
   // COMEDY: a fish that crosses a bait bubble gets distracted and loses the player. This is an
   // OCCASIONAL beat, not the default outcome -- if a chase usually ends in the fish wandering
   // off, the swarm stops being a threat and the joke replaces the mechanic.
@@ -1610,13 +1622,10 @@ function contactFish(field: HazardField, h: Hazard, ctx: HazardContext, effects:
   }
   if (ctx.invulnerable || h.baitedUntil > ctx.elapsed) return;
   effects.push({ kind: 'fish', damage: 1, broke: false });
-  // Bounce it away so one fish cannot immediately re-hit.
-  h.y -= r * 2;
   return;
 }
 
 function contactJelly(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
-  const r = ctx.laneWidth * h.radiusFraction;
   if (ctx.invulnerable) return;
   /**
    * A sting: it SLOWS you AND costs a hit point.
@@ -1633,9 +1642,9 @@ function contactJelly(_field: HazardField, h: Hazard, ctx: HazardContext, effect
     slowFactor: tuning.hazardSlowFactor,
     broke: false,
   });
-  // COMEDY: being bunted squashes it.
+  // COMEDY: being bunted squashes it. The squash is the whole reaction, and it is a squash rather than a
+  // shove -- the jellyfish stays exactly where it is.
   h.squashed = 1;
-  h.y -= r * 1.5;
   return;
 }
 
@@ -1659,19 +1668,14 @@ function contactCrab(_field: HazardField, h: Hazard, _ctx: HazardContext, effect
 }
 
 function contactPlain(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
-  const r = ctx.laneWidth * h.radiusFraction;
   if (ctx.invulnerable) return;
   effects.push({ kind: h.kind, damage: 1, broke: false });
-  // Bounce it away so one cannot immediately re-hit, as a fish does.
-  h.y -= r * 2;
   return;
 }
 
-function contactShrimp(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
-  const r = ctx.laneWidth * h.radiusFraction;
+function contactShrimp(_field: HazardField, _h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
   if (ctx.invulnerable) return;
   effects.push({ kind: 'shrimp', damage: contactDamageOf('shrimp'), broke: false });
-  h.y -= r * 2;
   return;
 }
 
@@ -1756,11 +1760,8 @@ function contactMineral(_field: HazardField, h: Hazard, ctx: HazardContext, effe
 }
 
 function contactBoss(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
-  const r = ctx.laneWidth * h.radiusFraction;
   if (ctx.invulnerable) return;
   effects.push({ kind: h.kind, damage: contactDamageOf(h.kind), broke: false });
-  // Bounce it away so one cannot immediately re-hit, as a fish does.
-  h.y -= r * 2;
   return;
 }
 
@@ -1803,7 +1804,7 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   foam: contactFoam,
   rain: contactRain,
   // THE GUNNERS: touching one is the same event as touching an eel -- a bite from a thing whose real threat
-  // is already in the water. The plain rule (1 damage + the bounce that stops a re-hit) is the whole of it.
+  // is already in the water. The plain rule (1 damage, and nothing else) is the whole of it.
   archer: contactPlain,
   pistol: contactPlain,
   puffer: contactPlain,
