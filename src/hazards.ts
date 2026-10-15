@@ -2245,9 +2245,14 @@ export class HazardField {
           this.schools.delete(id);
           continue;
         }
+        // Nobody to wait for means the leader walks at its own pace.
+        if (!members) {
+          school.inReach = Number.POSITIVE_INFINITY;
+          school.ahead = 0;
+        }
         advanceLeader(school, dt, ctx.laneWidth, screen);
         if (members) steerSchool(members, school, dt, ctx.laneWidth);
-        advanceDecor(school, dt, ctx.laneWidth, { min: ctx.min, max: ctx.max });
+        advanceDecor(school, members ?? [], dt, ctx.laneWidth, { min: ctx.min, max: ctx.max });
       }
     }
     for (const h of this.hazards) {

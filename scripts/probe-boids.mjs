@@ -179,11 +179,15 @@ try {
     check('placed · one school', field.schools.size, 1);
     check('placed · 120 fish, all members', fish.filter((h) => h.boid).length, 120);
     check('placed · no fish carries a spline of its own', fish.every((h) => h.path === null), true);
+    // The cloud is centred one radius BEHIND the leader, so the leader is at its front edge.
+    const cloudX = leaderStart.x - leaderStart.dirX * cfg.spawnSpread * LANE;
+    const cloudY = leaderStart.y - leaderStart.dirY * cfg.spawnSpread * LANE;
     check(
-      'placed · all born inside the cloud round the leader',
-      fish.every((h) => Math.hypot(h.x - leaderStart.x, h.y - leaderStart.y) <= cfg.spawnSpread * LANE + 1e-6),
+      'placed · all born inside the cloud behind the leader',
+      fish.every((h) => Math.hypot(h.x - cloudX, h.y - cloudY) <= cfg.spawnSpread * LANE + 1e-6),
       true,
     );
+    check('placed · and none is ahead of the leader to begin with', fish.every((h) => (h.x - leaderStart.x) * leaderStart.dirX + (h.y - leaderStart.y) * leaderStart.dirY <= 1e-6), true);
     check('placed · born off the lane, where a school starts', fish.every((h) => h.x > LANE), true);
     check('placed · one variety, the block\'s', new Set(fish.map((h) => h.variety)).size, 1);
 
@@ -195,8 +199,6 @@ try {
     // Individuality: the three numbers that stop it being a rigid body, and the depth that orders it.
     const speedVars = fish.map((h) => h.boid.speedVar);
     check('variation · every fish has its own speed, within the jitter', [new Set(speedVars).size > 100, Math.min(...speedVars) >= 1 - cfg.speedJitter - 1e-9, Math.max(...speedVars) <= 1 + cfg.speedJitter + 1e-9], [true, true, true]);
-    const homes = fish.map((h) => h.boid.home);
-    check('variation · every fish has its own place in the band, inside it', [new Set(homes).size > 100, Math.max(...homes.map(Math.abs)) <= cfg.bandHalfWidth + 1e-9], [true, true]);
     const depths = fish.map((h) => h.boid.d);
     check('depth · far first, near last, evenly spread, inside 0..1', [depths.every((d, i) => i === 0 || d < depths[i - 1]), depths[0] < 1, depths[depths.length - 1] > 0], [true, true, true]);
     check('depth · the far ones are tinted, the near ones are not', [depthTint(0) === 0xffffff, depthTint(1) !== 0xffffff, depthTint(1) < depthTint(0)], [true, true, true]);
@@ -212,6 +214,7 @@ try {
     const dt = 1 / 30;
     let sawNaN = false;
     const samples = {};
+    const school0 = leaderStart;
     const SECONDS = DEBUG_LEVEL.paths.straight.seconds;
     const marks = [SECONDS * 0.25, SECONDS * 0.5, SECONDS * 0.75];
     let decorEver = 0;
@@ -241,7 +244,7 @@ try {
         if (s.decor.some((d) => !Number.isFinite(d.x) || !Number.isFinite(d.y))) sawNaN = true;
         decorEver = Math.max(decorEver, s.decor.length);
       }
-      for (const mark of marks) if (Math.abs(t - mark) < dt / 2) samples[mark] = stats(field);
+      for (const mark of marks) if (!samples[mark] && school0.elapsed >= mark && field.hazards.some((h) => h.boid && !h.flee)) samples[mark] = { ...stats(field), leaderX: school0.x };
     }
     check('swim · nothing went NaN', sawNaN, false);
     // 0.8 lane widths a second is the fastest a fish may go (`maxSpeed`), so a frame at 30 fps is under 0.03 of a lane; a
@@ -259,8 +262,10 @@ try {
     atLeast('swim · it is NOT a rigid body: the fish do not all go the same speed (lane widths per second)', s6.speedSd / LANE, 0.005);
     check('swim · the centre travels left', s3.cx > s6.cx && s6.cx > s9.cx, true);
     const px = DEBUG_LEVEL.paths.straight.points;
-    const leaderX = (tt) => LANE * (px[0].x + ((px[px.length - 1].x - px[0].x) * tt) / SECONDS);
-    atMost('swim · the centre keeps up with the leader halfway along (lane widths)', Math.abs(s6.cx - leaderX(m6)) / LANE, 0.3);
+    void px;
+    // The leader waits for its school and stays at the front of it: the school's centre is behind the leader, by no more than
+    // the school is long. (Before the leader waited, the centre was 0.66 of a lane from it by halfway, and growing.)
+    atMost('swim · the school is not left behind: its centre is within its own length of the leader (lane widths)', Math.abs(s6.cx - s6.leaderX) / LANE, s6.length / LANE);
     atLeast('shape · length over width halfway along', s6.length / s6.width, 1.5);
 
     check('end · every fish left the water by itself', field.hazards.length, 0);
@@ -273,6 +278,9 @@ try {
     }
     check('end · and the school was dropped once the background had left too', field.schools.size, 0);
     atMost('end · within a minute', t + after, 60);
+    // The leader waits for its school, so the crossing takes at least the path's seconds -- but not forever.
+    atLeast('wait · the crossing took at least the path\'s seconds', t, SECONDS * 0.99);
+    atMost('wait · and no more than twice as long (seconds)', t, SECONDS * 2);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -296,6 +304,65 @@ try {
     atMost('wobble · off, the leader stays on the line (lane widths)', lateral(0), 1e-6);
     atLeast('wobble · on, the leader leaves the line (lane widths)', lateral(cfg.wobbleAmplitude), cfg.wobbleAmplitude * 0.3);
     atMost('wobble · and never by more than its amplitude', lateral(cfg.wobbleAmplitude), cfg.wobbleAmplitude + 1e-6);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The leader reaches only the fish near it, and only turns their velocity -- no spring to a position.
+  // ---------------------------------------------------------------------------------------------
+  {
+    const path = DEBUG_LEVEL.paths.straight;
+    const lone = (distanceLane, away) => {
+      // One fish alone in the school (nothing for alignment, cohesion or separation to act on), `distanceLane` from the
+      // leader, at rest relative to the water. What it does next is the leader's doing and nobody else's.
+      const f = new HazardField();
+      const school = boidsModule.createSchool(1, path, 400, LANE, 800, 0, 0);
+      school.vx = -100;
+      school.vy = 0;
+      school.dirX = -1;
+      school.dirY = 0;
+      const h = f.spawnForTest('fish', school.x + away * distanceLane * LANE, school.y);
+      h.boid = { school: 1, vx: 0, vy: 0, speedVar: 1, d: 0.5 };
+      boidsModule.steerSchool([h], school, 1 / 30, LANE);
+      return { vx: h.boid.vx, vy: h.boid.vy, x: h.x, y: h.y };
+    };
+    const inside = lone(cfg.leaderReach * 0.3, 1);
+    check('leader · a fish inside its reach is steered toward the leader\'s velocity', inside.vx < -1, true);
+    // Between the reach and the tether: nothing -- not its velocity, and (checked on the position terms by there being no
+    // force at all) not a pull. `minSpeed` still keeps it moving, so compare against the floor.
+    const between = lone((cfg.leaderReach + cfg.leaderTether) / 2, 1);
+    check('leader · a fish between the reach and the tether is not touched by it', Math.abs(between.vx) <= cfg.minSpeed * LANE + 1e-6, true);
+    const beyond = lone(cfg.leaderTether * 1.8, 1);
+    check('leader · a fish far beyond the tether is pulled back toward it', beyond.vx < -1, true);
+    const beyondOther = lone(cfg.leaderTether * 1.8, -1);
+    check('leader · from the other side too', beyondOther.vx > 1, true);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The background swims with the real fish nearest to it, and not with the leader.
+  // ---------------------------------------------------------------------------------------------
+  {
+    const field = makeField(21);
+    const school = [...field.schools.values()][0];
+    const dt = 1 / 30;
+    for (let t = 0; t < 2; t += dt) field.update(dt, ctxFor(LANE * 0.5, 400, t));
+    // The leader teleports: a background tied to it would jump, one tied to the real fish would not notice.
+    const before = school.decor.map((d) => ({ x: d.x, y: d.y }));
+    school.x += 80 * LANE / 100;
+    school.y += 60;
+    const members = field.hazards.filter((h) => h.boid && !h.flee);
+    boidsModule.advanceDecor(school, members, dt, LANE, { min: VIEW.min, max: VIEW.max });
+    const moved = school.decor.map((d, i) => Math.hypot(d.x - before[i].x, d.y - before[i].y));
+    atMost('background · does not jump when the leader does: the largest step in a frame (lane widths)', Math.max(...moved) / LANE, 0.06);
+
+    // And it is going the way the real fish round it are going.
+    let worst = 0;
+    for (const d of school.decor) {
+      const near = [...members].sort((a, b) => (a.x - d.x) ** 2 + (a.y - d.y) ** 2 - ((b.x - d.x) ** 2 + (b.y - d.y) ** 2)).slice(0, cfg.decor.neighbours);
+      const vx = near.reduce((s, m) => s + m.boid.vx, 0) / near.length;
+      const vy = near.reduce((s, m) => s + m.boid.vy, 0) / near.length;
+      worst = Math.max(worst, Math.hypot(d.vx - vx, d.vy - vy) / LANE);
+    }
+    atMost('background · its velocity is its nearest real fish\'s: the worst difference (lane widths per second)', worst, 0.35);
   }
 
   // ---------------------------------------------------------------------------------------------

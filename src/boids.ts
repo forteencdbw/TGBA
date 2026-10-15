@@ -32,15 +32,31 @@ import { pathPoint } from './spline';
  *                dimensions, see below
  *   alignment    the velocity is pulled toward the neighbours' average
  *   cohesion     the position is pulled toward the neighbours' centroid
- *   leader       a spring on the position and a damper on the velocity, toward the leader -- a stiffer spring across the
- *                leader's heading than along it, which is what makes the school long rather than round
+ *   leader       the fish NEAR the leader turn their velocity toward the leader's. Only those: a fish further than
+ *                `leaderReach` feels nothing from the leader at all, and follows its neighbours
  *
  * They are ACCELERATIONS, summed and then capped at `maxAccel`, and the speed is clamped between a floor and a ceiling.
  *
- * WHAT MAKES IT NOT A RIGID BODY: every fish has its own `speedVar` (the leader's speed it tries to match, so a fast one
- * drifts forward through the cloud and falls back as the spring pulls it in), its own `home` (the place ACROSS the
- * stream it is pulled to, instead of the centreline, so the cloud is a band with an inside), and the leader itself
- * snakes sideways on a slow noise (`wobble*`).
+ * WHY THE LEADER ONLY REACHES A FEW FISH: the first version pulled every fish toward the leader's position and velocity
+ * with a spring, each frame. When the leader turned, all of the fish received the same instruction in the same frame, so
+ * the whole school turned at once (measured: head and tail within 0.03 s of each other) and sat in a fixed shape round a
+ * point, which is not what a school does. A real school turns because the fish at the front turn and the ones behind
+ * them follow what they see -- the turn is passed back, fish to fish, at the speed `alignmentRate` carries it. So the
+ * leader steers the few inside its reach, and everything else is the neighbours' business.
+ *
+ * Far past `leaderReach`, at `leaderTether`, a weak pull toward the leader's position takes over: nothing in a school
+ * that only looks at its neighbours keeps a straggler from being left behind for good, and a fish that has been left
+ * behind by the length of a lane is not part of the school any more. It is zero everywhere inside `leaderTether`.
+ *
+ * WHY THE NEIGHBOURS ARE THE NEAREST FEW, AND NOT EVERYONE WITHIN A DISTANCE: a metric radius makes the number of fish a fish
+ * listens to depend on how crowded it is. In a dense school every fish hears most of the school, the average it aligns to is
+ * nearly the whole school's, and a turn arrives everywhere at about once -- measured: a tail-to-head delay of 0.03 s, with
+ * the same rules giving 1.9 s in a thin school. Real flocks listen to a fixed number of nearest neighbours (about seven)
+ * wherever they are, so the turn travels at one speed whatever the density. `neighbourRadius` is still there, as the
+ * furthest a neighbour can be and still count.
+ *
+ * WHAT MAKES IT NOT A RIGID BODY: every fish has its own `speedVar` (the leader's speed it tries to match while it is in
+ * reach), and the leader itself snakes sideways on a slow noise (`wobble*`).
  *
  * ---------------------------------------------------------------------------------------------
  * DEPTH, WHICH IS FIXED
@@ -60,29 +76,33 @@ import { pathPoint } from './spline';
  * through or around, like a fish string on a spline, only with a body.
  */
 
-/** One real member's state: its school, its velocity in metres per second, and the three numbers that make it itself. */
+/** One real member's state: its school, its velocity in metres per second, and the two numbers that make it itself. */
 export interface BoidState {
   school: number;
   vx: number;
   vy: number;
-  /** The fraction of the leader's speed this fish tries to match: 1 +/- `speedJitter`. */
+  /** The fraction of the leader's speed this fish tries to match while it is in reach: 1 +/- `speedJitter`. */
   speedVar: number;
-  /** Where ACROSS the stream it wants to be, as a signed lane fraction from the leader's line. */
-  home: number;
   /** Depth, 0 (near) to 1 (far). Fixed for life. */
   d: number;
 }
 
-/** One background fish: a point that follows a place relative to the leader. Nothing else about it is simulated. */
+/**
+ * One background fish: it swims with the real fish nearest to it, and keeps its own place relative to them.
+ *
+ * Not a hazard and not simulated beyond that -- no forces, nothing shoots it. What it follows is the nearest few REAL
+ * fish (`decor.neighbours`), not the leader, so a turn reaches the background by the same route it reaches the rest of the
+ * school: from the front, fish to fish.
+ */
 export interface DecorFish {
   x: number;
   y: number;
-  /** The place it wants, as lane fractions along and across the leader's heading. */
+  /** Its velocity in metres per second: it takes the average of the real fish round it, and keeps it when there are none. */
+  vx: number;
+  vy: number;
+  /** The place it keeps relative to the real fish round it, as lane fractions along and across THEIR heading. */
   along: number;
   across: number;
-  /** Where it is BORN, as a metre offset from the leader: a small cloud, like the real fish's. Faded out as it unfolds. */
-  bornX: number;
-  bornY: number;
   /** Its own phase and the two breathing frequencies (rad/s), so no two move together. */
   phase: number;
   freqA: number;
@@ -117,12 +137,20 @@ export interface School {
   finished: boolean;
   /** Where the sideways snaking is in its cycle, random per school so two schools never snake together. */
   wobblePhase: number;
+  /**
+   * How many real fish were inside the leader's reach on the last step: what the leader waits on.
+   *
+   * Infinity while there is nobody to wait for (a fresh school, or one with no real fish left), so the leader walks at its own
+   * pace then. See `advanceLeader`.
+   */
+  inReach: number;
+  /** How many real fish were AHEAD of the leader (along its heading) on the last step: the other thing it waits on. */
+  ahead: number;
   /** How many real fish have been seeded, which is how `seedMember` knows which depth is next. */
   seeded: number;
   /** The background fish. */
   decor: DecorFish[];
-  /** The leader's last speed and the time it stopped, so decor fish can keep swimming OUT once the leader parks. */
-  exitSpeed: number;
+  /** Seconds since the leader parked, which keeps the background's clock (its tails, its breathing) running. */
   exitElapsed: number;
 }
 
@@ -195,9 +223,10 @@ export function createSchool(
     dirY: 0,
     finished: false,
     wobblePhase: Math.random() * Math.PI * 2,
+    inReach: Number.POSITIVE_INFINITY,
+    ahead: 0,
     seeded: 0,
     decor: [],
-    exitSpeed: 0,
     exitElapsed: 0,
   };
   const here = leaderAt(school, 0, laneWidth, screen);
@@ -217,10 +246,10 @@ export function createSchool(
     const bornRadius = mech.hazards.boids.spawnSpread * laneWidth * Math.sqrt(Math.random());
     const bornAngle = Math.random() * Math.PI * 2;
     const fish: DecorFish = {
-      x: 0,
-      y: 0,
-      bornX: Math.cos(bornAngle) * bornRadius,
-      bornY: Math.sin(bornAngle) * bornRadius,
+      x: school.x + Math.cos(bornAngle) * bornRadius,
+      y: school.y + Math.sin(bornAngle) * bornRadius,
+      vx: school.vx,
+      vy: school.vy,
       along: (Math.random() - 0.5) * decor.alongSpread,
       across: (Math.random() * 2 - 1) * decor.bandHalfWidth,
       phase: Math.random() * Math.PI * 2,
@@ -229,9 +258,6 @@ export function createSchool(
       follow: decor.follow * (1 + (Math.random() * 2 - 1) * decor.followJitter),
       clock: Math.random() * 4,
     };
-    const at = decorTarget(school, fish, laneWidth);
-    fish.x = at.x;
-    fish.y = at.y;
     school.decor.push(fish);
   }
   return school;
@@ -248,7 +274,7 @@ function setDirection(school: School): void {
 
 /**
  * Where a new real member is born, and how it is moving: somewhere in the cloud around the leader, at the leader's
- * velocity -- plus its own three numbers.
+ * velocity -- plus its own two numbers.
  *
  * Uniform over the DISC (the square root), not over the radius: a uniform radius piles the fish at the centre, and a
  * school that is born as a dense ball then bursts apart under its own separation.
@@ -267,34 +293,50 @@ export function seedMember(
   const angle = Math.random() * Math.PI * 2;
   const index = school.seeded++;
   const speedVar = 1 + (Math.random() * 2 - 1) * cfg.speedJitter;
+  // The cloud is centred one radius BEHIND the leader, so the leader is at its front edge. A cloud centred on the leader
+  // puts half the school ahead of it, and a leader that stays at the front (see `advanceLeader`) would then wait for fish
+  // that never come back.
+  const behind = cfg.spawnSpread * laneWidth;
   return {
-    x: school.x + Math.cos(angle) * radius,
-    y: school.y + Math.sin(angle) * radius,
+    x: school.x - school.dirX * behind + Math.cos(angle) * radius,
+    y: school.y - school.dirY * behind + Math.sin(angle) * radius,
     vx: school.vx * speedVar,
     vy: school.vy * speedVar,
     boid: {
       vx: school.vx * speedVar,
       vy: school.vy * speedVar,
       speedVar,
-      home: (Math.random() * 2 - 1) * cfg.bandHalfWidth,
       d: 1 - (index + 0.5) / Math.max(1, count),
     },
   };
 }
 
-/** Walk the leader along the spline. It stops at the end rather than leaving: see `steerSchool` for how the school goes. */
+/**
+ * Walk the leader along the spline. It stops at the end rather than leaving: see `steerSchool` for how the school goes.
+ *
+ * THE LEADER STAYS AT THE FRONT OF ITS SCHOOL. It only steers the fish inside its reach, so it has to be where it can steer
+ * the ones that matter:
+ *   - if it walked away from the school it would soon have nobody in reach, and the school would go on in a straight line
+ *     on its momentum -- on a bend, straight off the path. So it slows when fewer than `leaderWantFish` real fish are in reach.
+ *   - if it fell back into the school, the fish AHEAD of it would be out of its reach and have no neighbours in front to
+ *     follow: the front of the school would be the last part to turn, which is backwards. So it slows when more than
+ *     `leaderAllowAhead` real fish are ahead of it, and lets the school's front come back to it.
+ * Either way the pace drops to at least `leaderWaitFloor` of its own. The path takes as long as the school takes, which is
+ * never less than `seconds`.
+ */
 export function advanceLeader(school: School, dt: number, laneWidth: number, screen: number): void {
   if (dt <= 0) return;
   if (school.finished) {
     school.exitElapsed += dt;
     return;
   }
-  school.elapsed += dt;
+  const cfg = mech.hazards.boids;
+  const reachPace = Math.min(1, school.inReach / Math.max(1, cfg.leaderWantFish));
+  const aheadPace = school.ahead <= cfg.leaderAllowAhead ? 1 : cfg.leaderAllowAhead / school.ahead;
+  const pace = Math.max(cfg.leaderWaitFloor, Math.min(reachPace, aheadPace));
+  school.elapsed += dt * pace;
   const t = Math.min(1, school.elapsed / school.seconds);
   const at = leaderAt(school, t, laneWidth, screen);
-  // The speed BEFORE this step, kept for the end: the frame the path runs out is usually a frame in which the leader has
-  // nowhere left to go, so its velocity from that frame alone is zero and says nothing about how fast it was swimming.
-  const priorSpeed = Math.hypot(school.vx, school.vy);
   school.vx = (at.x - school.x) / dt;
   school.vy = (at.y - school.y) / dt;
   school.x = at.x;
@@ -302,58 +344,110 @@ export function advanceLeader(school: School, dt: number, laneWidth: number, scr
   setDirection(school);
   if (t >= 1) {
     school.finished = true;
-    school.exitSpeed = Math.max(priorSpeed, Math.hypot(school.vx, school.vy));
     school.exitElapsed = 0;
+    // The leader parks, but its heading is kept: a school leaves the way it was going, and `dirX` is what the fish and the
+    // background are measured against.
     school.vx = 0;
     school.vy = 0;
   }
 }
 
 /**
- * Where a decor fish wants to be, in the water's metres.
+ * Move every background fish, and retire the ones that have left.
  *
- * The leader's point (or, once the leader has parked, the point it WOULD be at had it carried on along its last
- * heading at its last speed -- so the background leaves the way it came, rather than bunching up round a stopped point
- * off the edge of the screen), plus the fish's own place along and across the heading, plus two slow breathing
- * oscillations on those offsets.
- */
-function decorTarget(school: School, fish: DecorFish, laneWidth: number): { x: number; y: number } {
-  const decor = mech.hazards.boids.decor;
-  const clock = school.elapsed + school.exitElapsed;
-  const carry = school.finished ? school.exitSpeed * school.exitElapsed : 0;
-  /**
-   * THE UNFOLDING: the school's shape is blended in from a small cloud over `unfoldSeconds`.
-   *
-   * At 0 every decor fish is at its birth offset from the leader -- inside the cloud the real fish are born in, which is off
-   * the screen -- and at 1 it is on its own place in the finished school. Without the blend the front of the school, which
-   * reaches half a lane ahead of the leader, was already on the screen when the leader had not yet arrived: fish out of
-   * nothing. Smoothstep, so the fan-out starts and ends gently rather than as a burst.
-   */
-  const raw = decor.unfoldSeconds > 0 ? Math.min(1, clock / decor.unfoldSeconds) : 1;
-  const u = raw * raw * (3 - 2 * raw);
-  const along = (fish.along + decor.breatheAmplitude * Math.sin(clock * fish.freqA + fish.phase)) * laneWidth * u + carry;
-  const across = (fish.across + decor.breatheAmplitude * Math.cos(clock * fish.freqB + fish.phase * 1.7)) * laneWidth * u;
-  return {
-    x: school.x + school.dirX * along - school.dirY * across + fish.bornX * (1 - u),
-    y: school.y + school.dirY * along + school.dirX * across + fish.bornY * (1 - u),
-  };
-}
-
-/**
- * Move every decor fish toward its place, and retire the ones that have left.
+ * Each one finds the `decor.neighbours` real fish nearest to it and does two things with them:
+ *   - takes their AVERAGE VELOCITY (by `follow`, per second), so it swims where they swim -- and turns when they turn,
+ *     which is after the front of the school has, not at the moment the leader does;
+ *   - keeps its own place relative to their average position, along and across the way they are going.
+ * Moving at their velocity and correcting toward the place, rather than only chasing the place, is what keeps it from
+ * trailing behind by the speed over `follow`: a fish that only chases always lags.
  *
- * A first-order lag rather than a snap: the fish trail the leader through a turn and catch up on the straight, which is
- * what makes a school bend. A fish is retired the way a real one is -- once the leader has parked and it is out past
- * the lane, or once it has sunk out of the vertical band the hazard field itself culls on.
+ * THE UNFOLDING: the place is blended in over `unfoldSeconds`. At 0 the fish is simply among the real ones -- inside the
+ * cloud the school is born in, which is off the screen -- and at 1 it is on its own place round them, half a lane ahead
+ * and behind. Without the blend the front of the school was on the screen before the leader had arrived: fish out of nothing.
+ * Smoothstep, so the fan-out starts and ends gently rather than as a burst.
+ *
+ * With no real fish left (all shot, or all gone) a background fish keeps the velocity it had. It is retired the way a real one
+ * is: once the leader has parked and it is out past the lane, or once it has sunk out of the vertical band the hazard field
+ * itself culls on.
+ *
+ * Cost: each background fish looks at every real fish once -- 160 x 120 = 19,200 distance tests for a school of the debug
+ * level, a fraction of a millisecond.
  */
-export function advanceDecor(school: School, dt: number, laneWidth: number, view: { min: number; max: number }): void {
+export function advanceDecor(
+  school: School,
+  members: readonly Hazard[],
+  dt: number,
+  laneWidth: number,
+  view: { min: number; max: number },
+): void {
   if (school.decor.length === 0 || dt <= 0) return;
-  const margin = laneWidth * mech.hazards.boids.decor.exitMargin;
+  const cfg = mech.hazards.boids.decor;
+  const margin = laneWidth * cfg.exitMargin;
+  const want = Math.max(1, Math.round(cfg.neighbours));
+  const clock = school.elapsed + school.exitElapsed;
+  const raw = cfg.unfoldSeconds > 0 ? Math.min(1, clock / cfg.unfoldSeconds) : 1;
+  const unfold = raw * raw * (3 - 2 * raw);
+  // The nearest few, kept as parallel small arrays so a frame allocates nothing.
+  const nearD = new Array<number>(want);
+  const nearI = new Array<number>(want);
   school.decor = school.decor.filter((fish) => {
-    const at = decorTarget(school, fish, laneWidth);
-    const k = 1 - Math.exp(-fish.follow * dt);
-    fish.x += (at.x - fish.x) * k;
-    fish.y += (at.y - fish.y) * k;
+    let found = 0;
+    for (let i = 0; i < members.length; i++) {
+      const m = members[i]!;
+      const d = (m.x - fish.x) ** 2 + (m.y - fish.y) ** 2;
+      if (found < want) {
+        let at = found++;
+        while (at > 0 && nearD[at - 1]! > d) {
+          nearD[at] = nearD[at - 1]!;
+          nearI[at] = nearI[at - 1]!;
+          at--;
+        }
+        nearD[at] = d;
+        nearI[at] = i;
+      } else if (d < nearD[want - 1]!) {
+        let at = want - 1;
+        while (at > 0 && nearD[at - 1]! > d) {
+          nearD[at] = nearD[at - 1]!;
+          nearI[at] = nearI[at - 1]!;
+          at--;
+        }
+        nearD[at] = d;
+        nearI[at] = i;
+      }
+    }
+    if (found > 0) {
+      let px = 0;
+      let py = 0;
+      let vx = 0;
+      let vy = 0;
+      for (let k = 0; k < found; k++) {
+        const m = members[nearI[k]!]!;
+        px += m.x;
+        py += m.y;
+        vx += m.boid!.vx;
+        vy += m.boid!.vy;
+      }
+      px /= found;
+      py /= found;
+      vx /= found;
+      vy /= found;
+      const speed = Math.hypot(vx, vy);
+      const dx = speed > 1e-6 ? vx / speed : school.dirX;
+      const dy = speed > 1e-6 ? vy / speed : school.dirY;
+      const along = (fish.along + cfg.breatheAmplitude * Math.sin(clock * fish.freqA + fish.phase)) * laneWidth * unfold;
+      const across = (fish.across + cfg.breatheAmplitude * Math.cos(clock * fish.freqB + fish.phase * 1.7)) * laneWidth * unfold;
+      const k = 1 - Math.exp(-fish.follow * dt);
+      fish.vx += (vx - fish.vx) * k;
+      fish.vy += (vy - fish.vy) * k;
+      const tx = px + dx * along - dy * across;
+      const ty = py + dy * along + dx * across;
+      fish.x += fish.vx * dt + (tx - fish.x) * k;
+      fish.y += fish.vy * dt + (ty - fish.y) * k;
+    } else {
+      fish.x += fish.vx * dt;
+      fish.y += fish.vy * dt;
+    }
     if (fish.y < view.min - 80 || fish.y > view.max + 120) return false;
     if (school.finished && (fish.x < -margin || fish.x > laneWidth + margin)) return false;
     return true;
@@ -377,6 +471,10 @@ export function steerSchool(members: readonly Hazard[], school: School, dt: numb
   const cfg = mech.hazards.boids;
   const neighbourR = cfg.neighbourRadius * laneWidth;
   const neighbourSq = neighbourR * neighbourR;
+  // Alignment and cohesion look at the K NEAREST fish, not at every fish within a distance -- see the header's note on why.
+  const want = Math.max(1, Math.round(cfg.neighbours));
+  const nearD = new Float64Array(want);
+  const nearB = new Array<Hazard>(want);
   const separationR = cfg.separationRadius * laneWidth;
   const separationSq = separationR * separationR;
   const maxSpeed = cfg.maxSpeed * laneWidth;
@@ -386,10 +484,12 @@ export function steerSchool(members: readonly Hazard[], school: School, dt: numb
   const cohAccel = cfg.cohesionAccel * laneWidth;
   // The thickness of the school in the depth direction, in metres: what a depth of 1 is worth in the distance.
   const depthM = cfg.depthRange * laneWidth;
-  // The leader's line across its heading, for the fish's own place in the band.
-  const perpX = -school.dirY;
-  const perpY = school.dirX;
+  const reach = cfg.leaderReach * laneWidth;
+  const tether = cfg.leaderTether * laneWidth;
+  const tetherAccel = cfg.tetherAccel * laneWidth;
 
+  let inReach = 0;
+  let ahead = 0;
   for (const a of members) {
     const boid = a.boid;
     if (!boid) continue;
@@ -406,11 +506,17 @@ export function steerSchool(members: readonly Hazard[], school: School, dt: numb
       const dy = b.y - a.y;
       const distSq = dx * dx + dy * dy;
       if (distSq > neighbourSq) continue;
-      seen++;
-      avgVx += b.boid.vx;
-      avgVy += b.boid.vy;
-      centreX += b.x;
-      centreY += b.y;
+      // Keep the `want` nearest, in order: an insertion into a tiny sorted list, which allocates nothing.
+      if (seen < want || distSq < nearD[want - 1]!) {
+        let at = seen < want ? seen++ : want - 1;
+        while (at > 0 && nearD[at - 1]! > distSq) {
+          nearD[at] = nearD[at - 1]!;
+          nearB[at] = nearB[at - 1]!;
+          at--;
+        }
+        nearD[at] = distSq;
+        nearB[at] = b;
+      }
       // Separation is the only force that sees depth: two fish a whole depth apart need only be `separationR` apart
       // in THREE dimensions, so on the screen they may lie on top of each other.
       const dz = (b.boid.d - boid.d) * depthM;
@@ -434,33 +540,68 @@ export function steerSchool(members: readonly Hazard[], school: School, dt: numb
     }
 
     /**
-     * Leader: a spring on the position, a damper on the velocity -- and the spring is TWO springs.
+     * The leader reaches only the fish near it, and only turns their VELOCITY.
      *
-     * The offset from the fish's OWN place in the band is split along the leader's heading and across it, and the
-     * across half is pulled harder (`leaderCrossSpring` against `leaderSpring`). That is the whole of the school's
-     * SHAPE: a stiff cross spring and a soft along spring make the cloud a stream, long in the direction it is going and
-     * narrow across it, where one spring for both makes a round ball. The place in the band is `home`, so the stream has
-     * an inside; the damper matches `speedVar` times the leader's speed, so the fish drift through each other along it.
+     * Inside `leaderReach` the fish is steered toward `speedVar` times the leader's velocity, by `leaderSteer` per second and
+     * fading linearly to nothing at the edge of the reach -- so there is no position in it, nothing to pull back to, and no
+     * edge where a fish is suddenly grabbed. Outside it the leader is not consulted at all: that fish turns because the
+     * fish it can see have turned. See the header of this file for why.
+     *
+     * Past `leaderTether` there is a weak pull toward the leader's position, growing with how far past it the fish is and
+     * capped at `tetherAccel`. It is the only position term, it is zero for any fish still in the school, and it exists so
+     * that a straggler cannot be lost for good.
      */
-    const offX = school.x + perpX * boid.home * laneWidth - a.x;
-    const offY = school.y + perpY * boid.home * laneWidth - a.y;
-    const along = offX * school.dirX + offY * school.dirY;
-    const acrossX = offX - along * school.dirX;
-    const acrossY = offY - along * school.dirY;
-    let ax =
-      cfg.leaderSpring * along * school.dirX + cfg.leaderCrossSpring * acrossX + cfg.leaderDamp * (school.vx * boid.speedVar - boid.vx);
-    let ay =
-      cfg.leaderSpring * along * school.dirY + cfg.leaderCrossSpring * acrossY + cfg.leaderDamp * (school.vy * boid.speedVar - boid.vy);
+    let ax = 0;
+    let ay = 0;
+    const toLeaderX = school.x - a.x;
+    const toLeaderY = school.y - a.y;
+    const leaderDist = Math.hypot(toLeaderX, toLeaderY);
+    if (toLeaderX * school.dirX + toLeaderY * school.dirY < 0) ahead++;
+    if (leaderDist < reach) {
+      inReach++;
+      const weight = (1 - leaderDist / reach) * cfg.leaderSteer;
+      ax += weight * (school.vx * boid.speedVar - boid.vx);
+      ay += weight * (school.vy * boid.speedVar - boid.vy);
+    }
+    if (leaderDist > tether) {
+      const pull = Math.min(1, (leaderDist - tether) / Math.max(1e-6, tether)) * tetherAccel;
+      ax += (toLeaderX / leaderDist) * pull;
+      ay += (toLeaderY / leaderDist) * pull;
+    }
     ax += sepX;
     ay += sepY;
+    for (let k = 0; k < seen; k++) {
+      const n = nearB[k]!;
+      avgVx += n.boid!.vx;
+      avgVy += n.boid!.vy;
+      centreX += n.x;
+      centreY += n.y;
+    }
     if (seen > 0) {
       // Alignment: toward the neighbours' average velocity.
       ax += cfg.alignmentRate * (avgVx / seen - boid.vx);
       ay += cfg.alignmentRate * (avgVy / seen - boid.vy);
       // Cohesion: toward their centroid, at full strength once it is a neighbour-radius away and fading to nothing on top
       // of it. A force that grew with distance without bound would pull a straggler across the screen in one frame.
-      const toX = centreX / seen - a.x;
-      const toY = centreY / seen - a.y;
+      let toX = centreX / seen - a.x;
+      let toY = centreY / seen - a.y;
+      /**
+       * Cohesion pulls harder ACROSS the way the neighbours are going than ALONG it (`cohesionAcrossRatio`).
+       *
+       * That is what makes a school a stream rather than a ball, and it does it with the neighbours alone -- the way they
+       * are going is their average velocity, so there is no leader and no fixed point in it. The first version made the stream
+       * with springs to the leader, and a spring to a point is what made the whole school turn in one frame.
+       */
+      const speed = Math.hypot(avgVx, avgVy);
+      if (cfg.cohesionAcrossRatio !== 1 && speed > 1e-6) {
+        const hx = avgVx / speed;
+        const hy = avgVy / speed;
+        const along = toX * hx + toY * hy;
+        const acrossX = toX - along * hx;
+        const acrossY = toY - along * hy;
+        toX = along * hx + acrossX * cfg.cohesionAcrossRatio;
+        toY = along * hy + acrossY * cfg.cohesionAcrossRatio;
+      }
       const toLen = Math.hypot(toX, toY);
       if (toLen > 1e-6) {
         const pull = Math.min(1, toLen / neighbourR) * cohAccel;
@@ -489,14 +630,17 @@ export function steerSchool(members: readonly Hazard[], school: School, dt: numb
     }
 
     /**
-     * Which way it is drawn facing: the way the SCHOOL is going, and not the way this fish happens to be moving this frame.
+     * Which way it is drawn facing: the way its NEIGHBOURS are going, and not the way this fish happens to be moving this
+     * frame.
      *
-     * It used to be the fish's own velocity, and a fish born inside the dense cloud is thrown about by separation for the
+     * Its own velocity was the first answer, and a fish born inside the dense cloud is thrown about by separation for the
      * first moments -- enough to send some of them backward for a few frames, which flipped the picture round to face the
-     * leader. A fish in a school faces the school's way; `dirX` only changes when the leader itself turns, and then the
-     * whole school turns with it.
+     * leader. Then it was the leader's heading, which is steady but is also the one thing in the school that turns in the
+     * same frame for everybody. The average of the fish round it is both: steady (separation pushes cancel in an
+     * average) and passed back through the school, so a fish turns round after the ones in front of it have.
      */
-    if (Math.abs(school.dirX) > 0.05) a.heading = Math.sign(school.dirX);
+    const looking = seen > 0 ? avgVx / seen : boid.vx;
+    if (Math.abs(looking) > 0.05 * laneWidth) a.heading = Math.sign(looking);
 
     /**
      * THE SCHOOL LEAVES BY THE SIDE ONCE THE LEADER HAS STOPPED.
@@ -513,4 +657,6 @@ export function steerSchool(members: readonly Hazard[], school: School, dt: numb
       else if (a.x > laneWidth + margin) a.flee = 'right';
     }
   }
+  school.inReach = inReach;
+  school.ahead = ahead;
 }

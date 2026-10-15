@@ -901,18 +901,27 @@ export interface Mechanisms {
     boids: {
       /** Radius of the cloud a school is born in, around its leader's first point. */
       spawnSpread: number;
-      /** How far a fish sees its neighbours, for alignment and cohesion. */
+      /** The furthest a neighbour can be and still count, for alignment and cohesion (lane fraction). */
       neighbourRadius: number;
+      /** How many of the nearest fish alignment and cohesion listen to. */
+      neighbours: number;
       /** Neighbours closer than this push apart. */
       separationRadius: number;
       separationAccel: number;
       alignmentRate: number;
       cohesionAccel: number;
-      /** The pull toward the invisible leader: a spring, and a damper on the velocity difference. */
-      leaderSpring: number;
-      /** The same spring measured ACROSS the leader's heading; above `leaderSpring` it makes the school long. */
-      leaderCrossSpring: number;
-      leaderDamp: number;
+      /** How much harder cohesion pulls across the neighbours' heading than along it. 1 = the same, and the school is round. */
+      cohesionAcrossRatio: number;
+      /** How far the invisible leader reaches (lane fraction), and how hard it turns the velocity of the fish inside (per second). */
+      leaderReach: number;
+      leaderSteer: number;
+      /** The only position term: past this distance from the leader (lane fraction) a weak pull begins, capped at `tetherAccel`. */
+      leaderTether: number;
+      tetherAccel: number;
+      /** The leader waits for its school: it needs this many real fish in reach to walk at full pace, and never slows below this share of it. */
+      leaderWantFish: number;
+      leaderAllowAhead: number;
+      leaderWaitFloor: number;
       minSpeed: number;
       maxSpeed: number;
       /** The cap on the sum of all four, so a crowd cannot fling a fish. */
@@ -921,8 +930,6 @@ export interface Mechanisms {
       scale: number;
       /** Each fish's own share of the leader's speed: 1 +/- this. */
       speedJitter: number;
-      /** The half-width of the band across the stream the fish's own places are drawn from, as a lane fraction. */
-      bandHalfWidth: number;
       /** The leader's sideways snaking: its largest offset (lane fraction) and its main period. */
       wobbleAmplitude: number;
       wobbleSeconds: number;
@@ -935,6 +942,8 @@ export interface Mechanisms {
         scale: number;
         alpha: number;
         tint: number;
+        /** How many of the nearest real fish a background fish swims with. */
+        neighbours: number;
         alongSpread: number;
         bandHalfWidth: number;
         follow: number;
@@ -2804,14 +2813,15 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
       ['separationAccel', 'lane widths per second squared'],
       ['alignmentRate', 'per second; how fast velocity is pulled toward the neighbours\' average'],
       ['cohesionAccel', 'lane widths per second squared'],
-      ['leaderSpring', 'per second squared; how hard the invisible leader pulls ALONG its heading'],
-      ['leaderCrossSpring', 'per second squared; how hard it pulls ACROSS its heading -- above leaderSpring the school is long'],
-      ['leaderDamp', 'per second; how hard the leader\'s velocity is matched'],
+      ['leaderReach', 'a fraction of the lane width: only fish this close to the invisible leader feel it'],
+      ['leaderSteer', "per second; how hard a fish in reach turns toward the leader's velocity"],
+      ['leaderTether', 'a fraction of the lane width: past this distance a weak pull toward the leader begins'],
+      ['tetherAccel', 'lane widths per second squared; the cap on that pull'],
+      ['leaderWaitFloor', 'a share of the leader\'s own pace, above 0 and at most 1: the slowest it walks while it waits for its school'],
       ['minSpeed', 'lane widths per second; a school never hovers'],
       ['maxSpeed', 'lane widths per second'],
       ['maxAccel', 'lane widths per second squared; the cap on the sum of all four forces'],
       ['speedJitter', "a fraction of the leader's speed; 0 makes every fish identical"],
-      ['bandHalfWidth', 'a fraction of the lane width, half the band across the stream'],
       ['wobbleAmplitude', 'a fraction of the lane width; 0 disables the snaking'],
       ['wobbleSeconds', 'seconds, the main period of the snaking'],
       ['depthRange', 'a fraction of the lane width, the thickness of the school in depth'],
@@ -2843,6 +2853,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     describe: `${describe}; 0 or more`,
   })),
   { path: 'hazards.boids.decor.tint', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.boids.neighbours', check: (v) => wholeNumber(v) && (v as number) >= 1 && (v as number) <= 30, describe: 'a whole number from 1 to 30: how many of the nearest fish alignment and cohesion listen to' },
+  { path: 'hazards.boids.cohesionAcrossRatio', check: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 20, describe: 'a ratio from 1 (round) to 20: how much harder cohesion pulls across the neighbours\' heading than along it' },
+  { path: 'hazards.boids.leaderAllowAhead', check: (v) => wholeNumber(v) && (v as number) >= 0, describe: 'a whole number of real fish that may be ahead of the leader before it slows to let the school\'s front catch up' },
+  { path: 'hazards.boids.leaderWantFish', check: (v) => wholeNumber(v) && (v as number) >= 1, describe: 'a whole number of real fish the leader needs in reach to walk at full pace' },
+  { path: 'hazards.boids.decor.neighbours', check: (v) => wholeNumber(v) && (v as number) >= 1 && (v as number) <= 20, describe: 'a whole number from 1 to 20: how many of the nearest real fish a background fish swims with' },
   /** The crab: one row per key of its own block, for the reason the config gives at `hazards.crab`. */
   { path: 'hazards.crab.armDistanceMeters', check: anyNumber, describe: 'metres of 0 or more; the distance at which the fuse is lit' },
   { path: 'hazards.crab.fuseSeconds', check: anyNumber, describe: 'seconds' },
@@ -3910,8 +3925,10 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
   if (!(b.decor.breatheSeconds > 0)) fail('hazards.boids.decor.breatheSeconds must be above 0: it is a period');
   if (!(b.wobbleSeconds > 0)) fail('hazards.boids.wobbleSeconds must be above 0: it is a period');
   if (b.decor.followJitter > 1) fail(`hazards.boids.decor.followJitter (${b.decor.followJitter}) is above 1: a fish would follow backwards`);
-  if (b.leaderCrossSpring < b.leaderSpring) {
-    fail(`hazards.boids.leaderCrossSpring (${b.leaderCrossSpring}) is below leaderSpring (${b.leaderSpring}): the school would be wider than it is long`);
+  if (!(b.leaderWaitFloor > 0) || b.leaderWaitFloor > 1) fail(`hazards.boids.leaderWaitFloor (${b.leaderWaitFloor}) must be above 0 and at most 1: at 0 the leader would stop for good the moment it lost its school`);
+  if (!(b.leaderReach > 0)) fail('hazards.boids.leaderReach must be above 0, or the leader reaches no fish and the school does not follow it');
+  if (b.leaderTether < b.leaderReach) {
+    fail(`hazards.boids.leaderTether (${b.leaderTether}) is inside leaderReach (${b.leaderReach}): the tether would pull fish the leader is already steering`);
   }
 }
 
