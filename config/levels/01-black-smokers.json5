@@ -296,14 +296,18 @@
   //
   // 三次爆发越来越近（S3 → S5 → S6），因为"突然全来了"这件事**靠的是它来得比上一次快**，
   // 而不是靠底噪一点点升高。
+  //
+  // **收集物铺在每一屏的缝隙里**：起/落屏各 3-4 颗（一小串 `spread`，顺手就能吃到一颗），爆发屏**一颗都不放**
+  // （那一屏只有威胁），开场那一屏 6 颗、收尾那屏 8 颗。它的定位是「击败怪物的间隙顺手捡到」，所以它得
+  // **从头到尾都在**，而不是只在开头结尾各堆一撮——上一轮六关都是「两头两撮、中间 45-58 秒一颗都没有」。
   spawns: [
     // --- S0  安静开场：只有食物和一点颗粒。玩家在这里学"往上、吃泡泡"。
-    { at: 30, span: 150, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.4, 0.5, 0.35] },
+    { at: 30, span: 150, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.4, 0.5, 0.35] },
     // 第一批颗粒**从下面上来**：这一关第一个新方向。
     { at: 120, span: 60, count: 3, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
 
     // --- S1  起：一串会游动的鱼（`weave`）、一只盲虾，和**喷口第一次登场**。
-    { at: 200, span: 90, count: 5, kind: 'bubble', arrange: 'spread', amplitude: 0.2, sizes: [0.4, 0.5] },
+    { at: 200, span: 170, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.4, 0.5, 0.35] },
     { at: 240, kind: 'shrimp', x: 0.5 },
     { at: 290, kind: 'fish', count: 6, path: 'weave', x: 0.5, pathSpacingSeconds: 0.35 },
     // **喷口第一次登场，而且是早的**：它的三种朝向（`up` / `down` / `flat`）是这一关的招牌课，
@@ -317,6 +321,7 @@
     { at: 470, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'left', depth: 0.6 },
     { at: 520, kind: 'crab', x: 0.5 },
 
+    { at: 380, span: 180, count: 4, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S3  **爆发一 · 黑烟囱群**：一串鱼从画外斜插上来，紧接着热流把矿物颗粒推上来。
     { at: 600, kind: 'fish', count: 14, path: 'riseLeft', x: 0.0, pathSpacingSeconds: 0.28 },
     { at: 660, span: 70, count: 5, kind: 'mineral', arrange: 'spread', x: 0.45, from: 'bottom' },
@@ -327,6 +332,7 @@
     { at: 850, kind: 'vent', side: 'right', aim: 'down' },
     { at: 890, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', depth: 0.55 },
 
+    { at: 770, span: 160, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S5  起（第二次爬升）：再来一串鱼，加两条金枪鱼——**第一条爆发和第二条之间是这一关最长的一段**，
     // 所以它需要一个能自己站住的节拍，而不是空着等下一次。
     { at: 980, kind: 'fish', count: 8, path: 'weave', x: 0.5, pathSpacingSeconds: 0.32 },
@@ -334,6 +340,7 @@
     { at: 1080, kind: 'shrimp', count: 3, arrange: 'spread', span: 30, x: 0.5, from: 'left', depth: 0.6 },
     { at: 1110, kind: 'crab', count: 2, arrange: 'line' },
 
+    { at: 950, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S6  **爆发二 · 管虫丛**：一串鱼 + 枪手 + 一排管虫墙。重点在那排墙——你必须**改道**。
     { at: 1160, kind: 'fish', count: 12, path: 'arcLeft', x: 0.2, pathSpacingSeconds: 0.28 },
     { at: 1220, kind: 'archer', x: 0.5 },
@@ -344,6 +351,7 @@
     { at: 1400, kind: 'eel', x: 0.5 },
     { at: 1450, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', depth: 0.55 },
 
+    { at: 1340, span: 160, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S8  **爆发三 · 热流区（最高点）**：两路合围 + **横贯泳道的喷口** + 最后一排管虫墙。
     // 间隔已经缩到 2 屏，到这里不再留余量——这是"突然全来了"最响的一次，而且它在最快的区间里。
     { at: 1540, kind: 'fish', count: 12, path: 'pincerLeft', x: 0.0, pathSpacingSeconds: 0.26 },

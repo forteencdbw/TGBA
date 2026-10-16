@@ -70,9 +70,13 @@
   //
   // **11 屏 / 81 秒 / 约 211 分威胁 / 19.2 每屏。** 密度比第四关高一档（17.0），
   // 但**每屏秒数也更长**（7.4 对 7.0）：它比第四关多出来的不只是更多的怪，还有更多读它们的时间。
+  //
+  // **收集物铺在每一屏的缝隙里**：起/落屏各 3-4 颗（一小串 `spread`，顺手就能吃到一颗），爆发屏**一颗都不放**
+  // （那一屏只有威胁），开场那一屏 6 颗、收尾那屏 8 颗。它的定位是「击败怪物的间隙顺手捡到」，所以它得
+  // **从头到尾都在**，而不是只在开头结尾各堆一撮——上一轮六关都是「两头两撮、中间 45-58 秒一颗都没有」。
   spawns: [
     // --- S0  安静开场：只有食物和两只螃蟹。风暴还没到。
-    { at: 30, span: 150, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.45, 0.6, 0.4] },
+    { at: 30, span: 150, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.45, 0.6, 0.4] },
     { at: 130, kind: 'crab', count: 2, arrange: 'line' },
 
     // --- S1  起：第一张网、一群鱼、两只螃蟹，然后是**从下往上推的矿物颗粒**——风暴的第一口气。
@@ -81,6 +85,7 @@
     { at: 280, kind: 'crab', count: 3, arrange: 'line' },
     { at: 330, kind: 'mineral', count: 3, arrange: 'spread', span: 40, amplitude: 0.3, x: 0.5, from: 'bottom' },
 
+    { at: 190, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.45, 0.6, 0.4] },
     // --- S2  **爆发一 · 浪涌**：一排**封路墙**（撞不开，只能打掉或从缺口过去）+ 两条鱼雷 + 一张网 + 三只盲虾。
     // 网在墙后面：你刚改完道，网正好在改道的方向上。
     { at: 400, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.19 },
@@ -94,6 +99,7 @@
     { at: 700, kind: 'crab', count: 3, arrange: 'line' },
     { at: 730, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5 },
 
+    { at: 570, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.45, 0.6, 0.4] },
     // --- S4  起（第二次爬升）：网 + 鱼群 + 两条鱼雷 + 螃蟹，再补一串颗粒。
     // **这是全关最长的一段安静**（爆发一到爆发二之间三屏），所以它必须自己站得住。
     { at: 780, kind: 'net', count: 5, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.19 },
@@ -102,6 +108,7 @@
     { at: 910, kind: 'crab', count: 3, arrange: 'line' },
     { at: 930, kind: 'mineral', count: 8, arrange: 'spread', span: 50, amplitude: 0.3, x: 0.5, from: 'bottom' },
 
+    { at: 900, span: 40, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.45, 0.6, 0.4] },
     // --- S5  **爆发二 · 暴雨层**：珊瑚（硬，3.5 血，"变小有优势"这句话本身）+ 三条鱼雷 + 网 + 盲虾 + 鱼群。
     // 珊瑚和网一起出现是这一关最贵的一次改道：一个打不动，一个一推就破。
     { at: 980, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
@@ -117,6 +124,7 @@
     { at: 1240, kind: 'crab', count: 2, arrange: 'line' },
     { at: 1280, kind: 'pistol', x: 0.5 },
 
+    { at: 1140, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.45, 0.6, 0.4] },
     // --- S7  **爆发三 · 废网（最高点）**：最后一排封路墙 + 四块珊瑚 + 鱼雷 + 盲虾。
     // 间隔已经从 3 屏缩到 2 屏，而且它在最快的区间里（每屏 5.4 秒）——
     // 两种硬度不同的障碍**在同一屏里**，这就是这一关的顶点。
@@ -131,7 +139,7 @@
     { at: 1660, kind: 'fish', count: 12, arrange: 'spread', span: 50, x: 0.5 },
 
     // --- S9  收一屏：**只有食物**。海面就在上面，BOSS 之前把手腾出来。
-    { at: 1740, span: 140, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.28, sizes: [0.5, 0.65, 0.45] },
+    { at: 1740, span: 150, count: 8, kind: 'bubble', arrange: 'spread', amplitude: 0.28, sizes: [0.45, 0.6, 0.4] },
   ],
 
 }

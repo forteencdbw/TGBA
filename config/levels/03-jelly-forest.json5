@@ -68,9 +68,13 @@
   //
   // **10 屏 / 70 秒 / 约 154 分威胁 / 15.4 每屏。** 它的密度比第二关高一档、时长也长一点，
   // 但**比第四关低**——上一轮它是 20.1，比第四关还密，而第四关是它之后才玩的，那是个倒挂。
+  //
+  // **收集物铺在每一屏的缝隙里**：起/落屏各 3-4 颗（一小串 `spread`，顺手就能吃到一颗），爆发屏**一颗都不放**
+  // （那一屏只有威胁），开场那一屏 6 颗、收尾那屏 8 颗。它的定位是「击败怪物的间隙顺手捡到」，所以它得
+  // **从头到尾都在**，而不是只在开头结尾各堆一撮——上一轮六关都是「两头两撮、中间 45-58 秒一颗都没有」。
   spawns: [
     // --- S0  安静开场：食物，和**一只**电水母。让"它会放电"先单独出现一次。
-    { at: 30, span: 150, count: 10, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.35] },
+    { at: 30, span: 150, count: 6, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.35] },
     { at: 120, kind: 'zapper', x: 0.5 },
 
     // --- S1  起：两只一列，教导电链——打一只会牵动旁边那只。后面跟一串鱼，把"边躲边打"先轻轻演一遍。
@@ -78,6 +82,7 @@
     { at: 300, kind: 'zapper', count: 2, arrange: 'column', x: 0.6 },
     { at: 340, kind: 'fish', count: 8, arrange: 'spread', from: 'right' },
 
+    { at: 190, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S2  **爆发一 · 水母树冠**：一列四只 + 减速水母 + 一串鱼。这一屏开始要求你**边躲边挑目标**。
     { at: 420, kind: 'zapper', count: 4, arrange: 'column', x: 0.5 },
     { at: 480, kind: 'jelly', count: 4, arrange: 'line' },
@@ -89,6 +94,7 @@
     { at: 660, kind: 'urchin', x: 0.5 },
     { at: 700, kind: 'zapper', count: 2, arrange: 'spread' },
 
+    { at: 570, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S4  起（第二次爬升）：一串鱼 + 两只电水母 + 一只海胆 + 两只虾。**这是最长的两次爆发之间的空档**，
     // 所以它得自己站住：海胆先给你一个"绕开就行"的靶子，电水母再把绕开的路线收窄。
     { at: 780, kind: 'fish', count: 8, arrange: 'spread', from: 'left' },
@@ -96,6 +102,7 @@
     { at: 880, kind: 'urchin', x: 0.4 },
     { at: 920, kind: 'shrimp', count: 2, arrange: 'spread', from: 'right' },
 
+    { at: 760, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S5  **爆发二 · 触须森林**：五只一排 + 减速 + 两只海胆。横排的电水母是"整片不能碰"。
     { at: 1000, kind: 'zapper', count: 5, arrange: 'line' },
     { at: 1060, kind: 'jelly', count: 4, arrange: 'spread' },
@@ -106,6 +113,7 @@
     { at: 1230, kind: 'shrimp', count: 3, arrange: 'spread', from: 'left' },
     { at: 1280, kind: 'zapper', count: 2, arrange: 'spread' },
 
+    { at: 1140, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S7  **爆发三 · 冠冕（最高点）**：两群电水母 + 海星 + 热流矿物。间隔已缩到 2 屏，
     // 而且它在最快的区间里（每屏 5.7 秒）——这一关的顶点是"整片都在放电，而你还得选打哪一只"。
     { at: 1350, kind: 'zapper', count: 5, arrange: 'line' },
@@ -114,7 +122,7 @@
     { at: 1500, span: 60, count: 4, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
 
     // --- S8  收一屏：**只有食物，没有一个危险物**。水母林的最上面是光，这一屏留给它。
-    { at: 1560, span: 110, count: 6, kind: 'bubble', arrange: 'spread', sizes: [0.5, 0.6, 0.45] },
+    { at: 1560, span: 140, count: 8, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.35] },
     { at: 1640, kind: 'fish', count: 6, arrange: 'spread', from: 'left' },
   ],
 

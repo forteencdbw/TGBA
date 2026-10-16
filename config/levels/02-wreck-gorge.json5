@@ -69,6 +69,10 @@
   //
   // **10 屏 / 66 秒 / 约 139 分威胁 / 13.8 每屏**：密度比第一关高一档（第一关 11.7），时长几乎一样
   // （66 对 65）——它比第一关难，但不比第一关长，因为第三关还要在它之上。
+  //
+  // **收集物铺在每一屏的缝隙里**：起/落屏各 3-4 颗（一小串 `spread`，顺手就能吃到一颗），爆发屏**一颗都不放**
+  // （那一屏只有威胁），开场那一屏 6 颗、收尾那屏 8 颗。它的定位是「击败怪物的间隙顺手捡到」，所以它得
+  // **从头到尾都在**，而不是只在开头结尾各堆一撮——上一轮六关都是「两头两撮、中间 45-58 秒一颗都没有」。
   spawns: [
     // --- S0  安静开场：只有食物和两只螃蟹。螃蟹是"机会不是敌人"——它把你弹上去，这一关先教这个。
     { at: 20, span: 120, count: 6, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.45] },
@@ -80,6 +84,7 @@
     { at: 320, kind: 'archer', x: 0.5 },
     { at: 350, kind: 'crab', count: 2, arrange: 'spread', from: 'right' },
 
+    { at: 280, span: 95, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S2  **爆发一 · 船首残骸**：木箱之后紧接着一排**撞不开的**封路墙——同一屏里两种答案，
     // 先给软的再给硬的。鮟鱇躲在墙后面（你改道的时候它正好扑上来），最后一张网封住退路。
     { at: 400, kind: 'crate', count: 5, arrange: 'barrier', gapAt: 0.45, gapWidth: 0.2 },
@@ -94,6 +99,7 @@
     { at: 640, kind: 'net', count: 3, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.2 },
     { at: 700, kind: 'crab', count: 2, arrange: 'spread', from: 'left' },
 
+    { at: 700, span: 50, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S4  起（第二次爬升）：木箱 + 枪手 + 两条鱼雷。**这是全关最长的一段安静**，所以它得自己站住：
     // 一条鱼雷是诚实的，两条就开始算账了；水母放在末尾，让这一屏的账单带到来不及。
     { at: 780, kind: 'crate', count: 4, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.2 },
@@ -102,6 +108,7 @@
     { at: 910, kind: 'crab', count: 2, arrange: 'spread', from: 'left' },
     { at: 920, kind: 'jelly', count: 2, arrange: 'spread', from: 'right' },
 
+    { at: 900, span: 40, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S5  **爆发二 · 货舱通道**：珊瑚（硬，变小有优势）+ 两条鱼雷 + 一排封路墙。
     // 珊瑚和封路墙在同一屏里是这一关最贵的一次"改道"：一个能打碎，一个打不碎，而且它们之间只有两秒。
     { at: 980, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.2 },
@@ -113,6 +120,7 @@
     { at: 1200, kind: 'net', count: 3, arrange: 'line' },
     { at: 1250, kind: 'crate', count: 3, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.2 },
 
+    { at: 1290, span: 30, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S7  **爆发三 · 锚链（最高点）**：最后一排封路墙 + 三条鱼雷 + 两只鮟鱇 + 水母。
     // 间隔已经缩到 2 屏，到这里不再留余量——而且它在最快的区间里（每屏 5.6 秒）。
     { at: 1340, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
@@ -121,7 +129,7 @@
     { at: 1490, kind: 'jelly', count: 2, arrange: 'spread', from: 'left' },
 
     // --- S8  收一屏：**只有食物**，外加两只螃蟹（它们是往上的推力，不是威胁）。
-    { at: 1560, span: 110, count: 6, kind: 'bubble', arrange: 'spread', sizes: [0.5, 0.6, 0.45] },
+    { at: 1560, span: 140, count: 8, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.45] },
     { at: 1650, kind: 'crab', count: 2, arrange: 'spread', from: 'right' },
   ],
 

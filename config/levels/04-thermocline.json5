@@ -68,9 +68,13 @@
   // 鮟鱇、刺魨、螃蟹、鲨鱼、电鳗、座头鲸）。三次爆发因此按"这一层能碰到什么"来分层，
   // 而不是按"这里放了什么布景"：暖水层只有鱼群和海豚，温跃层把四个猎食者加进来，
   // 冷水层才是鲨鱼和鲸——**你过的是水层，不是关卡**。
+  //
+  // **收集物铺在每一屏的缝隙里**：起/落屏各 3-4 颗（一小串 `spread`，顺手就能吃到一颗），爆发屏**一颗都不放**
+  // （那一屏只有威胁），开场那一屏 6 颗、收尾那屏 8 颗。它的定位是「击败怪物的间隙顺手捡到」，所以它得
+  // **从头到尾都在**，而不是只在开头结尾各堆一撮——上一轮六关都是「两头两撮、中间 45-58 秒一颗都没有」。
   spawns: [
     // --- S0  安静开场：只有泡泡和一群鱼。鱼群本身就是内容（沙丁鱼群不主动攻击，受惊会集体转向）。
-    { at: 30, span: 150, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
+    { at: 30, span: 150, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
     { at: 110, kind: 'fish', count: 4, arrange: 'line' },
 
     // --- S1  起：鱼群、一条鱼雷（第一段诚实）、**第一只海豚**和两只螃蟹。
@@ -81,6 +85,7 @@
     { at: 350, kind: 'dolphin', x: 0.78 },
     { at: 370, kind: 'crab', count: 2, arrange: 'line' },
 
+    { at: 190, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
     // --- S2  **爆发一 · 暖水层**：鱼群 + 两只海豚 + 炸弹鱼（会炸，"在哪挨"）+ 鮟鱇（会骗你）+ 章鱼。
     // 猎食者们第一次一起出现，但全是"吃得下"的那几个。
     { at: 400, kind: 'fish', count: 12, arrange: 'spread', span: 60, amplitude: 0.2, x: 0.5, from: 'bottom' },
@@ -98,6 +103,7 @@
     { at: 700, kind: 'puffer', count: 2, arrange: 'spread', span: 40, x: 0.5 },
     { at: 730, kind: 'torpedo', count: 1, arrange: 'spread', x: 0.4, from: 'left', enterSpeed: 46 },
 
+    { at: 570, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
     // --- S4  起（第二次爬升）：上下同时来的两串鱼，逼玩家**换高度**——这是温跃层这一层的题目本身。
     // 加章鱼和炸弹鱼：一个慢到可以忽略、一个近到不能打，同一屏里两种"别碰我"。
     { at: 780, kind: 'fish', count: 6, arrange: 'spread', span: 40, from: 'left', depth: 0.62 },
@@ -106,6 +112,7 @@
     { at: 890, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'left', enterSpeed: 46 },
     { at: 920, kind: 'bombfish', count: 2, arrange: 'spread', span: 30, x: 0.6 },
 
+    { at: 760, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
     // --- S5  **爆发二 · 温跃层**：四个猎食者全在同一屏——鮟鱇（诱饵就是陷阱）、章鱼、刺魨（打它有代价）、
     // 加两条鱼雷。这一屏的题目不是"躲开"，是"先解决谁"。
     { at: 980, kind: 'fish', count: 14, arrange: 'spread', span: 70, amplitude: 0.22, x: 0.5 },
@@ -121,6 +128,7 @@
     { at: 1250, kind: 'puffer', count: 2, arrange: 'spread', span: 40, x: 0.5 },
     { at: 1290, kind: 'eel', x: 0.3 },
 
+    { at: 1140, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
     // --- S7  **爆发三 · 冷水层（最高点）**：大白鲨（前摇 0.6 秒、冲刺 0.4 秒，四个里最"已经决定了"的那个）
     // + 三条鱼雷 + 两条电鳗 + 三只鮟鱇 + 鱼群 + 炸弹鱼。它同时是**最快**的一屏（5.4 秒）和**最密**的一屏。
     //
@@ -136,11 +144,11 @@
 
     // --- S8  收：把**海豚**放回来两只。它现在是"已知的、吃得下的那种大东西"——
     // 一次补给，一次能赢的架，让最后一次爆发之后不是一口气泄掉。
-    { at: 1560, span: 110, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.5, 0.6, 0.45] },
+    { at: 1560, span: 140, count: 8, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
     { at: 1660, kind: 'dolphin', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', enterSpeed: 40 },
 
     // --- S9  收一屏：**只有食物，没有一个危险物**。BOSS 之前把手腾出来。
-    { at: 1740, span: 140, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.5, 0.65, 0.45] },
+    { at: 1740, span: 150, count: 8, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.4, 0.55, 0.35] },
   ],
 
 }
