@@ -4,40 +4,28 @@
  * ---------------------------------------------------------------------------------------------
  * A CUE IS DATA
  * ---------------------------------------------------------------------------------------------
- * Every cue is a row in `audio.sfx.sounds` (config/mechanics.json5): a few layers of pulse, triangle and LFSR noise, and
- * the numbers that shape them. Nothing here knows what any cue is FOR -- that is the callers' business
- * (`src/soundIds.ts` lists the names). So replacing a placeholder is a config edit, and replacing it with a real
- * recording is a file drop: `src/assets/audio/sfx/<name>.wav` (or `.mp3`) wins over the recipe of the same name, with no
- * code and no config change.
+ * Every cue is a row in `audio.sfx.sounds` (config/mechanics.json5): a few layers of tone and filtered noise, and the
+ * numbers that shape them. Nothing here knows what any cue is FOR -- that is the callers' business (`src/soundIds.ts`
+ * lists the names). So replacing a placeholder is a config edit, and replacing it with a real recording is a file drop:
+ * `src/assets/audio/sfx/<name>.wav` (or `.mp3`) wins over the recipe of the same name, with no code and no config change.
  *
- * The files are fetched and decoded after the first gesture (the context does not exist before it), and a cue whose file
- * has not finished decoding plays its recipe -- so a slow connection costs a few cues their recording, never their
+ * The files are fetched and decoded after the first gesture (the context does not exist before it), and a cue whose
+ * file has not finished decoding plays its recipe -- so a slow connection costs a few cues their recording, never their
  * sound.
- *
- * ---------------------------------------------------------------------------------------------
- * THE PALETTE IS A CHIP'S, ON PURPOSE
- * ---------------------------------------------------------------------------------------------
- * Three voices and no more -- a pulse wave with a duty cycle, a triangle, and the noise register (`src/chip.ts`). That
- * is the whole instrument. A recipe that wanted a sine, a filter sweep or a vibrato has nowhere to put it, which is the
- * point: this is the sound of a particular kind of machine, and the constraint is what makes it sound like one.
  *
  * ---------------------------------------------------------------------------------------------
  * WHERE A CUE COMES FROM
  * ---------------------------------------------------------------------------------------------
- * `pan` is -1..1 and comes from where the thing happened in the lane, so a shark on the left is in the left ear. The
- * width of that (`panWidth`) is a config number: a full-width pan on a phone's single speaker is nothing, and on
- * headphones is a lot.
+ * `pan` is -1..1 and comes from where the thing happened in the lane, so a shark on the left is in the left ear. The width
+ * of that (`panWidth`) is a config number: a full-width pan on a phone's single speaker is nothing, and on headphones is
+ * a lot.
  */
-import { applyEnvelope, envelopeEnd, lfsrNoise, pulseWave, type EnvelopeShape, type NoiseMode } from './chip';
 import { mech } from './mechanisms';
 import { SOUND_BUSES, type SoundBus, type SoundId } from './soundIds';
 
 export interface ToneLayer {
   type: 'tone';
-  /** `pulse` is the chip's square channel; `triangle` is its other tonal one. */
-  wave: 'pulse' | 'triangle';
-  /** Duty cycle of a pulse: 0.125, 0.25 or 0.5. Ignored by a triangle, which has no duty. */
-  duty?: number;
+  wave?: OscillatorType;
   hz: number;
   /** Frequency at the end, as a multiple of `hz`. Default 1 (no sweep). */
   endRatio?: number;
@@ -45,25 +33,24 @@ export interface ToneLayer {
   gain: number;
   /** Seconds before this layer starts, for a cue made of several beats. */
   delay?: number;
-  /** Seconds to reach full level. Default 0: instantly on, which is what the chip did. */
+  /** Seconds to reach full level. Default 0.008; longer for a swell. */
   attack?: number;
-  /** How it ends. Default `linear`. */
-  shape?: EnvelopeShape;
+  /** A wobble on the pitch: its rate in Hz and its depth as a fraction of `hz`. */
+  vibratoHz?: number;
+  vibratoDepth?: number;
 }
 
 export interface NoiseLayer {
   type: 'noise';
-  /** `hiss` is the 15-bit register, `buzz` the short one that can be heard as a note. Default `hiss`. */
-  mode?: NoiseMode;
-  /** How fast the register is clocked. Low is a pitched buzz, high is a hiss. */
-  rate: number;
-  /** Clock rate at the end, as a multiple of `rate`. Default 1. */
+  filter?: 'bandpass' | 'lowpass' | 'highpass';
+  hz: number;
+  /** Filter centre/cutoff at the end, as a multiple of `hz`. Default 1. */
   endRatio?: number;
+  q?: number;
   seconds: number;
   gain: number;
   delay?: number;
   attack?: number;
-  shape?: EnvelopeShape;
 }
 
 export type SfxLayer = ToneLayer | NoiseLayer;
@@ -102,6 +89,7 @@ const FILE_URL = new Map<string, string>(Object.entries(FILES).map(([path, url])
 export class SfxEngine {
   private ctx: AudioContext | null = null;
   private buses: Partial<Record<SoundBus, GainNode>> = {};
+  private noise: AudioBuffer | null = null;
   private readonly last = new Map<string, number>();
   private readonly buffers = new Map<string, AudioBuffer>();
   /** When each sounding voice ends, in context time, so "how many are playing" needs no callbacks. */
@@ -120,6 +108,10 @@ export class SfxEngine {
       node.connect(destination);
       this.buses[bus] = node;
     }
+    const frames = ctx.sampleRate;
+    this.noise = ctx.createBuffer(1, frames, ctx.sampleRate);
+    const data = this.noise.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
     for (const [id, url] of FILE_URL) {
       fetch(url)
         .then((r) => r.arrayBuffer())
@@ -145,6 +137,11 @@ export class SfxEngine {
 
     const bus = this.buses[recipe.bus];
     if (!bus) return;
+    const level = Math.min(1, Math.max(0, intensity));
+    const loud = (recipe.gain ?? 1) * (1 + level * (recipe.gainPerIntensity ?? 0));
+    const jitter = 1 + (Math.random() * 2 - 1) * (recipe.pitchJitter ?? 0);
+    const pitch = jitter * (1 + level * (recipe.pitchPerIntensity ?? 0));
+
     let out: AudioNode = bus;
     if (pan !== 0 && ctx.createStereoPanner) {
       const panner = ctx.createStereoPanner();
@@ -158,7 +155,7 @@ export class SfxEngine {
       const src = ctx.createBufferSource();
       src.buffer = file;
       const g = ctx.createGain();
-      g.gain.value = (recipe.fileGain ?? 1) * (1 + intensity * (recipe.gainPerIntensity ?? 0));
+      g.gain.value = (recipe.fileGain ?? 1) * (1 + level * (recipe.gainPerIntensity ?? 0));
       src.connect(g);
       g.connect(out);
       src.start(now);
@@ -166,129 +163,74 @@ export class SfxEngine {
       return;
     }
 
-    this.render(recipe, ctx, out, intensity, now);
-  }
-
-  /**
-   * Voice one recipe into `destination`, starting at `at`.
-   *
-   * Its own function, and taking the context rather than using `this.ctx`, for one reason: the offline render below has
-   * to make the SAME sound in a context that never touches the audio device. Two copies of this arithmetic is how a
-   * measurement and the thing it measures come to disagree.
-   */
-  private render(recipe: SfxRecipe, ctx: BaseAudioContext, destination: AudioNode, intensity: number, at: number): void {
-    const level = Math.min(1, Math.max(0, intensity));
-    const loud = (recipe.gain ?? 1) * (1 + level * (recipe.gainPerIntensity ?? 0));
-    const jitter = 1 + (Math.random() * 2 - 1) * (recipe.pitchJitter ?? 0);
-    const pitch = jitter * (1 + level * (recipe.pitchPerIntensity ?? 0));
-
     for (const layer of recipe.layers) {
-      const start = at + (layer.delay ?? 0);
-      const shape = layer.shape ?? 'linear';
-      const attack = layer.attack ?? 0;
-      this.ends.push(envelopeEnd(shape, attack, layer.seconds, start));
-      if (layer.type === 'tone') this.voiceTone(layer, ctx, destination, start, loud, pitch, shape, attack);
-      else this.voiceNoise(layer, ctx, destination, start, loud, pitch, shape, attack);
+      const at = now + (layer.delay ?? 0);
+      this.ends.push(at + layer.seconds);
+      if (layer.type === 'tone') this.tone(layer, at, loud, pitch, out);
+      else this.burst(layer, at, loud, pitch, out);
     }
-  }
-
-  private voiceTone(
-    l: ToneLayer,
-    ctx: BaseAudioContext,
-    destination: AudioNode,
-    at: number,
-    loud: number,
-    pitch: number,
-    shape: EnvelopeShape,
-    attack: number,
-  ): void {
-    const osc = ctx.createOscillator();
-    if (l.wave === 'pulse') osc.setPeriodicWave(pulseWave(ctx, l.duty ?? 0.5, l.hz * pitch));
-    else osc.type = 'triangle';
-    const hz = l.hz * pitch;
-    osc.frequency.setValueAtTime(hz, at);
-    if (l.endRatio !== undefined && l.endRatio !== 1) {
-      // LINEAR, not exponential: a chip's pitch came from a clock divider, and a divider does not bend the way a
-      // synthesiser's exponential sweep does. It is also why the sweeps in this table are short.
-      osc.frequency.linearRampToValueAtTime(Math.max(20, hz * l.endRatio), at + l.seconds);
-    }
-    const g = ctx.createGain();
-    applyEnvelope(g.gain, shape, attack, l.seconds, l.gain * loud, at);
-    osc.connect(g);
-    g.connect(destination);
-    osc.start(at);
-    osc.stop(envelopeEnd(shape, attack, l.seconds, at) + 0.01);
-  }
-
-  private voiceNoise(
-    l: NoiseLayer,
-    ctx: BaseAudioContext,
-    destination: AudioNode,
-    at: number,
-    loud: number,
-    pitch: number,
-    shape: EnvelopeShape,
-    attack: number,
-  ): void {
-    const src = ctx.createBufferSource();
-    // Generated for this play rather than cached: at a low rate the register's period is longer than the cue, so there is
-    // nothing to loop, and a buffer of a few thousand samples costs less than a cache keyed by (mode, rate, length).
-    src.buffer = lfsrNoise(ctx, l.mode ?? 'hiss', l.rate, Math.max(0.01, l.seconds));
-    // A rate sweep is a CLOCK sweep, which is a playback-rate sweep -- and that is how the hardware made a falling drum:
-    // by rewiring the period register in the middle of the hit.
-    if (l.endRatio !== undefined && l.endRatio !== 1) {
-      src.playbackRate.setValueAtTime(pitch, at);
-      src.playbackRate.linearRampToValueAtTime(Math.max(0.1, pitch * l.endRatio), at + l.seconds);
-    } else {
-      src.playbackRate.value = pitch;
-    }
-    const g = ctx.createGain();
-    applyEnvelope(g.gain, shape, attack, l.seconds, l.gain * loud, at);
-    src.connect(g);
-    g.connect(destination);
-    src.start(at);
-    src.stop(envelopeEnd(shape, attack, l.seconds, at) + 0.01);
   }
 
   /**
    * Test hook: what the engine has been asked to play.
    *
-   * Sound is the one thing a screenshot cannot show, and this is the version of "did it work" that can be READ: a cue
-   * that was played is a count and a name, and a cue that was dropped by the throttle or the voice cap is visible as a
-   * count that did not move.
+   * Sound is the one thing a screenshot cannot show, and this is the version of "did it work" that can be READ: a cue that
+   * was played is a count and a name, and a cue that was dropped by the throttle or the voice cap is visible as a count
+   * that did not move.
    */
   probe(): { attached: boolean; plays: number; last: SoundId | null; lastPan: number; voices: number } {
     const now = this.ctx?.currentTime ?? 0;
     return { attached: !!this.ctx, plays: this.plays, last: this.lastId, lastPan: this.lastPan, voices: this.ends.filter((t) => t > now).length };
   }
 
-  /**
-   * Test hook: render one cue to samples, with no audio device involved.
-   *
-   * An `OfflineAudioContext` is silent by construction -- which is what makes measuring the timbre possible at all
-   * without making a noise on the machine doing the measuring. The samples go back to
-   * `scripts/probe-sfx-timbre.mjs`, which reads the duty, the envelope and the harmonics out of them, so that "the
-   * palette really is a pulse wave" is a measurement rather than a claim about a config file.
-   */
-  async renderOffline(id: SoundId, seconds: number): Promise<Float32Array> {
-    const recipe = mech.audio.sfx.sounds[id];
-    if (!recipe) return new Float32Array(0);
-    const rate = 44100;
-    const ctx = new OfflineAudioContext(1, Math.ceil(seconds * rate), rate);
-    const sink = ctx.createGain();
-    sink.connect(ctx.destination);
-    // Deterministic: `render` jitters the pitch per play, and a measurement that moves cannot be compared to the last one.
-    const jitter = recipe.pitchJitter;
-    recipe.pitchJitter = 0;
-    try {
-      this.render(recipe, ctx, sink, 0.5, 0.01);
-    } finally {
-      // `delete` rather than assigning back: the field is optional, and putting `undefined` into it is not the same shape
-      // as never having had it.
-      if (jitter === undefined) delete recipe.pitchJitter;
-      else recipe.pitchJitter = jitter;
+  private tone(l: ToneLayer, at: number, loud: number, pitch: number, out: AudioNode): void {
+    const ctx = this.ctx!;
+    const osc = ctx.createOscillator();
+    osc.type = l.wave ?? 'sine';
+    const hz = l.hz * pitch;
+    osc.frequency.setValueAtTime(hz, at);
+    if (l.endRatio !== undefined && l.endRatio !== 1) osc.frequency.exponentialRampToValueAtTime(Math.max(30, hz * l.endRatio), at + l.seconds);
+    if (l.vibratoHz && l.vibratoDepth) {
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = l.vibratoHz;
+      const depth = ctx.createGain();
+      depth.gain.value = hz * l.vibratoDepth;
+      lfo.connect(depth);
+      depth.connect(osc.frequency);
+      lfo.start(at);
+      lfo.stop(at + l.seconds + 0.02);
     }
-    const rendered = await ctx.startRendering();
-    return rendered.getChannelData(0);
+    const g = ctx.createGain();
+    // Fast attack, exponential decay: a linear ramp to 0 would click, so the tail stops at a small floor.
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(l.gain * loud, at + Math.min(l.attack ?? 0.008, l.seconds * 0.5));
+    g.gain.exponentialRampToValueAtTime(0.0001, at + l.seconds);
+    osc.connect(g);
+    g.connect(out);
+    osc.start(at);
+    osc.stop(at + l.seconds + 0.02);
+  }
+
+  private burst(l: NoiseLayer, at: number, loud: number, pitch: number, out: AudioNode): void {
+    const ctx = this.ctx!;
+    if (!this.noise) return;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = l.filter ?? 'bandpass';
+    const hz = l.hz * pitch;
+    filter.frequency.setValueAtTime(hz, at);
+    if (l.endRatio !== undefined && l.endRatio !== 1) filter.frequency.exponentialRampToValueAtTime(Math.max(30, hz * l.endRatio), at + l.seconds);
+    filter.Q.value = l.q ?? 0.8;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(l.gain * loud, at + Math.min(l.attack ?? 0.004, l.seconds * 0.5));
+    g.gain.exponentialRampToValueAtTime(0.0001, at + l.seconds);
+    src.connect(filter);
+    filter.connect(g);
+    g.connect(out);
+    src.start(at, Math.random() * 0.5);
+    src.stop(at + l.seconds + 0.02);
   }
 }
