@@ -1337,6 +1337,15 @@ export class Run {
           if (points > 0) this.scorePopup(b.x, b.y, points);
         }
         this.stats.absorbed++;
+        /**
+         * Every collectable pays mutation points, on BOTH routes.
+         *
+         * The score above does not: it goes to whoever cannot grow from absorbing, because for the growth route the
+         * size IS the payment (see `score.absorb`). Mutation is not that kind of currency -- the pickup happened
+         * either way, and the route that grows faster should not also be the one that mutates slower. `times` is 1,
+         * so this is the config's `mutation.gain.absorb` and nothing else.
+         */
+        this.xp.gain('absorb');
         eaten++;
         this.sound('player.absorb', Math.min(1, bubbleR / Math.max(1e-6, playerR)));
         this.field.bubbles.splice(i, 1);
@@ -1505,6 +1514,8 @@ export class Run {
         y: this.player.y + Math.sin(angle) * r * 0.3,
         vy: 0,
         radius: radiusFraction,
+        // 饵是固定大小的，所以"它相对玩家多大"要现算——图的粗细读的就是这个（见 collectableArt）。
+        sizeRatio: radiusFraction / Math.max(1e-6, stageRadiusFraction(this.stage.stage, this.player.volume)),
         volume: bubbleVolumeFromRadius(radiusFraction),
         phase: angle,
         wobble: tuning.bubbleWobbleMin,

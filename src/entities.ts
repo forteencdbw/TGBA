@@ -27,6 +27,14 @@ export interface Bubble {
   radius: number;
   /** Mechanical size, derived from the radius so bigger bubbles are worth more. */
   volume: number;
+  /**
+   * The ratio the level asked for, as a multiple of the player's radius at the moment it spawned.
+   *
+   * Kept because the drawn radius is in METRES and the player grows: this is the one value that still says "how big
+   * was this compared with you", and it is what the picture is chosen by (see `collectableArt` in the config). It is
+   * read only by the painter -- the eating rules use the radius, which is the same fact in the units they need.
+   */
+  sizeRatio: number;
   /** 0..1 phase offset so they do not all wobble in unison. */
   phase: number;
   /**
@@ -337,6 +345,7 @@ export class EntityField {
       vy: bubbleRelativeFallRatio(volume, this.playerVolume) * this.scrollSpeed,
       radius,
       volume,
+      sizeRatio: ratio,
       phase: Math.random() * Math.PI * 2,
       wobble: Math.max(tuning.bubbleWobbleMin, Math.min(tuning.bubbleWobbleMax, 0.3 / Math.max(0.2, ratio))),
     };

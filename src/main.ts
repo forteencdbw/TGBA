@@ -32,7 +32,7 @@ import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
 import { RecordedMusic } from './recordedMusic';
 import { Sprite } from 'pixi.js';
-import { allAssetNames, assetTextureNow, loadAssetTexture, preloadAssets } from './assets';
+import { allAssetNames, assetSizeNow, assetTextureNow, loadAssetTexture, preloadAssets } from './assets';
 import { ParticleField } from './particles';
 import { ChargeTrail } from './chargeTrail';
 import { LoadingScreen } from './loading';
@@ -3817,28 +3817,89 @@ private updateBoss(): void {
     }
   }
 
+  /** The collectables' pictures by texel width, smallest first. See `collectables` in the config. */
+  private picturesBySize(): string[] {
+    if (!this.bubblePictureOrder) {
+      this.bubblePictureOrder = mech.collectableArt.pictures
+        .map((name) => ({ name, width: assetSizeNow(name)?.width ?? 0 }))
+        // A name with no size is not a candidate: `Math.min` of a zero would hand every bubble the same picture.
+        .filter((p) => p.width > 0)
+        .sort((a, b) => a.width - b.width)
+        .map((p) => p.name);
+    }
+    return this.bubblePictureOrder;
+  }
+
   /** Collectables and decoration, drawn in world metres. */
   private drawPickups(): void {
     const laneWidth = this.camera.viewport.laneWidthMeters;
     const g = this.pickups;
     g.clear();
 
-    for (const b of this.run.field.bubbles) {
+    const order = this.picturesBySize();
+    const art = mech.collectableArt;
+    const span = Math.max(1e-6, art.largeRatio - art.smallRatio);
+    const playerR = laneWidth * stageRadiusFraction(this.run.stage.stage, this.run.player.volume);
+
+    for (const [index, b] of this.run.field.bubbles.entries()) {
       const r = laneWidth * b.radius;
       // Lateral wobble: small bubbles shimmy, large ones hold their shape. Cosmetic, and small
       // enough that it never changes when a bubble passes the player.
       const drift = Math.sin(b.phase) * r * b.wobble;
       const x = b.x + drift;
-      // Bigger bubbles are brighter; anything bigger than the player reads as a threat.
-      const playerR = laneWidth * stageRadiusFraction(this.run.stage.stage, this.run.player.volume);
+      /**
+       * Which picture, by how big this one is COMPARED WITH THE PLAYER.
+       *
+       * `sizeRatio` rather than the radius in metres, because the radius is a distance and the player grows: the
+       * ratio is the level's own "how big is this relative to you", which is the same question the eating rules ask
+       * and therefore the one the drawing should be answering. The picture is then scaled to the exact radius below,
+       * so the collision circle is still what you see -- the choice of picture only decides the rim's weight.
+       */
+      const t = Math.min(1, Math.max(0, (b.sizeRatio - art.smallRatio) / span));
+      const name = order[Math.round(t * (order.length - 1))] ?? '';
+      const texture = name ? assetTextureNow(name) : null;
+      if (texture) {
+        let sprite = this.bubbleSprites[index];
+        if (!sprite) {
+          sprite = new Sprite(texture);
+          sprite.anchor.set(0.5);
+          sprite.eventMode = 'none';
+          /**
+           * The same parent as the drawn pickups, inserted AT the Graphics -- which is what keeps the specks over
+           * the bubbles: they are still filled into that Graphics, and a child at a lower index draws first.
+           */
+          g.parent?.addChildAt(sprite, g.parent.getChildIndex(g));
+          this.bubbleSprites[index] = sprite;
+        }
+        // Reassigned every frame rather than only on creation: the slot is by POSITION, and the picture a bubble
+        // wants depends on its own ratio, so two frames in a row can ask the same slot for different art.
+        sprite.texture = texture;
+        sprite.visible = true;
+        sprite.x = x;
+        sprite.y = b.y;
+        // The LONG side onto the diameter, so a picture can only ever look SMALLER than the thing that can hit you.
+        const scale = (2 * r * art.imageScale) / Math.max(1, Math.max(texture.width, texture.height));
+        // Negated Y for the same reason the bullets' sprites are: the world container is flipped.
+        sprite.scale.set(scale, -scale);
+        continue;
+      }
+      /**
+       * No picture: drawn as before.
+       *
+       * Kept rather than deleted because art is an upgrade and never a prerequisite (the project's rule for every
+       * creature), so a build whose atlas lacks these twelve must still show the player their food.
+       *
+       * Bigger bubbles are brighter; anything bigger than the player reads as a threat. Edible ones read as soft
+       * watery beads; the inedible minority gets a hard rim and a warmer tint so "do not touch" is legible at a
+       * glance in a busy screen.
+       */
       const edible = playerR >= r * 0.92;
       const tint = edible ? 0xaef2ff : 0xffd479;
-      // Edible ones read as soft watery beads; the inedible minority gets a hard rim and a warmer
-      // tint so "do not touch" is legible at a glance in a busy screen.
       g.circle(x, b.y, r).fill({ color: tint, alpha: edible ? 0.3 : 0.34 });
       g.circle(x - r * 0.3, b.y + r * 0.3, r * 0.68).fill({ color: 0xeafcff, alpha: 0.16 });
       g.circle(x, b.y, r).stroke({ color: tint, alpha: edible ? 0.6 : 0.95, width: r * (edible ? 0.09 : 0.16) });
     }
+    for (let i = this.run.field.bubbles.length; i < this.bubbleSprites.length; i++) this.bubbleSprites[i]!.visible = false;
     // Specks, one shape each, in two fills.
     //
     // NOT batched into a single `poly()`. That was tried and it is wrong: `poly()` builds ONE path, so
@@ -4163,6 +4224,16 @@ private updateBoss(): void {
    * screen, which is what keeps this from being the "one sprite per frame" bug with bullets.
    */
   private readonly bulletSprites: Sprite[] = [];
+  /**
+   * The collectables' sprites, and the picture names they are handed out by.
+   *
+   * A pool slotted by index, like the bullets', rather than the hazard pool's keyed-and-swept one: a collectable has
+   * no animation, no filter and no per-creature state to keep, so "the third bubble wears whatever sprite slot three
+   * holds" is the whole of the bookkeeping.
+   */
+  private readonly bubbleSprites: Sprite[] = [];
+  /** The picture names sorted by texel width, smallest first; computed once, on the first frame that asks. */
+  private bubblePictureOrder: string[] | null = null;
   private bubbleSpriteFor = '';
 
   /**
@@ -4576,6 +4647,7 @@ private updateBoss(): void {
       y: this.run.player.y,
       vy: 0,
       radius,
+      sizeRatio,
       volume: bubbleVolumeFromRadius(radius),
       phase: 0,
       wobble: tuning.bubbleWobbleMin,
@@ -4612,6 +4684,7 @@ private updateBoss(): void {
       y: this.run.player.y,
       vy: relative,
       radius,
+      sizeRatio,
       volume,
       phase: 0,
       wobble: tuning.bubbleWobbleMin,

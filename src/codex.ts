@@ -439,10 +439,12 @@ const ENVIRONMENT: readonly CodexEntry[] = [
       { label: '体积', value: '按半径的平方算，所以大泡泡一颗顶好几颗' },
       { label: '上升', value: '越大升得越快（浮力随体积、阻力随截面积）' },
       { label: '吸食', value: '玩家半径 ≥ 它的 92% 才能吃' },
+      { label: '吃到', value: `突变值 +${mech.mutation.gain.absorb}（两条路线都给）· 分数 +${mech.score.absorb}（只在不长大的路线上）` },
     ],
     notes: [
       '它相对你的屏幕速度 = 你的上升速度 - 它自己的上升速度，所以往下飘的是能吃的，往上跑的是吃不动的——这条不需要任何 UI。',
       '大泡泡比你还快，会跑到视野下方去；在那里回收等于一直删掉最大的那些。',
+      '**它穿哪张图由"它相对你多大"决定**：主菜单水里那十二张，比例 0.35 的穿最小的、0.7 的穿最大的。所以边框越粗的越大——而"能不能吃"读的就是这件事。图只是外套：它真正的大小永远是碰撞半径。',
     ],
     icon: { kind: 'glyph', glyph: 'collectable' },
   },
@@ -484,7 +486,7 @@ const ENVIRONMENT: readonly CodexEntry[] = [
     facts: [
       {
         label: '来源',
-        value: `随时间 ${num(mech.mutation.autoPerSecond, 1)}/秒  ·  打跑/吞噬 ${mech.mutation.gain.drivenOff}  ·  子弹擦边 ${mech.mutation.gain.bulletGraze}  ·  贴脸 ${mech.mutation.gain.pointBlank}  ·  拆弹 ${mech.mutation.gain.defuse}  ·  擦边 ${mech.mutation.gain.graze}  ·  BOSS ${mech.mutation.gain.boss}`,
+        value: `随时间 ${num(mech.mutation.autoPerSecond, 1)}/秒  ·  拾取 ${mech.mutation.gain.absorb}  ·  打跑/吞噬 ${mech.mutation.gain.drivenOff}  ·  子弹擦边 ${mech.mutation.gain.bulletGraze}  ·  贴脸 ${mech.mutation.gain.pointBlank}  ·  拆弹 ${mech.mutation.gain.defuse}  ·  擦边 ${mech.mutation.gain.graze}  ·  BOSS ${mech.mutation.gain.boss}`,
       },
       { label: '首级', value: `${mech.mutation.first} 点，每级 ×${mech.mutation.growth}` },
       { label: '持续', value: '跨关保留，死亡清零' },

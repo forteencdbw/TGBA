@@ -572,6 +572,7 @@ export interface Mechanisms {
     autoPerSecond: number;
     /** Points per event, keyed by `XpEvent` in `src/xp.ts`. */
     gain: {
+      absorb: number;
       drivenOff: number;
       eaten: number;
       graze: number;
@@ -1193,6 +1194,29 @@ export interface Mechanisms {
     /** Degrees clockwise. The world container is Y-flipped and that is compensated for; this is on top of it. */
     imageRotation: number;
     keepDetails: boolean;
+  };
+  /**
+   * The collectables' pictures: the main menu's set of bubbles, one drawn per collectable.
+   *
+   * The menu's own note (`src/menuDrift.ts`) says why it is twelve drawings rather than one that is scaled -- a
+   * pixel-art rim turns into a slab at the top of its range and a hairline at the bottom. This block borrows that set
+   * for the food, with one difference: a collectable's size IS a game value (its radius decides whether it can be
+   * eaten), so the picture is chosen by how big it is relative to the player and then scaled to the exact radius
+   * instead of being allowed to decide it.
+   */
+  collectableArt: {
+    /** File names in `src/assets/`, without their extensions. Order is irrelevant: the painter sorts them by width. */
+    pictures: readonly string[];
+    /**
+     * Which ratio wears the smallest picture, and which wears the largest. Cosmetic only.
+     *
+     * The twelve drawings span 2.4x in their own texel sizes; these two numbers are where that span lands on the
+     * gameplay ratio, which is what makes the rim's weight say "how big is this compared with you".
+     */
+    smallRatio: number;
+    largeRatio: number;
+    /** A multiplier on the drawn radius. 1 puts the picture's LONG side on the diameter, so art never looks bigger than it is. */
+    imageScale: number;
   };
   /**
    * Pictures for a creature, by kind. Keys are `HazardKind`s; a kind without an entry is drawn as before.
@@ -2586,7 +2610,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'graze.playerFlash.widthRatio', check: anyNumber, describe: 'a stroke width ratio' },
   ...popupRules('grazePopups'),
   { path: 'mutation.autoPerSecond', check: anyNumber, describe: 'mutation points per second' },
-  ...['drivenOff', 'eaten', 'graze', 'bulletGraze', 'pointBlank', 'defuse', 'boss'].map((event) => ({
+  ...['absorb', 'drivenOff', 'eaten', 'graze', 'bulletGraze', 'pointBlank', 'defuse', 'boss'].map((event) => ({
     path: `mutation.gain.${event}`,
     check: anyNumber,
     describe: 'mutation points for this event; 0 takes the event out of the economy',
@@ -3277,6 +3301,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'playerBubble.imageRotation', check: anyNumber, describe: 'degrees' },
   { path: 'playerBubble.imageScale', check: anyNumber, describe: 'a multiplier' },
   { path: 'playerBubble.keepDetails', check: (v) => typeof v === 'boolean', describe: 'true or false' },
+  { path: 'collectableArt.pictures', check: (v) => Array.isArray(v) && v.length > 0 && v.every((n) => typeof n === 'string'), describe: 'a non-empty list of file names in src/assets/ without their extensions' },
+  { path: 'collectableArt.smallRatio', check: anyNumber, describe: 'a multiple of the player radius' },
+  { path: 'collectableArt.largeRatio', check: anyNumber, describe: 'a multiple of the player radius' },
+  { path: 'collectableArt.imageScale', check: anyNumber, describe: 'a multiplier' },
   { path: 'codex.previewScrimColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'codex.previewScrimAlpha', check: anyNumber, describe: 'an opacity' },
   { path: 'codex.columns', check: wholeNumber, describe: 'a whole number of columns' },

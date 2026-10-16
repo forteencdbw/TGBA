@@ -23,6 +23,7 @@ import { mech } from './mechanisms';
 
 /** Every way a run earns mutation points. The names are the config's keys under `mutation.gain`. */
 export type XpEvent =
+  | 'absorb'
   | 'drivenOff'
   | 'eaten'
   | 'graze'
@@ -32,7 +33,7 @@ export type XpEvent =
   | 'boss';
 
 export class Xp {
-  private counts: Record<XpEvent, number> = { drivenOff: 0, eaten: 0, graze: 0, bulletGraze: 0, pointBlank: 0, defuse: 0, boss: 0 };
+  private counts: Record<XpEvent, number> = { absorb: 0, drivenOff: 0, eaten: 0, graze: 0, bulletGraze: 0, pointBlank: 0, defuse: 0, boss: 0 };
   /** Points toward the NEXT level. Whatever crossed a threshold is kept here, minus the cost paid. */
   private towards = 0;
   /**
@@ -130,7 +131,7 @@ export class Xp {
 
   /** Back to zero, and an empty ledger. A death starts the ladder over. */
   reset(): void {
-    this.counts = { drivenOff: 0, eaten: 0, graze: 0, bulletGraze: 0, pointBlank: 0, defuse: 0, boss: 0 };
+    this.counts = { absorb: 0, drivenOff: 0, eaten: 0, graze: 0, bulletGraze: 0, pointBlank: 0, defuse: 0, boss: 0 };
     this.towards = 0;
     this.taken = 0;
     this.picked = 0;
