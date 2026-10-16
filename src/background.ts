@@ -604,7 +604,7 @@ export interface HudState {
      * `pending` is the banked-pick count, so the bar can ring itself while a banked level waits for its
      * `playing` frame -- the player earned it, and a bar that hides what it is holding is lying.
      */
-    mutation: { fraction: number; level: number; pending: number };
+    mutation: { fraction: number; level: number; pending: number; ramp: boolean };
     /**
      * A second resource, for a bubble type that has one: its label, its readout, and its colour.
      *
@@ -1070,7 +1070,7 @@ export class Hud {
    * EARNED one at a time -- the next one is wherever the bar currently ends, and a tick for it would
    * be a tick that moves.
    */
-  private drawMutationGauge(state: { fraction: number; level: number; pending: number }): void {
+  private drawMutationGauge(state: { fraction: number; level: number; pending: number; ramp: boolean }): void {
     const cfg = mech.mutation.gauge;
     const s = this.hudScale;
     const g = this.mutationGauge;
@@ -1104,6 +1104,21 @@ export class Hud {
      */
     if (state.pending > 0) {
       g.roundRect(x, barY, w, h, r).stroke({ color: cfg.readyStroke, alpha: cfg.readyStrokeAlpha, width: Math.max(1.5, 1.5 * s) });
+    }
+
+    /**
+     * And a brighter, thicker ring while the pick's slow motion is running.
+     *
+     * `pending` says "you are owed a card"; this says "you are about to choose one", and the difference is the whole reason
+     * the water is slow. It is on the bar rather than in a banner because the bar is what filled -- the cause is already
+     * drawn, and a line of text would cover the water at the one moment the player can still act in it.
+     */
+    if (state.ramp) {
+      g.roundRect(x, barY, w, h, r).stroke({
+        color: cfg.rampStroke,
+        alpha: cfg.rampStrokeAlpha,
+        width: Math.max(1.5, h * cfg.rampStrokeScale),
+      });
     }
   }
 

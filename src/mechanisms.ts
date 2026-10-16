@@ -512,15 +512,22 @@ export interface Mechanisms {
    * radius times a multiplier, a reward that arrives on the frame it happens, and a slow-motion beat that
    * is the dodge's own helping hand. See `config/mechanics.json5` for the reasoning behind each number.
    */
+  /**
+   * The one global timescale, and the two beats that drive it.
+   *
+   * Shared shape, separate numbers: both are "hard to `factor`, hold for `slowSeconds`, then spend `recoverSeconds`
+   * coming back linearly" -- one piece of arithmetic with two tunings, because the two beats want different lengths. The
+   * counters run on REAL time and freeze with the pause. See `src/main.ts`'s `timeScale()`.
+   */
+  slowMotion: {
+    /** The near-miss beat: short, and it happens AFTER the danger has passed. */
+    graze: SlowMotionConfig;
+    /** The mutation pick's warning: long enough to register, and the player keeps control throughout. */
+    pick: SlowMotionConfig;
+  };
   graze: {
     /** The graze circle, as a multiple of the CONTACT radius (the player's plus the creature's). */
     radiusMultiplier: number;
-    /** The whole world's timescale while the beat holds: 0.25 is a quarter speed. */
-    slowFactor: number;
-    /** How long the hard slow lasts, in real seconds. */
-    slowSeconds: number;
-    /** How long the ease back to full speed takes after that. */
-    recoverSeconds: number;
     /**
      * The flash on the bubble's own edge, on the frame the graze lands.
      *
@@ -612,6 +619,11 @@ export interface Mechanisms {
       fillAlpha: number;
       readyStroke: number;
       readyStrokeAlpha: number;
+      /** The look while the pick's slow motion is running: brighter than "a card is banked", because it is nearer. */
+      rampStroke: number;
+      rampStrokeAlpha: number;
+      /** How thick that ring is, relative to the bar's height. */
+      rampStrokeScale: number;
       labelSize: number;
       labelColour: number;
     };
@@ -2048,6 +2060,8 @@ export interface Mechanisms {
         leaveFadeSeconds: number;
         /** Seconds before the end of a track at which it fades out, to loop back to the start. */
         loopFadeSeconds: number;
+        /** Seconds to fade out when a slot is HELD -- faded to silence but left where it is -- rather than left. */
+        holdFadeSeconds: number;
         /** Levels, 0..1, one per slot: the menu, a level, a boss fight, and the results screen. */
         menuVolume: number;
         levelVolume: number;
@@ -2147,6 +2161,16 @@ export interface Mechanisms {
     playerColour: number;
     grazeColour: number;
   };
+}
+
+/** One slow-motion beat's three numbers. See `mech.slowMotion`. */
+export interface SlowMotionConfig {
+  /** Timescale at its slowest, as a fraction of normal speed. */
+  factor: number;
+  /** Seconds held at `factor`. */
+  slowSeconds: number;
+  /** Seconds spent easing from `factor` back to 1. */
+  recoverSeconds: number;
 }
 
 /** One level's music, as the config writes it. See `src/music.ts` for what each field does to the sound. */
@@ -2527,9 +2551,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     describe: 'an opacity',
   })),
   { path: 'graze.radiusMultiplier', check: anyNumber, describe: 'a multiple of the contact radius' },
-  { path: 'graze.slowFactor', check: anyNumber, describe: 'a timescale (1 is no slow at all)' },
-  { path: 'graze.slowSeconds', check: anyNumber, describe: 'seconds' },
-  { path: 'graze.recoverSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'slowMotion.graze.factor', check: anyNumber, describe: 'a timescale (1 is no slow at all)' },
+  { path: 'slowMotion.graze.slowSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'slowMotion.graze.recoverSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'slowMotion.pick.factor', check: anyNumber, describe: 'a timescale (1 is no slow at all)' },
+  { path: 'slowMotion.pick.slowSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'slowMotion.pick.recoverSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'graze.playerFlash.seconds', check: anyNumber, describe: 'seconds' },
   { path: 'graze.playerFlash.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'graze.playerFlash.alpha', check: anyNumber, describe: 'an opacity' },
@@ -2588,6 +2615,9 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'mutation.gauge.fillAlpha', check: anyNumber, describe: 'an opacity' },
   { path: 'mutation.gauge.readyStroke', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
   { path: 'mutation.gauge.readyStrokeAlpha', check: anyNumber, describe: 'an opacity' },
+  { path: 'mutation.gauge.rampStroke', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'mutation.gauge.rampStrokeAlpha', check: anyNumber, describe: 'an opacity' },
+  { path: 'mutation.gauge.rampStrokeScale', check: anyNumber, describe: 'a thickness ratio' },
   { path: 'mutation.gauge.labelSize', check: anyNumber, describe: 'a font size' },
   { path: 'mutation.gauge.labelColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
   ...popupRules('score.popups'),
@@ -3528,6 +3558,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'audio.music.recorded.fadeInSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'audio.music.recorded.leaveFadeSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'audio.music.recorded.loopFadeSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'audio.music.recorded.holdFadeSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'audio.music.recorded.menuVolume', check: anyNumber, describe: 'a level, 0..1' },
   { path: 'audio.music.recorded.levelVolume', check: anyNumber, describe: 'a level, 0..1' },
   { path: 'audio.music.recorded.bossVolume', check: anyNumber, describe: 'a level, 0..1' },

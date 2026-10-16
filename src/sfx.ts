@@ -19,6 +19,13 @@
  * `pan` is -1..1 and comes from where the thing happened in the lane, so a shark on the left is in the left ear. The width
  * of that (`panWidth`) is a config number: a full-width pan on a phone's single speaker is nothing, and on headphones is
  * a lot.
+ *
+ * `scale` is the world's timescale, and it is what makes a slow motion believable: a cue fired while the world is at a
+ * third speed is played a third as high AND a third as long, which together are what a slowed tape does. **The `ui` bus is
+ * exempt**, and that is not a detail: a button, a card, and the pick's own warning are the player's feedback about a
+ * CONTROL rather than a thing happening in the water, so dragging them down with the water would make the panel itself
+ * feel like it had stalled. The exemption lives here rather than at the call sites, so "does this cue slow down" has one
+ * answer and it is the cue's own bus.
  */
 import { mech } from './mechanisms';
 import { SOUND_BUSES, type SoundBus, type SoundId } from './soundIds';
@@ -121,8 +128,13 @@ export class SfxEngine {
     }
   }
 
-  /** Play one cue. `intensity` is 0..1, `pan` is -1..1 (0 for a sound that is not somewhere in the water). */
-  play(id: SoundId, intensity: number, pan: number): void {
+  /**
+   * Play one cue.
+   *
+   * `intensity` is 0..1, `pan` is -1..1 (0 for a sound that is not somewhere in the water), and `scale` is the world's
+   * timescale -- see the note on it at the top of this file.
+   */
+  play(id: SoundId, intensity: number, pan: number, scale = 1): void {
     const ctx = this.ctx;
     const recipe = mech.audio.sfx.sounds[id];
     if (!ctx || !recipe) return;
@@ -140,7 +152,10 @@ export class SfxEngine {
     const level = Math.min(1, Math.max(0, intensity));
     const loud = (recipe.gain ?? 1) * (1 + level * (recipe.gainPerIntensity ?? 0));
     const jitter = 1 + (Math.random() * 2 - 1) * (recipe.pitchJitter ?? 0);
-    const pitch = jitter * (1 + level * (recipe.pitchPerIntensity ?? 0));
+    // The tape factor: the pitch is multiplied by it and every duration divided by it. 1 for a `ui` cue and for a world
+    // at full speed, so the ordinary path is unchanged. Bounded below so a pathological value cannot ask for silence.
+    const tape = recipe.bus === 'ui' ? 1 : Math.max(0.05, Math.min(1, scale));
+    const pitch = jitter * (1 + level * (recipe.pitchPerIntensity ?? 0)) * tape;
 
     let out: AudioNode = bus;
     if (pan !== 0 && ctx.createStereoPanner) {
@@ -163,7 +178,23 @@ export class SfxEngine {
       return;
     }
 
-    for (const layer of recipe.layers) {
+    /**
+     * Every duration is divided by the tape factor, so a slowed cue is stretched rather than merely re-pitched.
+     *
+     * The layer is copied rather than the two voice functions taught about a timescale: they already take a start time,
+     * a length and an attack, so a layer that is longer and starts later IS a slowed one, and neither of them has to know
+     * that time can run at different speeds.
+     */
+    for (const source of recipe.layers) {
+      const layer =
+        tape === 1
+          ? source
+          : {
+              ...source,
+              seconds: source.seconds / tape,
+              delay: (source.delay ?? 0) / tape,
+              attack: (source.attack ?? 0) / tape,
+            };
       const at = now + (layer.delay ?? 0);
       this.ends.push(at + layer.seconds);
       if (layer.type === 'tone') this.tone(layer, at, loud, pitch, out);

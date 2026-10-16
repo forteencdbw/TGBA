@@ -186,6 +186,16 @@ export class Run {
   }
 
   /**
+   * Whether the run is protected because a mutation pick is on its way.
+   *
+   * Not `invulnerable` with a long number in it: that is a COUNTDOWN in world time, and this is a state with no length of
+   * its own -- the game knows when the cards are coming and when they have been dealt, and a duration guessed from the
+   * outside would be a second thing to keep in step with the first. It is also deliberately not a general "safe" flag:
+   * there is exactly one reason the player cannot be hurt right now, and this says which.
+   */
+  pickProtected = false;
+
+  /**
    * The lane's width in metres, kept here so a cue can be panned to where it happened.
    *
    * Set by the game each frame (it is the camera's number, not the run's), and only read by `panAt`.
@@ -449,6 +459,14 @@ export class Run {
      * that was never touched.
      */
     if (this.infiniteHealth) return;
+    /**
+     * And nothing happens while a mutation pick is on its way either.
+     *
+     * The card is the player's own -- they filled the bar -- and the slow motion is the game saying "this next moment does
+     * not count". Losing a card to a round that happened to be crossing the screen would be a frustration about having no
+     * control rather than about having played badly, and the whole ramp is only six tenths of a second.
+     */
+    if (this.pickProtected) return;
     this.stats.hits++;
     this.sound('player.hurt', 0.5);
     // The base window is the config's; the mutation ladder's picks widen it in 0.2s steps.

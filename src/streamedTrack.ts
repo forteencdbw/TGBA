@@ -32,6 +32,8 @@ export interface StreamedTrackConfig {
   leaveFadeSeconds: number;
   /** Seconds before the end of the file at which it fades out, to loop back to the start. */
   loopFadeSeconds: number;
+  /** Seconds to fade out when this slot is HELD rather than left. See `update`'s `held`. */
+  holdFadeSeconds: number;
 }
 
 /** What `stateRef` reports: enough to prove the fade and the element are doing what they should. */
@@ -78,9 +80,18 @@ export class StreamedTrack {
    * @param bus the game's music bus, or null before the first gesture.
    * @param dt seconds since the last call. 0 is passed from a pointer handler: `play()` is only reliably allowed inside a
    *   gesture on iOS, and that call is what starts the first one there.
+   * @param opts `held` fades this slot to silence but LEAVES IT WHERE IT IS, and `rate` is the world's timescale -- a
+   *   recorded track is slowed by playing it slower, which is the only way an `<audio>` element can be slowed at all.
    */
-  update(dt: number, active: boolean, bus: { ctx: AudioContext; destination: AudioNode } | null, cfg: StreamedTrackConfig): void {
+  update(
+    dt: number,
+    active: boolean,
+    bus: { ctx: AudioContext; destination: AudioNode } | null,
+    cfg: StreamedTrackConfig,
+    opts: { held?: boolean; rate?: number } = {},
+  ): void {
     if (!bus) return;
+    const held = opts.held ?? false;
     if (!this.el) {
       if (!active || !this.url) return;
       this.create(bus);
@@ -91,19 +102,39 @@ export class StreamedTrack {
 
     // Near the end of the file the target drops to zero so the track fades out before it runs out. `duration` is NaN until
     // the metadata has arrived, which compares false, so the first seconds never loop early.
-    const looping = active && el.duration - el.currentTime <= cfg.loopFadeSeconds;
-    const target = active && !looping ? 1 : 0;
-    const seconds = target > this.presence ? cfg.fadeInSeconds : active ? cfg.loopFadeSeconds : cfg.leaveFadeSeconds;
+    const looping = active && !held && el.duration - el.currentTime <= cfg.loopFadeSeconds;
+    const target = active && !held && !looping ? 1 : 0;
+    /**
+     * WHICH FADE, and the three cases are three different things rather than three lengths.
+     *
+     * Coming UP is always `fadeInSeconds`. Going down depends on WHY: a HOLD (the pick) uses its own length so it can be
+     * made to match the slow motion it is riding; the loop point uses the loop's; and being left for another slot uses the
+     * leave fade. Sharing one number between them would mean the pick could not be made silent exactly when the cards
+     * appear without changing every other fade in the game.
+     */
+    const seconds =
+      target > this.presence ? cfg.fadeInSeconds : held ? cfg.holdFadeSeconds : active ? cfg.loopFadeSeconds : cfg.leaveFadeSeconds;
     const step = dt / Math.max(0.01, seconds);
     this.presence = target > this.presence ? Math.min(target, this.presence + step) : Math.max(target, this.presence - step);
 
-    if (active) {
+    if (active && !held) {
       if (looping && this.presence === 0) el.currentTime = 0;
       if ((el.paused || el.ended) && performance.now() >= this.retryAfter) this.start(el);
     } else if (this.presence === 0 && !el.paused) {
       el.pause();
-      this.rewind = true;
+      /**
+       * A HOLD REMEMBERS WHERE IT WAS; being left does not.
+       *
+       * `rewind` is what makes the next start begin at zero, and it is set here rather than at `start` because this is the
+       * moment that knows WHY the element stopped. The pick can happen three times in one level, and a 173-second track
+       * that began again each time would be three openings and no middle.
+       */
+      this.rewind = !held;
     }
+    // The world's tape speed. A step rather than a ramp: the slow motion's own shape is already the ramp, and the element
+    // follows it frame by frame.
+    const rate = Math.max(0.05, Math.min(1, opts.rate ?? 1));
+    if (el.playbackRate !== rate) el.playbackRate = rate;
     gain.gain.setTargetAtTime(this.presence * cfg.volume, bus.ctx.currentTime, 0.05);
   }
 

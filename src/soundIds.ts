@@ -25,6 +25,13 @@ export const SOUND_IDS = [
   'ui.pause',
   'ui.resume',
   'levelup.open',
+  /**
+   * The pick's slow motion starting.
+   *
+   * Its own cue rather than reusing `levelup.open`: that one belongs to the cards appearing, and the whole point of the
+   * ramp is that it happens BEFORE they do. On the `ui` bus, so it does not slow down with the slow motion it announces.
+   */
+  'levelup.ramp',
   'levelup.pick',
   'level.start',
   'level.banner',

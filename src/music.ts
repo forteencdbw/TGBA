@@ -139,7 +139,7 @@ export class Music {
    * loop that runs while it is visible and stops when the tab is hidden -- which is exactly the behaviour wanted from
    * music in a browser game, and free.
    */
-  update(dt: number): void {
+  update(dt: number, scale = 1): void {
     if (!this.playing || !this.track || !this.ctx || !this.filter) return;
     const stepSeconds = 60 / Math.max(1, this.track.stepPerMinute);
     this.stepClock += dt;
@@ -148,27 +148,37 @@ export class Music {
     let scheduled = 0;
     while (this.stepClock >= stepSeconds && scheduled < 4) {
       this.stepClock -= stepSeconds;
-      this.playStep(this.stepIndex, stepSeconds);
+      this.playStep(this.stepIndex, stepSeconds, scale);
       this.stepIndex++;
       scheduled++;
     }
   }
 
-  /** One step: a chord note from the arpeggio, plus the pad when a chord starts. */
-  private playStep(index: number, stepSeconds: number): void {
+  /**
+   * One step: a chord note from the arpeggio, plus the pad when a chord starts.
+   *
+   * `scale` is the world's timescale, and this music needs it for a different reason than a recorded track does. The
+   * TEMPO already follows the slow motion for free -- `update` is called once per simulation step, so a slowed world mints
+   * fewer of them and the notes arrive further apart. What it does not do by itself is go DOWN in pitch or STRETCH, so a
+   * note is played at `scale` times its frequency for `1/scale` times its length. Together with the tempo that is a tape
+   * slow, which is what the recorded tracks get from `playbackRate` -- and the two kinds of music behaving differently
+   * under the same slow motion is the sort of difference that reads as a bug.
+   */
+  private playStep(index: number, stepSeconds: number, scale: number): void {
     const track = this.track;
     const ctx = this.ctx;
     if (!track || !ctx || !this.filter) return;
     const chord = track.chords[Math.floor(index / Math.max(1, track.stepsPerChord)) % track.chords.length];
     if (!chord || !chord.length) return;
     const note = chord[track.pattern[index % track.pattern.length] % chord.length] ?? chord[0]!;
-    this.blip(this.frequency(track.rootHz, note), stepSeconds, track.arpGain, track.wave, 0);
+    const stretch = 1 / Math.max(0.05, Math.min(1, scale));
+    this.blip(this.frequency(track.rootHz * scale, note), stepSeconds * stretch, track.arpGain, track.wave, 0);
     // The pad retriggers only on a chord change, so it holds underneath the arpeggio instead of pulsing with it.
     if (index % Math.max(1, track.stepsPerChord) === 0) {
-      const barSeconds = stepSeconds * track.stepsPerChord;
-      this.blip(this.frequency(track.rootHz, chord[0]!), barSeconds, track.padGain, track.padWave, track.detuneCents);
+      const barSeconds = stepSeconds * track.stepsPerChord * stretch;
+      this.blip(this.frequency(track.rootHz * scale, chord[0]!), barSeconds, track.padGain, track.padWave, track.detuneCents);
       const fifth = chord[Math.min(2, chord.length - 1)] ?? chord[0]!;
-      this.blip(this.frequency(track.rootHz, fifth), barSeconds, track.padGain * 0.7, track.padWave, -track.detuneCents);
+      this.blip(this.frequency(track.rootHz * scale, fifth), barSeconds, track.padGain * 0.7, track.padWave, -track.detuneCents);
     }
   }
 

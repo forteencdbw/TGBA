@@ -388,10 +388,13 @@ musicBus(): { ctx: AudioContext; destination: AudioNode } | null {
    *
    * @param intensity 0..1, scales level and brightness. Used for things like how big a bubble was.
    * @param pan -1..1, where in the lane it happened (0 for something that is not in the water: a button, a banner).
+   * @param scale the world's timescale, so a cue in the water can slow with it. 1 is normal speed. **Ignored by the
+   *   `ui` bus**, which is the player's own feedback about a control rather than a thing happening in the water -- see
+   *   `SfxEngine.play`.
    */
-  play(event: SoundEvent, intensity = 0.5, pan = 0): void {
+  play(event: SoundEvent, intensity = 0.5, pan = 0, scale = 1): void {
     if (!this.ctx || !this.sfxBus || !this.enabled) return;
-    this.sfx.play(event, intensity, pan);
+    this.sfx.play(event, intensity, pan, scale);
   }
 
   /** Test hook: what the one-shot engine has been asked to play. See `SfxEngine.probe`. */

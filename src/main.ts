@@ -889,6 +889,22 @@ class Game {
     return this.summary;
   }
 
+  /**
+   * Test hook: the slow motions and the cards they lead to.
+   *
+   * `scale` is what the world is running at; `pickLeft` is the seconds left of the pick's whole beat, so a probe can watch
+   * the ramp elapse and the recovery run rather than inferring it from a screenshot nobody can hear.
+   */
+  get slowMotionRef(): { scale: number; pickScale: number; pickLeft: number; rampArmed: boolean; pickProtected: boolean } {
+    return {
+      scale: this.timeScale(),
+      pickScale: this.pickTimeScale(),
+      pickLeft: this.pickSlow,
+      rampArmed: this.pickRampArmed,
+      pickProtected: this.run.pickProtected,
+    };
+  }
+
   /** Test hook: the level music, so a probe can read whether a track is running and which. */
   get musicRef(): Music {
     return this.music;
@@ -1393,6 +1409,20 @@ class Game {
    * rules reads it, and the graze itself is already paid by the time this starts.
    */
   private grazeFlash = 0;
+  /**
+   * Seconds left of the mutation pick's slow motion, real time, 0 when there is none.
+   *
+   * The whole beat, not just the ramp: the cards open when the slow phase has elapsed and the recovery runs on what is
+   * left, so ONE counter describes both halves and the frozen pick sits exactly between them.
+   */
+  private pickSlow = 0;
+  /**
+   * Whether a ramp is running whose cards have not been dealt yet.
+   *
+   * The distinction between "the slow motion is running" and "the cards are coming" is what makes a second consecutive
+   * pick skip the ramp: the player is already choosing, so warning them again would say the same thing twice.
+   */
+  private pickRampArmed = false;
   /** White-out flash driven by the surface breach, 1 -> 0. */
   private splash = 0;
   /** Whether the current burst is a SURFACE finish rather than a death. */
@@ -1920,7 +1950,7 @@ class Game {
      * not burning its remaining seconds behind a frozen screen.
      */
     if (
-      this.grazeSlow > 0 &&
+      (this.grazeSlow > 0 || this.pickSlow > 0) &&
       this.run.phase !== 'paused' &&
       this.run.phase !== 'levelup' &&
       this.run.phase !== 'menu' &&
@@ -1928,8 +1958,42 @@ class Game {
     ) {
       this.grazeSlow = Math.max(0, this.grazeSlow - dt);
       this.grazeFlash = Math.max(0, this.grazeFlash - dt);
+      /**
+       * The pick's ramp burns down with the rest, and it is frozen for the same reason.
+       *
+       * A slow motion that kept running behind the pause panel would mean the cards were waiting for the player when they
+       * closed it -- so the ramp they never saw happen would be over, and the warning would have been spent while nobody
+       * was looking. `levelup` is in the list for the mirror-image reason: the ramp has already finished by then.
+       */
+      this.pickSlow = Math.max(0, this.pickSlow - dt);
     }
-    const scaled = dt * this.grazeTimeScale();
+    /**
+     * And the player cannot be hurt while a pick is on its way.
+     *
+     * Six tenths of a second during which the world is still running: a round that happens to be crossing the screen would
+     * otherwise take a card the player had already earned, and the frustration would be about having no control rather than
+     * about having played badly. SET HERE rather than beside the music, because the simulation below is what asks -- a flag
+     * set after it would leave the first frame of every ramp unprotected.
+     */
+    this.run.pickProtected = this.run.phase === 'playing' && this.pickRampArmed;
+
+    /**
+     * The recorded music, once per FRAME and on the REAL clock.
+     *
+     * It used to be stepped with the simulation, and the slow motion is what made that wrong. A recorded track's fade is an
+     * envelope on a media element rather than a simulation quantity, and `step` runs on the timescale -- so a hold told to
+     * take 0.6 seconds actually took two, and the music was still audible when the cards appeared. Measured in the running
+     * game before the move: the fade advanced at 0.53 of the ramp's rate during the pick's slow motion, exactly the 0.3
+     * factor, which left it at a third of its level when the cards opened.
+     *
+     * It has to run in EVERY phase, which is why it is here rather than in the level's own code: the menu's track, a boss
+     * track and the hold behind the pick all have to keep moving while the water is frozen.
+     */
+    this.recordedMusic.play(this.run.phase === 'menu' ? 'menu' : this.recordedMusic.playing === 'menu' ? null : this.recordedMusic.playing);
+    this.updateMusicForSlowMotion();
+    this.recordedMusic.update(dt, audio.musicBus());
+
+    const scaled = dt * this.timeScale();
 
     this.accumulator += scaled;
     const step = 1 / 120;
@@ -1947,17 +2011,35 @@ class Game {
   /**
    * The world's timescale right now, 1 when nothing is happening.
    *
-   * The beat has two halves: `slowSeconds` at the full `slowFactor`, then `recoverSeconds` easing back
-   * to 1 -- a snap back to speed reads as a stutter, and a fade back is what lets the player's hands
-   * catch up with their eyes.
+   * THE ONE PLACE the two slow motions meet. They are the same shape -- hard to `factor`, hold for `slowSeconds`, then
+   * spend `recoverSeconds` coming back linearly, because a snap back to full speed reads as a stutter and a fade back is
+   * what lets the player's hands catch up with their eyes -- so the arithmetic is written once and given two tunings. When
+   * both are running the DEEPER one wins rather than the two multiplying: they are both "everything slows down", and
+   * stacking them would make a graze during a pick twice as slow as either was tuned to be.
    */
-  private grazeTimeScale(): number {
-    if (this.grazeSlow <= 0) return 1;
-    const cfg = mech.graze;
-    const elapsed = cfg.slowSeconds + cfg.recoverSeconds - this.grazeSlow;
-    if (elapsed < cfg.slowSeconds) return cfg.slowFactor;
+  private timeScale(): number {
+    return Math.min(this.slowScale(this.grazeSlow, mech.slowMotion.graze), this.slowScale(this.pickSlow, mech.slowMotion.pick));
+  }
+
+  /** One slow motion's own timescale, `left` being the seconds remaining of the whole beat. */
+  private slowScale(left: number, cfg: { factor: number; slowSeconds: number; recoverSeconds: number }): number {
+    if (left <= 0) return 1;
+    const elapsed = cfg.slowSeconds + cfg.recoverSeconds - left;
+    if (elapsed < cfg.slowSeconds) return cfg.factor;
     const t = Math.min(1, (elapsed - cfg.slowSeconds) / Math.max(0.01, cfg.recoverSeconds));
-    return cfg.slowFactor + (1 - cfg.slowFactor) * t;
+    return cfg.factor + (1 - cfg.factor) * t;
+  }
+
+  /**
+   * The PICK's slow motion on its own, for the two things that follow it rather than the world: the recorded music's
+   * playback rate and the synthesiser's pitch.
+   *
+   * Deliberately not `timeScale()`: those two should tape-slow for the beat they were written for and for nothing else.
+   * The synthesiser already slows its TEMPO during a graze -- that falls out of the frame loop for free -- and giving it a
+   * detune there as well would be a change to a mechanic the owner tuned and did not ask to have re-voiced.
+   */
+  private pickTimeScale(): number {
+    return this.slowScale(this.pickSlow, mech.slowMotion.pick);
   }
 
   /**
@@ -1986,15 +2068,6 @@ class Game {
      * is handled here too, and muting while the settings panel is open is exactly when someone would want it.
      */
     this.input.update();
-    /**
-     * The recorded side of the music, every frame and in every phase.
-     *
-     * During a run the synth's `update` is what plays a level's notes, and that one only ticks while the level does -- so
-     * this has to be here rather than beside it, or the menu's track would stop the moment a run began and a boss track
-     * could not start while the pick was open.
-     */
-    this.recordedMusic.play(this.run.phase === 'menu' ? 'menu' : this.recordedMusic.playing === 'menu' ? null : this.recordedMusic.playing);
-    this.recordedMusic.update(dt, audio.musicBus());
     if (this.run.phase !== 'menu' && this.input.consumeMute()) this.audioMuted = audio.toggleMute();
 
     /**
@@ -2394,7 +2467,7 @@ class Game {
      * player cannot leave). Everything the old rule needed -- a length, a finish line, a countdown to it -- is gone
      * with it.
      */
-    this.music.update(dt);
+    this.music.update(dt, this.pickTimeScale());
     this.updateBoss();
     this.run.updateConductiveCharge(dt, viewport.laneWidthMeters);
     this.watchHazardsForSound(dt);
@@ -2411,7 +2484,7 @@ class Game {
      * first playing frame of the next level hands it over. (A death clears the ladder with everything
      * else, so `burst` can never hold one.)
      */
-    if (this.run.phase === 'playing' && this.run.xp.pending > 0) this.openLevelUp();
+    if (this.run.phase === 'playing' && this.run.xp.pending > 0) this.stepMutationPick();
 
     // Trace the end condition, so a probe can see WHY a level failed to end rather than only that it
     // did. A win condition with five clauses is exactly the kind of thing that reports "still playing"
@@ -2464,6 +2537,35 @@ class Game {
    * interrupted. The touches are released for the same reason the pause releases them: a finger held
    * on the water through the freeze would resume a drag the player has already stopped thinking about.
    */
+  /**
+   * The mutation pick, in three beats: slow down, deal the cards, come back up.
+   *
+   * Called from the end of the `playing` step when the bar is full -- the position the pick has always opened from. What is
+   * new is that it does not open there any more: the world slows first and the cards wait for it, because a freeze that
+   * arrives with no warning is a freeze the player reads as a hang.
+   *
+   * It takes no delta: the counter is burned in `frame` alongside the graze's, and this decides only what the count means.
+   */
+  private stepMutationPick(): void {
+    const cfg = mech.slowMotion.pick;
+    if (this.pickSlow <= 0) {
+      /**
+       * Nothing running: the bar just filled. Start the ramp.
+       *
+       * The counter is the WHOLE beat -- the slow part plus the recovery -- so that the pick itself, which freezes the
+       * frame, sits in the middle of it without a second clock to keep in step.
+       */
+      this.pickSlow = cfg.slowSeconds + cfg.recoverSeconds;
+      this.pickRampArmed = true;
+      this.sound('levelup.ramp', 0.8);
+      return;
+    }
+    if (this.pickRampArmed && cfg.slowSeconds + cfg.recoverSeconds - this.pickSlow >= cfg.slowSeconds) {
+      this.pickRampArmed = false;
+      this.openLevelUp();
+    }
+  }
+
   private openLevelUp(): void {
     this.sound('levelup.open', 0.6);
     this.run.phase = 'levelup';
@@ -2507,6 +2609,11 @@ class Game {
      */
     if (choice.id.startsWith('route:')) this.applyFormToTouch();
     this.run.xp.consume();
+    /**
+     * The ramp is over the moment a card is taken: what is left of `pickSlow` is the recovery, which runs while the world
+     * comes back up to speed and the music comes back in. `pickRampArmed` is already false -- the cards cannot be up and
+     * the ramp still armed -- and clearing it here would hide a bug where they both were.
+     */
     this.levelup.close();
     sayBanner(this.run.events, `突变  ·  ${choice.name}`);
     if (this.run.xp.pending > 0) {
@@ -2681,6 +2788,15 @@ class Game {
       this.run.skill = null;
       this.run.skillActivations = 0;
       this.run.xp.reset();
+    /**
+     * The ramp goes with the run.
+     *
+     * A level that ends while the ramp is armed leaves it armed: the pick never opens, because the pick only opens in
+     * `playing`, and the bar would stay lit through the ending and into the next level's first frame. Same for a run that
+     * is restarted from the panel. Both come through here.
+     */
+    this.pickSlow = 0;
+    this.pickRampArmed = false;
       this.run.mutations = {};
       this.run.picks = [];
       /**
@@ -2749,6 +2865,27 @@ class Game {
    * gear returns true from `handlePointerDown` and the menu's button is read in `handlePointerUp` -- so it is not
    * called from a pointer handler directly.
    */
+  /**
+   * Hold the music where it is, or let it go, and follow the world's speed.
+   *
+   * Called every frame from the same place the recorded music is updated, so there is one place that decides both what the
+   * music is doing and how fast.
+   */
+  private updateMusicForSlowMotion(): void {
+    const scale = this.pickTimeScale();
+    /**
+     * Held from the moment the ramp starts, which is not the same as from the moment the cards appear.
+     *
+     * The fade takes the same seconds as the ramp, so it has to BEGIN with it: holding only while `levelup` is up would
+     * mean the music only started going quiet once the cards arrived, and the player would hear it fade out over a menu
+     * they were already reading. The recovery is the one window that is neither -- slow motion left to run AND the world
+     * back in the player's hands -- and that is where it fades back in.
+     */
+    const held = this.pickSlow > 0 && (this.pickRampArmed || this.run.phase !== 'playing');
+    this.recordedMusic.hold(held);
+    this.recordedMusic.setRate(scale);
+  }
+
   private openSettings(): void {
     // The codex is excluded: it is a full-screen page reached FROM the menu, so there is no run to pause behind it and
     // its gear would be a button onto itself.
@@ -3413,7 +3550,9 @@ private updateBoss(): void {
           this.bannerSeen = true;
           break;
         case 'sound':
-          audio.play(e.event, e.intensity, e.pan);
+          // The world's timescale, so a cue fired during a slow motion is slowed with it. The `ui` bus ignores it --
+          // see `SfxEngine.play` -- so a panel sound is unaffected however slow the water is.
+          audio.play(e.event, e.intensity, e.pan, this.timeScale());
           break;
         case 'scorePopup':
           this.popups.add(e.x, e.y, e.points, this.camera);
@@ -3432,7 +3571,7 @@ private updateBoss(): void {
            * a standstill, which was the design's call -- the reward is TIME, not power.
            */
           this.grazePopups.say(e.x, e.y, mech.grazePopups.prefix, this.camera);
-          this.grazeSlow = mech.graze.slowSeconds + mech.graze.recoverSeconds;
+          this.grazeSlow = mech.slowMotion.graze.slowSeconds + mech.slowMotion.graze.recoverSeconds;
           this.grazeFlash = mech.graze.playerFlash.seconds;
           break;
         case 'callout':
@@ -3561,7 +3700,14 @@ private updateBoss(): void {
          * not spent yet (a boss's payment can cross two thresholds before the next `playing` frame
          * opens the modal).
          */
-        mutation: { fraction: this.run.xp.fraction, level: this.run.xp.level, pending: this.run.xp.pending },
+        mutation: {
+          fraction: this.run.xp.fraction,
+          level: this.run.xp.level,
+          pending: this.run.xp.pending,
+          // The bar lights up while the cards are coming: it is the only thing that says WHY the water slowed down, and it
+          // already exists -- the same bar holds the progress that earned the card.
+          ramp: this.pickRampArmed,
+        },
         /**
          * The second resource's readout, for the type that has one.
          *

@@ -138,8 +138,15 @@ test.describe('routes', () => {
         };
       }).__GB.game;
       g.debugGrantMutationPoints(200);
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      /**
+       * The cards do not appear on the frame the bar fills any more: the mutation pick runs a slow motion FIRST and opens
+       * when it has elapsed (`stepMutationPick`), so waiting two frames waits for a phase that is no longer there. Poll for
+       * the phase -- which is what this suite tells you to do everywhere else; counting frames only ever worked because the
+       * two moments happened to be the same one.
+       */
+      for (let i = 0; i < 300 && g.diagnostics.phase !== 'levelup'; i++) {
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      }
       return {
         phase: g.diagnostics.phase,
         route: g.diagnostics.route,
@@ -234,8 +241,15 @@ test.describe('routes', () => {
         };
       }).__GB;
       g.game.debugGrantMutationPoints(200);
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      /**
+       * The cards do not appear on the frame the bar fills any more: the mutation pick runs a slow motion FIRST and opens
+       * when it has elapsed (`stepMutationPick`), so waiting two frames waits for a phase that is no longer there. Poll for
+       * the phase -- which is what this suite tells you to do everywhere else; counting frames only ever worked because the
+       * two moments happened to be the same one.
+       */
+      for (let i = 0; i < 300 && g.game.diagnostics.phase !== 'levelup'; i++) {
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      }
       return { phase: g.game.diagnostics.phase, cards: [0, 1, 2].map((i) => g.game.levelupRef.choiceAt(i)) };
     });
     expect(first.phase).toBe('levelup');
@@ -268,8 +282,15 @@ test.describe('routes', () => {
         };
       }).__GB.game;
       g.debugGrantMutationPoints(200);
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      /**
+       * The cards do not appear on the frame the bar fills any more: the mutation pick runs a slow motion FIRST and opens
+       * when it has elapsed (`stepMutationPick`), so waiting two frames waits for a phase that is no longer there. Poll for
+       * the phase -- which is what this suite tells you to do everywhere else; counting frames only ever worked because the
+       * two moments happened to be the same one.
+       */
+      for (let i = 0; i < 300 && g.diagnostics.phase !== 'levelup'; i++) {
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      }
       return { phase: g.diagnostics.phase, cards: [0, 1, 2].map((i) => g.levelupRef.choiceAt(i)) };
     });
     expect(second.phase).toBe('levelup');
@@ -1139,8 +1160,8 @@ test.describe('routes', () => {
       const base = { streams: g.game.diagnostics.bullets.gunStreams, controls: [...g.game.touchRef.controlIds] };
       // The branch node, then the third card: 弹幕.
       g.game.debugGrantMutationPoints(200);
-      await raf();
-      await raf();
+      // The slow motion runs before the cards do -- see the note on the first site in this file.
+      for (let i = 0; i < 300 && g.game.diagnostics.phase !== 'levelup'; i++) await raf();
       const cards = [0, 1, 2].map((i) => g.game.levelupRef.choiceAt(i)?.id);
       const barrageAt = cards.findIndex((id) => id === 'route:barrage');
       if (barrageAt < 0) throw new Error(`branch node did not offer barrage: ${cards.join(',')}`);
