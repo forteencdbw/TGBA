@@ -1220,8 +1220,9 @@ export class Run {
     );
     if (contact.hit?.broke) {
       this.lastComedyBeat = { what: 'crab', at: this.elapsed };
-      // By MATERIAL rather than one thud: a crate, a coral and a net are three different things to break, and the wall
-      // is the one the bubble bounces off instead. See `OBSTACLE_BREAK_SOUNDS`.
+      // By MATERIAL rather than one thud: a crate and a net come apart to their own cues and the three hard ones
+      // (coral, wall, tube) share one. See `OBSTACLE_BREAK_SOUNDS`, which covers every kind now -- until it did, this
+      // line's fallback was quietly playing `rage.slam` for walls and tubes.
       this.sound(OBSTACLE_BREAK_SOUNDS[contact.hit.kind] ?? 'rage.slam');
       /**
        * Breaking something LARGE is one of the document's ways to release the rage, and it is checked here because

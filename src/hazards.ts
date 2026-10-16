@@ -2179,7 +2179,6 @@ export class HazardField {
      */
     hazard.charge = null;
     hazard.flee = FLEE_DIRECTIONS[Math.floor(Math.random() * FLEE_DIRECTIONS.length)]!;
-    hazard.flee = FLEE_DIRECTIONS[Math.floor(Math.random() * FLEE_DIRECTIONS.length)]!;
     this.fled++;
     // Reported like every other outcome of a round landing, because the sound of a creature being driven off is the beat
     // that says the shot finished the job -- and until now nothing downstream could tell it had happened at all.

@@ -1,5 +1,5 @@
 import type { SfxConfig } from './sfx';
-import { SOUND_BUSES, SOUND_IDS } from './soundIds';
+import { OBSTACLE_BREAK_SOUNDS, SOUND_BUSES, SOUND_IDS } from './soundIds';
 import JSON5 from 'json5';
 import rawText from '../config/mechanics.json5?raw';
 
@@ -3945,6 +3945,29 @@ for (const table of ['health', 'radius'] as const) {
   const rows = Object.keys(mech.obstacles.ramVolume);
   const extra = rows.filter((k) => !(OBSTACLE_KINDS as readonly string[]).includes(k));
   if (extra.length) fail(`obstacles.ramVolume names kinds that do not exist: ${extra.join(', ')}`);
+}
+
+/**
+ * Every obstacle kind must have a break cue (`OBSTACLE_BREAK_SOUNDS` in `src/soundIds.ts`).
+ *
+ * Checked here rather than in `soundIds.ts`, which has no imports on purpose: the kinds live in this file, and a
+ * source table cannot import them back without a runtime cycle through `mech`.
+ *
+ * It guards the same shape of failure as the tables above, with a nastier symptom: `src/run.ts` falls back to
+ * `rage.slam`, so a missing row is the WRONG sound rather than no sound -- a wall coming apart to the volatile
+ * bubble's cue. Nobody reports that as a bug, because it is not obviously a bug. `wall` and `tube` were both missing
+ * that way until the eel became shootable and somebody read the table.
+ */
+{
+  const missing = (OBSTACLE_KINDS as readonly string[]).filter((k) => !(k in OBSTACLE_BREAK_SOUNDS));
+  const extra = Object.keys(OBSTACLE_BREAK_SOUNDS).filter((k) => !(OBSTACLE_KINDS as readonly string[]).includes(k));
+  if (missing.length || extra.length) {
+    fail(
+      'soundIds.OBSTACLE_BREAK_SOUNDS must have exactly one cue per obstacle kind' +
+        (missing.length ? `; missing: ${missing.join(', ')}` : '') +
+        (extra.length ? `; not a kind: ${extra.join(', ')}` : ''),
+    );
+  }
 }
 
 /**

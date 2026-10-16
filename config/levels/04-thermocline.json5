@@ -114,7 +114,7 @@
     { at: 1090, kind: 'angler', count: 2, arrange: 'line' },
     { at: 1120, kind: 'octopus', x: 0.65, from: 'right', enterSpeed: 34 },
 
-    // --- S6  回落：**电鳗**（枪打不死的射手，0 血，只能躲或吞）+ 鱼群 + 螃蟹。
+    // --- S6  回落：**电鳗**（射速全表最高的射手，5 发赶跑；它也可以被吞——吞噬门槛比四位枪手低）+ 鱼群 + 螃蟹。
     // 间隔已经从 3 屏缩到 2 屏：这一屏比上一次回落短，而且射手不给你喘的机会。
     { at: 1160, kind: 'fish', count: 12, arrange: 'spread', span: 50, x: 0.5 },
     { at: 1210, kind: 'crab', count: 3, arrange: 'line' },

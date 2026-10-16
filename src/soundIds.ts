@@ -149,13 +149,26 @@ export function enemyClassOf(kind: string): EnemyClass {
  *
  * Keyed by `ObstacleKind` and kept here with the other tables rather than in `src/run.ts`, which is where it is used: it
  * is the same kind of fact as the enemy families above (a name maps to a cue) and belongs beside them.
+ *
+ * EVERY kind needs a row, and the reason is the one nobody would ever report: the lookup in `src/run.ts` falls back to
+ * `rage.slam`, so a kind missing here does not go silent -- it plays another verb's cue. `wall` and `tube` were both
+ * missing exactly that way, and a wall coming apart to the volatile bubble's slam is what that sounded like.
  */
 export const OBSTACLE_BREAK_SOUNDS: Record<string, SoundId> = {
   crate: 'obstacle.break.crate',
   coral: 'obstacle.break.coral',
   net: 'obstacle.break.net',
+  // 硬的那两种借珊瑚的音：木箱是脆的（1 点），网是软的（撕开），而珊瑚 3.5、封路木箱 3.0、管虫 3.0 是同一类
+  // "厚而干"的碎——三者耐久差不到一成五，玩家听到的是同一件事：一块挡路的东西没了。
+  wall: 'obstacle.break.coral',
+  tube: 'obstacle.break.coral',
 };
-/** Being stopped by the one kind that cannot be broken at any size. */
+/**
+ * Being stopped by the one kind no size can RAM through.
+ *
+ * Not the same as unbreakable, and the name is a trap: a wall is unrammable at every volume, but the volatile bubble's
+ * slam opens it (`angry.charge.slamBreaksUnrammable`), which is why it has a row in the table above.
+ */
 export const OBSTACLE_BLOCK_SOUND: SoundId = 'obstacle.hit.wall';
 
 /** Each carried skill's own cue, keyed by `Skill.id` (see `src/skills.ts`). */
