@@ -298,13 +298,13 @@ levels/03-jelly-forest.json5 (level "jelly-forest"): paths.weave.points[0].y sho
 - **每关一段合成曲**（`src/music.ts`，配方在 `audio.music.tracks`）——这是**后备**，不是过时的东西。
 - **录好的曲子**放 `src/assets/audio/music/`，文件名就是槽位：
 
-| 文件 | 什么时候播 |
-|---|---|
-| `<关卡 id>.mp3` | 这一关，替换掉同名合成曲（`black-smokers`、`wreck-gorge`、`jelly-forest`、`thermocline`、`storm-surge`、`dawn-surface`） |
-| `boss.mp3` | BOSS 战：BOSS 登场时切过去，被击败后回到关卡曲 |
-| `summary.mp3` | 通关结算页 |
+| 文件 | 什么时候播 | 现在有吗 |
+|---|---|---|
+| `<关卡 id>.mp3` | 这一关，替换掉同名合成曲 | **`black-smokers.mp3`（第一关）有了**；`wreck-gorge`、`jelly-forest`、`thermocline`、`storm-surge`、`dawn-surface` 还没有 |
+| `boss.mp3` | BOSS 战：BOSS 登场时切过去，被击败后回到关卡曲 | 还没有 |
+| `summary.mp3` | 通关结算页 | 还没有 |
 
-**一个文件都没有是支持的状态**，不是缺东西：没有文件的关卡照旧播合成曲，没有 `boss.mp3` 就继续播关卡曲。
+**某几个槽位空着是支持的状态**，不是缺东西：没有文件的关卡照旧播合成曲，没有 `boss.mp3` 就继续播关卡曲。
 
 - **主菜单那一首**固定在 `src/assets/audio/abyssal-menu.mp3`（约 190 秒、2.3 MB），只在 `phase === 'menu'` 时播，
   点开始后淡出让位给关卡。
@@ -318,8 +318,20 @@ levels/03-jelly-forest.json5 (level "jelly-forest"): paths.weave.points[0].y sho
 **死亡那一下**是一段短的 sting（不循环），它是音效 `defeat.sting`，所以换成录音就是放一个
 `src/assets/audio/sfx/defeat.sting.wav`。
 
-**主菜单那首的导出参数**（原始 WAV 太大、**不入库**，所以这一节就是它的记录）：`scripts/encode-menu-music.py <wav>`，
-MP3、96 kbps CBR、联合立体声、保持源文件的 48 kHz（不重采样）、不裁剪、不改响度。需要 `pip install --user lameenc numpy`。
+**这些曲子是怎么导出的**（原始 WAV 几十 MB、**不入库**，所以这一节就是它们的记录）：
+
+```
+pip install --user lameenc numpy
+python scripts/encode-music.py "<原始 wav 路径>" <槽位名> [--kbps 128]
+```
+
+槽位名就是上表第一列（`black-smokers`、`boss`、`abyssal-menu`……），脚本据此决定文件落在哪。四件**故意不做**的事，
+每一件都是"顺手优化"会悄悄改掉声音的地方：**不重采样**（保留源文件的 48 kHz，重采样等于白白多一道有损）、
+**不裁首尾**（循环靠淡入淡出处理，见下；裁一刀只会冒着削掉一个音头的风险）、**不做响度归一**（混音是你的，
+每一格音量在 `audio.music.recorded.*Volume` 里调，而不是在这里压扁）、**不动循环点**（MP3 本来也放不下样本级接缝）。
+
+默认 **128 kbps**。主菜单那首是 96——氛围曲撑得住，而密集的混音撑不住：码率低最先听出来的是打击乐和镲。
+觉得不对就用 `--kbps` 改。
 
 ### 设置面板里的两个滑条
 
