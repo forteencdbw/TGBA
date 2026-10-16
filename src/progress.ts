@@ -101,6 +101,17 @@ export function unlockedIds(progress: Progress): string[] {
 }
 
 /** The class the run is in, and the UI it drives. One instance, owned by the game. */
+/**
+ * Whether the two evolved forms have been unlocked: ONE completed run.
+ *
+ * Derived rather than stored, and that is the point -- there is nothing to migrate. A run walks the ladder in order,
+ * so "the campaign was cleared" and "the last level is in `cleared`" are the same fact, and a save written before this
+ * feature existed already answers it.
+ */
+export function formsUnlocked(cleared: readonly string[], lastLevelId: string): boolean {
+  return cleared.includes(lastLevelId);
+}
+
 export class Progression {
   private state: Progress;
 

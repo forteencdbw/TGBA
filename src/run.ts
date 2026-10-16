@@ -121,22 +121,21 @@ export class Run {
   }
 
   /**
-   * Commit the run to a route. The FIRST level-up's whole question, answered with one card.
+   * Adopt a form. Called with what the picker returned, at the start of a fresh run.
    *
-   * The form swap is the grant: the new controls, palette and mouth are what the card promised, and they land on
-   * the frame the pick resolves. The instant extras beyond the form live in the route's own switch below, because
-   * they are the route's business -- the barrage route's promise is a gun that is bigger RIGHT NOW.
+   * It used to be the FIRST LEVEL-UP's whole question; the identity moved to a screen between 开始游戏 and the load,
+   * because it is the first decision of a run rather than a reward inside one. What the call does is unchanged: the
+   * form swap is the grant, and the instant extras beyond it live below, because they are the route's business (the
+   * barrage route's promise is a gun that is bigger RIGHT NOW).
    *
-   * Deliberately no way back and no second call: the other routes' cards never appear again this run, and
-   * `routeCardPending` is set so the NEXT draw opens with one of this route's own cards rather than three
-   * universals -- the player just chose an identity, and the first thing after the choice should deepen it.
+   * Idempotent, and that is load-bearing: a carried run keeps its form, so the walk into the next level calls this
+   * again with the same id and gets the same answer.
    */
   pickRoute(id: string): RouteId | null {
     const route = findRoute(id);
     if (!route || this.route !== null) return this.route;
     this.route = route.id;
     this.bubbleType = formForRoute(route);
-    this.routeCardPending = true;
     if (route.id === 'barrage') {
       // The route's promise, on the spot: a wider gun before the panel has even closed.
       this.gunStreams = Math.min(mech.bullets.maxStreams, this.gunStreams + 1);
@@ -253,13 +252,6 @@ export class Run {
    * verbs -- reads this or the form it produced.
    */
   route: RouteId | null = null;
-  /**
-   * Whether the NEXT draw must include one of the run's own route cards.
-   *
-   * Set the moment a route is picked, so the first cards after the choice deepen the identity the player just
-   * bought rather than dilute it into universals; consumed by the one draw that follows. See `rollMutationChoices`.
-   */
-  routeCardPending = false;
   rage: RageState = initialRageState();
   /**
    * The armour: the volatile bubble's melee ammunition.

@@ -17,8 +17,10 @@ import { audio, type SoundEvent } from './audio';
 import { NumberPopups } from './numberPopups';
 import { massFromEating } from './consumption';
 import { MainMenu } from './menu';
+import { RoutePickScreen, type RouteOption } from './routePick';
 import type { CodexDetail, CodexUi } from './codexUi';
-import { defaultBubbleType, hasVerb, ROUTES } from './bubbleTypes';
+import { hasVerb, ROUTES } from './bubbleTypes';
+import { formsUnlocked } from './progress';
 import { sayBanner, sayResults, sayScore, saySkillSlot, saySound, saySplash } from './runEvents';
 import { LevelUpUi } from './levelup';
 import { growthView } from './growth';
@@ -145,6 +147,20 @@ class Game {
   /** Seconds of play across the whole RUN, which is what the summary reports -- lapsed is per level. */
   /** The main menu, shown before a run and after exiting to it. */
   private readonly menu = new MainMenu();
+  /**
+   * The form picker: the screen between 开始游戏 and the load. See `src/routePick.ts`.
+   *
+   * A screen of its own rather than a row on the menu, because the menu's buttons are pictures cut from one shared box
+   * and because this is the first decision of a RUN rather than something you do to the menu.
+   */
+  private readonly routePick = new RoutePickScreen();
+  /**
+   * Which form the next fresh run starts in.
+   *
+   * The picker's answer, remembered so a death does not have to ask again: the form is the run's, and a player who has
+   * just been killed should be back in the water rather than back in a menu.
+   */
+  private selectedRoute: string = 'barrage';
   /**
    * The save: which levels are cleared, and which one is selected.
    *
@@ -401,7 +417,7 @@ class Game {
      * The pages the menu opens from itself -- the codex and the summary -- are after it for the same reason: they cover
      * the menu they were reached from.
      */
-    this.app.stage.addChild(this.loading.root, this.levelup.root, this.menu.root, this.settings.root, this.summary.root);
+    this.app.stage.addChild(this.loading.root, this.levelup.root, this.menu.root, this.routePick.root, this.settings.root, this.summary.root);
     this.levelup.onPick = (index) => this.pickMutation(index);
     this.summary.onMenu = () => this.exitToMenu();
     this.settings.setVolume(audio.getVolume());
@@ -448,7 +464,15 @@ class Game {
      * phase is \`loading\`, which the frame loop treats like any other non-playing phase: no input, no hazards, no timers, so
      * nothing can happen to the player while the pictures arrive.
      */
-    this.menu.onStart = () => {
+    this.menu.onStart = () => this.openFormPick();
+    /**
+     * The picker's answer: remember it, then load.
+     *
+     * The load is the SAME path the menu used to take -- this screen only decides what the run will be before the
+     * art starts arriving, which is why nothing about `beginWithLoading` had to change.
+     */
+    this.routePick.onPick = (id) => {
+      this.selectedRoute = id;
       void this.beginWithLoading();
     };
     this.menu.onCodex = () => {
@@ -650,6 +674,11 @@ class Game {
       this.menu.handlePointerDown(x, y);
       return;
     }
+    // The picker is a full screen of its own between the two, and it answers the pointer the same way the menu does.
+    if (this.run.phase === 'formPick') {
+      this.routePick.handlePointerDown(x, y);
+      return;
+    }
     // The codex swallows every press while it is open: it is a full screen, and a tap in its margin landing in the
     // water would steer a bubble nobody can see.
     if (this.run.phase === 'codex') {
@@ -687,6 +716,10 @@ class Game {
       this.menu.handlePointerMove(x, y);
       return;
     }
+    if (this.run.phase === 'formPick') {
+      this.routePick.handlePointerMove(x, y);
+      return;
+    }
     if (this.run.phase === 'codex') {
       // Nothing on the codex page tracks a drag, so a move is simply not the water's business either.
       return;
@@ -711,6 +744,11 @@ class Game {
         return;
       }
       this.menu.handlePointerUp(at.x, at.y);
+      return;
+    }
+    // The picker's release: the same press-and-drag-out-to-cancel rule the menu's buttons use.
+    if (this.run.phase === 'formPick') {
+      this.routePick.handlePointerUp(at.x, at.y);
       return;
     }
     // The codex fires on press, so a release has nothing left to do -- but it must still not reach the water.
@@ -1112,9 +1150,15 @@ class Game {
    * layer, which is the one way this feature can half-work.
    */
   debugStartRunWithRoute(routeId: string): string | null {
+    /**
+     * The choice is set and then the run STARTS, rather than the run starting and being patched afterwards.
+     *
+     * The patch version stopped working the moment a fresh run adopted its form at the start of `startRun`: by the
+     * time `pickRoute` was called here the run already had one, and `pickRoute` is idempotent, so a spec asking for
+     * the volatile bubble got the barrage one and the difference only showed up three assertions later.
+     */
+    this.selectedRoute = routeId;
     this.enterFromMenu();
-    this.run.pickRoute(routeId);
-    this.applyFormToTouch();
     return this.run.route;
   }
 
@@ -1576,6 +1620,7 @@ class Game {
     this.settings.layout(viewport);
     this.levelup.layout(viewport);
     this.menu.layout(viewport);
+    this.routePick.layout(viewport);
     this.codex?.layout(viewport);
     // The loading page is sized in the canvas's own pixels rather than in the play area's: it is a page, not a HUD.
     this.loading.layout(screenW, screenH);
@@ -2649,6 +2694,41 @@ class Game {
    * `handlePointerDown`): before that it was a bar drawn under the water with the touch controls still live over it, so
    * the player could steer a bubble through a level that had not started.
    */
+  /**
+   * Open the form picker: the run's first decision, before the water exists.
+   *
+   * The options are rebuilt on every open rather than cached, because the SAVE changes between one run and the next --
+   * clearing the campaign is exactly what unlocks two of these rows.
+   */
+  private openFormPick(): void {
+    this.routePick.setOptions(this.formOptions());
+    this.run.phase = 'formPick';
+    /**
+     * The loader is not running, so nothing else is holding the pointer; but a finger that was down on the menu's
+     * 开始 button is still down, and the press that opened this screen must not also land on a card.
+     */
+    this.touch.releaseAll();
+    this.routePick.layout(this.camera.viewport);
+  }
+
+  /**
+   * The three forms, with the save's answer about which are earned.
+   *
+   * The two evolved forms are locked until the campaign has been cleared once, and they are LISTED while locked: a
+   * player who cannot see what they are working towards is not working towards anything.
+   */
+  private formOptions(): RouteOption[] {
+    const last = LEVELS[LEVELS.length - 1]?.id ?? '';
+    const unlocked = formsUnlocked(this.run.progress.cleared, last);
+    return ROUTES.map((route) => ({
+      id: route.id,
+      name: route.name,
+      title: route.title,
+      blurb: route.blurb,
+      locked: route.id !== 'barrage' && !unlocked,
+    }));
+  }
+
   private async beginWithLoading(): Promise<void> {
     this.sound('menu.start', 0.7);
     this.pendingStart = true;
@@ -2752,9 +2832,9 @@ class Game {
     /**
      * The volatile bubble's run state, reset with everything else.
      *
-     * `chargeAim` deliberately keeps its old value: a player who died mid-wind-up and restarts should not have to
-     * re-aim before their first slam, and there is nothing a stale direction can be wrong about -- it is overwritten
-     * the moment they push the stick.
+     * The plates start EMPTY rather than at the cap: a plate is ammunition the metronome earns, and a run that began
+     * holding two spare hits would turn "I have to earn the next one" into "I have two in the bank" for its first
+     * five seconds.
      */
     this.run.rage = initialRageState();
     this.run.armourPlates = 0;
@@ -2810,13 +2890,17 @@ class Game {
        */
       this.run.bulletHomingChance = 0;
       /**
-       * A fresh run is the BASE bubble again: no route, no route cards owed, the growth palette. A carried run
-       * (the walk into the next level) keeps its route and its form -- the identity the player picked is the
-       * run's, not the level's.
+       * A fresh run ADOPTS THE FORM THE PICKER RETURNED.
+       *
+       * It used to hand the run the base bubble and leave the identity to the first level-up; the picker is the first
+       * decision of a run now, so the form is settled before the water exists. `pickRoute` is the same call the card's
+       * `apply` made -- the form swap, the palette, the mouth, and the barrage route's extra gun row -- so a run that
+       * starts in a form is exactly the run that used to pick it, minus the minute of being somebody else.
+       *
+       * A CARRIED run (the walk into the next level) never reaches this branch: the identity is the run's, not the
+       * level's, and `pickRoute` is idempotent anyway.
        */
-      this.run.route = null;
-      this.run.routeCardPending = false;
-      this.run.bubbleType = defaultBubbleType();
+      this.run.pickRoute(this.selectedRoute);
       this.applyFormToTouch();
     }
     this.run.fartReadyAt = 0;
@@ -3642,7 +3726,11 @@ private updateBoss(): void {
      * touch while the pictures arrive, and a bubble that answers the finger on a page that has not started is exactly
      * the bug this list is here to prevent.
      */
-    const fullScreenPage = this.run.phase === 'menu' || this.run.phase === 'codex' || this.run.phase === 'loading';
+    const fullScreenPage =
+      this.run.phase === 'menu' ||
+      this.run.phase === 'formPick' ||
+      this.run.phase === 'codex' ||
+      this.run.phase === 'loading';
     const inMenu = this.run.phase === 'menu';
     /** Whether the menu's water is the world behind what is on screen -- see `MENU_PAGES`. */
     const menuPage = MENU_PAGES.includes(this.run.phase);
@@ -3770,6 +3858,7 @@ private updateBoss(): void {
     // The mutation pick draws only while it is the phase -- it is a freeze the run is inside, not a page
     // the run is behind, so it needs no clearing: there is nothing in flight that outlives it.
     this.levelup.root.visible = this.run.phase === 'levelup';
+    this.routePick.root.visible = this.run.phase === 'formPick';
     this.menu.root.visible = inMenu;
     /**
      * The menu IS the page: it decides and it draws. A page opened from it does neither -- the codex schedules its own

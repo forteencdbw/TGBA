@@ -55,9 +55,15 @@ export type ControlId =
    */
   | 'spit'
   | 'compress'
-  /** Hold to wind up, release to slam. The boil route's verb. */
+  /**
+   * Dormant: the volatile bubble's two verbs were deleted, because both took the steering away from a route whose
+   * whole pitch is getting close on purpose -- so no form asks for these, and what is left is the touch layer's
+   * knowledge of how to lay the buttons out.
+   *
+   * Kept as ids for the same reason `spit` and `compress` above are: a future route that wants a wind-up-and-release
+   * move and a spend-the-whole-gauge move will want exactly these two slots back, and the layout is the expensive half.
+   */
   | 'charge'
-  /** Tap to spend the whole rage gauge as a shockwave. The boil route's other verb. */
   | 'burst';
 
 /** The routes a run may commit to, at its first level-up. Keyed by their card, the HUD and the codex. */

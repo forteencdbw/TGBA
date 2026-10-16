@@ -2,7 +2,7 @@ import { mech } from './mechanisms';
 import type { Run } from './run';
 import { healthAfterHeal, healthMaxFor } from './health';
 import { SKILLS } from './skills';
-import { ROUTES, type RouteId } from './bubbleTypes';
+import type { RouteId } from './bubbleTypes';
 
 /**
  * Mutations (突变): the three-choice ladder the mutation meter pays for.
@@ -23,9 +23,9 @@ import { ROUTES, type RouteId } from './bubbleTypes';
  *     exists to be answered, not dismissed.
  *   - 均匀随机 (uniform draw): no rarity weights until the pool is big enough to want them.
  *   - 可叠加 (numeric cards stack): the ladder stays climbable late in a run.
- *   - 按路线过滤 (route filtering): a card a run's route does not own is never offered -- and the route itself
- *     is the FIRST pick, so the very first three-choice the system shows is the one that decides what the rest
- *     of them will contain. That first panel is the one that teaches the player whether to trust it.
+ *   - 按路线过滤 (route filtering): a card a run's FORM does not own is never offered. The form is chosen on the
+ *     screen between 开始游戏 and the load now, so the filter is settled before the first card is ever drawn -- the
+ *     pool a run sees is a consequence of a decision the player already made, rather than of one it is about to.
  *   - 卡满不出现 (capped cards leave the pool): the same honesty as the filtering. A "gun +1" offered at
  *     the ceiling is a dead card, and a dead card in a mandatory pick is a punishment for having played
  *     well.
@@ -38,10 +38,10 @@ export interface Mutation {
   /** One line, on the button under the name. */
   blurb: string;
   /**
-   * Which route's pool this card belongs to, or 'all' for every run.
+   * Which form's pool this card belongs to, or 'all' for every run.
    *
-   * The route is chosen at the FIRST level-up, so a route card is invisible before that pick and for every run
-   * that chose the other two routes -- this one field is the whole of the lock.
+   * This one field is the whole of the lock: a run's form is fixed before its first draw, so a card belonging to
+   * another form is never legal for it.
    */
   routes: 'all' | RouteId;
   /** Whether this card is a legal offer for THIS run right now -- a ceiling reached, a skill already carried. */
@@ -391,30 +391,18 @@ const POOL: readonly Mutation[] = [
   })),
 ];
 
-/**
- * The route cards: the FIRST level-up's whole panel, generated from `ROUTES` so a route cannot exist without
- * its card. Not part of `POOL` -- they are never DRAWN, they are the branch node itself, offered as a set of
- * exactly three the way the design fixed it.
- */
-const ROUTE_CARDS: readonly Mutation[] = ROUTES.map((route) => ({
-  id: `route:${route.id}`,
-  name: `${route.name} · ${route.title}`,
-  blurb: route.blurb,
-  routes: 'all' as const,
-  available: (run: Run) => run.route === null,
-  apply: (run: Run) => {
-    run.pickRoute(route.id);
-  },
-}));
 
 /**
  * A card by its id -- pool, skill and route cards alike -- or undefined for an id no card has.
  *
  * For the growth readout, which has the log's ids and needs each card's name and blurb. The cards are the single source of
  * both, so the readout cannot describe a card differently from the panel that offered it.
+ *
+ * The route cards used to be a second list to search, because the first level-up's panel showed them. That panel is
+ * gone (the form is chosen before the run starts) and so is the list.
  */
 export function mutationCard(id: string): Mutation | undefined {
-  return POOL.find((m) => m.id === id) ?? ROUTE_CARDS.find((m) => m.id === id);
+  return POOL.find((m) => m.id === id);
 }
 
 /**
@@ -436,22 +424,16 @@ export function pickMutationCard(run: Run, card: Mutation): void {
  * because the five universal body cards are never unavailable.
  *
  * ---------------------------------------------------------------------------------------------
- * THE BRANCH NODE, AND THE GUARANTEE
+ * EVERY DRAW IS UNIFORM
  * ---------------------------------------------------------------------------------------------
- * A run that has not picked a route gets the three route cards instead of a draw -- the branch is not an offer
- * among others, it is the panel. A run that JUST picked one has `routeCardPending` set, and this draw spends
- * it: one of its own route's cards is forced in first, so the cards the player sees immediately after choosing
- * an identity deepen it rather than dilute it into three universals. Every draw after that is uniform.
+ * There used to be two exceptions here: the branch node (a run with no route was handed the three route cards as its
+ * whole panel) and the guarantee (the draw right after choosing a route was forced to include one of that route's own
+ * cards). Both went with the pick -- the form is chosen before the run starts now, so there is no node to be at and
+ * nothing for a guarantee to deepen. What is left is one uniform draw from everything legal for the form.
  */
 export function rollMutationChoices(run: Run, count = 3): readonly Mutation[] {
-  if (run.route === null) return ROUTE_CARDS;
   const legal = POOL.filter((m) => (m.routes === 'all' || m.routes === run.route) && m.available(run));
   const drawn: Mutation[] = [];
-  if (run.routeCardPending) {
-    run.routeCardPending = false;
-    const own = legal.filter((m) => m.routes === run.route);
-    if (own.length > 0) drawn.push(own[Math.floor(Math.random() * own.length)]!);
-  }
   while (drawn.length < count && drawn.length < legal.length) {
     let pick = legal[Math.floor(Math.random() * legal.length)]!;
     while (drawn.includes(pick)) pick = legal[Math.floor(Math.random() * legal.length)]!;

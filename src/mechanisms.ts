@@ -1525,6 +1525,45 @@ export interface Mechanisms {
     /** How long that distance takes to be covered. */
     seconds: number;
   };
+  /**
+   * The form picker's sizes and colours. See `src/routePick.ts`.
+   *
+   * Sizes are DESIGN pixels (they carry the HUD's design scale, so a phone and a desktop window agree), and the two
+   * `maxWidth*` fields are the usual pair: a fraction of the canvas, capped in design pixels, because a landscape
+   * window would otherwise draw one card the width of a monitor.
+   */
+  routePick: {
+    backdropColour: number;
+    /** Not opaque on purpose: the menu's own water shows through it. */
+    backdropAlpha: number;
+    headingColour: number;
+    headingSize: number;
+    subheadingColour: number;
+    subheadingSize: number;
+    nameColour: number;
+    nameSize: number;
+    titleColour: number;
+    titleSize: number;
+    mutedColour: number;
+    blurbSize: number;
+    lockColour: number;
+    lockSize: number;
+    lockedAlpha: number;
+    cardHeight: number;
+    cardGap: number;
+    cardRadius: number;
+    maxWidthRatio: number;
+    maxWidth: number;
+    topMargin: number;
+    headingGap: number;
+    subheadingGap: number;
+    cardFillColour: number;
+    cardAlpha: number;
+    cardStrokeColour: number;
+    cardStrokeWidth: number;
+    selectedStrokeColour: number;
+    selectedStrokeWidth: number;
+  };
   codex: {
     /** The full-screen preview's scrim. */
     previewScrimColour: number;
@@ -3351,6 +3390,35 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'collectableArt.smallRatio', check: anyNumber, describe: 'a multiple of the player radius' },
   { path: 'collectableArt.largeRatio', check: anyNumber, describe: 'a multiple of the player radius' },
   { path: 'collectableArt.imageScale', check: anyNumber, describe: 'a multiplier' },
+  { path: 'routePick.backdropColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'routePick.backdropAlpha', check: anyNumber, describe: 'an opacity' },
+  { path: 'routePick.headingColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'routePick.headingSize', check: anyNumber, describe: 'a font size' },
+  { path: 'routePick.subheadingColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'routePick.subheadingSize', check: anyNumber, describe: 'a font size' },
+  { path: 'routePick.nameColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'routePick.nameSize', check: anyNumber, describe: 'a font size' },
+  { path: 'routePick.titleColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'routePick.titleSize', check: anyNumber, describe: 'a font size' },
+  { path: 'routePick.mutedColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'routePick.blurbSize', check: anyNumber, describe: 'a font size' },
+  { path: 'routePick.lockColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'routePick.lockSize', check: anyNumber, describe: 'a font size' },
+  { path: 'routePick.lockedAlpha', check: anyNumber, describe: 'an opacity' },
+  { path: 'routePick.cardHeight', check: anyNumber, describe: 'design pixels' },
+  { path: 'routePick.cardGap', check: anyNumber, describe: 'design pixels' },
+  { path: 'routePick.cardRadius', check: anyNumber, describe: 'design pixels' },
+  { path: 'routePick.maxWidthRatio', check: anyNumber, describe: 'a fraction of the canvas' },
+  { path: 'routePick.maxWidth', check: anyNumber, describe: 'design pixels' },
+  { path: 'routePick.topMargin', check: anyNumber, describe: 'design pixels' },
+  { path: 'routePick.headingGap', check: anyNumber, describe: 'design pixels' },
+  { path: 'routePick.subheadingGap', check: anyNumber, describe: 'design pixels' },
+  { path: 'routePick.cardFillColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'routePick.cardAlpha', check: anyNumber, describe: 'an opacity' },
+  { path: 'routePick.cardStrokeColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'routePick.cardStrokeWidth', check: anyNumber, describe: 'design pixels' },
+  { path: 'routePick.selectedStrokeColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'routePick.selectedStrokeWidth', check: anyNumber, describe: 'design pixels' },
   { path: 'codex.previewScrimColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
   { path: 'codex.previewScrimAlpha', check: anyNumber, describe: 'an opacity' },
   { path: 'codex.columns', check: wholeNumber, describe: 'a whole number of columns' },

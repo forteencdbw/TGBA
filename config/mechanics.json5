@@ -3663,6 +3663,55 @@
     "imageScale": 1
   },
 
+  // ---------------------------------------------------------------------------------------------
+  // 形态选择屏（「开始游戏」之后、加载之前的那一屏）
+  // ---------------------------------------------------------------------------------------------
+  //
+  // 一轮一次，在死亡重开时**不再问**：形态是这一局的，每次死都问一遍会把一个决定变成一道关卡。
+  // 锁住的两个也照画——灰掉、底下写清原因——因为看不到自己在追什么的玩家，没有在追什么。
+  //
+  // 卡片**内部**那四行的位置是代码里的比例（见 `src/routePick.ts`）：那是重画卡片，不是调参。
+  // 这里放的是尺寸、颜色和卡片自己的尺度。
+  "routePick": {
+    // 遮罩。和加载页、图鉴预览页一样是**一张自己的屏**：这一页压着画布，背后的东西不参与。
+    "backdropColour": 0x030a17,
+    "backdropAlpha": 0.93,
+    // 标题两行。
+    "headingColour": 0x9ff2ff,
+    "headingSize": 26,
+    "subheadingColour": 0x7fc4e8,
+    "subheadingSize": 14,
+    // 卡片里的四行：名字、身份、一句话、锁。
+    "nameColour": 0xe8f6ff,
+    "nameSize": 24,
+    "titleColour": 0x9ff2ff,
+    "titleSize": 15,
+    "mutedColour": 0x9fb8cc,
+    "blurbSize": 13,
+    "lockColour": 0xffb862,
+    "lockSize": 13,
+    // 锁住的那两张整体压暗到多少。
+    "lockedAlpha": 0.45,
+    // 卡片的尺度（设计像素）。
+    "cardHeight": 118,
+    "cardGap": 18,
+    "cardRadius": 14,
+    // 卡片最宽 = min(画布 × 这个比例, 这个设计像素数)。
+    "maxWidthRatio": 0.86,
+    "maxWidth": 340,
+    // 版式：离顶多少、标题和副标题之间、以及副标题到第一张卡片。
+    "topMargin": 120,
+    "headingGap": 60,
+    "subheadingGap": 34,
+    "cardFillColour": 0x0b1c2e,
+    "cardAlpha": 0.92,
+    "cardStrokeColour": 0x3d7fa8,
+    "cardStrokeWidth": 1.5,
+    "selectedStrokeColour": 0x9ff2ff,
+    "selectedStrokeWidth": 3
+  },
+
+
   "codex": {
     // **全屏预览**（点卡片放大看图）的遮罩：颜色与不透明度。压在整张画布上，所以文字要能压得住。
     "previewScrimColour": 0x030a17,

@@ -155,6 +155,13 @@ export interface GameSnapshot {
  */
 export type Phase =
   | 'menu'
+  /**
+   * The form picker: the screen between 开始游戏 and the load.
+   *
+   * A phase of its own rather than a flag on the menu, because it is a different screen with its own pointer target
+   * and its own idea of what a press means -- the same reason `paused` and `levelup` are not flags either.
+   */
+  | 'formPick'
   | 'intro'
   | 'playing'
   | 'burst'
