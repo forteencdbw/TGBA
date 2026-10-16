@@ -210,12 +210,17 @@ export const ROUTES: readonly Route[] = [
     id: 'boil',
     name: '沸腾',
     title: '以怒为刃',
-    blurb: '越挨打越烫，把怒气撞出去 —— 怒气不看体积',
+    blurb: '越挨打越烫 —— 满怒自动炸开，靠近你的人自己烧起来',
     /**
-     * Wind up, release, slam; the burst spends the whole gauge. The palette switches to rage on the pick, because
-     * "how close to boiling am I" is this route's one question and the bubble answers it in colour.
+     * NO BUTTONS beyond the skill, and that is the redesign rather than an omission.
+     *
+     * This form used to have a charge (wind up, release, slam) and a burst (spend the whole gauge). Both went
+     * passive: the burst fires by itself when the gauge fills, and the melee became the ARMOUR -- a plate you spend
+     * by walking into something, which is the player's own movement rather than a button that flings them. The
+     * reason the charge went is the one that killed the overload before it: a verb that moves the bubble takes the
+     * steering away, and this is the form whose whole pitch is getting close on purpose.
      */
-    controls: ['skill', 'charge', 'burst'],
+    controls: ['skill'],
     look: 'rage',
     swallowsHazards: false,
     /** Fixed size. Rage is this route's answer to growth, and a bubble that also grew would be two answers. */

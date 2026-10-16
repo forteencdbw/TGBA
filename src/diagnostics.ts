@@ -231,10 +231,7 @@ export function diagnosticsOf(g: GameSnapshot): {
       value: number;
       fraction: number;
       safeSeconds: number;
-      charging: boolean;
-      aiming: { x: number; y: number };
       stageName: string;
-      slamSeconds: number;
       onSlam: boolean;
       slams: number;
       /** The burst: how many have fired, and what the last one did. */
@@ -243,9 +240,10 @@ export function diagnosticsOf(g: GameSnapshot): {
       waveAlive: boolean;
       lastBurstKills: number;
       lastBurstPushes: number;
-      /** Overload: full gauge, on the clock. `left` is what the HUD counts down. */
-      overloaded: boolean;
-      overloadLeft: number;
+      /** The armour: plates in hand, seconds to the next plate, seconds to the next burn tick. */
+      plates: number;
+      plateSeconds: number;
+      auraSeconds: number;
     };
     phase: string;
     volume: number;
@@ -514,10 +512,7 @@ export function diagnosticsOf(g: GameSnapshot): {
         value: +g.rage.rage.toFixed(2),
         fraction: +rageFraction(g.rage.rage).toFixed(3),
         safeSeconds: +g.rage.safeSeconds.toFixed(2),
-        charging: g.charging,
-        aiming: { x: +g.chargeAim.x.toFixed(2), y: +g.chargeAim.y.toFixed(2) },
         stageName: rageStageName(g.rage.rage),
-        slamSeconds: +g.slamSeconds.toFixed(3),
         onSlam: g.onSlam,
         slams: g.slams,
         /** The burst: how many have fired, and what the last one did. */
@@ -526,9 +521,15 @@ export function diagnosticsOf(g: GameSnapshot): {
         waveAlive: g.burst !== null,
         lastBurstKills: g.burst?.kills ?? 0,
         lastBurstPushes: g.burst?.pushes ?? 0,
-        /** Overload: full gauge, on the clock. `left` is what the HUD counts down. */
-        overloaded: g.overloaded,
-        overloadLeft: +g.rage.overloadLeft.toFixed(2),
+        /**
+         * The armour and the aura, which are what the volatile bubble does now.
+         *
+         * `plates` is the ammunition and `onSlam` above is "there is at least one", so a probe can tell "out of
+         * plates" from "the wrong form" -- the two look identical from the outside otherwise.
+         */
+        plates: g.armourPlates,
+        plateSeconds: +g.armourSeconds.toFixed(2),
+        auraSeconds: +g.auraSeconds.toFixed(2),
       },
       phase: g.phase,
       volume: g.player.volume,

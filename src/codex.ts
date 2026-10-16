@@ -585,7 +585,9 @@ function routeFacts(route: Route): readonly CodexFact[] {
   } else if (route.id === 'boil') {
     facts.push(
       { label: '怒气', value: `受伤 +${mech.angry.rage.perHit} · 安全 ${num(mech.angry.rage.decayDelaySeconds, 1)}s 后每秒 -${mech.angry.rage.decayPerSecond}` },
-      { label: '失控', value: `满怒 ${num(mech.angry.overload.seconds, 1)}s 倒计时，不放掉扣 ${mech.angry.overload.punishDamage} 点但不破` },
+      { label: '怒甲', value: `每 ${num(mech.angry.armour.secondsPerPlate, 1)}s 攒 1 个（最多 ${mech.angry.armour.max} 个）。撞上敌人消耗 1 个：**你不挨打**、它吃 ${mech.angry.armour.damage} 点，并且中**破甲**（收到的所有伤害 ×${mech.angry.armour.vulnerableMultiplier}，持续 ${num(mech.angry.armour.vulnerableSeconds, 1)}s）` },
+      { label: '贴身灼烧', value: `半径 ${num(mech.angry.aura.playerRadiusRadii, 1)}× 你自己的半径，每 ${num(mech.angry.aura.tickSeconds, 2)}s 一跳、每跳 ${num(mech.angry.aura.damagePerTick, 2)} 点。破甲的敌人烧得更疼` },
+      { label: '爆破', value: '怒气**满**就自动放，一次花光——怒气槽的顶端就是这一发，没有按钮' },
       { label: '专属卡', value: `怒气积攒 +${Math.round(pool.ragePerPick * 100)}% · 爆破半径 +${Math.round(pool.burstRadiusPerPick * 100)}% · 余温 -${Math.round(pool.rageDecayReductionPerPick * 100)}% 衰减` },
     );
   } else {

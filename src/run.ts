@@ -19,15 +19,14 @@ import type { Input } from './input';
 import { chainTargets } from './conductive';
 import { tuning } from './config';
 import { massFromEating } from './consumption';
-import { hazardTuning, shoveCreature, type Hazard, type SpawnOptions } from './hazards';
+import { hazardSizeFraction, hazardTuning, markVulnerable, shoveCreature, vulnerableDamage, type Hazard, type SpawnOptions } from './hazards';
 import { healthAfterHit, healthMaxFor } from './health';
 import { canEatHazard } from './consumption';
 import { LEVEL, type LevelEntry } from './levels';
 import { mech } from './mechanisms';
-import { isOverloaded, rageFraction } from './rage';
-import { obstacleHealth, obstacleName } from './obstacles';
+import { rageFraction } from './rage';
 import { placeEntry } from './placement';
-import { endOverload, gainRage, hitRage, slamDamage, spendRage, tickRage } from './rage';
+import { gainRage, hitRage, spendRage, tickRage } from './rage';
 import { OBSTACLE_BLOCK_SOUND, OBSTACLE_BREAK_SOUNDS } from './soundIds';
 import { sayBlast, sayCallout, sayGraze } from './runEvents';
 import { findSkill } from './skills';
@@ -78,13 +77,14 @@ export interface WorldView {
 export const BURST_SECONDS = 1.5;
 
 export class Run {
-  /** Whether a slam is in its window right now: the charge has been released and the window has not run out. */
-  get onSlam(): boolean {
-    return this.slamSeconds > 0 && this.bubbleType.look === 'rage';
-  }
-  /** Whether the bubble is in overload: full rage, on the clock. See `angry.overload`. */
-  get overloaded(): boolean {
-    return this.bubbleType.look === 'rage' && isOverloaded(this.rage);
+  /**
+   * Whether a contact is a SLAM right now: the volatile bubble, with a plate to spend.
+   *
+   * One question, asked in two places -- the obstacle field (is this bump a ram?) and the hazard field (is this touch
+   * a hit, or a shove?) -- and answered here so the two can never disagree about what "I have armour" means.
+   */
+  get hasArmour(): boolean {
+    return this.bubbleType.look === 'rage' && this.armourPlates > 0;
   }
   /**
    * Whether the suction field is actually up.
@@ -261,15 +261,24 @@ export class Run {
    */
   routeCardPending = false;
   rage: RageState = initialRageState();
-  chargeAim = { x: 0, y: 0 };
-  charging = false;
-  slamSeconds = 0;
+  /**
+   * The armour: the volatile bubble's melee ammunition.
+   *
+   * Kept apart from `rage` on purpose. Rage is the fuse (earned by being hit, spent by the burst at the top of the
+   * gauge); armour is the ammunition (a metronome, spent by touching something). Tying the two together would make
+   * "may I slam right now" a second table to read for no gain -- see `angry.armour`.
+   */
+  armourPlates = 0;
+  armourSeconds = 0;
+  /** Seconds toward the next burn tick of the attached aura. */
+  auraSeconds = 0;
+  /** Slams landed this run, for the results panel. */
   slams = 0;
   burst: { radius: number; seconds: number; kills: number; pushes: number } | null = null;
   bursts = 0;
   stage: StageState = initialStageState();
   invulnerable = 0;
-  stats = { absorbed: 0, hits: 0, maxVolume: 1, ended: 0, overloads: 0, newRecord: false };
+  stats = { absorbed: 0, hits: 0, maxVolume: 1, ended: 0, newRecord: false };
   lastEaten = 0;
   obstacles = new ObstacleField();
   bullets = new BulletField();
@@ -757,93 +766,92 @@ export class Run {
    * Only the decay needs a frame. The devour bubble has no rage at all, and this returning immediately is what keeps
    * the second resource from costing the first type anything.
    */
-  updateRage(dt: number): void {
+  updateRage(dt: number, laneWidth: number): void {
     if (this.bubbleType.look !== 'rage') return;
-    if (this.slamSeconds > 0) this.slamSeconds = Math.max(0, this.slamSeconds - dt);
     // The wave's animation, which is drawing only: its effects were applied on the frame it fired.
     if (this.burst) {
       this.burst.seconds += dt;
       if (this.burst.seconds >= mech.angry.burst.waveSeconds) this.burst = null;
     }
 
-    /**
-     * The overload's cost, applied every frame it lasts, and its end.
-     *
-     * The steering penalty rides the same slow the net drag uses, so "the bubble has gone sluggish" is one mechanic
-     * with two causes rather than two mechanics that look alike. Re-applied per frame, so it expires the moment the
-     * overload does.
-     */
-    if (this.overloaded) this.player.applySlow(dt * 2, mech.angry.overload.steerFactor);
-
     const gripped = this.hazards.hazards.some((h) => h.gripping);
-    const wasOverloaded = isOverloaded(this.rage);
-    const { overloadExpired } = tickRage(this.rage, dt, this.invulnerable > 0 || gripped, this.rageDecayMultiplier);
-    if (!wasOverloaded && isOverloaded(this.rage)) {
-      // Announced once, on the frame it starts: a warning that repeats every frame is noise.
-      this.banner(`失控  ·  ${mech.angry.overload.seconds.toFixed(1)} 秒内把怒气放掉`);
-      this.sound('rage.overload');
-    }
-    if (overloadExpired) this.punishOverload();
-  }
-  /**
-   * The volatile bubble's verb: wind up while the control is held, slam when it is released.
-   *
-   * ---------------------------------------------------------------------------------------------
-   * THE AIM IS CAPTURED, NOT SAMPLED AT RELEASE
-   * ---------------------------------------------------------------------------------------------
-   * The design asks for the direction to LOCK while the bubble compresses. So the aim is written only while the
-   * player is actually steering, and once they let go of the stick the last aim stays -- which makes "push toward the
-   * thing, let the stick centre, release" the natural gesture, and makes a held stick mean "keep adjusting".
-   *
-   * What is deliberately NOT here: a minimum hold time, and a maximum. Letting go after a tenth of a second is a
-   * legal slam, because the power comes from RAGE rather than from how long the button was down -- so there is
-   * nothing to charge up and no reason to stand still. The verb is "aim, then commit", not "wait".
-   */
-  updateCharge(input: Input): void {
-    if (!hasVerb(this.bubbleType, 'charge')) return;
-
-    const held = input.charging;
-    if (!input.consumeChargeRelease() && held) {
-      /**
-       * Winding up: the aim follows whichever hand is pointing, and freezes when nothing is.
-       *
-       * Two producers, one number, the same shape the movement axes had: the keyboard's axis while a direction
-       * key is held, otherwise the touch drag's direction from where the finger landed. On a phone that gives the
-       * whole verb -- drag to point, hold the button to wind up, let the finger off the drag so nothing overwrites
-       * `chargeAim` any more, then release the button to slam.
-       */
-      if (input.axisX !== 0 || input.axisY !== 0) {
-        this.chargeAim = { x: input.axisX, y: input.axisY };
-      } else if (input.dragAimX !== 0 || input.dragAimY !== 0) {
-        this.chargeAim = { x: input.dragAimX, y: input.dragAimY };
-      } else if (!this.charging && this.chargeAim.x === 0 && this.chargeAim.y === 0) {
-        // First press with no aim at all: go the configured way (up), so a player who taps cannot waste a slam.
-        this.chargeAim = { x: mech.angry.charge.defaultAimX, y: mech.angry.charge.defaultAimY };
-      }
-      this.charging = true;
+    /**
+     * A FULL GAUGE IS THE VERB, and it is checked BEFORE the clock for one reason: a gauge that is full has to fire
+     * even if it is also about to cool.
+     *
+     * The order is load-bearing for the carried-over case. A run that finished a level with a full gauge -- or one
+     * the boss's own payout put near the top -- arrives here full AND safe, and if the decay ran first it would take
+     * a sliver off every frame and `>= max` would never be true again: the burst would silently never fire.
+     */
+    if (this.rage.rage >= mech.angry.rage.max) {
+      this.useBurst(laneWidth);
       return;
     }
+    tickRage(this.rage, dt, this.invulnerable > 0 || gripped, this.rageDecayMultiplier);
 
     /**
-     * Released: launch.
+     * The armour's metronome.
      *
-     * `Math.max` rather than assignment on the vertical, so a slam cannot cancel a crab launch the player is already
-     * riding -- the same rule the crab uses when it shoves them.
+     * Fixed, and deliberately NOT scaled by rage (see the config's note): a plate is a thing you have, rage is a
+     * thing that is happening to you, and a player who wants more slams takes the card that shortens this.
      */
-    if (!this.charging) return;
-    this.charging = false;
-    const aim = this.chargeAim;
-    const len = Math.hypot(aim.x, aim.y);
-    const dir = len > 1e-6 ? { x: aim.x / len, y: aim.y / len } : { x: 0, y: 1 };
-    this.player.impulseVy = Math.max(this.player.impulseVy, dir.y * mech.angry.charge.launchScreenSpeed);
-    this.player.impulseVx += dir.x * mech.angry.charge.launchLateralSpeed;
-    this.slamSeconds = Math.max(this.slamSeconds, mech.angry.charge.slamSeconds);
+    const armour = mech.angry.armour;
+    if (this.armourPlates < armour.max) {
+      this.armourSeconds += dt;
+      if (this.armourSeconds >= armour.secondsPerPlate) {
+        this.armourSeconds -= armour.secondsPerPlate;
+        this.armourPlates++;
+      }
+    }
+
     /**
-     * Its own cue rather than the crab's, which it borrowed until now: the crab is something done TO the bubble and the
-     * slam is something the bubble does, so a player charging on purpose should hear their own move.
+     * The attached burn.
+     *
+     * The tick carries its remainder rather than resetting to zero, so the rate is the configured one whatever the
+     * frame rate did -- the same carried clock the gun's cadence uses.
      */
-    this.sound('rage.slam', 0.7);
+    const aura = mech.angry.aura;
+    if (aura.damagePerTick > 0 && aura.tickSeconds > 0) {
+      this.auraSeconds += dt;
+      if (this.auraSeconds >= aura.tickSeconds) {
+        this.auraSeconds -= aura.tickSeconds;
+        this.burnNearby(laneWidth);
+      }
+    }
+
+    /**
+     * A FULL GAUGE IS THE VERB.
+     *
+     * The gauge used to end in a countdown at the top ("失控") and that is gone -- it took the controls away, which
+     * is the one thing a melee route cannot afford. Instead the ceiling is where the burst fires, by itself, and
+     * spending the gauge is what makes it a one-shot trigger rather than a state: `useBurst` empties it, so the next
+     * frame is looking at a gauge that is no longer full.
+     */
+    if (this.rage.rage >= mech.angry.rage.max) this.useBurst(laneWidth);
   }
+
+  /**
+   * The attached burn's tick: every creature inside the aura takes it.
+   *
+   * The radius is a multiple of the player's OWN radius, so it is always "on you" rather than a fixed zone that
+   * stops mattering as the bubble grows. Damage goes through `hit` like everything else, with a knockback scale of
+   * zero -- a fire that shoved things away would be a fire that could not keep burning them.
+   */
+  private burnNearby(laneWidth: number): void {
+    const aura = mech.angry.aura;
+    const playerRadius = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
+    const reach = playerRadius * aura.playerRadiusRadii;
+    const px = this.player.x * laneWidth;
+    const py = this.player.y;
+    for (const h of this.hazards.hazards) {
+      const r = reach + laneWidth * hazardSizeFraction(h.kind, h.scale);
+      const dx = h.x - px;
+      const dy = h.y - py;
+      if (dx * dx + dy * dy > r * r) continue;
+      this.hazards.hit(h, vulnerableDamage(h, aura.damagePerTick), { x: h.x, y: h.y, knockScale: 0 });
+    }
+  }
+
   /**
    * The boss fight: arrival, the health bar, and the win condition.
    *
@@ -954,6 +962,7 @@ export class Run {
       // now it is one question with one answer, because every steering source ends up in the axes.
       struggling: input.steering,
       playerVolume: this.player.volume,
+      canSlam: this.hasArmour,
       /**
        * The food-chain reversal, asked of the ONE module that owns the rule.
        *
@@ -1115,6 +1124,24 @@ export class Run {
           if (this.phase !== 'playing') return;
         }
       }
+      if (e.slammed) {
+        /**
+         * The armour's hit: the same overlap that would have hurt is spent as a plate instead.
+         *
+         * Here rather than in the field, for the reason `e.eaten` is: the field reports what touched what, and the
+         * RUN owns what a plate is. The order matters -- the slam's own damage lands BEFORE the mark, so the hit that
+         * applies the opening is not itself multiplied by it.
+         */
+        this.armourPlates = Math.max(0, this.armourPlates - 1);
+        this.slams++;
+        const target = this.hazards.hazards.find((h) => h.id === e.slammed!.id);
+        if (target) {
+          this.hazards.hit(target, mech.angry.armour.damage, { x: target.x, y: target.y, knockScale: 1 });
+          markVulnerable(target, mech.angry.armour.vulnerableSeconds);
+        }
+        this.sound('rage.slam', 0.7);
+        continue;
+      }
       if (e.eaten) {
         // Health, like every other meal: size comes from the bands now, so what a swallow is worth has to be the
         // currency the bands read. See the absorb branch for the same swap.
@@ -1216,34 +1243,27 @@ export class Run {
       playerX,
       this.player.y,
       /**
-       * The bubble's reach, with the two bonuses that belong to it.
+       * The bubble's reach, and nothing else.
        *
-       * `slamRadiusBonus` widens a committed attack so it connects on the frame it was aimed at; the overload's
-       * `radiusBonus` is a real enlargement of the bubble (the document says "碰撞体积增大"), drawn and collided with
-       * alike. The overload also widens the drawn radius in `drawBubble` -- the two must agree, which is why both
-       * read the same number.
+       * It used to carry two bonuses: the slam's (which widened a committed attack so it connected on the frame it
+       * was aimed at) and the overload's (which really did enlarge the bubble). Both lived with verbs that are gone
+       * -- see `hasArmour`. The aura does NOT widen this: it is a damage field AROUND the bubble, not a bigger
+       * bubble, and confusing the two would make the fire reach further than it looks.
        */
-      playerR *
-        (this.onSlam ? 1 + mech.angry.slamRadiusBonus : 1) *
-        (this.overloaded ? 1 + mech.angry.overload.radiusBonus : 1),
+      playerR,
       this.player.volume,
       this.invulnerable > 0,
       dt,
       /**
-       * The slam, while its window is open and only for the type that has the verb.
+       * The ram, while a plate is unspent.
        *
        * `breaksUnrammable` comes from the config rather than from the type descriptor because it is a balance
-       * question about the WALL (does this bubble get to ignore masonry?), not about the bubble's identity.
-       *
-       * The OVERLOAD smashes too, and with a bigger number, because the document lists "can destroy most ordinary
-       * obstacles" as one of the things being overloaded DOES. It is a separate case rather than a bigger slam window
-       * because the two differ in what they cost -- see below.
+       * question about the WALL (does this bubble get to ignore masonry?), not about the bubble's identity -- and the
+       * answer has to be yes, because this is the only way ANY form opens a wall. See `angry.armour`.
        */
-      this.onSlam
-        ? { damage: slamDamage(this.rage.rage), breaksUnrammable: mech.angry.charge.slamBreaksUnrammable }
-        : this.overloaded
-          ? { damage: mech.angry.overload.ramDamage, breaksUnrammable: mech.angry.charge.slamBreaksUnrammable }
-          : undefined,
+      this.hasArmour
+        ? { damage: mech.angry.armour.obstacleDamage, breaksUnrammable: mech.angry.armour.breaksUnrammable }
+        : undefined,
     );
     if (contact.hit?.broke) {
       this.lastComedyBeat = { what: 'crab', at: this.elapsed };
@@ -1251,35 +1271,18 @@ export class Run {
       // (coral, wall, tube) share one. See `OBSTACLE_BREAK_SOUNDS`, which covers every kind now -- until it did, this
       // line's fallback was quietly playing `rage.slam` for walls and tubes.
       this.sound(OBSTACLE_BREAK_SOUNDS[contact.hit.kind] ?? 'rage.slam');
-      /**
-       * Breaking something LARGE is one of the document's ways to release the rage, and it is checked here because
-       * this is the only place that knows what was broken.
-       *
-       * "Large" is a health threshold rather than a size: coral and a wall count, a crate and a net do not. Shoving a
-       * crate aside is a side effect of being overloaded; taking a wall down is an achievement, and the document
-       * treats it as one of the four ways out.
-       */
-      if (this.overloaded && obstacleHealth(contact.hit.kind) >= mech.angry.overload.releaseHealth) {
-        endOverload(this.rage);
-        this.banner(`怒气释放  ·  撞碎了${obstacleName(contact.hit.kind)}`);
-}
     }
     if (contact.hit) {
       /**
-       * A slam that connected costs rage, and costs MORE if it broke the thing.
+       * A ram costs a PLATE, not rage.
        *
-       * This is what makes the charge a resource rather than a cooldown: rage is the ammunition, so a player who
-       * spends it all on one wall has nothing left for the next one, and the price of breaking something is the
-       * reason to think about whether it was worth breaking.
-       *
-       * `this.onSlam` and NOT `this.overloaded`: while overloaded the smashing is FREE, and that is deliberate. If
-       * the overload's own ram charged rage per hit, a player could smash their way down to an empty gauge and then
-       * have nothing left to release the countdown with -- the state whose entire point is that you must release it
-       * would have become the state that makes releasing impossible.
+       * The armour is the ammunition now, and the plate is spent whether the thing broke or was merely shoved: the
+       * bubble was a hammer for that frame either way, and a hammer that could swing for ever would not be
+       * ammunition. This is also what keeps "may I open this wall" a question with a cost, since walls are the one
+       * thing no other form can open at all -- see `angry.armour.breaksUnrammable`.
        */
-      if (this.onSlam) {
-        const cost = contact.hit.broke ? mech.angry.charge.rageCostPerBreak : mech.angry.charge.rageCostPerHit;
-        if (this.bubbleType.look === 'rage') spendRage(this.rage, cost);
+      if (this.hasArmour) {
+        this.armourPlates--;
         this.slams++;
       }
     }
@@ -1386,37 +1389,7 @@ export class Run {
     if (this.player.volume > this.stats.maxVolume) this.stats.maxVolume = this.player.volume;
     this.lastEaten = eaten;
   }
-  /**
-   * The overload expired: a heavy wound, and the gauge is gone.
-   *
-   * ---------------------------------------------------------------------------------------------
-   * IT CANNOT KILL, AND THAT IS THE DESIGN RATHER THAN A MERCY
-   * ---------------------------------------------------------------------------------------------
-   * The document is explicit: "the bubble does NOT simply end the game, it takes a heavy wound". So the wound
-   * STOPS while one hit point is left: a player who missed a button loses most of a bar, not a run. The punishment
-   * is real -- 60 of a 100-point pool, plus the gauge -- without anyone being executed for a missed input.
-   */
-  punishOverload(): void {
-    // The cheat covers the overload too: it is a third way to lose the bubble, and a cheat that only blocks collisions
-    // would still let the player kill themselves by overeating.
-    if (this.infiniteHealth) return;
-    const before = this.health;
-    /**
-     * ONE wound of `punishDamage`, and it stops while one hit point remains.
-     *
-     * It used to be N applications of one point each, applied to whichever pool the route kept its health in.
-     * Both of those are gone: one pool now, and one number big enough to be felt (`config`: 60 of a 100-point
-     * pool). The floor is what makes the design's "it does NOT end the game" literal rather than aspirational.
-     *
-     * Defence does NOT apply (`takeHit`'s second argument 0): the overload is the player's own doing, and a
-     * player who could armour it away would be deleting the reason to watch the gauge at all.
-     */
-    this.health = Math.max(1, this.health - mech.angry.overload.punishDamage);
-    this.stats.overloads++;
-    this.banner(`怒气失控  ·  血量 ${Math.round(before)} → ${Math.round(this.health)}`);
-    this.sound('rage.punish');
-  }
-  /** The bubble pops: slow-motion burst, then a brief result card, then a fresh run. */
+    /** The bubble pops: slow-motion burst, then a brief result card, then a fresh run. */
   startBurst(): void {
     this.phase = 'burst';
     this.phaseTimer = BURST_SECONDS;
@@ -1445,10 +1418,10 @@ export class Run {
    * Everything is applied HERE, on the frame of the press. The ring that follows is the drawing of what already
    * happened -- see `burst`.
    */
-  useBurst(world: WorldView): void {
-    if (!hasVerb(this.bubbleType, 'burst')) return;
+  useBurst(laneWidthMeters: number): void {
+    if (this.bubbleType.look !== 'rage') return;
     const cfg = mech.angry.burst;
-    const laneWidth = world.laneWidth;
+    const laneWidth = laneWidthMeters;
     const radius = laneWidth * this.burstRadiusRatio();
     const px = this.player.x * laneWidth;
     const py = this.player.y;
@@ -1488,13 +1461,6 @@ export class Run {
      * everything the player has.
      */
     spendRage(this.rage, this.rage.rage);
-    /**
-     * The burst is the document's headline way to release the overload, and it is the one the player always has.
-     *
-     * `endOverload` after the spend: emptying the gauge is what releases it, and the overload's own timers and
-     * penalties are done with either way.
-     */
-    endOverload(this.rage);
     this.burst = { radius, seconds: 0, kills, pushes };
     this.bursts++;
     this.sound('rage.burst', 0.8);

@@ -24,7 +24,7 @@ import { LevelUpUi } from './levelup';
 import { growthView } from './growth';
 import { applyMutationPassives, pickMutationCard, rollMutationChoices, type Mutation } from './mutations';
 import { bubbleLook, bubbleShake, bubbleStateColor, bubbleSwell } from './bubbleLook';
-import { gainRage, initialRageState, isOverloaded, rageColor, rageFraction, rageStageName } from './rage';
+import { gainRage, initialRageState, rageColor, rageFraction, rageStageName } from './rage';
 import { mech } from './mechanisms';
 import { suctionRadiusFraction } from './suction';
 import { BackSchoolLayer } from './backSchoolLayer';
@@ -336,14 +336,9 @@ class Game {
    */
   private shake = { seconds: 0, total: 0, pixels: 0 };
 
-  /** Whether a slam is in its window right now: the charge has been released and the window has not run out. */
+  /** Whether a touch is a slam right now: the volatile bubble, with a plate unspent. See `Run.hasArmour`. */
   private get onSlam(): boolean {
-    return this.run.slamSeconds > 0 && this.run.bubbleType.look === 'rage';
-  }
-
-  /** Whether the bubble is in overload: full rage, on the clock. See `angry.overload`. */
-  private get overloaded(): boolean {
-    return this.run.bubbleType.look === 'rage' && isOverloaded(this.run.rage);
+    return this.run.hasArmour;
   }
 
 /** The phase to restore when the settings panel closes. */
@@ -1158,7 +1153,7 @@ class Game {
    * presses of ceremony around one number.
    */
   useBurstForTest(): void {
-    this.run.useBurst(this.worldView());
+    this.run.useBurst(this.worldView().laneWidth);
   }
 
   /**
@@ -1488,7 +1483,7 @@ class Game {
    * cost health" needs headroom rather than a precise starting number.
    */
   debugResetStats(): void {
-    this.run.stats = { absorbed: 0, hits: 0, maxVolume: this.run.stats.maxVolume, ended: this.run.stats.ended, overloads: this.run.stats.overloads, newRecord: false };
+    this.run.stats = { absorbed: 0, hits: 0, maxVolume: this.run.stats.maxVolume, ended: this.run.stats.ended, newRecord: false };
     this.run.player.volume = tuning.volumeMax;
     this.run.player.slowRemaining = 0;
     this.run.player.slowFactor = 1;
@@ -2417,13 +2412,15 @@ class Game {
      * Order matters here and only here: the launch sets an impulse, and `player.update` is what turns an impulse
      * into movement. Firing it after would spend a frame with the bubble wound up and going nowhere.
      */
-    this.run.updateCharge(this.input);
-    this.run.updateRage(dt);
+    this.run.updateRage(dt, this.worldView().laneWidth);
     /**
-     * The burst, read after the charge and before the movement: it is an instant, so where it lands is where the
-     * bubble is on the frame of the press, and reading it here keeps that frame the same one the player saw.
+     * There is no burst KEY any more, and no charge either.
+     *
+     * The volatile bubble's two verbs went passive (see its `controls`): the burst fires on its own when the gauge
+     * fills, and the melee is the armour, spent by walking into something. Reading the old keys here would have left
+     * a way to fire a burst with an empty gauge -- the trigger is the gauge, so a key that bypassed it would be a
+     * cheat rather than a shortcut.
      */
-    if (this.input.consumeBurst()) this.run.useBurst(world);
 
     this.run.player.update(this.input, dt, this.run.lateral);
     /**
@@ -2760,8 +2757,9 @@ class Game {
      * the moment they push the stick.
      */
     this.run.rage = initialRageState();
-    this.run.charging = false;
-    this.run.slamSeconds = 0;
+    this.run.armourPlates = 0;
+    this.run.armourSeconds = 0;
+    this.run.auraSeconds = 0;
     this.run.slams = 0;
     this.run.obstacles.reset();
     this.run.field.reset();
@@ -2834,7 +2832,7 @@ class Game {
     this.run.phase = 'intro';
     this.run.phaseTimer = INTRO_SECONDS;
     this.run.invulnerable = 0;
-    this.run.stats = { absorbed: 0, hits: 0, maxVolume: this.run.talentEffects.startVolume, ended: this.run.stats.ended, overloads: this.run.stats.overloads, newRecord: false };
+    this.run.stats = { absorbed: 0, hits: 0, maxVolume: this.run.talentEffects.startVolume, ended: this.run.stats.ended, newRecord: false };
     this.rollSeed();
     this.run.rollTalent();
     /**
@@ -3731,9 +3729,7 @@ private updateBoss(): void {
                * left, and it belongs beside the gauge it is counting down. The bar underneath empties or not
                * independently -- it shows the rage, this shows the clock.
                */
-              text: this.overloaded
-                ? `${Math.round(this.run.rage.rage)}  ${rageStageName(this.run.rage.rage)}  ${this.run.rage.overloadLeft.toFixed(1)}s`
-                : `${Math.round(this.run.rage.rage)}  ${rageStageName(this.run.rage.rage)}`,
+              text: `${Math.round(this.run.rage.rage)}  ${rageStageName(this.run.rage.rage)}`,
               colour: rageColor(this.run.rage.rage),
               fraction: rageFraction(this.run.rage.rage),
             }
@@ -4115,14 +4111,11 @@ private updateBoss(): void {
     const radius =
       viewport.laneWidthMeters * stageRadiusFraction(this.run.stage.stage, this.run.player.volume) * (0.25 + 0.75 * eased) * burstScale *
       /**
-       * The overload's enlargement, applied to the DRAWN radius because it is applied to the hitbox.
-       *
-       * The project's rule is that the bubble is exactly as big as it looks, and the overload is the one state where
-       * the envelope itself grows -- so this is not a decoration beside the collision number, it IS the collision
-       * number, read from the same config key. `bubbleSwell` below is the other kind of change: a breathing that is
+       * Nothing to correct for any more: the overload's enlargement was the one state where the drawn envelope
+       * grew with the hitbox, and it is gone. `bubbleSwell` below is the other kind of change -- a breathing that is
        * deliberately drawing-only.
        */
-      (this.overloaded ? 1 + mech.angry.overload.radiusBonus : 1);
+      1;
 
     /**
      * The volatile bubble's two drawing-only cues: a tremor and a breath.
@@ -4570,15 +4563,15 @@ private updateBoss(): void {
       invulnerable: this.run.invulnerable,
       burst: this.run.burst,
       bursts: this.run.bursts,
-      chargeAim: this.run.chargeAim,
-      charging: this.run.charging,
+      armourPlates: this.run.armourPlates,
+      armourSeconds: this.run.armourSeconds,
+      auraSeconds: this.run.auraSeconds,
       comedyBeats: this.run.comedyBeats,
       lastComedyBeat: this.run.lastComedyBeat,
       lastEaten: this.run.lastEaten,
       lastEvent: this.run.lastEvent,
       farts: this.run.farts,
       slams: this.run.slams,
-      slamSeconds: this.run.slamSeconds,
       trashDrain: this.run.trashDrain,
       eventsSeen: this.run.eventsSeen,
       eventsFired: this.run.eventsFired,
@@ -4588,7 +4581,6 @@ private updateBoss(): void {
       bestScore: this.run.bestScore,
       bestVolume: this.run.bestVolume,
       nominalSeconds: this.run.nominalSeconds,
-      overloaded: this.overloaded,
       onSlam: this.onSlam,
       suctionUp: this.suctionUp,
       burstRadiusRatio: this.run.burstRadiusRatio(),

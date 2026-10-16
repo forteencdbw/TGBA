@@ -1977,30 +1977,41 @@ export interface Mechanisms {
   angry: {
     rage: {
       max: number;
-      /** Rage gained from one non-fatal hit. The design's number: four hits to overload. */
+      /** Rage gained from one non-fatal hit. The design's number: four hits to a full gauge. */
       perHit: number;
       decayPerSecond: number;
       /** How long the player must go untouched before rage starts falling. */
       decayDelaySeconds: number;
     };
-    charge: {
-      launchScreenSpeed: number;
-      launchLateralSpeed: number;
-      /** How long after release a contact still counts as a slam. */
-      slamSeconds: number;
-      slamDamageBase: number;
-      slamRageScale: number;
-      rageCostPerHit: number;
-      rageCostPerBreak: number;
-      /** Whether a slam can break what no volume can smash (`obstacles.ramVolume` null). */
-      slamBreaksUnrammable: boolean;
-      defaultAimX: number;
-      defaultAimY: number;
+    /**
+     * The armour: the route's melee ammunition, earned on a metronome and spent by touching things.
+     *
+     * Deliberately independent of `rage` -- rage is the fuse, armour is the ammunition -- so "may I slam right now"
+     * is a thing the player can see rather than a second table to read.
+     */
+    armour: {
+      /** Seconds per plate. */
+      secondsPerPlate: number;
+      max: number;
+      /** What a plate does to what it touches. */
+      damage: number;
+      /** The mark it leaves: how much more everything hurts, and for how long. */
+      vulnerableMultiplier: number;
+      vulnerableSeconds: number;
+      /** The ram's damage to scenery, and whether it opens what no volume can. */
+      obstacleDamage: number;
+      breaksUnrammable: boolean;
+    };
+    /** The attached burn: a continuous melee radius that follows the bubble's own size. */
+    aura: {
+      /** The burn's radius, as a multiple of the player's own drawn radius. */
+      playerRadiusRadii: number;
+      tickSeconds: number;
+      damagePerTick: number;
     };
     /** One row per rage stage, ordered by `minRage`. */
     appearance: RageAppearance[];
     look: RageLook;
-    slamRadiusBonus: number;
     /** The rage burst: a radial spend of the whole gauge. See the config block for the reasoning. */
     burst: {
       radiusBaseRatio: number;
@@ -2015,15 +2026,6 @@ export interface Mechanisms {
       waveSeconds: number;
       waveWidthRatio: number;
       waveColour: number;
-    };
-    /** Overload: the state a full gauge puts the bubble in, and the price of not spending it. */
-    overload: {
-      seconds: number;
-      steerFactor: number;
-      radiusBonus: number;
-      ramDamage: number;
-      releaseHealth: number;
-      punishDamage: number;
     };
     /** The rage gauge on the HUD: a bar, drawn only for a type that has a resource. */
     gauge: {
@@ -3778,17 +3780,16 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.rage.perHit', check: anyNumber, describe: 'a number, or no hit would ever matter' },
   { path: 'angry.rage.decayPerSecond', check: anyNumber, describe: 'a number of 0 or more' },
   { path: 'angry.rage.decayDelaySeconds', check: anyNumber, describe: 'a number of 0 or more' },
-  { path: 'angry.charge.launchScreenSpeed', check: anyNumber, describe: 'a number' },
-  { path: 'angry.charge.launchLateralSpeed', check: anyNumber, describe: 'a number' },
-  { path: 'angry.charge.slamSeconds', check: anyNumber, describe: 'a number' },
-  { path: 'angry.charge.slamDamageBase', check: anyNumber, describe: 'a number' },
-  { path: 'angry.charge.slamRageScale', check: anyNumber, describe: 'a number of 0 or more' },
-  { path: 'angry.charge.rageCostPerHit', check: anyNumber, describe: 'a number of 0 or more' },
-  { path: 'angry.charge.rageCostPerBreak', check: anyNumber, describe: 'a number of 0 or more' },
-  { path: 'angry.charge.slamBreaksUnrammable', check: (v) => typeof v === 'boolean', describe: 'true or false' },
-  { path: 'angry.charge.defaultAimX', check: anyNumber, describe: 'a direction' },
-  { path: 'angry.charge.defaultAimY', check: anyNumber, describe: 'a direction' },
-  { path: 'angry.slamRadiusBonus', check: anyNumber, describe: 'a fraction' },
+  { path: 'angry.armour.secondsPerPlate', check: anyNumber, describe: 'seconds' },
+  { path: 'angry.armour.max', check: anyNumber, describe: 'a plate count' },
+  { path: 'angry.armour.damage', check: anyNumber, describe: 'hit points' },
+  { path: 'angry.armour.vulnerableMultiplier', check: anyNumber, describe: 'a damage multiplier' },
+  { path: 'angry.armour.vulnerableSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'angry.armour.obstacleDamage', check: anyNumber, describe: 'a number' },
+  { path: 'angry.armour.breaksUnrammable', check: (v) => typeof v === 'boolean', describe: 'true or false' },
+  { path: 'angry.aura.playerRadiusRadii', check: anyNumber, describe: 'a multiple of the player radius' },
+  { path: 'angry.aura.tickSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'angry.aura.damagePerTick', check: anyNumber, describe: 'hit points' },
   { path: 'angry.burst.radiusBaseRatio', check: anyNumber, describe: 'a fraction of the lane' },
   { path: 'angry.burst.radiusMaxRatio', check: anyNumber, describe: 'a fraction of the lane' },
   { path: 'angry.burst.obstacleDamage', check: anyNumber, describe: 'a number' },
@@ -3807,12 +3808,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.burst.waveWidthRatio', check: anyNumber, describe: 'a stroke width ratio' },
   { path: 'angry.burst.waveColour', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'angry.gauge.widthRatio', check: anyNumber, describe: 'a fraction of the lane' },
-  { path: 'angry.overload.seconds', check: anyNumber, describe: 'a number' },
-  { path: 'angry.overload.steerFactor', check: anyNumber, describe: 'a speed multiplier' },
-  { path: 'angry.overload.radiusBonus', check: anyNumber, describe: 'a fraction' },
-  { path: 'angry.overload.ramDamage', check: anyNumber, describe: 'a number' },
-  { path: 'angry.overload.releaseHealth', check: anyNumber, describe: 'a number' },
-  { path: 'angry.overload.punishDamage', check: anyNumber, describe: 'hit points' },
   { path: 'angry.gauge.height', check: anyNumber, describe: 'design pixels' },
   { path: 'angry.gauge.gap', check: anyNumber, describe: 'design pixels' },
   { path: 'angry.gauge.radius', check: anyNumber, describe: 'a corner radius' },

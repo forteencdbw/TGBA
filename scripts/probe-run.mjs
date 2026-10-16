@@ -141,7 +141,7 @@ try {
      */
     check('derived · tier bonus', typeof r.eatTierBonus, 'number');
     check('derived · burst radius', typeof r.burstRadiusRatio(), 'number');
-    check('derived · overload state', typeof r.overloaded, 'boolean');
+    check('derived · armour, asked as a question', typeof r.hasArmour, 'boolean');
     check('derived · suction, asked WITH the input', typeof r.suctionUp(input()), 'boolean');
     check('derived · whether something can be swallowed', typeof r.canSwallow('fish'), 'boolean');
     check('derived · the stage ceiling is config', mech.bullets.maxStreams >= 1, true);

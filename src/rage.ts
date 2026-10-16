@@ -1,7 +1,7 @@
 import { mech, type RageAppearance, type RageLook } from './mechanisms';
 
 /**
- * Rage: the volatile bubble's resource, its countdown, and its four stages.
+ * Rage: the volatile bubble's resource, its cool-down, and its three stages.
  *
  * ---------------------------------------------------------------------------------------------
  * WHERE IT COMES FROM, AND WHY THAT IS A DELIBERATE HALF-IMPLEMENTATION
@@ -11,17 +11,17 @@ import { mech, type RageAppearance, type RageLook } from './mechanisms';
  * rewards only surviving it. Keeping the near-miss judgement out of it is what makes the system affordable now:
  * damage already exists as an event, and "nearly touched" does not exist at all.
  *
- * The consequence to keep in mind while tuning: **rage is bought with volume**, because volume is health. That is
- * a real mechanic (fighting back from the brink) and it has one failure mode -- being too hurt to use what you
- * earned. The answer here is not a guard rail on the gauge, it is in `src/bubbleTypes.ts`: the charge's power comes
- * from rage and NOT from volume, so a nearly-dead bubble with full rage still hits at full strength. See
- * `slamDamage`.
+ * The consequence while tuning: **rage is bought with volume**, because volume is health.
  *
  * ---------------------------------------------------------------------------------------------
- * THE STAGES ARE AN APPEARANCE, NOT A MECHANIC (YET)
+ * A FULL GAUGE IS THE BURST'S TRIGGER
  * ---------------------------------------------------------------------------------------------
- * `stage` picks a look and a HUD name. The document's overload COUNTDOWN (the fourth stage threatening to pop you)
- * is deliberately not here -- it needs the burst verb to be fair, so it lands with it.
+ * There used to be a fourth stage here -- a countdown at the top of the gauge that punished a player who let it run
+ * out -- and it is gone. It took control AWAY (a steering penalty over four seconds), and a route whose whole pitch
+ * is "get close and hit things" cannot spend four seconds unable to steer. The gauge's ceiling is now simply where
+ * the burst fires, automatically, and the player's hands are never taken off the bubble.
+ *
+ * So `stage` picks a look and a HUD name and nothing else, and the three stages are 平静 / 烦躁 / 暴怒.
  */
 
 export interface RageState {
@@ -29,44 +29,10 @@ export interface RageState {
   rage: number;
   /** Seconds since the last damage. Rage only starts falling after the configured delay. */
   safeSeconds: number;
-  /**
-   * Seconds left of the overload, or 0 when the bubble is not overloaded.
-   *
-   * The design's "rage is both a resource and a countdown": a full gauge does not simply sit there, it starts a
-   * clock the player has to beat. See `tickRage`.
-   */
-  overloadLeft: number;
 }
 
 export function initialRageState(): RageState {
-  return { rage: 0, safeSeconds: mech.angry.rage.decayDelaySeconds, overloadLeft: 0 };
-}
-
-/** Whether the bubble is in overload right now. */
-export function isOverloaded(state: RageState): boolean {
-  return state.overloadLeft > 0;
-}
-
-/**
- * Start the overload, if it is not already running.
- *
- * @return true when this call started it, so the caller can announce it exactly once -- a warning played every frame
- *   would be noise rather than a warning.
- */
-export function beginOverload(state: RageState): boolean {
-  if (state.overloadLeft > 0) return false;
-  state.overloadLeft = mech.angry.overload.seconds;
-  return true;
-}
-
-/**
- * End the overload: the rage was released, one way or another.
- *
- * Idempotent, and it does NOT touch `rage` -- releasing by breaking something large leaves the rage spent by the
- * hits that did it, while the burst has already emptied the gauge. Two different amounts, one shared "it is over".
- */
-export function endOverload(state: RageState): void {
-  state.overloadLeft = 0;
+  return { rage: 0, safeSeconds: mech.angry.rage.decayDelaySeconds };
 }
 
 /**
@@ -84,14 +50,6 @@ export function gainRage(state: RageState, amount: number): void {
   // Any damage resets the clock, even damage that overflowed the cap: the player was in danger this frame, and the
   // decay is meant to reward being left alone, not to reward being at full rage.
   state.safeSeconds = 0;
-  /**
-   * Reaching the cap is what puts the bubble INTO overload.
-   *
-   * Here rather than in the tick, so the countdown starts on the frame the gauge fills: a clock that only noticed a
-   * full gauge on the next tick would give the player one extra frame of grace, and "the moment it fills" is the
-   * only moment the design describes.
-   */
-  if (state.rage >= mech.angry.rage.max) beginOverload(state);
 }
 
 /**
@@ -107,7 +65,7 @@ export function spendRage(state: RageState, amount: number): number {
 }
 
 /**
- * Advance the clock: count safe time, decay once the delay has passed, and run the overload countdown.
+ * Advance the clock: count safe time, then decay once the delay has passed.
  *
  * @param dt seconds
  * @param inDanger whether something is currently touching or draining the player. The design calls the delay "no
@@ -115,38 +73,15 @@ export function spendRage(state: RageState, amount: number): number {
  *   draining the bubble should not also be letting its rage cool down.
  * @param decayMultiplier what the route's 余温 picks do to the cooling rate. 1 for a run that has not stacked the
  *   card; below 1 and the heat lingers, which is the whole idea of the card.
- * @return whether the overload EXPIRED this frame, which is the caller's cue to apply the punishment -- the volume
- *   loss belongs to the game, and this module knows nothing about volume.
  */
-export function tickRage(state: RageState, dt: number, inDanger: boolean, decayMultiplier = 1): { overloadExpired: boolean } {
-  /**
-   * The countdown, before anything else, and it REPLACES the decay while it runs.
-   *
-   * The decay would otherwise fight the countdown: a full gauge would start ticking down from 100 at the same moment
-   * the clock started, so the player could "escape" the overload by simply waiting -- which is the one thing the
-   * design says must not work.
-   */
-  if (state.overloadLeft > 0) {
-    state.overloadLeft = Math.max(0, state.overloadLeft - dt);
-    if (state.overloadLeft === 0) {
-      // Expired: the caller punishes, and rage is cleared here because "forced to empty" is this module's rule
-      // rather than the game's.
-      state.rage = 0;
-      state.safeSeconds = 0;
-      return { overloadExpired: true };
-    }
-    state.safeSeconds = 0;
-    return { overloadExpired: false };
-  }
-
+export function tickRage(state: RageState, dt: number, inDanger: boolean, decayMultiplier = 1): void {
   if (inDanger) {
     state.safeSeconds = 0;
-    return { overloadExpired: false };
+    return;
   }
   state.safeSeconds += dt;
-  if (state.safeSeconds < mech.angry.rage.decayDelaySeconds) return { overloadExpired: false };
+  if (state.safeSeconds < mech.angry.rage.decayDelaySeconds) return;
   state.rage = Math.max(0, state.rage - mech.angry.rage.decayPerSecond * decayMultiplier * dt);
-  return { overloadExpired: false };
 }
 
 /**
@@ -184,17 +119,4 @@ export function rageLook(): RageLook {
 /** How full the gauge is, 0..1. What the HUD and any pulse want. */
 export function rageFraction(rage: number): number {
   return Math.min(1, Math.max(0, rage / Math.max(1e-6, mech.angry.rage.max)));
-}
-
-/**
- * Damage one slam does at a given rage: `P = P0 x (1 + scale x rage/max)`.
- *
- * **Deliberately not a function of volume.** That is the design answer to the document's fourth open question: the
- * loop "get hit -> earn rage -> spend it on a charge" has to keep working when the player is nearly dead, or being
- * hurt both arms and disarms them at once. So a small bubble at full rage hits exactly as hard as a big one, and
- * the charge is the one thing in this game that does not care how big you are.
- */
-export function slamDamage(rage: number): number {
-  const { slamDamageBase, slamRageScale } = mech.angry.charge;
-  return slamDamageBase * (1 + slamRageScale * rageFraction(rage));
 }

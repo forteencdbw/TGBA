@@ -33,7 +33,7 @@ import type { Xp } from './xp';
  * just watched, so frame time, the popup pools, the banner and the codex page are part of the answer. The run's own
  * state is the bulk of it.
  *
- * Four of these members are DERIVED -- `overloaded`, `onSlam`, `suctionUp` and `burstRadiusRatio` are
+ * Three of these members are DERIVED -- `onSlam`, `suctionUp` and `burstRadiusRatio` are
  * getters on the game. They arrive as VALUES, because a report that had to ask the game to compute things would be a
  * report that needs the game.
  */
@@ -57,7 +57,6 @@ export interface GameSnapshot {
     hits: number;
     maxVolume: number;
     ended: number;
-    overloads: number;
     newRecord: boolean;
   };
   stage: StageState;
@@ -77,6 +76,11 @@ export interface GameSnapshot {
   gunStreams: number;
   lateral: LateralAuthority;
   rage: RageState;
+  /** The armour's plate count. Part of the snapshot because the diagnostics readout shows it. */
+  armourPlates: number;
+  /** Seconds toward the next plate, and toward the next burn tick of the aura. */
+  armourSeconds: number;
+  auraSeconds: number;
   talentEffects: TalentEffects;
 
   /** Which part of the flow this is: menu, intro, playing, the two halves of clearing a level, or a page. */
@@ -100,15 +104,12 @@ export interface GameSnapshot {
   /** The rage burst in progress, if one is. */
   burst: { radius: number; seconds: number; kills: number; pushes: number } | null;
   bursts: number;
-  chargeAim: { x: number; y: number };
-  charging: boolean;
   comedyBeats: number;
   lastComedyBeat: { what: HazardKind; at: number } | null;
   lastEaten: number;
   lastEvent: { label: string; at: number } | null;
   farts: number;
   slams: number;
-  slamSeconds: number;
   trashDrain: number;
   eventsSeen: number;
   eventsFired: Set<number>;
@@ -123,7 +124,6 @@ export interface GameSnapshot {
   // ---------------------------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------------------------
-  overloaded: boolean;
   onSlam: boolean;
   suctionUp: boolean;
   /** The burst's reach as a fraction of a lane, from the rage stage the run is in. */

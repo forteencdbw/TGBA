@@ -228,6 +228,14 @@ export interface HazardEffect {
    */
   eaten?: { id: number };
   /**
+   * Set when the ARMOUR took this contact instead of the player: the id to spend the plate on.
+   *
+   * The exact mirror of `eaten` above, and the reason it is an effect rather than the field doing the work: the field
+   * reports what touched what, and the run owns what a plate is worth. What the reader does with it is knock the
+   * creature, mark it, and take a plate -- see `Run`'s effect loop.
+   */
+  slammed?: { id: number };
+  /**
    * A creature's order to FIRE, from where it is.
    *
    * An effect rather than a direct call into the bullet field for the reason every other entry here is: this module
@@ -663,6 +671,16 @@ export interface Hazard {
    * landed"), they have different lengths, and a light hit must not restart the outline of a heavy one.
    */
   heavyStarted?: number;
+  /**
+   * The armour's mark: seconds left of "everything hurts this one more", and by how much.
+   *
+   * Two plain numbers rather than an object, and stored on the HAZARD rather than resolved when damage lands, for one
+   * reason: the multiplier is decided when the mark lands (`angry.armour.vulnerableMultiplier`), so a card taken
+   * during the window cannot retroactively change a hit that already happened. Absent means unmarked, which is every
+   * creature in every run that never spent a plate on it.
+   */
+  vulnerableLeft?: number;
+  vulnerableMultiplier?: number;
   heavyStrength?: number;
   /**
    * The facing the creature has COMMITTED to, and how long before it may change: +1 is as drawn, -1 is mirrored.
@@ -1004,6 +1022,15 @@ export interface HazardContext {
    * punishes the player for trusting what they were shown.
    */
   canEat: (kind: HazardKind) => boolean;
+  /**
+   * Whether a touch is a SLAM this frame: the volatile bubble with an unspent plate.
+   *
+   * A value rather than a function, unlike `canEat` above, because there is nothing to ask ABOUT: a plate is the
+   * player's own state and does not care what it hit. It sits beside `canEat` because the two are the same rule --
+   * "this overlap does not hurt you, it does something else" -- and the ordering between them is the only thing that
+   * matters (see the collision code).
+   */
+  canSlam: boolean;
   /**
    * The suction field, or null when it is not up.
    *
@@ -1835,6 +1862,31 @@ const CONTACT_SHAPES: Partial<Record<HazardKind, (h: Hazard, ctx: HazardContext)
  * The only caller is the rage burst, which passes its own `knockbackMeters` scaled by `pushImpact`; the metres are
  * a parameter rather than a shared config read so the function stays a rule rather than a mechanic of any one verb.
  */
+/**
+ * Mark a creature: everything that lands on it hurts more, for a while.
+ *
+ * The multiplier is COPIED onto the creature here rather than read at damage time, so the mark is a fact about the
+ * moment it landed -- see the note on `Hazard.vulnerableMultiplier`.
+ */
+export function markVulnerable(h: Hazard, seconds: number): void {
+  if (seconds <= 0) return;
+  h.vulnerableLeft = seconds;
+  h.vulnerableMultiplier = mech.angry.armour.vulnerableMultiplier;
+}
+
+/**
+ * What a hit is worth against a marked creature.
+ *
+ * Applied by the CALLER rather than inside `hit`, and that is a deliberate trade: `hit` returns an outcome, not a
+ * number, so a multiplier applied in there would be invisible to the floating digit -- and "the number over the
+ * creature is the number that came off it" is the whole point of that digit. One helper, two callers (the gun and
+ * the aura), and a mark that cannot make the display lie.
+ */
+export function vulnerableDamage(h: Hazard, damage: number): number {
+  if (h.vulnerableLeft === undefined || h.vulnerableLeft <= 0) return damage;
+  return damage * (h.vulnerableMultiplier ?? 1);
+}
+
 export function shoveCreature(target: { kind: HazardKind; x: number; y: number }, dx: number, dy: number, shoveMeters: number): void {
   const mass = Math.max(0.05, hazardMass(target.kind));
   const shove = shoveMeters / mass;
@@ -1918,6 +1970,9 @@ export class HazardField {
    */
   eaten = 0;
 
+  /** Slams the armour took this frame. The same "how does a test see it happened" reasoning as `eaten`. */
+  slammed = 0;
+
   /**
    * The ids come from `NEXT_HAZARD_ID` at the top of this file, NOT from a counter of this field's own.
    *
@@ -1971,6 +2026,7 @@ export class HazardField {
     this.charges = 0;
     this.grazes = 0;
     this.eaten = 0;
+    this.slammed = 0;
     this.splits = 0;
     this.bubblesEaten = 0;
     this.fled = 0;
@@ -2279,6 +2335,7 @@ export class HazardField {
        * runs every frame.
        */
       if (h.facingRest !== undefined && h.facingRest > 0) h.facingRest = Math.max(0, h.facingRest - dt);
+      if (h.vulnerableLeft !== undefined && h.vulnerableLeft > 0) h.vulnerableLeft = Math.max(0, h.vulnerableLeft - dt);
       /**
        * And the turn animation, which is in this loop for exactly the reason above: `advance` returns early for a
        * charge, for a path follower and for a creature that is leaving, and a creature turns in all three of those.
@@ -2499,6 +2556,19 @@ export class HazardField {
       if (ctx.canEat(h.kind)) {
         this.eaten++;
         effects.push({ kind: h.kind, broke: true, eaten: { id: h.id } });
+        continue;
+      }
+
+      /**
+       * THE ARMOUR, immediately after the mouth and for the same reason.
+       *
+       * Both are "this overlap does not hurt you" -- one because of how big the bubble is, the other because of what
+       * it is holding -- so both have to be asked before any of the damage branches below. A plate is spent whether
+       * the creature survives or not: the bubble was a hammer for that frame either way.
+       */
+      if (ctx.canSlam) {
+        this.slammed++;
+        effects.push({ kind: h.kind, broke: true, slammed: { id: h.id } });
         continue;
       }
 
