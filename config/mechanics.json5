@@ -4612,15 +4612,21 @@
     "lowHealthIntervalSeconds": 1.1,
 
     // ---------------------------------------------------------------------------------------------
-    // 背景音乐：每关一段，**合成而不是文件**
+    // 背景音乐：每关一段，**合成而不是文件**（录好的曲子走下面的 `music.recorded`，两条路并存）
     // ---------------------------------------------------------------------------------------------
     //
-    // 这个项目没有任何二进制素材：所有声音都是 WebAudio 现场合成的。六段音乐要是做成文件，体积会翻好几个
-    // 数量级，而且变成六件"改关卡列表时要同步维护"的东西。所以一段音乐是一份**配方**：调性、速度、波形、
-    // 和弦进行、琶音型。
+    // 一段音乐是一份**配方**：调性、速度、和弦进行、琶音型，加上三个声部的音色。合成而不是放文件，是因为六段
+    // 音乐要是做成文件，体积会翻好几个数量级，而且变成六件"改关卡列表时要同步维护"的东西。
     //
-    // 三个数字决定一段音乐的"性格"：`rootHz` 调性（低=沉、高=亮）、`stepPerMinute` 琶音速度（慢=平静）、
-    // `cutoffHz` 低通截止（低=水下、闷，高=明亮、开阔）。**想换一关的气氛，改这四个数就够了。**
+    // **三个声部，就是芯片那三条声道**（见 `src/music.ts` 和 `src/chip.ts`）：
+    //   lead  脉冲波主旋。`leadDuty` 是它的占空比（0.125 薄而亮 / 0.25 经典的"电子" / 0.5 空而厚），
+    //         **这是六关听着不一样的主要来源**——现在没有低通、没有失谐，一关的性格靠波形和打点密度。
+    //   bass  三角波低音，在 `chord[0]` 降八度，每次换和弦才重新触发。低音只能靠它：三角波是芯片唯一"暖"的声。
+    //   drums 噪声打点，**每关自己写，不写就是没有打点**（第一关就没有，它要的是"压抑、安静"）。
+    //         `rate` 是噪声寄存器的时钟：200 上下是低鼓、600 是中鼓、2400 像军鼓、8000 以上是踩镲；
+    //         `endRatio` 小于 1 就是"时钟往下走"，也就是鼓音下滑。
+    //
+    // 决定一段音乐性格的数：`rootHz` 调性（低=沉、高=亮）、`stepPerMinute` 速度（慢=平静）、`leadDuty` 音色。
       // **过关音乐**：攻克 BOSS 之后单独播一段，播完气泡才向上飞走。
       //
       // `notes` 是相对主音的半音（大调上行琶音：do-mi-sol-do），`gapSeconds` 是每个音之间的间隔。
@@ -4641,11 +4647,25 @@
       // 音效：每个声音一行配方，名字是 src/soundIds.ts 里的 id。想换成真实录音，把 <名字>.wav（或 .mp3）放进 src/assets/audio/sfx/，
       // 同名文件会自动盖过这里的配方，不用改任何别的东西。每个 id 都必须有一行（启动时会检查）。
       //
-      // 配方 = 若干层。tone 层：wave 波形、hz 起始频率、endRatio 结束频率是起始的几倍（默认 1，不滑音）、seconds 时长、gain 音量、
-      //   delay 延后多久开始、attack 起音时间、vibratoHz/vibratoDepth 音高颤动。
-      // noise 层：filter 滤波类型、hz 滤波中心（或截止）、endRatio 结束时是起始的几倍、q 滤波锐度、seconds/gain/delay 同上。
-      // 整行：gap 同一个声音最少隔多久才能再响（防叠成一团）、gain 整体音量、pitchJitter 每次随机偏多少音高、
-      //   pitchPerIntensity / gainPerIntensity 强度越大音高 / 音量越高（强度由触发处决定，例如吸收的泡泡越大）、fileGain 录音版的音量。
+      // **调色板是芯片的：只有三种声音**（见 src/chip.ts）。写成别的波形会直接开不了页面。
+      //
+      //   tone 层，`wave: "pulse"`：脉冲波。**必须写 `duty`**，只能是 0.125 / 0.25 / 0.5——
+      //     0.125 薄而亮（高音滴答、电）、0.25 是那个经典的"电子"音、0.5 空而厚（低音闷响）。
+      //     这是「像不像芯片」最大的一个旋钮，比频率还重要。
+      //   tone 层，`wave: "triangle"`：三角波，唯一"暖"的波形，低音用它。**不能写 duty。**
+      //   noise 层：噪声寄存器。`mode` 是 "hiss"（长寄存器，宽频嘶声）或 "buzz"（短寄存器，**带音高**，
+      //     做鼓就靠它）；`rate` 是寄存器时钟，200 上下是低鼓、600 中鼓、2400 像军鼓、8000 以上是踩镲。
+      //
+      // 两层共有的：`hz` / `rate` 起始值、`endRatio` 结束值是起始的几倍（默认 1 = 不滑音；滑音是**线性**的，
+      //   芯片的分频器就是这么走的）、`seconds` 时长、`gain` 音量、`delay` 延后多久开始、`attack` 起音时间
+      //   （默认 0 = 瞬间起音）、`shape` 怎么结束：`linear`（瞬间起音、直线下降，默认）/ `cut`（起音后平着，
+      //   到点直接收——打击音用它）/ `exponential`（合成器那种软尾巴，很少用）。
+      //
+      // 整行：`gap` 同一个声音最少隔多久才能再响（防叠成一团）、`gain` 整体音量、`pitchJitter` 每次随机偏多少音高、
+      //   `pitchPerIntensity` / `gainPerIntensity` 强度越大音高 / 音量越高（强度由触发处决定，例如吸收的泡泡越大）、
+      //   `fileGain` 录音版的音量。
+      //
+      // 改这一批数字的脚本是 `scripts/make-chip-sfx-recipes.py`——**那是历史记录，不要重跑**，它会盖掉你手改的值。
       //
       // 分组音量（界面 / 战斗 / 玩家 / 环境）：
       "buses": { "ui": 1, "combat": 0.9, "player": 1, "env": 0.8 },
@@ -4656,309 +4676,288 @@
       "sounds": {
         // ---- 界面与流程
         "ui.click": { "label": "按钮按下", "bus": "ui", "gap": 0.03, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 1200, "endRatio": 0.6, "seconds": 0.05, "gain": 0.18 },
-          { "type": "noise", "filter": "bandpass", "hz": 3000, "seconds": 0.02, "gain": 0.05 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 880, "seconds": 0.035, "gain": 0.16 },
+          { "type": "noise", "mode": "hiss", "rate": 6000, "seconds": 0.015, "gain": 0.05, "shape": "cut" }
         ] },
         "ui.back": { "label": "返回 / 关闭", "bus": "ui", "gap": 0.03, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 800, "endRatio": 0.6, "seconds": 0.07, "gain": 0.16 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 660, "endRatio": 0.6, "seconds": 0.06, "gain": 0.15 },
+          { "type": "noise", "mode": "hiss", "rate": 6000, "seconds": 0.015, "gain": 0.05, "shape": "cut" }
         ] },
         "ui.toggle": { "label": "开关切换", "bus": "ui", "gap": 0.05, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 700, "endRatio": 1.5, "seconds": 0.05, "gain": 0.14 },
-          { "type": "tone", "wave": "triangle", "hz": 1050, "seconds": 0.05, "gain": 0.12, "delay": 0.05 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 700, "seconds": 0.04, "gain": 0.14 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1050, "seconds": 0.05, "gain": 0.13, "delay": 0.045 }
         ] },
         "ui.slider": { "label": "滑条刻度", "bus": "ui", "gap": 0.05, "pitchJitter": 0.05, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 900, "seconds": 0.025, "gain": 0.08 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1200, "seconds": 0.02, "gain": 0.08, "shape": "cut" }
         ] },
         "menu.start": { "label": "点「开始游戏」：气泡出发", "bus": "ui", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 300, "endRatio": 2.5, "seconds": 0.5, "gain": 0.22, "attack": 0.05 },
-          { "type": "tone", "wave": "triangle", "hz": 450, "endRatio": 2.5, "seconds": 0.5, "gain": 0.14 },
-          { "type": "noise", "filter": "bandpass", "hz": 1200, "endRatio": 2.5, "seconds": 0.45, "gain": 0.1 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 330, "seconds": 0.09, "gain": 0.2 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 440, "seconds": 0.09, "gain": 0.18, "delay": 0.08 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 660, "seconds": 0.16, "gain": 0.16, "delay": 0.16 },
+          { "type": "noise", "mode": "hiss", "rate": 1200, "endRatio": 3, "seconds": 0.2, "gain": 0.08 }
         ] },
         "ui.pause": { "label": "打开设置 / 暂停", "bus": "ui", "gap": 0.2, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 500, "endRatio": 0.5, "seconds": 0.15, "gain": 0.16 },
-          { "type": "tone", "wave": "sine", "hz": 350, "endRatio": 0.6, "seconds": 0.18, "gain": 0.12, "delay": 0.05 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 520, "endRatio": 0.55, "seconds": 0.1, "gain": 0.16 },
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 350, "endRatio": 0.8, "seconds": 0.12, "gain": 0.14, "delay": 0.06 }
         ] },
         "ui.resume": { "label": "关闭设置 / 继续", "bus": "ui", "gap": 0.2, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 350, "endRatio": 1.6, "seconds": 0.15, "gain": 0.16 },
-          { "type": "tone", "wave": "sine", "hz": 520, "endRatio": 1.5, "seconds": 0.15, "gain": 0.12, "delay": 0.05 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 350, "endRatio": 1.45, "seconds": 0.1, "gain": 0.16 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 520, "seconds": 0.12, "gain": 0.14, "delay": 0.06 }
         ] },
         "levelup.open": { "label": "突变三选一弹出", "bus": "ui", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 523, "seconds": 0.25, "gain": 0.16 },
-          { "type": "tone", "wave": "sine", "hz": 659, "seconds": 0.25, "gain": 0.16, "delay": 0.08 },
-          { "type": "tone", "wave": "sine", "hz": 784, "seconds": 0.3, "gain": 0.16, "delay": 0.16 },
-          { "type": "noise", "filter": "highpass", "hz": 5000, "seconds": 0.3, "gain": 0.05, "delay": 0.1 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 523, "seconds": 0.07, "gain": 0.16 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 659, "seconds": 0.07, "gain": 0.16, "delay": 0.07 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 784, "seconds": 0.14, "gain": 0.16, "delay": 0.14 }
         ] },
         "levelup.pick": { "label": "选定一张突变卡", "bus": "ui", "gap": 0.2, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 660, "endRatio": 1.5, "seconds": 0.12, "gain": 0.2 },
-          { "type": "tone", "wave": "square", "hz": 990, "seconds": 0.18, "gain": 0.1, "delay": 0.06 },
-          { "type": "noise", "filter": "highpass", "hz": 4000, "seconds": 0.2, "gain": 0.07 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 660, "seconds": 0.05, "gain": 0.18 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 990, "seconds": 0.1, "gain": 0.15, "delay": 0.055 }
         ] },
         "level.start": { "label": "关卡开始：气泡出生", "bus": "ui", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 3, "seconds": 0.4, "gain": 0.2, "attack": 0.02 },
-          { "type": "noise", "filter": "bandpass", "hz": 800, "endRatio": 3, "seconds": 0.35, "gain": 0.1 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 150, "endRatio": 2.4, "seconds": 0.14, "gain": 0.2 },
+          { "type": "noise", "mode": "hiss", "rate": 900, "endRatio": 2.4, "seconds": 0.22, "gain": 0.09 }
         ] },
         "level.banner": { "label": "关卡事件横幅", "bus": "ui", "gap": 0.2, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 880, "seconds": 0.1, "gain": 0.1 },
-          { "type": "tone", "wave": "triangle", "hz": 1175, "seconds": 0.12, "gain": 0.09, "delay": 0.09 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1046, "seconds": 0.05, "gain": 0.11 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1318, "seconds": 0.07, "gain": 0.1, "delay": 0.05 }
         ] },
-        // level.surface：原来的 surface
         "level.surface": { "label": "到达水面 / 过关", "bus": "ui", "gap": 0.2, "layers": [
-          { "type": "noise", "filter": "bandpass", "hz": 4200, "seconds": 0.5, "gain": 0.42 },
-          { "type": "tone", "wave": "sine", "hz": 720, "endRatio": 2.4, "seconds": 0.5, "gain": 0.3 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 784, "seconds": 0.08, "gain": 0.16 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 988, "seconds": 0.08, "gain": 0.16, "delay": 0.075 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1175, "seconds": 0.24, "gain": 0.18, "delay": 0.15 },
+          { "type": "noise", "mode": "hiss", "rate": 5000, "endRatio": 3, "seconds": 0.22, "gain": 0.09 }
         ] },
         "boss.warn": { "label": "Boss 预警", "bus": "ui", "gap": 0.5, "layers": [
-          { "type": "tone", "wave": "sawtooth", "hz": 110, "endRatio": 0.8, "seconds": 0.8, "gain": 0.2, "attack": 0.1, "vibratoHz": 6, "vibratoDepth": 0.03 },
-          { "type": "tone", "wave": "sine", "hz": 55, "seconds": 0.9, "gain": 0.25 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 147, "seconds": 0.18, "gain": 0.22 },
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 147, "seconds": 0.18, "gain": 0.22, "delay": 0.28 },
+          { "type": "tone", "wave": "triangle", "hz": 73, "seconds": 0.3, "gain": 0.18, "delay": 0.28 }
         ] },
         "boss.enter": { "label": "Boss 登场", "bus": "ui", "gap": 0.5, "layers": [
-          { "type": "tone", "wave": "sawtooth", "hz": 70, "endRatio": 0.5, "seconds": 0.9, "gain": 0.28 },
-          { "type": "noise", "filter": "lowpass", "hz": 400, "seconds": 0.8, "gain": 0.3 },
-          { "type": "tone", "wave": "sine", "hz": 40, "seconds": 1, "gain": 0.3 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 110, "endRatio": 0.5, "seconds": 0.34, "gain": 0.24 },
+          { "type": "noise", "mode": "hiss", "rate": 300, "endRatio": 0.6, "seconds": 0.34, "gain": 0.22 },
+          { "type": "tone", "wave": "triangle", "hz": 55, "seconds": 0.4, "gain": 0.22, "delay": 0.05 }
         ] },
         "summary.show": { "label": "结算页出现", "bus": "ui", "gap": 0.5, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 523, "seconds": 0.4, "gain": 0.18 },
-          { "type": "tone", "wave": "triangle", "hz": 659, "seconds": 0.4, "gain": 0.18, "delay": 0.12 },
-          { "type": "tone", "wave": "triangle", "hz": 784, "seconds": 0.4, "gain": 0.18, "delay": 0.24 },
-          { "type": "tone", "wave": "triangle", "hz": 1046, "seconds": 0.7, "gain": 0.2, "delay": 0.36 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 523, "seconds": 0.1, "gain": 0.17 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 659, "seconds": 0.1, "gain": 0.17, "delay": 0.11 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 784, "seconds": 0.1, "gain": 0.17, "delay": 0.22 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1046, "seconds": 0.3, "gain": 0.18, "delay": 0.33 }
         ] },
         // ---- 战斗反馈
-        // gun.fire：原来的 bulletFire；强度来自 audio.bulletFireVolume
-        "gun.fire": { "label": "小泡泡子弹射出", "bus": "combat", "gap": 0.04, "pitchJitter": 0.04, "gainPerIntensity": 0.83, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 430, "endRatio": 0.55, "seconds": 0.055, "gain": 0.06 },
-          { "type": "noise", "filter": "bandpass", "hz": 1300, "seconds": 0.022, "gain": 0.03 }
+        "gun.fire": { "label": "小泡泡子弹射出", "bus": "combat", "gap": 0.04, "fileGain": 1, "pitchJitter": 0.05, "gainPerIntensity": 0.8, "layers": [
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 900, "endRatio": 0.6, "seconds": 0.03, "gain": 0.055 },
+          { "type": "noise", "mode": "hiss", "rate": 6000, "seconds": 0.015, "gain": 0.05, "shape": "cut" }
         ] },
-        // gun.hit：原来的 bulletHit；强度来自 audio.bulletHitVolume
         "gun.hit": { "label": "小泡泡子弹命中", "bus": "combat", "gap": 0.05, "gainPerIntensity": 0.8, "layers": [
-          { "type": "tone", "wave": "square", "hz": 1050, "endRatio": 1.5, "seconds": 0.045, "gain": 0.09 },
-          { "type": "noise", "filter": "bandpass", "hz": 3200, "seconds": 0.028, "gain": 0.05 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1500, "endRatio": 0.8, "seconds": 0.025, "gain": 0.07 },
+          { "type": "noise", "mode": "hiss", "rate": 7000, "endRatio": 0.7, "seconds": 0.02, "gain": 0.05 }
         ] },
-        "enemy.hit.small": { "label": "小型鱼类被打中", "bus": "combat", "gap": 0.08, "pitchJitter": 0.08, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 700, "endRatio": 0.7, "seconds": 0.06, "gain": 0.14 },
-          { "type": "noise", "filter": "bandpass", "hz": 2500, "seconds": 0.03, "gain": 0.06 }
+        "enemy.hit.small": { "label": "小型鱼类被打中", "bus": "combat", "gap": 0.08, "pitchJitter": 0.06, "layers": [
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1046, "endRatio": 0.75, "seconds": 0.045, "gain": 0.14 },
+          { "type": "noise", "mode": "hiss", "rate": 6000, "seconds": 0.015, "gain": 0.05, "shape": "cut" }
         ] },
-        "enemy.hit.predator": { "label": "大型捕食者被打中", "bus": "combat", "gap": 0.1, "pitchJitter": 0.05, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 180, "endRatio": 0.6, "seconds": 0.1, "gain": 0.22 },
-          { "type": "noise", "filter": "lowpass", "hz": 900, "seconds": 0.08, "gain": 0.12 }
+        "enemy.hit.predator": { "label": "大型捕食者被打中", "bus": "combat", "gap": 0.1, "pitchJitter": 0.04, "layers": [
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 196, "endRatio": 0.7, "seconds": 0.09, "gain": 0.22 },
+          { "type": "noise", "mode": "hiss", "rate": 700, "endRatio": 0.6, "seconds": 0.06, "gain": 0.1 }
         ] },
-        "enemy.hit.jelly": { "label": "水母 / 电类被打中", "bus": "combat", "gap": 0.1, "pitchJitter": 0.06, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 400, "endRatio": 2.2, "seconds": 0.1, "gain": 0.16 },
-          { "type": "noise", "filter": "bandpass", "hz": 600, "seconds": 0.1, "gain": 0.08 }
+        "enemy.hit.jelly": { "label": "水母 / 电类被打中", "bus": "combat", "gap": 0.1, "pitchJitter": 0.05, "layers": [
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 659, "endRatio": 1.35, "seconds": 0.08, "gain": 0.16 },
+          { "type": "noise", "mode": "hiss", "rate": 2000, "seconds": 0.06, "gain": 0.07 }
         ] },
-        "enemy.hit.shell": { "label": "硬壳带刺被打中", "bus": "combat", "gap": 0.08, "pitchJitter": 0.06, "layers": [
-          { "type": "tone", "wave": "square", "hz": 900, "endRatio": 0.5, "seconds": 0.04, "gain": 0.12 },
-          { "type": "noise", "filter": "bandpass", "hz": 4000, "seconds": 0.04, "gain": 0.12 }
+        "enemy.hit.shell": { "label": "硬壳带刺被打中", "bus": "combat", "gap": 0.08, "pitchJitter": 0.05, "layers": [
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1318, "endRatio": 0.6, "seconds": 0.02, "gain": 0.13, "shape": "cut" },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 988, "endRatio": 0.6, "seconds": 0.03, "gain": 0.12, "delay": 0.03, "shape": "cut" }
         ] },
-        "enemy.hit.ranged": { "label": "远程射手被打中", "bus": "combat", "gap": 0.08, "pitchJitter": 0.06, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 520, "endRatio": 0.8, "seconds": 0.07, "gain": 0.15 },
-          { "type": "noise", "filter": "bandpass", "hz": 1800, "seconds": 0.04, "gain": 0.07 }
+        "enemy.hit.ranged": { "label": "远程射手被打中", "bus": "combat", "gap": 0.08, "pitchJitter": 0.05, "layers": [
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 740, "endRatio": 0.8, "seconds": 0.04, "gain": 0.14 },
+          { "type": "noise", "mode": "hiss", "rate": 6000, "seconds": 0.015, "gain": 0.05, "shape": "cut" }
         ] },
         "enemy.hit.boss": { "label": "Boss 被打中", "bus": "combat", "gap": 0.1, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 110, "endRatio": 0.5, "seconds": 0.18, "gain": 0.26 },
-          { "type": "noise", "filter": "lowpass", "hz": 1200, "seconds": 0.12, "gain": 0.18 },
-          { "type": "tone", "wave": "sine", "hz": 70, "endRatio": 0.8, "seconds": 0.2, "gain": 0.2 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 98, "endRatio": 0.6, "seconds": 0.16, "gain": 0.26 },
+          { "type": "noise", "mode": "hiss", "rate": 400, "endRatio": 0.5, "seconds": 0.12, "gain": 0.16 }
         ] },
         "enemy.leave.small": { "label": "小型鱼类逃走", "bus": "combat", "gap": 0.08, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 500, "endRatio": 2.5, "seconds": 0.15, "gain": 0.2 },
-          { "type": "noise", "filter": "bandpass", "hz": 2800, "seconds": 0.05, "gain": 0.08 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 880, "endRatio": 2.2, "seconds": 0.13, "gain": 0.19 },
+          { "type": "noise", "mode": "hiss", "rate": 3000, "endRatio": 2, "seconds": 0.1, "gain": 0.06 }
         ] },
         "enemy.leave.predator": { "label": "大型捕食者逃走", "bus": "combat", "gap": 0.1, "layers": [
-          { "type": "tone", "wave": "sawtooth", "hz": 120, "endRatio": 2.2, "seconds": 0.3, "gain": 0.18 },
-          { "type": "noise", "filter": "lowpass", "hz": 700, "seconds": 0.2, "gain": 0.12 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 147, "endRatio": 0.5, "seconds": 0.26, "gain": 0.2 },
+          { "type": "noise", "mode": "hiss", "rate": 600, "endRatio": 0.5, "seconds": 0.2, "gain": 0.1 }
         ] },
         "enemy.leave.jelly": { "label": "水母 / 电类逃走", "bus": "combat", "gap": 0.1, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 350, "endRatio": 0.4, "seconds": 0.3, "gain": 0.18, "vibratoHz": 12, "vibratoDepth": 0.12 },
-          { "type": "noise", "filter": "bandpass", "hz": 500, "endRatio": 0.5, "seconds": 0.2, "gain": 0.08 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 494, "endRatio": 1.5, "seconds": 0.26, "gain": 0.17 },
+          { "type": "noise", "mode": "hiss", "rate": 1600, "endRatio": 1.6, "seconds": 0.22, "gain": 0.07 }
         ] },
         "enemy.leave.shell": { "label": "硬壳带刺逃走", "bus": "combat", "gap": 0.1, "layers": [
-          { "type": "tone", "wave": "square", "hz": 300, "endRatio": 0.3, "seconds": 0.12, "gain": 0.15 },
-          { "type": "noise", "filter": "highpass", "hz": 3000, "seconds": 0.15, "gain": 0.18 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 392, "endRatio": 0.55, "seconds": 0.1, "gain": 0.16, "shape": "cut" },
+          { "type": "noise", "mode": "hiss", "rate": 5000, "endRatio": 0.8, "seconds": 0.14, "gain": 0.12, "shape": "cut" }
         ] },
         "enemy.leave.ranged": { "label": "远程射手逃走", "bus": "combat", "gap": 0.1, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 400, "endRatio": 2, "seconds": 0.2, "gain": 0.18 },
-          { "type": "tone", "wave": "triangle", "hz": 600, "endRatio": 2, "seconds": 0.2, "gain": 0.12, "delay": 0.08 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 587, "endRatio": 2, "seconds": 0.16, "gain": 0.17 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 392, "endRatio": 1.6, "seconds": 0.16, "gain": 0.13, "delay": 0.07 }
         ] },
         "enemy.leave.boss": { "label": "Boss 被击败", "bus": "combat", "gap": 0.5, "layers": [
-          { "type": "noise", "filter": "lowpass", "hz": 1500, "endRatio": 0.13, "seconds": 1.2, "gain": 0.4 },
-          { "type": "tone", "wave": "sawtooth", "hz": 100, "endRatio": 0.3, "seconds": 1, "gain": 0.3 },
-          { "type": "tone", "wave": "sine", "hz": 50, "endRatio": 0.6, "seconds": 1.2, "gain": 0.3 }
+          { "type": "noise", "mode": "hiss", "rate": 900, "endRatio": 0.15, "seconds": 0.9, "gain": 0.34 },
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 196, "endRatio": 0.35, "seconds": 0.7, "gain": 0.26 },
+          { "type": "tone", "wave": "triangle", "hz": 98, "endRatio": 0.5, "seconds": 0.9, "gain": 0.24, "delay": 0.1 }
         ] },
         "hit.heavy": { "label": "重击", "bus": "combat", "gap": 0.12, "layers": [
-          { "type": "noise", "filter": "bandpass", "hz": 1000, "endRatio": 0.5, "seconds": 0.1, "gain": 0.2 },
-          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 0.5, "seconds": 0.12, "gain": 0.25 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 110, "endRatio": 0.55, "seconds": 0.1, "gain": 0.22, "shape": "cut" },
+          { "type": "noise", "mode": "hiss", "rate": 2000, "endRatio": 0.6, "seconds": 0.06, "gain": 0.16 }
         ] },
-        // enemy.fire：原来是 hit 的 0.25 强度
         "enemy.fire": { "label": "敌人开火", "bus": "combat", "gap": 0.12, "pitchJitter": 0.06, "layers": [
-          { "type": "tone", "wave": "sawtooth", "hz": 300, "endRatio": 0.5, "seconds": 0.08, "gain": 0.1 },
-          { "type": "noise", "filter": "bandpass", "hz": 1500, "seconds": 0.05, "gain": 0.07 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 440, "endRatio": 0.6, "seconds": 0.05, "gain": 0.09 },
+          { "type": "noise", "mode": "hiss", "rate": 6000, "seconds": 0.015, "gain": 0.05, "shape": "cut" }
         ] },
         "enemy.charge": { "label": "敌人冲锋", "bus": "combat", "gap": 0.15, "layers": [
-          { "type": "noise", "filter": "bandpass", "hz": 400, "endRatio": 5, "seconds": 0.35, "gain": 0.15, "q": 1 },
-          { "type": "tone", "wave": "sawtooth", "hz": 150, "endRatio": 2.5, "seconds": 0.3, "gain": 0.1 }
+          { "type": "noise", "mode": "hiss", "rate": 900, "endRatio": 0.25, "seconds": 0.22, "gain": 0.13 },
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 196, "endRatio": 0.6, "seconds": 0.22, "gain": 0.1 }
         ] },
         "enemy.discharge": { "label": "放电", "bus": "combat", "gap": 0.2, "layers": [
-          { "type": "tone", "wave": "sawtooth", "hz": 1200, "endRatio": 0.2, "seconds": 0.25, "gain": 0.14, "vibratoHz": 40, "vibratoDepth": 0.2 },
-          { "type": "noise", "filter": "highpass", "hz": 3000, "seconds": 0.25, "gain": 0.12 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1568, "endRatio": 0.25, "seconds": 0.1, "gain": 0.13 },
+          { "type": "noise", "mode": "buzz", "rate": 3000, "endRatio": 0.9, "seconds": 0.16, "gain": 0.12 }
         ] },
         "chain.zap": { "label": "连锁放电", "bus": "combat", "gap": 0.3, "layers": [
-          { "type": "noise", "filter": "highpass", "hz": 4000, "seconds": 0.4, "gain": 0.2 },
-          { "type": "tone", "wave": "square", "hz": 800, "endRatio": 0.3, "seconds": 0.4, "gain": 0.12, "vibratoHz": 60, "vibratoDepth": 0.3 }
+          { "type": "noise", "mode": "buzz", "rate": 2400, "endRatio": 0.6, "seconds": 0.28, "gain": 0.18 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1976, "endRatio": 0.3, "seconds": 0.2, "gain": 0.11 }
         ] },
-        // bomb.blast：原来是 pop
         "bomb.blast": { "label": "炸弹鱼爆炸", "bus": "combat", "gap": 0.2, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 120, "endRatio": 0.3, "seconds": 0.6, "gain": 0.35 },
-          { "type": "noise", "filter": "lowpass", "hz": 2500, "endRatio": 0.08, "seconds": 0.7, "gain": 0.4 }
+          { "type": "noise", "mode": "hiss", "rate": 300, "endRatio": 0.25, "seconds": 0.4, "gain": 0.34 },
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 78, "endRatio": 0.4, "seconds": 0.3, "gain": 0.28 }
         ] },
         "puffer.counter": { "label": "河豚反击", "bus": "combat", "gap": 0.2, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 200, "endRatio": 2.5, "seconds": 0.15, "gain": 0.2 },
-          { "type": "noise", "filter": "bandpass", "hz": 1500, "seconds": 0.12, "gain": 0.12 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 220, "endRatio": 1.8, "seconds": 0.12, "gain": 0.19 },
+          { "type": "noise", "mode": "hiss", "rate": 1400, "endRatio": 1.6, "seconds": 0.09, "gain": 0.1 }
         ] },
         "boss.attack": { "label": "Boss 攻击", "bus": "combat", "gap": 0.3, "layers": [
-          { "type": "noise", "filter": "bandpass", "hz": 3000, "endRatio": 0.17, "seconds": 0.3, "gain": 0.22 },
-          { "type": "tone", "wave": "sawtooth", "hz": 200, "endRatio": 0.4, "seconds": 0.3, "gain": 0.15 }
+          { "type": "noise", "mode": "hiss", "rate": 2200, "endRatio": 0.4, "seconds": 0.2, "gain": 0.2 },
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 165, "endRatio": 0.5, "seconds": 0.22, "gain": 0.18 }
         ] },
         "bullet.hurt": { "label": "弹幕命中玩家", "bus": "combat", "gap": 0.08, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 260, "endRatio": 0.5, "seconds": 0.1, "gain": 0.22 },
-          { "type": "noise", "filter": "bandpass", "hz": 2000, "seconds": 0.05, "gain": 0.15 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 262, "endRatio": 0.5, "seconds": 0.08, "gain": 0.2 },
+          { "type": "noise", "mode": "hiss", "rate": 3000, "endRatio": 0.5, "seconds": 0.05, "gain": 0.13 }
         ] },
-        // graze：原来借用 skill
         "graze": { "label": "擦边", "bus": "combat", "gap": 0.12, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 1400, "endRatio": 1.3, "seconds": 0.08, "gain": 0.1 },
-          { "type": "noise", "filter": "highpass", "hz": 5000, "seconds": 0.05, "gain": 0.08 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1760, "seconds": 0.04, "gain": 0.1, "shape": "cut" },
+          { "type": "noise", "mode": "hiss", "rate": 9000, "seconds": 0.03, "gain": 0.06, "shape": "cut" }
         ] },
         // ---- 玩家动作与警告
-        // player.hurt：原来的 hit
         "player.hurt": { "label": "玩家受伤", "bus": "player", "gap": 0.09, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 150, "endRatio": 0.55, "seconds": 0.18, "gain": 0.3 },
-          { "type": "noise", "filter": "bandpass", "hz": 700, "seconds": 0.09, "gain": 0.22 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 147, "endRatio": 0.5, "seconds": 0.16, "gain": 0.28 },
+          { "type": "noise", "mode": "hiss", "rate": 700, "endRatio": 0.5, "seconds": 0.07, "gain": 0.18 }
         ] },
-        // player.pop：原来的 pop
         "player.pop": { "label": "气泡破裂（死亡）", "bus": "player", "gap": 0.2, "layers": [
-          { "type": "noise", "filter": "bandpass", "hz": 2600, "seconds": 0.22, "gain": 0.5 },
-          { "type": "tone", "wave": "sine", "hz": 660, "endRatio": 0.35, "seconds": 0.26, "gain": 0.34 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 784, "endRatio": 0.25, "seconds": 0.3, "gain": 0.3 },
+          { "type": "noise", "mode": "hiss", "rate": 2500, "endRatio": 0.2, "seconds": 0.18, "gain": 0.26 }
         ] },
-        // player.eat：原来借用 pop
         "player.eat": { "label": "吞下一只敌人", "bus": "player", "gap": 0.1, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 300, "endRatio": 2.6, "seconds": 0.16, "gain": 0.26 },
-          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 0.5, "seconds": 0.2, "gain": 0.2, "delay": 0.12 },
-          { "type": "noise", "filter": "lowpass", "hz": 700, "seconds": 0.12, "gain": 0.15 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 262, "endRatio": 2, "seconds": 0.1, "gain": 0.24 },
+          { "type": "tone", "wave": "triangle", "hz": 131, "endRatio": 1.6, "seconds": 0.16, "gain": 0.18, "delay": 0.05 }
         ] },
-        // player.absorb：原来的 absorb：音高随泡泡大小升高
-        "player.absorb": { "label": "吸收小泡泡", "bus": "player", "gap": 0.045, "pitchPerIntensity": 1.24, "gainPerIntensity": 0.625, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 420, "endRatio": 1.9, "seconds": 0.09, "gain": 0.16 }
+        "player.absorb": { "label": "吸收小泡泡", "bus": "player", "gap": 0.045, "pitchPerIntensity": 0.9, "gainPerIntensity": 0.6, "layers": [
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 523, "endRatio": 1.8, "seconds": 0.05, "gain": 0.15 }
         ] },
-        // stage.grow：原来借用 skill
         "stage.grow": { "label": "成长阶段提升", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 400, "seconds": 0.2, "gain": 0.2 },
-          { "type": "tone", "wave": "sine", "hz": 500, "seconds": 0.2, "gain": 0.2, "delay": 0.09 },
-          { "type": "tone", "wave": "sine", "hz": 630, "seconds": 0.35, "gain": 0.22, "delay": 0.18 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 440, "seconds": 0.07, "gain": 0.19 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 554, "seconds": 0.07, "gain": 0.19, "delay": 0.07 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 659, "seconds": 0.16, "gain": 0.2, "delay": 0.14 }
         ] },
         "mutation.gain": { "label": "获得突变", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 880, "endRatio": 1.5, "seconds": 0.2, "gain": 0.14 },
-          { "type": "tone", "wave": "sine", "hz": 1320, "endRatio": 1.2, "seconds": 0.25, "gain": 0.12, "delay": 0.08 },
-          { "type": "noise", "filter": "highpass", "hz": 6000, "seconds": 0.3, "gain": 0.08 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 880, "seconds": 0.06, "gain": 0.14 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1318, "seconds": 0.14, "gain": 0.13, "delay": 0.06 }
         ] },
         "skill.dash": { "label": "技能：冲刺", "bus": "player", "gap": 0.2, "layers": [
-          { "type": "noise", "filter": "bandpass", "hz": 500, "endRatio": 7, "seconds": 0.25, "gain": 0.25 },
-          { "type": "tone", "wave": "sawtooth", "hz": 200, "endRatio": 3, "seconds": 0.2, "gain": 0.12 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 330, "endRatio": 4, "seconds": 0.14, "gain": 0.22 },
+          { "type": "noise", "mode": "hiss", "rate": 2000, "endRatio": 4, "seconds": 0.12, "gain": 0.14 }
         ] },
         "skill.vortex": { "label": "技能：漩涡", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 300, "endRatio": 2.2, "seconds": 0.7, "gain": 0.2, "vibratoHz": 5, "vibratoDepth": 0.25 },
-          { "type": "noise", "filter": "bandpass", "hz": 600, "endRatio": 2.5, "seconds": 0.7, "gain": 0.15 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 330, "endRatio": 1.9, "seconds": 0.34, "gain": 0.18 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 494, "endRatio": 1.9, "seconds": 0.34, "gain": 0.12, "delay": 0.06 }
         ] },
         "skill.stink": { "label": "技能：臭云", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sawtooth", "hz": 100, "endRatio": 0.7, "seconds": 0.5, "gain": 0.2, "vibratoHz": 8, "vibratoDepth": 0.1 },
-          { "type": "noise", "filter": "lowpass", "hz": 500, "seconds": 0.5, "gain": 0.15 }
+          { "type": "noise", "mode": "buzz", "rate": 420, "endRatio": 0.6, "seconds": 0.3, "gain": 0.22 },
+          { "type": "tone", "wave": "triangle", "hz": 98, "endRatio": 0.8, "seconds": 0.3, "gain": 0.16 }
         ] },
         "skill.shell": { "label": "技能：硬壳", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "square", "hz": 800, "endRatio": 0.5, "seconds": 0.12, "gain": 0.16 },
-          { "type": "tone", "wave": "sine", "hz": 400, "endRatio": 0.8, "seconds": 0.2, "gain": 0.2 },
-          { "type": "noise", "filter": "bandpass", "hz": 3000, "seconds": 0.06, "gain": 0.15 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 196, "seconds": 0.1, "gain": 0.22 },
+          { "type": "noise", "mode": "hiss", "rate": 5000, "endRatio": 0.6, "seconds": 0.05, "gain": 0.13, "shape": "cut" }
         ] },
         "skill.burst": { "label": "技能：爆散", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 3, "seconds": 0.35, "gain": 0.28 },
-          { "type": "noise", "filter": "bandpass", "hz": 1200, "endRatio": 2.5, "seconds": 0.35, "gain": 0.25 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 165, "endRatio": 3, "seconds": 0.22, "gain": 0.26 },
+          { "type": "noise", "mode": "hiss", "rate": 1600, "endRatio": 3, "seconds": 0.2, "gain": 0.22 }
         ] },
         "suction.on": { "label": "开始吸附", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 250, "endRatio": 0.5, "seconds": 0.3, "gain": 0.14 },
-          { "type": "noise", "filter": "bandpass", "hz": 800, "endRatio": 0.4, "seconds": 0.3, "gain": 0.1 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 262, "endRatio": 0.6, "seconds": 0.16, "gain": 0.13 },
+          { "type": "noise", "mode": "hiss", "rate": 1200, "endRatio": 0.5, "seconds": 0.16, "gain": 0.09 }
         ] },
-        // rage.slam：原来借用 crab / hit
         "rage.slam": { "label": "怒气冲撞 / 撞碎障碍", "bus": "player", "gap": 0.15, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 100, "endRatio": 0.4, "seconds": 0.25, "gain": 0.35 },
-          { "type": "noise", "filter": "lowpass", "hz": 1500, "seconds": 0.15, "gain": 0.3 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 82, "endRatio": 0.45, "seconds": 0.2, "gain": 0.3 },
+          { "type": "noise", "mode": "hiss", "rate": 1100, "endRatio": 0.4, "seconds": 0.12, "gain": 0.22 }
         ] },
-        // rage.burst：原来借用 crab
         "rage.burst": { "label": "怒气释放（冲击波）", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 80, "endRatio": 0.3, "seconds": 0.8, "gain": 0.35 },
-          { "type": "noise", "filter": "lowpass", "hz": 3000, "endRatio": 0.07, "seconds": 0.8, "gain": 0.3 },
-          { "type": "tone", "wave": "sawtooth", "hz": 300, "endRatio": 0.2, "seconds": 0.5, "gain": 0.15 }
+          { "type": "noise", "mode": "hiss", "rate": 500, "endRatio": 0.2, "seconds": 0.46, "gain": 0.3 },
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 123, "endRatio": 0.35, "seconds": 0.4, "gain": 0.28 }
         ] },
-        // rage.overload：原来借用 slow
         "rage.overload": { "label": "怒气失控警告", "bus": "player", "gap": 0.5, "layers": [
-          { "type": "tone", "wave": "square", "hz": 660, "seconds": 0.12, "gain": 0.16 },
-          { "type": "tone", "wave": "square", "hz": 440, "seconds": 0.12, "gain": 0.16, "delay": 0.18 },
-          { "type": "tone", "wave": "square", "hz": 660, "seconds": 0.12, "gain": 0.16, "delay": 0.36 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 880, "seconds": 0.09, "gain": 0.17 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 660, "seconds": 0.09, "gain": 0.17, "delay": 0.16 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 880, "seconds": 0.09, "gain": 0.17, "delay": 0.32 }
         ] },
-        // rage.punish：原来借用 pop
         "rage.punish": { "label": "怒气失控惩罚", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sawtooth", "hz": 200, "endRatio": 0.3, "seconds": 0.5, "gain": 0.28 },
-          { "type": "noise", "filter": "lowpass", "hz": 800, "seconds": 0.4, "gain": 0.25 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 220, "endRatio": 0.35, "seconds": 0.34, "gain": 0.26 },
+          { "type": "noise", "mode": "hiss", "rate": 800, "endRatio": 0.4, "seconds": 0.26, "gain": 0.2 }
         ] },
         "health.low": { "label": "血量告急（心跳）", "bus": "player", "gap": 0.5, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 60, "endRatio": 0.8, "seconds": 0.12, "gain": 0.4 },
-          { "type": "tone", "wave": "sine", "hz": 55, "endRatio": 0.8, "seconds": 0.12, "gain": 0.3, "delay": 0.16 }
+          { "type": "tone", "wave": "triangle", "hz": 65, "endRatio": 0.85, "seconds": 0.1, "gain": 0.34 },
+          { "type": "tone", "wave": "triangle", "hz": 60, "endRatio": 0.85, "seconds": 0.1, "gain": 0.24, "delay": 0.14 }
         ] },
-        // player.slow：原来的 slow
         "player.slow": { "label": "被减速 / 被缠住", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sawtooth", "hz": 300, "endRatio": 0.4, "seconds": 0.4, "gain": 0.26 }
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 330, "endRatio": 0.4, "seconds": 0.28, "gain": 0.24 }
         ] },
-        // crab.launch：原来的 crab
         "crab.launch": { "label": "螃蟹把你弹起来", "bus": "player", "gap": 0.2, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 240, "endRatio": 3.4, "seconds": 0.3, "gain": 0.3 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 262, "endRatio": 2.6, "seconds": 0.22, "gain": 0.26 }
         ] },
-        // talent.fart：原来的 fart
         "talent.fart": { "label": "天赋：放屁", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sawtooth", "hz": 90, "endRatio": 0.62, "seconds": 0.34, "gain": 0.34 },
-          { "type": "tone", "wave": "square", "hz": 120, "endRatio": 0.5, "seconds": 0.3, "gain": 0.2 }
+          { "type": "noise", "mode": "buzz", "rate": 260, "endRatio": 0.7, "seconds": 0.3, "gain": 0.26 },
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 98, "endRatio": 0.7, "seconds": 0.28, "gain": 0.2 }
         ] },
-        // defeat.sting：死亡那一小段曲子，你做好后用 sting 录音替换这一个
         "defeat.sting": { "label": "死亡 sting（占位）", "bus": "player", "gap": 1, "layers": [
-          { "type": "tone", "wave": "triangle", "hz": 392, "seconds": 0.9, "gain": 0.2, "attack": 0.04 },
-          { "type": "tone", "wave": "triangle", "hz": 330, "seconds": 0.9, "gain": 0.2, "delay": 0.55, "attack": 0.04 },
-          { "type": "tone", "wave": "triangle", "hz": 262, "seconds": 0.9, "gain": 0.2, "delay": 1.1, "attack": 0.04 },
-          { "type": "tone", "wave": "sine", "hz": 196, "endRatio": 0.97, "seconds": 2, "gain": 0.22, "delay": 1.65, "attack": 0.05 }
+          { "type": "tone", "wave": "triangle", "hz": 196, "seconds": 0.55, "gain": 0.2 },
+          { "type": "tone", "wave": "triangle", "hz": 165, "seconds": 0.55, "gain": 0.2, "delay": 0.5 },
+          { "type": "tone", "wave": "triangle", "hz": 131, "seconds": 0.55, "gain": 0.2, "delay": 1 },
+          { "type": "tone", "wave": "triangle", "hz": 98, "seconds": 1.4, "gain": 0.22, "delay": 1.5 }
         ] },
         // ---- 环境
         "vent.erupt": { "label": "喷口喷发", "bus": "env", "gap": 0.4, "layers": [
-          { "type": "noise", "filter": "lowpass", "hz": 600, "endRatio": 3, "seconds": 0.8, "gain": 0.25 },
-          { "type": "tone", "wave": "sine", "hz": 70, "seconds": 0.8, "gain": 0.2 }
+          { "type": "noise", "mode": "hiss", "rate": 400, "endRatio": 2.5, "seconds": 0.5, "gain": 0.24 },
+          { "type": "tone", "wave": "triangle", "hz": 66, "endRatio": 0.8, "seconds": 0.5, "gain": 0.16 }
         ] },
         "obstacle.break.crate": { "label": "木箱被撞碎", "bus": "env", "gap": 0.1, "layers": [
-          { "type": "noise", "filter": "bandpass", "hz": 1500, "seconds": 0.18, "gain": 0.3 },
-          { "type": "tone", "wave": "square", "hz": 200, "endRatio": 0.4, "seconds": 0.1, "gain": 0.15 }
+          { "type": "noise", "mode": "buzz", "rate": 900, "endRatio": 0.6, "seconds": 0.13, "gain": 0.26 },
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 196, "endRatio": 0.5, "seconds": 0.07, "gain": 0.14 }
         ] },
         "obstacle.break.coral": { "label": "珊瑚被撞碎", "bus": "env", "gap": 0.1, "layers": [
-          { "type": "noise", "filter": "bandpass", "hz": 3500, "seconds": 0.25, "gain": 0.3 },
-          { "type": "tone", "wave": "triangle", "hz": 500, "endRatio": 0.3, "seconds": 0.15, "gain": 0.15 }
+          { "type": "noise", "mode": "hiss", "rate": 4200, "endRatio": 0.5, "seconds": 0.18, "gain": 0.24 },
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 523, "endRatio": 0.4, "seconds": 0.08, "gain": 0.12 }
         ] },
         "obstacle.break.net": { "label": "渔网被撕开", "bus": "env", "gap": 0.1, "layers": [
-          { "type": "noise", "filter": "highpass", "hz": 2000, "endRatio": 1.8, "seconds": 0.3, "gain": 0.2 }
+          { "type": "noise", "mode": "hiss", "rate": 2600, "endRatio": 0.6, "seconds": 0.22, "gain": 0.18 }
         ] },
         "obstacle.hit.wall": { "label": "撞上岩壁", "bus": "env", "gap": 0.15, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 90, "endRatio": 0.6, "seconds": 0.2, "gain": 0.3 },
-          { "type": "noise", "filter": "lowpass", "hz": 600, "seconds": 0.12, "gain": 0.2 }
+          { "type": "tone", "wave": "pulse", "duty": 0.5, "hz": 74, "endRatio": 0.6, "seconds": 0.14, "gain": 0.26 },
+          { "type": "noise", "mode": "hiss", "rate": 400, "endRatio": 0.6, "seconds": 0.09, "gain": 0.18 }
         ] },
         "rain.press": { "label": "雨压下来", "bus": "env", "gap": 0.2, "layers": [
-          { "type": "noise", "filter": "highpass", "hz": 3000, "endRatio": 0.5, "seconds": 0.3, "gain": 0.15 },
-          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 0.5, "seconds": 0.25, "gain": 0.12 }
+          { "type": "noise", "mode": "hiss", "rate": 6000, "endRatio": 0.6, "seconds": 0.16, "gain": 0.14 },
+          { "type": "tone", "wave": "pulse", "duty": 0.25, "hz": 220, "endRatio": 0.6, "seconds": 0.14, "gain": 0.09 }
         ] },
         "foam.pop": { "label": "泡沫破裂", "bus": "env", "gap": 0.08, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 900, "endRatio": 0.4, "seconds": 0.05, "gain": 0.14 },
-          { "type": "noise", "filter": "highpass", "hz": 6000, "seconds": 0.04, "gain": 0.1 }
+          { "type": "noise", "mode": "buzz", "rate": 3000, "endRatio": 0.5, "seconds": 0.05, "gain": 0.14 },
+          { "type": "noise", "mode": "hiss", "rate": 6000, "seconds": 0.015, "gain": 0.05, "shape": "cut" }
         ] },
         "mineral.hit": { "label": "矿物颗粒撞上", "bus": "env", "gap": 0.08, "layers": [
-          { "type": "tone", "wave": "square", "hz": 1200, "endRatio": 0.5, "seconds": 0.05, "gain": 0.1 },
-          { "type": "noise", "filter": "bandpass", "hz": 5000, "seconds": 0.04, "gain": 0.1 }
+          { "type": "tone", "wave": "pulse", "duty": 0.125, "hz": 1568, "endRatio": 0.5, "seconds": 0.03, "gain": 0.09, "shape": "cut" },
+          { "type": "noise", "mode": "hiss", "rate": 8000, "endRatio": 0.6, "seconds": 0.025, "gain": 0.07 }
         ] }
       }
     },
@@ -4995,96 +4994,12 @@
       },
       // 每关一段。键是关卡的 id；没写的关卡就是没有音乐。
       "tracks": {
-        // 第一关 黑烟囱墓场：压抑、安静、几乎没有光。低音区、极慢、闷。
-        "black-smokers": {
-          "rootHz": 55,
-          "stepPerMinute": 44,
-          "stepsPerChord": 8,
-          "chords": [[0, 3, 7], [-2, 2, 5], [-4, 0, 3], [-2, 2, 7]],
-          "pattern": [0, 1, 2, 1],
-          "wave": "triangle",
-          "padWave": "sine",
-          "arpGain": 0.16,
-          "padGain": 0.1,
-          "noteSeconds": 0.9,
-          "cutoffHz": 420,
-          "detuneCents": 7
-        },
-        // 第二关 沉船幽谷：昏暗但有灯、有反光金属，所以比第一关暖一点、亮一点。
-        "wreck-gorge": {
-          "rootHz": 65.4,
-          "stepPerMinute": 56,
-          "stepsPerChord": 6,
-          "chords": [[0, 4, 7], [-3, 0, 4], [2, 5, 9], [-1, 2, 7]],
-          "pattern": [0, 2, 1, 2],
-          "wave": "triangle",
-          "padWave": "sawtooth",
-          "arpGain": 0.15,
-          "padGain": 0.075,
-          "noteSeconds": 0.7,
-          "cutoffHz": 640,
-          "detuneCents": 9
-        },
-        // 第三关 发光水母林：蓝紫、飘、生物荧光。大调色彩 + 高一些的琶音，像在发光。
-        "jelly-forest": {
-          "rootHz": 87.3,
-          "stepPerMinute": 72,
-          "stepsPerChord": 8,
-          "chords": [[0, 4, 9], [2, 7, 11], [-3, 4, 7], [0, 5, 9]],
-          "pattern": [0, 1, 2, 1, 2, 0],
-          "wave": "sine",
-          "padWave": "triangle",
-          "arpGain": 0.17,
-          "padGain": 0.09,
-          "noteSeconds": 0.55,
-          "cutoffHz": 1500,
-          "detuneCents": 12
-        },
-        // 第四关 猎食者温跃层：开阔、有温差与折射。中音区、流动、稍快。
-        "thermocline": {
-          "rootHz": 73.4,
-          "stepPerMinute": 84,
-          "stepsPerChord": 6,
-          "chords": [[0, 5, 9], [3, 7, 10], [-2, 3, 7], [1, 5, 8]],
-          "pattern": [0, 2, 1, 0, 2, 1],
-          "wave": "triangle",
-          "padWave": "sawtooth",
-          "arpGain": 0.15,
-          "padGain": 0.07,
-          "noteSeconds": 0.42,
-          "cutoffHz": 1100,
-          "detuneCents": 8
-        },
-        // 第五关 风暴暗流：明亮却混乱。小调、有推进感、滤波器开得更大。
-        "storm-surge": {
-          "rootHz": 61.7,
-          "stepPerMinute": 96,
-          "stepsPerChord": 4,
-          "chords": [[0, 3, 7], [5, 8, 12], [-2, 3, 7], [0, 7, 10]],
-          "pattern": [0, 1, 2, 1],
-          "wave": "square",
-          "padWave": "sawtooth",
-          "arpGain": 0.11,
-          "padGain": 0.075,
-          "noteSeconds": 0.34,
-          "cutoffHz": 1700,
-          "detuneCents": 14
-        },
-        // 第六关 破晓海面：最终关，最亮、最上行。大调、最亮的滤波器。
-        "dawn-surface": {
-          "rootHz": 98,
-          "stepPerMinute": 80,
-          "stepsPerChord": 8,
-          "chords": [[0, 4, 7], [5, 9, 12], [7, 11, 14], [2, 7, 11]],
-          "pattern": [0, 1, 2, 1, 2, 1],
-          "wave": "sine",
-          "padWave": "triangle",
-          "arpGain": 0.16,
-          "padGain": 0.1,
-          "noteSeconds": 0.5,
-          "cutoffHz": 2400,
-          "detuneCents": 10
-        }
+        "black-smokers": { "rootHz": 55, "stepPerMinute": 44, "stepsPerChord": 8, "chords": [[0, 3, 7], [-2, 2, 5], [-4, 0, 3], [-2, 2, 7]], "pattern": [0, 1, 2, 1], "leadDuty": 0.5, "leadGain": 0.13, "bassGain": 0.16, "noteSeconds": 0.9 },
+        "wreck-gorge": { "rootHz": 65.4, "stepPerMinute": 56, "stepsPerChord": 6, "chords": [[0, 4, 7], [-3, 0, 4], [2, 5, 9], [-1, 2, 7]], "pattern": [0, 2, 1, 2], "leadDuty": 0.5, "leadGain": 0.12, "bassGain": 0.14, "noteSeconds": 0.7, "drums": { "mode": "buzz", "rate": 420, "endRatio": 0.7, "seconds": 0.1, "pattern": [1, 0, 0, 0, 0, 0], "gain": 0.06 } },
+        "jelly-forest": { "rootHz": 87.3, "stepPerMinute": 72, "stepsPerChord": 8, "chords": [[0, 4, 9], [2, 7, 11], [-3, 4, 7], [0, 5, 9]], "pattern": [0, 1, 2, 1, 2, 0], "leadDuty": 0.25, "leadGain": 0.14, "bassGain": 0.12, "noteSeconds": 0.55, "drums": { "mode": "hiss", "rate": 9000, "seconds": 0.04, "pattern": [0, 0, 1, 0, 0, 0, 1, 0], "gain": 0.035 } },
+        "thermocline": { "rootHz": 73.4, "stepPerMinute": 84, "stepsPerChord": 6, "chords": [[0, 5, 9], [3, 7, 10], [-2, 3, 7], [1, 5, 8]], "pattern": [0, 2, 1, 0, 2, 1], "leadDuty": 0.25, "leadGain": 0.13, "bassGain": 0.12, "noteSeconds": 0.42, "drums": { "mode": "hiss", "rate": 2400, "seconds": 0.09, "pattern": [1, 0, 1, 0, 1, 0], "gain": 0.05 } },
+        "storm-surge": { "rootHz": 61.7, "stepPerMinute": 96, "stepsPerChord": 4, "chords": [[0, 3, 7], [5, 8, 12], [-2, 3, 7], [0, 7, 10]], "pattern": [0, 1, 2, 1], "leadDuty": 0.125, "leadGain": 0.11, "bassGain": 0.12, "noteSeconds": 0.34, "drums": { "mode": "buzz", "rate": 200, "endRatio": 0.55, "seconds": 0.13, "pattern": [1, 0, 1, 1], "gain": 0.06 } },
+        "dawn-surface": { "rootHz": 98, "stepPerMinute": 80, "stepsPerChord": 8, "chords": [[0, 4, 7], [5, 9, 12], [7, 11, 14], [2, 7, 11]], "pattern": [0, 1, 2, 1, 2, 1], "leadDuty": 0.125, "leadGain": 0.13, "bassGain": 0.11, "noteSeconds": 0.5, "drums": { "mode": "hiss", "rate": 9000, "seconds": 0.04, "pattern": [1, 1, 0, 1, 1, 0, 1, 1], "gain": 0.04 } }
       }
     },
     // --- 音效（下面这些直接挂主增益） -------------------------------------------

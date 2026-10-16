@@ -2156,13 +2156,20 @@ export interface MusicTrackConfig {
   stepsPerChord: number;
   chords: number[][];
   pattern: number[];
-  wave: 'sine' | 'square' | 'sawtooth' | 'triangle';
-  padWave: 'sine' | 'square' | 'sawtooth' | 'triangle';
-  arpGain: number;
-  padGain: number;
+  /** The lead's duty cycle: 0.125 is thin and bright, 0.5 is hollow and loud. */
+  leadDuty: number;
+  leadGain: number;
+  bassGain: number;
   noteSeconds: number;
-  cutoffHz: number;
-  detuneCents: number;
+  /** Absent for a level with no drums, which is a mood rather than a missing value. */
+  drums?: {
+    pattern: number[];
+    rate: number;
+    endRatio?: number;
+    mode?: 'hiss' | 'buzz';
+    seconds: number;
+    gain: number;
+  };
 }
 
 /** Throw with the offending key named, so a typo in the file is a message rather than a mystery. */
@@ -3502,8 +3509,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
       // Every name must have a recipe, and no recipe may be for a name nobody can ask for.
       if (SOUND_IDS.some((id) => !(id in table)) || Object.keys(table).some((id) => !(SOUND_IDS as readonly string[]).includes(id))) return false;
       const optionalNumber = (x: unknown) => x === undefined || (typeof x === 'number' && Number.isFinite(x));
-      const waves = ['sine', 'square', 'sawtooth', 'triangle'];
-      const filters = ['bandpass', 'lowpass', 'highpass'];
+      // The chip's palette, and nothing else: a `sine` here would be a layer the engine cannot voice, and the check is
+      // what turns that from a silent no-op into a page that will not load.
+      const duties = [0.125, 0.25, 0.5];
+      const modes = ['hiss', 'buzz'];
+      const shapes = ['linear', 'cut', 'exponential'];
       return Object.values(table).every((row) => {
         if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
         const r = row as Record<string, unknown>;
@@ -3513,10 +3523,18 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
         return r.layers.every((layer) => {
           if (!layer || typeof layer !== 'object') return false;
           const l = layer as Record<string, unknown>;
-          if (typeof l.hz !== 'number' || l.hz <= 0 || typeof l.seconds !== 'number' || l.seconds <= 0 || typeof l.gain !== 'number') return false;
+          if (typeof l.seconds !== 'number' || l.seconds <= 0 || typeof l.gain !== 'number') return false;
           if (![l.endRatio, l.delay, l.attack].every(optionalNumber)) return false;
-          if (l.type === 'tone') return (l.wave === undefined || waves.includes(l.wave as string)) && optionalNumber(l.vibratoHz) && optionalNumber(l.vibratoDepth);
-          if (l.type === 'noise') return (l.filter === undefined || filters.includes(l.filter as string)) && optionalNumber(l.q);
+          if (l.shape !== undefined && !shapes.includes(l.shape as string)) return false;
+          if (l.type === 'tone') {
+            if (typeof l.hz !== 'number' || l.hz <= 0) return false;
+            if (l.wave === 'triangle') return l.duty === undefined;
+            return l.wave === 'pulse' && duties.includes(l.duty as number);
+          }
+          if (l.type === 'noise') {
+            if (typeof l.rate !== 'number' || l.rate <= 0) return false;
+            return l.mode === undefined || modes.includes(l.mode as string);
+          }
           return false;
         });
       });
@@ -3541,7 +3559,23 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
       Object.values(v as Record<string, unknown>).every((row) => {
         if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
         const r = row as Record<string, unknown>;
-        const waveOk = (w: unknown) => w === 'sine' || w === 'square' || w === 'sawtooth' || w === 'triangle';
+        const drumsOk = (d: unknown) => {
+          if (d === undefined) return true;
+          if (!d || typeof d !== 'object' || Array.isArray(d)) return false;
+          const k = d as Record<string, unknown>;
+          return (
+            Array.isArray(k.pattern) &&
+            k.pattern.length >= 1 &&
+            k.pattern.every((n) => typeof n === 'number' && Number.isFinite(n)) &&
+            typeof k.rate === 'number' &&
+            k.rate > 0 &&
+            typeof k.seconds === 'number' &&
+            k.seconds > 0 &&
+            typeof k.gain === 'number' &&
+            (k.endRatio === undefined || typeof k.endRatio === 'number') &&
+            (k.mode === undefined || k.mode === 'hiss' || k.mode === 'buzz')
+          );
+        };
         return (
           typeof r.rootHz === 'number' &&
           r.rootHz > 20 &&
@@ -3559,25 +3593,21 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
           Array.isArray(r.pattern) &&
           r.pattern.length >= 1 &&
           r.pattern.every((n) => typeof n === 'number' && Number.isInteger(n)) &&
-          waveOk(r.wave) &&
-          waveOk(r.padWave) &&
-          typeof r.arpGain === 'number' &&
-          r.arpGain >= 0 &&
-          r.arpGain <= 1 &&
-          typeof r.padGain === 'number' &&
-          r.padGain >= 0 &&
-          r.padGain <= 1 &&
+          [0.125, 0.25, 0.5].includes(r.leadDuty as number) &&
+          typeof r.leadGain === 'number' &&
+          r.leadGain >= 0 &&
+          r.leadGain <= 1 &&
+          typeof r.bassGain === 'number' &&
+          r.bassGain >= 0 &&
+          r.bassGain <= 1 &&
           typeof r.noteSeconds === 'number' &&
           r.noteSeconds > 0.02 &&
           r.noteSeconds <= 8 &&
-          typeof r.cutoffHz === 'number' &&
-          r.cutoffHz >= 80 &&
-          r.cutoffHz <= 12000 &&
-          typeof r.detuneCents === 'number' &&
-          Math.abs(r.detuneCents) <= 100
+          drumsOk(r.drums)
         );
       }),
-    describe: 'an object of level id to a music recipe (rootHz, stepPerMinute, stepsPerChord, chords, pattern, wave, padWave, arpGain, padGain, noteSeconds, cutoffHz, detuneCents)',
+    describe:
+      'an object of level id to a music recipe (rootHz, stepPerMinute, stepsPerChord, chords, pattern, leadDuty, leadGain, bassGain, noteSeconds, and an optional drums block)',
   },
   { path: 'audio.ambientVolume', check: anyNumber, describe: 'a level' },
   { path: 'audio.musicVolume', check: anyNumber, describe: 'an opacity-like level' },
