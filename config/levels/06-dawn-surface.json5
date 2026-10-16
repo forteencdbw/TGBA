@@ -30,10 +30,10 @@
     tint: 0xffb46b,
     tintStrength: 0.18
   },
-  scrollLength: 1700,
+  scrollLength: 2280,
 
   boss: {
-    at: 1450,
+    at: 2090,
     health: 320,
     name: '风暴之眼',
     // **这一关的 BOSS 是哪一只**：它怎么动、多大、什么颜色、怎么开火，全在
@@ -42,47 +42,99 @@
     kind: 'boss-eye'
   },
 
-  scrollSpeed: 34,
-  // 生物在**屏幕上**的下落速度（米/秒）。以前它和 scrollSpeed 是同一个数：改关卡节奏会连带改每条鱼的速度。
-  // 现在 scrollSpeed 只管关卡推进（时间线、进度、背景视差），生物的速度只看这个。写的是这一关原来的数值，所以屏幕上没变。
+  scrollSpeed: 25,
+  // 节奏曲线：17 → 25 → 34。**全六关最慢的开头**（每屏 11.2 秒），最长的一关（92 秒）。
+  // 这一关的干扰不是"打你"，是**让你看不清**——泡沫长得像你的气泡，雨把你压回水里。
+  // 看不清这件事**不能靠快**：快只会让人放弃读，慢 + 满屏才是"每一格都得怀疑一次"。
+  // 所以它是全套里最慢、也是最密的一关：慢的是推进，密的是内容，两者叠起来才是这一关的样子。
+    scrollSpeedCurve: [
+    [0, 17],
+    [1000, 25],
+    [2280, 34],
+  ],
   driftSpeed: 34,
   playerLeadLimit: 130,
-  landmarks: [
-    { depth: 1350, label: '阳光层' },
-    { depth: 900, label: '泡沫带' },
-    { depth: 400, label: '浪峰' },
+  // 三条横幅 = **三次爆发**（下面 `spawns` 里的 S2 / S5 / S7），按深度顺序对应各自那一屏的布景：
+  // 阳光层那屏是第一批泡沫（视线第一次不可信），泡沫带那屏是雨幕 + 手枪虾，浪峰那屏是泡沫和雨的最密处。
+    landmarks: [
+    { depth: 1900, label: '阳光层' }, // 380m —— 爆发一
+    { depth: 1330, label: '泡沫带' }, // 950m —— 爆发二
+    { depth: 950, label: '浪峰' }, // 1330m —— 爆发三
   ],
+  // ---------------------------------------------------------------------------------------------
+  // 刷怪表：**安静开场 → 起 → 三次爆发（间隔 3 屏 → 2 屏）→ 收两屏**
+  // ---------------------------------------------------------------------------------------------
+  //
+  // `S<n>` 是每一块落在第几屏（一屏 190 米）。形状看读数：`node scripts/probe-pacing.mjs`。
+  //
+  // 这一关的威胁几乎全在两样东西上：**泡沫**（打不掉、长得像你的泡泡）和**雨**（压你下沉、满屏挪不开）。
+  // 两者都是第 2 档而不是第 1 档——它们拿走的不是"一条命"，是"你知道自己在哪"。
+  //
+  // 所以这一关和前五关的形状**有一处刻意不同**：它的"回落"屏也是厚的。
+  // 前五关的回落是"把位置找回来"，这一关的回落只是**换了种看不清的方式**——
+  // 那正是它 23.0 的每屏密度（全六关最高）的来源，也是它作为最终关的身份。
+  //
+  // **12 屏 / 92 秒 / 约 276 分威胁 / 23.0 每屏。**
   spawns: [
-    // --- 开场：光进来了，鱼群也多了。先给一段"看得清"的，泡沫随后才出现。 ---
-    { at: 30, span: 200, count: 14, kind: 'bubble', arrange: 'spread', amplitude: 0.28, sizes: [0.45, 0.6, 0.4] },
+    // --- S0  安静开场：光进来了，鱼群也多了。**这一段是看得清的**——泡沫随后才出现，
+    // 因为"看不清"只有在"看得清"之后才是一种损失。
+    { at: 30, span: 150, count: 14, kind: 'bubble', arrange: 'spread', amplitude: 0.28, sizes: [0.45, 0.6, 0.4] },
     { at: 110, kind: 'fish', count: 5, arrange: 'line' },
-    { at: 180, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5, from: 'bottom' },
 
-    // --- 泡沫带：视线开始不可信。泡沫和真泡泡一起漂，玩家要看清哪个是自己。 ---
-    { at: 300, kind: 'foam', count: 5, arrange: 'spread', span: 40, x: 0.5 },
-    { at: 340, kind: 'bubble', count: 6, arrange: 'spread', span: 30, x: 0.5, sizes: [0.5] },
-    { at: 400, kind: 'foam', count: 8, arrange: 'line' },
-    { at: 460, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'right', enterSpeed: 48 },
+    // --- S1  起：鱼群 + 两条鱼雷。仍然是清水——这一屏是以后每一屏的参照物。
+    { at: 200, kind: 'fish', count: 11, arrange: 'spread', span: 50, x: 0.5 },
+    { at: 250, kind: 'fish', count: 5, arrange: 'spread', span: 50, x: 0.5, from: 'bottom' },
+    { at: 320, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'right', enterSpeed: 48 },
 
-    // --- 雨滴冲击：从上面砸下来，把接近海面的气泡压回去。 ---
-    { at: 580, span: 70, count: 6, kind: 'rain', arrange: 'spread', amplitude: 0.3, x: 0.5 },
-    { at: 640, kind: 'foam', count: 6, arrange: 'spread', span: 40, x: 0.5 },
-    { at: 700, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.22, x: 0.5, from: 'bottom' },
-    { at: 760, kind: 'rain', count: 8, arrange: 'line' },
-    // **手枪虾**：破晓海面的精英——雨幕挡视线时一发大弹，是这一关最贵的失误。只放一只。
-    { at: 820, kind: 'pistol', x: 0.35 },
+    // --- S2  **爆发一 · 阳光层**：第一批泡沫，和**真泡泡混在一起**。这一屏不伤你，它只是让你分不清。
+    { at: 400, kind: 'foam', count: 5, arrange: 'spread', span: 40, x: 0.5 },
+    { at: 420, kind: 'bubble', count: 6, arrange: 'spread', span: 30, x: 0.5, sizes: [0.5] },
+    { at: 460, kind: 'foam', count: 8, arrange: 'line' },
+    { at: 500, kind: 'fish', count: 4, arrange: 'spread', span: 40, x: 0.5 },
 
-    // --- 浪峰：泡沫 + 雨 + 追兵混在一起，能见度最低的一段。 ---
-    { at: 880, kind: 'foam', count: 10, arrange: 'spread', span: 70, x: 0.5 },
-    { at: 940, kind: 'rain', count: 10, arrange: 'spread', span: 40, amplitude: 0.3, x: 0.5 },
-    { at: 1000, kind: 'angler', count: 2, arrange: 'line' },
-    { at: 1060, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.5, from: 'left', enterSpeed: 48 },
-    { at: 1120, kind: 'foam', count: 8, arrange: 'spread', span: 50, x: 0.4 },
-    { at: 1180, kind: 'rain', count: 12, arrange: 'spread', span: 60, amplitude: 0.28, x: 0.5 },
+    // --- S3  回落：泡沫换了种排法（散开而不是一排），加两条鱼雷和一群鱼。回落**不减量，只换形**。
+    { at: 600, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'right', enterSpeed: 48 },
+    { at: 650, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.22, x: 0.5, from: 'bottom' },
+    { at: 720, kind: 'foam', count: 4, arrange: 'spread', span: 50, x: 0.5 },
 
-    // --- 终段：最后一次补给，然后进风暴之眼。 ---
-    { at: 1250, span: 70, count: 8, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.55, 0.7] },
-    { at: 1320, kind: 'foam', count: 10, arrange: 'line' },
-    { at: 1380, kind: 'fish', count: 10, arrange: 'spread', span: 60, x: 0.5, from: 'bottom' },
+    // --- S4  起（雨滴冲击登场）：雨从上面砸下来，**命中把你压回水里**——第一次出现就必须满屏，
+    // 因为它不是"躲某一滴"，是"这一屏往下压"。
+    { at: 780, span: 70, count: 8, kind: 'rain', arrange: 'spread', amplitude: 0.3, x: 0.5 },
+    { at: 830, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5, from: 'bottom' },
+    { at: 890, kind: 'foam', count: 3, arrange: 'spread', span: 40, x: 0.5 },
+
+    // --- S5  **爆发二 · 泡沫带**：雨幕 + 泡沫 + 鱼群，最后是**手枪虾**——
+    // 雨幕挡视线时一发大弹，是这一关最贵的失误。只放一只。
+    { at: 980, span: 80, count: 10, kind: 'rain', arrange: 'spread', amplitude: 0.3, x: 0.5 },
+    { at: 1030, kind: 'foam', count: 5, arrange: 'spread', span: 50, x: 0.5 },
+    { at: 1080, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5 },
+    { at: 1120, kind: 'pistol', x: 0.35 },
+
+    // --- S6  回落：泡沫一排 + 两条鱼雷 + 鱼群。间隔已经从 3 屏缩到 2 屏。
+    { at: 1160, kind: 'foam', count: 6, arrange: 'line' },
+    { at: 1220, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'left', enterSpeed: 48 },
+    { at: 1280, kind: 'fish', count: 8, arrange: 'spread', span: 60, x: 0.5, from: 'bottom' },
+
+    // --- S7  **爆发三 · 浪峰（最高点）**：泡沫十只 + 雨十滴 + 两只鮟鱇。能见度最低的一屏，
+    // 而且它在最快的区间里（每屏 5.6 秒）。这一屏是"看不清"这件事的顶点：
+    // 你甚至分不清哪一块该躲，只能靠**位置记忆**往下走。
+    { at: 1340, kind: 'foam', count: 10, arrange: 'spread', span: 70, x: 0.5 },
+    { at: 1400, span: 80, count: 10, kind: 'rain', arrange: 'spread', amplitude: 0.3, x: 0.5 },
+    { at: 1460, kind: 'angler', count: 2, arrange: 'line' },
+
+    // --- S8  回落：雨变少、泡沫变多——**同一种看不清，换了形状**。加一群鱼。
+    { at: 1540, span: 70, count: 8, kind: 'rain', arrange: 'spread', amplitude: 0.28, x: 0.5 },
+    { at: 1600, kind: 'foam', count: 3, arrange: 'spread', span: 50, x: 0.4 },
+    { at: 1660, kind: 'fish', count: 8, arrange: 'spread', span: 60, x: 0.5, from: 'bottom' },
+
+    // --- S9  起：最后一次爬升，三种东西一起上（泡沫 + 雨 + 鱼群）。这是进 BOSS 之前的最后一屏压力，
+    // 它比前面任何一次回落都厚——因为这一关不给你"爆发前先松一口气"这件事本身。
+    { at: 1720, kind: 'foam', count: 8, arrange: 'spread', span: 60, x: 0.5 },
+    { at: 1780, span: 70, count: 6, kind: 'rain', arrange: 'spread', amplitude: 0.3, x: 0.5 },
+    { at: 1840, kind: 'fish', count: 8, arrange: 'spread', span: 60, x: 0.5, from: 'bottom' },
+
+    // --- S10  收一屏：**只有食物**。海面就在上面，风暴之眼就在上面。
+    { at: 1940, span: 130, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.55, 0.7, 0.5] },
   ],
+
 }

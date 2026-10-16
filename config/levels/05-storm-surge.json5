@@ -27,10 +27,10 @@
     tint: 0x3a4a5f,
     tintStrength: 0.24
   },
-  scrollLength: 1600,
+  scrollLength: 2090,
 
   boss: {
-    at: 1400,
+    at: 1900,
     health: 280,
     name: '废网巨鲨',
     // **这一关的 BOSS 是哪一只**：它怎么动、多大、什么颜色、怎么开火，全在
@@ -39,42 +39,99 @@
     kind: 'boss-netshark'
   },
 
-  scrollSpeed: 36,
-  // 生物在**屏幕上**的下落速度（米/秒）。以前它和 scrollSpeed 是同一个数：改关卡节奏会连带改每条鱼的速度。
-  // 现在 scrollSpeed 只管关卡推进（时间线、进度、背景视差），生物的速度只看这个。写的是这一关原来的数值，所以屏幕上没变。
+  scrollSpeed: 26,
+  // 节奏曲线：18 → 26 → 35。**六关里最慢的开头**（每屏 10.6 秒），全关 81 秒。
+  // 这一关的身份是"混乱"，而混乱不能靠快——**快只是快，混乱是"你刚看清就被改道"**，
+  // 所以开头慢到每一排网都读得完，后段（每屏 5.4 秒）再把这些排一起推给你。
+  // 和第四关一样，`driftSpeed` 不跟着变：慢下来的是关卡推进，不是雨和鱼。
+    scrollSpeedCurve: [
+    [0, 18],
+    [900, 26],
+    [2090, 35],
+  ],
   driftSpeed: 36,
   playerLeadLimit: 130,
-  landmarks: [
-    { depth: 1250, label: '浪涌' },
-    { depth: 800, label: '暴雨层' },
-    { depth: 350, label: '废网' },
+  // 三条横幅 = **三次爆发**（下面 `spawns` 里的 S2 / S5 / S7），按深度顺序对应各自那一屏的布景：
+  // 浪涌那屏是封路墙，暴雨层那屏是珊瑚，废网那屏是墙 + 珊瑚的最后一次合围。
+    landmarks: [
+    { depth: 1690, label: '浪涌' }, // 400m —— 爆发一
+    { depth: 1110, label: '暴雨层' }, // 980m —— 爆发二
+    { depth: 750, label: '废网' }, // 1340m —— 爆发三
   ],
+  // ---------------------------------------------------------------------------------------------
+  // 刷怪表：**安静开场 → 起 → 三次爆发（间隔 3 屏 → 2 屏）→ 收两屏**
+  // ---------------------------------------------------------------------------------------------
+  //
+  // `S<n>` 是每一块落在第几屏（一屏 190 米）。形状看读数：`node scripts/probe-pacing.mjs`。
+  //
+  // 这一关的**身份是把路切断**（渔网、封路墙、珊瑚——三种硬度不同的障碍，占它威胁值的一半以上），
+  // 所以三次爆发都长在障碍上。填缝的东西是**风暴自己的碎片**：矿物颗粒和盲虾——它们又便宜又到处都是，
+  // 正好是"雨从上面砸下来"这一件事在读数上的样子。
+  //
+  // **11 屏 / 81 秒 / 约 211 分威胁 / 19.2 每屏。** 密度比第四关高一档（17.0），
+  // 但**每屏秒数也更长**（7.4 对 7.0）：它比第四关多出来的不只是更多的怪，还有更多读它们的时间。
   spawns: [
-    // --- 开场：渔网团和暗流一起摆，通道本身就是危险。 ---
-    { at: 30, span: 200, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.45, 0.6, 0.4] },
-    { at: 110, kind: 'net', count: 4, arrange: 'line' },
-    { at: 180, kind: 'fish', count: 5, arrange: 'spread', span: 40, x: 0.5, from: 'bottom' },
-    { at: 300, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.19 },
-    { at: 360, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'left', enterSpeed: 50 },
+    // --- S0  安静开场：只有食物和两只螃蟹。风暴还没到。
+    { at: 30, span: 150, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.45, 0.6, 0.4] },
+    { at: 130, kind: 'crab', count: 2, arrange: 'line' },
 
-    // --- 暴雨层：从上往下穿透的冲击 + 高速穿刺的东西。 ---
-    { at: 480, kind: 'mineral', count: 6, arrange: 'spread', span: 50, amplitude: 0.3, x: 0.5, from: 'bottom' },
-    { at: 540, kind: 'shrimp', count: 3, arrange: 'spread', span: 40, x: 0.4, from: 'right', depth: 0.6 },
-    { at: 600, kind: 'net', count: 5, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.19 },
-    { at: 660, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.6, from: 'right', enterSpeed: 50 },
-    { at: 720, kind: 'crab', count: 3, arrange: 'line' },
-    { at: 780, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.24, x: 0.5, from: 'bottom' },
-    // **手枪虾**：精英位——风暴关的混乱里一发电化弹，稀疏、快、重。只放一只。
-    { at: 860, kind: 'pistol', x: 0.5 },
+    // --- S1  起：第一张网、一群鱼、两只螃蟹，然后是**从下往上推的矿物颗粒**——风暴的第一口气。
+    { at: 200, kind: 'net', count: 4, arrange: 'line' },
+    { at: 230, kind: 'fish', count: 5, arrange: 'spread', span: 40, x: 0.5, from: 'bottom' },
+    { at: 280, kind: 'crab', count: 3, arrange: 'line' },
+    { at: 330, kind: 'mineral', count: 3, arrange: 'spread', span: 40, amplitude: 0.3, x: 0.5, from: 'bottom' },
 
-    // --- 废网区：网 + 木箱 + 钩（用珊瑚和木箱代替），路线被反复切断。 ---
-    { at: 900, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
-    { at: 960, kind: 'net', count: 4, arrange: 'line' },
-    { at: 1020, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.3, from: 'left', enterSpeed: 50 },
-    { at: 1080, kind: 'wall', count: 6, arrange: 'barrier', gapAt: 0.65, gapWidth: 0.18 },
-    { at: 1150, kind: 'shrimp', count: 4, arrange: 'spread', span: 50, x: 0.5, from: 'left', depth: 0.5 },
-    { at: 1220, kind: 'mineral', count: 8, arrange: 'spread', span: 60, amplitude: 0.28, x: 0.5, from: 'bottom' },
-    { at: 1300, kind: 'crab', count: 4, arrange: 'line' },
-    { at: 1360, kind: 'fish', count: 10, arrange: 'line' },
+    // --- S2  **爆发一 · 浪涌**：一排**封路墙**（撞不开，只能打掉或从缺口过去）+ 两条鱼雷 + 一张网 + 三只盲虾。
+    // 网在墙后面：你刚改完道，网正好在改道的方向上。
+    { at: 400, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.19 },
+    { at: 460, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'left', enterSpeed: 50 },
+    { at: 500, kind: 'net', count: 4, arrange: 'line' },
+    { at: 530, kind: 'shrimp', count: 3, arrange: 'spread', span: 40, x: 0.4, from: 'right', depth: 0.6 },
+
+    // --- S3  回落：颗粒、盲虾、螃蟹、鱼群。刚被墙堵过一次，这一屏让你把高度和位置都找回来。
+    { at: 600, kind: 'mineral', count: 12, arrange: 'spread', span: 50, amplitude: 0.3, x: 0.5, from: 'bottom' },
+    { at: 650, kind: 'shrimp', count: 3, arrange: 'spread', span: 40, x: 0.4, from: 'right', depth: 0.6 },
+    { at: 700, kind: 'crab', count: 3, arrange: 'line' },
+    { at: 730, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5 },
+
+    // --- S4  起（第二次爬升）：网 + 鱼群 + 两条鱼雷 + 螃蟹，再补一串颗粒。
+    // **这是全关最长的一段安静**（爆发一到爆发二之间三屏），所以它必须自己站得住。
+    { at: 780, kind: 'net', count: 5, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.19 },
+    { at: 820, kind: 'fish', count: 10, arrange: 'spread', span: 60, amplitude: 0.24, x: 0.5, from: 'bottom' },
+    { at: 870, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'right', enterSpeed: 50 },
+    { at: 910, kind: 'crab', count: 3, arrange: 'line' },
+    { at: 930, kind: 'mineral', count: 8, arrange: 'spread', span: 50, amplitude: 0.3, x: 0.5, from: 'bottom' },
+
+    // --- S5  **爆发二 · 暴雨层**：珊瑚（硬，3.5 血，"变小有优势"这句话本身）+ 三条鱼雷 + 网 + 盲虾 + 鱼群。
+    // 珊瑚和网一起出现是这一关最贵的一次改道：一个打不动，一个一推就破。
+    { at: 980, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
+    { at: 1040, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.6, from: 'right', enterSpeed: 50 },
+    { at: 1080, kind: 'net', count: 4, arrange: 'line' },
+    { at: 1110, kind: 'shrimp', count: 4, arrange: 'spread', span: 50, x: 0.5, from: 'left', depth: 0.5 },
+    { at: 1120, kind: 'fish', count: 4, arrange: 'spread', span: 40, x: 0.5 },
+
+    // --- S6  回落：颗粒 + 鱼群 + 螃蟹，然后是**手枪虾**——风暴关的精英位，
+    // 稀疏、快、重（一发电化弹），放在"雨最密"的一屏末尾，是这一关最贵的失误。
+    { at: 1160, kind: 'mineral', count: 15, arrange: 'spread', span: 60, amplitude: 0.28, x: 0.5, from: 'bottom' },
+    { at: 1200, kind: 'fish', count: 8, arrange: 'spread', span: 50, x: 0.5 },
+    { at: 1240, kind: 'crab', count: 2, arrange: 'line' },
+    { at: 1280, kind: 'pistol', x: 0.5 },
+
+    // --- S7  **爆发三 · 废网（最高点）**：最后一排封路墙 + 四块珊瑚 + 鱼雷 + 盲虾。
+    // 间隔已经从 3 屏缩到 2 屏，而且它在最快的区间里（每屏 5.4 秒）——
+    // 两种硬度不同的障碍**在同一屏里**，这就是这一关的顶点。
+    { at: 1340, kind: 'wall', count: 6, arrange: 'barrier', gapAt: 0.65, gapWidth: 0.18 },
+    { at: 1400, kind: 'coral', count: 4, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
+    { at: 1450, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.3, from: 'left', enterSpeed: 50 },
+    { at: 1480, kind: 'shrimp', count: 4, arrange: 'spread', span: 50, x: 0.5, from: 'left', depth: 0.5 },
+
+    // --- S8  收：一次补给 + 一群鱼 + 三只螃蟹。风暴还没有停，但这一段是给你把血看回来的。
+    { at: 1560, span: 110, count: 8, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.5, 0.65, 0.45] },
+    { at: 1640, kind: 'crab', count: 3, arrange: 'line' },
+    { at: 1660, kind: 'fish', count: 12, arrange: 'spread', span: 50, x: 0.5 },
+
+    // --- S9  收一屏：**只有食物**。海面就在上面，BOSS 之前把手腾出来。
+    { at: 1740, span: 140, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.28, sizes: [0.5, 0.65, 0.45] },
   ],
+
 }

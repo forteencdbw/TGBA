@@ -27,10 +27,10 @@
     tint: 0x6b4a2a,
     tintStrength: 0.2
   },
-  scrollLength: 1100,
+  scrollLength: 1900,
 
   boss: {
-    at: 950,
+    at: 1710,
     health: 180,
     // 藏在船头残骸里：用触手封锁通道，吸进附近的漂浮物再喷向玩家。触手被破坏后船体坍塌，战场改变。
     name: '寄居沉船章鱼',
@@ -40,50 +40,89 @@
     kind: 'boss-octopus'
   },
 
-  scrollSpeed: 32,
-  // 生物在**屏幕上**的下落速度（米/秒）。以前它和 scrollSpeed 是同一个数：改关卡节奏会连带改每条鱼的速度。
-  // 现在 scrollSpeed 只管关卡推进（时间线、进度、背景视差），生物的速度只看这个。写的是这一关原来的数值，所以屏幕上没变。
+  scrollSpeed: 29,
+  // 节奏曲线：24 → 29 → 34。这一关的关键字是**改道**，而"改道"需要时间才读得懂——
+  // 所以它比第一关还慢（每屏 7.9 秒起，全关 66 秒），让每一排障碍都在最慢的地方先出现过一次。
+    scrollSpeedCurve: [
+    [0, 24],
+    [800, 29],
+    [1900, 34],
+  ],
   driftSpeed: 32,
   playerLeadLimit: 110,
-  landmarks: [
-    { depth: 820, label: '船首残骸' },
-    { depth: 520, label: '货舱通道' },
-    { depth: 240, label: '锚链' },
+  // 三条横幅 = **三次爆发**（下面 `spawns` 里的 S2 / S5 / S7），按深度顺序对应各自那一屏的布景：
+  // 船首残骸那屏是木箱+封路墙，货舱通道那屏是珊瑚，锚链那屏是最后一排墙。
+    landmarks: [
+    { depth: 1500, label: '船首残骸' }, // 400m —— 爆发一
+    { depth: 900, label: '货舱通道' }, // 980m —— 爆发二
+    { depth: 500, label: '锚链' }, // 1340m —— 爆发三
   ],
+  // ---------------------------------------------------------------------------------------------
+  // 刷怪表：**安静开场 → 起 → 三次爆发（间隔 3 屏 → 2 屏）→ 收一屏**
+  // ---------------------------------------------------------------------------------------------
+  //
+  // `S<n>` 是每一块落在第几屏（一屏 190 米）。形状看读数，不要凭感觉：`node scripts/probe-pacing.mjs`。
+  //
+  // 这一关的**身份是布景**（木箱/渔网/封路墙/珊瑚，占它威胁值的一半以上），所以三次爆发都长在障碍上：
+  // "你必须改道"这一件事在这一关是最贵的一种压力。**种类和编排一个都没换，换的是它们什么时候到**，
+  // 以及**它们之间隔多远**——三次爆发的间隔从 3 屏收到 2 屏，而这一关本身被拉长了一倍。
+  //
+  // **10 屏 / 66 秒 / 约 139 分威胁 / 13.8 每屏**：密度比第一关高一档（第一关 11.7），时长几乎一样
+  // （66 对 65）——它比第一关难，但不比第一关长，因为第三关还要在它之上。
   spawns: [
-    // --- 开场：这一关从第一秒就有侧向进场（玩家已经会玩了）。 ---
-    { at: 20, span: 160, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.3, sizes: [0.35, 0.5] },
-    { at: 40, kind: 'crab', count: 2, arrange: 'spread', span: 20, from: 'left', depth: 0.6 },
-    { at: 90, kind: 'crate', x: 0.7, from: 'right', enterSpeed: 26 },
+    // --- S0  安静开场：只有食物和两只螃蟹。螃蟹是"机会不是敌人"——它把你弹上去，这一关先教这个。
+    { at: 20, span: 120, count: 6, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.45] },
+    { at: 60, kind: 'crab', count: 2, arrange: 'spread', from: 'left' },
 
-    // --- 货舱通道：木板、酒桶、船体板和网交替，缝比第一关窄。 ---
-    { at: 150, kind: 'crate', count: 4, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
-    { at: 200, kind: 'net', count: 3, arrange: 'line' },
-    { at: 240, kind: 'wall', count: 4, arrange: 'barrier', gapAt: 0.62, gapWidth: 0.19 },
-    // **射水鱼**：沉船幽谷的第一位枪手——窄缝 + 子弹，躲弹的空间本身就是这一关的主题。
-    { at: 280, kind: 'archer', x: 0.4 },
+    // --- S1  起：第一排木箱（缺口是给你的）、一串渔网、第一位枪手，再补两只螃蟹把这一屏收住。
+    { at: 200, kind: 'crate', count: 4, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.2 },
+    { at: 260, kind: 'net', count: 3, arrange: 'line' },
+    { at: 320, kind: 'archer', x: 0.5 },
+    { at: 350, kind: 'crab', count: 2, arrange: 'spread', from: 'right' },
 
-    // --- 灯笼鱼第一次出现：唯一一个"自己会发光"的敌人，而光是诱饵。 ---
-    { at: 330, kind: 'angler', x: 0.4 },
-    { at: 370, kind: 'crab', count: 3, arrange: 'spread', span: 24, x: 0.6, from: 'right', depth: 0.55 },
-    { at: 410, kind: 'jelly', count: 3, arrange: 'line' },
+    // --- S2  **爆发一 · 船首残骸**：木箱之后紧接着一排**撞不开的**封路墙——同一屏里两种答案，
+    // 先给软的再给硬的。鮟鱇躲在墙后面（你改道的时候它正好扑上来），最后一张网封住退路。
+    { at: 400, kind: 'crate', count: 5, arrange: 'barrier', gapAt: 0.45, gapWidth: 0.2 },
+    { at: 450, kind: 'wall', count: 4, arrange: 'barrier', gapAt: 0.62, gapWidth: 0.2 },
+    { at: 510, kind: 'angler', x: 0.5 },
+    { at: 540, kind: 'crab', count: 3, arrange: 'spread', from: 'right' },
+    { at: 560, kind: 'net', count: 3, arrange: 'line' },
 
-    // --- 失控鱼雷：从船舱里射出来，直飞一段之后开始追。 ---
-    { at: 450, kind: 'torpedo', x: 0.5, from: 'right', enterSpeed: 40 },
-    { at: 490, kind: 'crate', count: 5, arrange: 'barrier', gapAt: 0.45, gapWidth: 0.19 },
-    { at: 560, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.6, from: 'left', enterSpeed: 40 },
+    // --- S3  回落：水母（减速）和一张网，再补两只螃蟹。减速之后撞上网是这一关最有教育意义的一次挫折——
+    // 而这次挫折现在**多了一屏**来读：被打完之后有三屏才到下一次爆发。
+    { at: 600, kind: 'jelly', count: 3, arrange: 'line' },
+    { at: 640, kind: 'net', count: 3, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.2 },
+    { at: 700, kind: 'crab', count: 2, arrange: 'spread', from: 'left' },
 
-    // --- 锚链：珊瑚（藤壶/锈蚀结构）竖直排成链，中间夹着漂浮残骸。 ---
-    { at: 600, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.19 },
-    { at: 640, kind: 'crab', count: 2, arrange: 'spread', span: 30, x: 0.3, from: 'left', depth: 0.65 },
-    { at: 680, kind: 'angler', count: 2, arrange: 'line' },
-    { at: 720, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
-    { at: 760, kind: 'torpedo', x: 0.25, from: 'right', enterSpeed: 40 },
-    { at: 800, span: 60, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.25, sizes: [0.5, 0.7] },
+    // --- S4  起（第二次爬升）：木箱 + 枪手 + 两条鱼雷。**这是全关最长的一段安静**，所以它得自己站住：
+    // 一条鱼雷是诚实的，两条就开始算账了；水母放在末尾，让这一屏的账单带到来不及。
+    { at: 780, kind: 'crate', count: 4, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.2 },
+    { at: 840, kind: 'archer', x: 0.5 },
+    { at: 880, kind: 'torpedo', count: 2, arrange: 'spread', from: 'left' },
+    { at: 910, kind: 'crab', count: 2, arrange: 'spread', from: 'left' },
+    { at: 920, kind: 'jelly', count: 2, arrange: 'spread', from: 'right' },
 
-    // --- 800-950m：船头残骸。两侧同时来东西，中间是窄缝。 ---
-    { at: 840, kind: 'jelly', count: 2, arrange: 'spread', span: 24, from: 'left', depth: 0.5 },
-    { at: 870, kind: 'crab', count: 3, arrange: 'line' },
-    { at: 900, kind: 'net', count: 3, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.2 },
+    // --- S5  **爆发二 · 货舱通道**：珊瑚（硬，变小有优势）+ 两条鱼雷 + 一排封路墙。
+    // 珊瑚和封路墙在同一屏里是这一关最贵的一次"改道"：一个能打碎，一个打不碎，而且它们之间只有两秒。
+    { at: 980, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.2 },
+    { at: 1040, kind: 'torpedo', count: 2, arrange: 'spread', from: 'left' },
+    { at: 1080, kind: 'wall', count: 3, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
+
+    // --- S6  回落：水母 + 网 + 一排木箱。间隔已经从 3 屏缩到 2 屏，所以这一屏比上一次回落更短也更急。
+    { at: 1160, kind: 'jelly', count: 3, arrange: 'line' },
+    { at: 1200, kind: 'net', count: 3, arrange: 'line' },
+    { at: 1250, kind: 'crate', count: 3, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.2 },
+
+    // --- S7  **爆发三 · 锚链（最高点）**：最后一排封路墙 + 三条鱼雷 + 两只鮟鱇 + 水母。
+    // 间隔已经缩到 2 屏，到这里不再留余量——而且它在最快的区间里（每屏 5.6 秒）。
+    { at: 1340, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
+    { at: 1400, kind: 'torpedo', count: 3, arrange: 'spread', from: 'right' },
+    { at: 1450, kind: 'angler', count: 2, arrange: 'line' },
+    { at: 1490, kind: 'jelly', count: 2, arrange: 'spread', from: 'left' },
+
+    // --- S8  收一屏：**只有食物**，外加两只螃蟹（它们是往上的推力，不是威胁）。
+    { at: 1560, span: 110, count: 6, kind: 'bubble', arrange: 'spread', sizes: [0.5, 0.6, 0.45] },
+    { at: 1650, kind: 'crab', count: 2, arrange: 'spread', from: 'right' },
   ],
+
 }

@@ -27,10 +27,10 @@
     tint: 0x2f8f7a,
     tintStrength: 0.16
   },
-  scrollLength: 1500,
+  scrollLength: 2090,
 
   boss: {
-    at: 1300,
+    at: 1900,
     health: 240,
     name: '长尾鲨',
     // **这一关的 BOSS 是哪一只**：它怎么动、多大、什么颜色、怎么开火，全在
@@ -39,60 +39,108 @@
     kind: 'boss-shark'
   },
 
-  scrollSpeed: 34,
-  // 生物在**屏幕上**的下落速度（米/秒）。以前它和 scrollSpeed 是同一个数：改关卡节奏会连带改每条鱼的速度。
-  // 现在 scrollSpeed 只管关卡推进（时间线、进度、背景视差），生物的速度只看这个。写的是这一关原来的数值，所以屏幕上没变。
+  scrollSpeed: 27,
+  // 节奏曲线：20 → 27 → 35。**这条曲线的形状就是这一关的设定**：开头在暖水层（慢、每屏 9.5 秒，
+  // 猎食者还稀疏），穿过渡层之后一路加速到冷水层（每屏 5.4 秒，猎食者密集）。
+  // 全关 77 秒。注意 `driftSpeed`（生物在屏幕上的速度）**没有跟着变**——变慢的是关卡推进，
+  // 不是那些鱼：不然整关会看起来像水冻住了。
+    scrollSpeedCurve: [
+    [0, 20],
+    [900, 27],
+    [2090, 35],
+  ],
   driftSpeed: 34,
   playerLeadLimit: 120,
-  landmarks: [
-    { depth: 1150, label: '暖水层' },
-    { depth: 750, label: '温跃层' },
-    { depth: 300, label: '冷水层' },
+  // 三条横幅 = **三次爆发**（下面 `spawns` 里的 S2 / S5 / S7）。这一关的三块牌子是**水层**而不是布景，
+  // 所以它们本来就该一次比一次密：暖水层（鱼群，赢得起）→ 温跃层（上下同时来，换高度）→ 冷水层（赢不了的）。
+    landmarks: [
+    { depth: 1690, label: '暖水层' }, // 400m —— 爆发一
+    { depth: 990, label: '温跃层' }, // 980m —— 爆发二
+    { depth: 560, label: '冷水层' }, // 1340m —— 爆发三
   ],
+  // ---------------------------------------------------------------------------------------------
+  // 刷怪表：**安静开场 → 起 → 三次爆发（间隔 3 屏 → 2 屏）→ 收两屏**
+  // ---------------------------------------------------------------------------------------------
+  //
+  // `S<n>` 是每一块落在第几屏（一屏 190 米）。形状看读数：`node scripts/probe-pacing.mjs`。
+  //
+  // 这一关没有障碍物，**威胁全是生物**，而且种类是六关里最多的（鱼、鱼雷、海豚、炸弹鱼、章鱼、
+  // 鮟鱇、刺魨、螃蟹、鲨鱼、电鳗、座头鲸）。三次爆发因此按"这一层能碰到什么"来分层，
+  // 而不是按"这里放了什么布景"：暖水层只有鱼群和海豚，温跃层把四个猎食者加进来，
+  // 冷水层才是鲨鱼和鲸——**你过的是水层，不是关卡**。
   spawns: [
-    // --- 开场：鱼群本身就是内容（沙丁鱼群不主动攻击，但受惊会集体转向）。 ---
-    { at: 30, span: 200, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
-    { at: 100, kind: 'fish', count: 4, arrange: 'line' },
-    { at: 180, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5 },
-    { at: 300, kind: 'torpedo', x: 0.5, from: 'right', enterSpeed: 46 },
-    { at: 360, kind: 'fish', count: 5, arrange: 'line' },
-    // --- 猎食者登场。先给**海豚**：四个里它最小、最薄（3 点血）、食谱门槛最低，所以它教的是
-    // "这一关的东西也可以很大、而且大的也能是食物"。先让玩家赢一次，再给他看赢不了的。 ---
-    { at: 390, kind: 'dolphin', x: 0.78 },
+    // --- S0  安静开场：只有泡泡和一群鱼。鱼群本身就是内容（沙丁鱼群不主动攻击，受惊会集体转向）。
+    { at: 30, span: 150, count: 12, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
+    { at: 110, kind: 'fish', count: 4, arrange: 'line' },
 
-    // --- 温跃层：上下同时来东西，逼玩家换高度。 ---
-    { at: 480, kind: 'fish', count: 5, arrange: 'spread', span: 40, from: 'left', depth: 0.62 },
-    { at: 520, kind: 'fish', count: 5, arrange: 'spread', span: 40, from: 'right', depth: 0.42 },
-    { at: 580, kind: 'bombfish', count: 2, arrange: 'spread', span: 30, x: 0.5 },
+    // --- S1  起：鱼群、一条鱼雷（第一段诚实）、**第一只海豚**和两只螃蟹。
+    // 海豚是四个猎食者里最小最薄（3 点血）、食谱门槛最低的，所以它教的是"这一关的东西也可以很大、
+    // 而且大的也能是食物"——**先让玩家赢一次，再给他看赢不了的**。
+    { at: 200, kind: 'fish', count: 10, arrange: 'spread', span: 50, x: 0.5 },
+    { at: 300, kind: 'torpedo', x: 0.5, from: 'right', enterSpeed: 46 },
+    { at: 350, kind: 'dolphin', x: 0.78 },
+    { at: 370, kind: 'crab', count: 2, arrange: 'line' },
+
+    // --- S2  **爆发一 · 暖水层**：鱼群 + 两只海豚 + 炸弹鱼（会炸，"在哪挨"）+ 鮟鱇（会骗你）+ 章鱼。
+    // 猎食者们第一次一起出现，但全是"吃得下"的那几个。
+    { at: 400, kind: 'fish', count: 12, arrange: 'spread', span: 60, amplitude: 0.2, x: 0.5, from: 'bottom' },
+    { at: 450, kind: 'dolphin', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', enterSpeed: 40 },
+    { at: 480, kind: 'bombfish', count: 2, arrange: 'spread', span: 30, x: 0.5 },
+    { at: 520, kind: 'angler', count: 2, arrange: 'line' },
     // 章鱼：从侧面**横着**进来（enterSpeed 比别的慢），因为它是四个里最懒的那个——前摇 0.9 秒、冷却 2.6 秒，
     // 它是"可以忽略一会儿"的猎食者，作用是让别的三个显得更快。
-    { at: 610, kind: 'octopus', x: 0.3, from: 'left', enterSpeed: 34 },
-    { at: 640, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'left', enterSpeed: 46 },
-    { at: 700, kind: 'angler', count: 2, arrange: 'line' },
-    { at: 760, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.2, x: 0.5, from: 'bottom' },
-    // **刺魨**：防御反击型——猎食者关里唯一'打它有代价'的东西，和冲锋的猎食者互为对照。
-    { at: 790, kind: 'puffer', x: 0.6 },
+    { at: 550, kind: 'octopus', x: 0.3, from: 'left', enterSpeed: 34 },
 
-    // --- 冷水层：猎食者密集，速度更快。 ---
-    { at: 830, kind: 'crab', count: 3, arrange: 'line' },
-    { at: 880, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.5, from: 'right', enterSpeed: 46 },
-    // **招牌**：大白鲨。前摇只有 0.6 秒、冲刺 0.4 秒，是四个里最"已经决定了"的那个。
-    // 放在这里而不是开场，是因为到这一步玩家已经见过鱼群、见过温跃层逼他换高度，知道"大"在这个游戏里是什么意思了。
-    { at: 900, kind: 'shark', x: 0.55 },
-    // **电鳗**：枪打不死的射手（0 血），只能躲或吞。冷水层入口放一条，和炸弹鱼错开——
-    // 这一段已经有"躲快的、拆炸的"，再加"擦着闪电走"，三种风险手法在同一片水里。
-    { at: 950, kind: 'eel', x: 0.3 },
-    { at: 1000, kind: 'fish', count: 6, arrange: 'spread', span: 30, from: 'left', depth: 0.55 },
-    { at: 1060, kind: 'bombfish', count: 3, arrange: 'spread', span: 40, x: 0.6 },
-    { at: 1120, kind: 'angler', count: 3, arrange: 'spread', span: 40, x: 0.4 },
-    // 第二条电鳗放在收尾段的对侧：座头鲸逼你横向走位时，另一边有一颗会放电的钉子。
-    { at: 1160, kind: 'eel', x: 0.72 },
-    // 座头鲸：一次只来一只。它是全场最慢（前摇 1.1 秒）也最厚（8 点血）的东西，
-    // 放在收尾段是因为**慢的东西在一段快的东西后面才最吓人**——玩家刚躲完一串快攻，会明显感到屏幕被占住了。
-    { at: 1080, kind: 'whale', x: 0.45 },
-    { at: 1200, kind: 'fish', count: 10, arrange: 'line' },
-    { at: 1260, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.7, from: 'bottom' },
-    // 最后把海豚放回来两只：它现在是"已知的、吃得下的那种大东西"，用来让 BOSS 之前那口气不空。
-    { at: 1290, kind: 'dolphin', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', enterSpeed: 40 },
+    // --- S3  回落：鱼群 + 螃蟹 + 刺魨 + 一条鱼雷。刺魨是猎食者关里唯一"打它有代价"的东西，和冲锋的
+    // 猎食者互为对照——它在这一屏出现，正好是下一次爆发前的呼吸。
+    { at: 600, kind: 'fish', count: 9, arrange: 'spread', span: 50, x: 0.5 },
+    { at: 660, kind: 'crab', count: 3, arrange: 'line' },
+    { at: 700, kind: 'puffer', count: 2, arrange: 'spread', span: 40, x: 0.5 },
+    { at: 730, kind: 'torpedo', count: 1, arrange: 'spread', x: 0.4, from: 'left', enterSpeed: 46 },
+
+    // --- S4  起（第二次爬升）：上下同时来的两串鱼，逼玩家**换高度**——这是温跃层这一层的题目本身。
+    // 加章鱼和炸弹鱼：一个慢到可以忽略、一个近到不能打，同一屏里两种"别碰我"。
+    { at: 780, kind: 'fish', count: 6, arrange: 'spread', span: 40, from: 'left', depth: 0.62 },
+    { at: 820, kind: 'fish', count: 6, arrange: 'spread', span: 40, from: 'right', depth: 0.42 },
+    { at: 860, kind: 'octopus', x: 0.3, from: 'left', enterSpeed: 34 },
+    { at: 890, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'left', enterSpeed: 46 },
+    { at: 920, kind: 'bombfish', count: 2, arrange: 'spread', span: 30, x: 0.6 },
+
+    // --- S5  **爆发二 · 温跃层**：四个猎食者全在同一屏——鮟鱇（诱饵就是陷阱）、章鱼、刺魨（打它有代价）、
+    // 加两条鱼雷。这一屏的题目不是"躲开"，是"先解决谁"。
+    { at: 980, kind: 'fish', count: 14, arrange: 'spread', span: 70, amplitude: 0.22, x: 0.5 },
+    { at: 1030, kind: 'puffer', count: 2, arrange: 'spread', span: 40, x: 0.5 },
+    { at: 1060, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'left', enterSpeed: 46 },
+    { at: 1090, kind: 'angler', count: 2, arrange: 'line' },
+    { at: 1120, kind: 'octopus', x: 0.65, from: 'right', enterSpeed: 34 },
+
+    // --- S6  回落：**电鳗**（枪打不死的射手，0 血，只能躲或吞）+ 鱼群 + 螃蟹。
+    // 间隔已经从 3 屏缩到 2 屏：这一屏比上一次回落短，而且射手不给你喘的机会。
+    { at: 1160, kind: 'fish', count: 12, arrange: 'spread', span: 50, x: 0.5 },
+    { at: 1210, kind: 'crab', count: 3, arrange: 'line' },
+    { at: 1250, kind: 'puffer', count: 2, arrange: 'spread', span: 40, x: 0.5 },
+    { at: 1290, kind: 'eel', x: 0.3 },
+
+    // --- S7  **爆发三 · 冷水层（最高点）**：大白鲨（前摇 0.6 秒、冲刺 0.4 秒，四个里最"已经决定了"的那个）
+    // + 三条鱼雷 + 两条电鳗 + 三只鮟鱇 + 鱼群 + 炸弹鱼。它同时是**最快**的一屏（5.4 秒）和**最密**的一屏。
+    //
+    // 座头鲸一次只来一只：全场最慢（前摇 1.1 秒）也最厚（8 点血），放在收尾段是因为
+    // **慢的东西在一段快的东西后面才最吓人**——玩家刚躲完一串快攻，会明显感到屏幕被占住了。
+    { at: 1340, kind: 'shark', x: 0.55 },
+    { at: 1380, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.5, from: 'right', enterSpeed: 46 },
+    { at: 1420, kind: 'eel', count: 2, arrange: 'spread', span: 40, x: 0.5 },
+    { at: 1450, kind: 'angler', count: 3, arrange: 'spread', span: 40, x: 0.4 },
+    { at: 1480, kind: 'fish', count: 12, arrange: 'spread', span: 50, x: 0.5 },
+    { at: 1500, kind: 'bombfish', count: 1, arrange: 'spread', x: 0.6 },
+    { at: 1510, kind: 'whale', x: 0.45 },
+
+    // --- S8  收：把**海豚**放回来两只。它现在是"已知的、吃得下的那种大东西"——
+    // 一次补给，一次能赢的架，让最后一次爆发之后不是一口气泄掉。
+    { at: 1560, span: 110, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.5, 0.6, 0.45] },
+    { at: 1660, kind: 'dolphin', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', enterSpeed: 40 },
+
+    // --- S9  收一屏：**只有食物，没有一个危险物**。BOSS 之前把手腾出来。
+    { at: 1740, span: 140, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.5, 0.65, 0.45] },
   ],
+
 }

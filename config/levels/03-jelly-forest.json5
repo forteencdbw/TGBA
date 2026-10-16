@@ -28,10 +28,10 @@
     tint: 0x8a4fd0,
     tintStrength: 0.3
   },
-  scrollLength: 1400,
+  scrollLength: 1900,
 
   boss: {
-    at: 1200,
+    at: 1710,
     health: 200,
     name: '冠冕水母',
     // **这一关的 BOSS 是哪一只**：它怎么动、多大、什么颜色、怎么开火，全在
@@ -40,50 +40,82 @@
     kind: 'boss-jelly'
   },
 
-  scrollSpeed: 28,
-  // 生物在**屏幕上**的下落速度（米/秒）。以前它和 scrollSpeed 是同一个数：改关卡节奏会连带改每条鱼的速度。
-  // 现在 scrollSpeed 只管关卡推进（时间线、进度、背景视差），生物的速度只看这个。写的是这一关原来的数值，所以屏幕上没变。
+  scrollSpeed: 27,
+  // 节奏曲线：22 → 27 → 33。**这是六关里最慢的一条**（开头每屏 8.6 秒），而且是有意的：
+  // 这一关的压力不来自速度，来自**读**——电水母"碰它放电、打它也放电、还会连累旁边那只"，
+  // 所以它必须慢到玩家能看清自己打的哪一只。全关 70 秒，比第二关长，因为要读的东西更多。
+    scrollSpeedCurve: [
+    [0, 22],
+    [800, 27],
+    [1900, 33],
+  ],
   driftSpeed: 28,
   playerLeadLimit: 110,
-  landmarks: [
-    { depth: 1050, label: '水母树冠' },
-    { depth: 650, label: '触须森林' },
-    { depth: 250, label: '冠冕' },
+  // 三条横幅 = **三次爆发**（下面 `spawns` 里的 S2 / S5 / S7），按深度顺序对应三次电水母群。
+    landmarks: [
+    { depth: 1480, label: '水母树冠' }, // 420m —— 爆发一
+    { depth: 900, label: '触须森林' }, // 1000m —— 爆发二
+    { depth: 550, label: '冠冕' }, // 1350m —— 爆发三
   ],
+  // ---------------------------------------------------------------------------------------------
+  // 刷怪表：**安静开场 → 起 → 三次爆发（间隔 3 屏 → 2 屏）→ 收一屏**
+  // ---------------------------------------------------------------------------------------------
+  //
+  // `S<n>` 是每一块落在第几屏（一屏 190 米）。形状看读数：`node scripts/probe-pacing.mjs`。
+  //
+  // 电水母是这一关唯一"越打越危险"的东西（碰它或打它都放电，而且导电链会传给旁边的同类），
+  // 所以三次爆发都用电水母群：**一次群就是一道题**，而不是把它摊平当底噪。
+  //
+  // **10 屏 / 70 秒 / 约 154 分威胁 / 15.4 每屏。** 它的密度比第二关高一档、时长也长一点，
+  // 但**比第四关低**——上一轮它是 20.1，比第四关还密，而第四关是它之后才玩的，那是个倒挂。
   spawns: [
-    // --- 开场：水母很多，但都很软。这一关的压力来自"电"，不来自追杀。 ---
-    { at: 30, span: 180, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.2, sizes: [0.4, 0.5, 0.35] },
-    { at: 120, kind: 'zapper', x: 0.35 },
-    { at: 180, kind: 'zapper', x: 0.68 },
+    // --- S0  安静开场：食物，和**一只**电水母。让"它会放电"先单独出现一次。
+    { at: 30, span: 150, count: 10, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.35] },
+    { at: 120, kind: 'zapper', x: 0.5 },
 
-    // --- 触须森林：竖直的水母列 + 之间夹着电击水母，路线要么穿过去、要么带电炸开。 ---
-    { at: 300, kind: 'zapper', count: 4, arrange: 'column', span: 90, x: 0.3 },
-    { at: 340, kind: 'zapper', count: 4, arrange: 'column', span: 90, x: 0.7 },
-    // **海星**：水母林是弹幕的主场——导电水母教'别碰'，海星教'读方向'（五臂就是下一轮的走向）。
-    { at: 410, kind: 'starfish', x: 0.3 },
-    { at: 450, kind: 'zapper', count: 3, arrange: 'line' },
-    { at: 500, kind: 'jelly', count: 4, arrange: 'line' },
-    { at: 560, kind: 'zapper', count: 5, arrange: 'line' },
+    // --- S1  起：两只一列，教导电链——打一只会牵动旁边那只。后面跟一串鱼，把"边躲边打"先轻轻演一遍。
+    { at: 200, kind: 'zapper', x: 0.4 },
+    { at: 300, kind: 'zapper', count: 2, arrange: 'column', x: 0.6 },
+    { at: 340, kind: 'fish', count: 8, arrange: 'spread', from: 'right' },
 
-    // --- 中段：孢子鱼群和伪装者混进来，路线观察开始变难。 ---
-    { at: 620, kind: 'fish', count: 4, arrange: 'spread', span: 30, from: 'left', depth: 0.6 },
-    { at: 660, kind: 'shrimp', count: 3, arrange: 'spread', span: 30, x: 0.6, from: 'right', depth: 0.5 },
-    { at: 720, kind: 'zapper', count: 3, arrange: 'spread', span: 40, x: 0.5 },
-    // **海胆**：一个会朝你射尖刺的硬壳，15 点血、要打十几发。它在这里干的活和障碍物一样——不是追杀，
-    // 是"必须先看见、再决定绕开还是打"的固定威胁。所以放在中段路开始变挤的地方：前面的水母教你"别碰"、
-    // 海星教你"读方向"，从这里开始教"选哪边绕"。它转得很慢（`hazardArt.urchin.spin`，每一只初相不同），
-    // 刺球转起来才不像一张静止的图。
-    { at: 700, kind: 'urchin', x: 0.28 },
-    { at: 860, kind: 'urchin', count: 2, arrange: 'spread', span: 40, x: 0.55 },
-    { at: 830, kind: 'zapper', count: 5, arrange: 'line' },
-    { at: 880, kind: 'jelly', count: 4, arrange: 'spread', span: 50, x: 0.5 },
+    // --- S2  **爆发一 · 水母树冠**：一列四只 + 减速水母 + 一串鱼。这一屏开始要求你**边躲边挑目标**。
+    { at: 420, kind: 'zapper', count: 4, arrange: 'column', x: 0.5 },
+    { at: 480, kind: 'jelly', count: 4, arrange: 'line' },
+    { at: 520, kind: 'fish', count: 4, arrange: 'spread', from: 'left' },
 
-    // --- 终段：一连串带电的窄缝，然后进 BOSS。 ---
-    { at: 950, span: 60, count: 6, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.45, 0.6] },
-    { at: 1000, kind: 'zapper', count: 4, arrange: 'line' },
-    { at: 1060, kind: 'zapper', count: 3, arrange: 'spread', span: 30, x: 0.35 },
-    { at: 1120, kind: 'mineral', count: 4, arrange: 'spread', span: 40, x: 0.6, from: 'bottom' },
-    // 第二只海星放在 BOSS 前：两只星形弹幕的旋转相位不同（每实例随机初相），合起来是一张会转的网。
-    { at: 1150, kind: 'starfish', x: 0.7 },
+    // --- S3  回落：虾 + 海胆 + 两只电水母。刚被电过，这一屏把位置找回来——而且它比上一次回落**多了一屏**，
+    // 因为电水母的教训消化得慢。
+    { at: 600, kind: 'shrimp', count: 3, arrange: 'spread', from: 'right' },
+    { at: 660, kind: 'urchin', x: 0.5 },
+    { at: 700, kind: 'zapper', count: 2, arrange: 'spread' },
+
+    // --- S4  起（第二次爬升）：一串鱼 + 两只电水母 + 一只海胆 + 两只虾。**这是最长的两次爆发之间的空档**，
+    // 所以它得自己站住：海胆先给你一个"绕开就行"的靶子，电水母再把绕开的路线收窄。
+    { at: 780, kind: 'fish', count: 8, arrange: 'spread', from: 'left' },
+    { at: 840, kind: 'zapper', count: 2, arrange: 'column', x: 0.55 },
+    { at: 880, kind: 'urchin', x: 0.4 },
+    { at: 920, kind: 'shrimp', count: 2, arrange: 'spread', from: 'right' },
+
+    // --- S5  **爆发二 · 触须森林**：五只一排 + 减速 + 两只海胆。横排的电水母是"整片不能碰"。
+    { at: 1000, kind: 'zapper', count: 5, arrange: 'line' },
+    { at: 1060, kind: 'jelly', count: 4, arrange: 'spread' },
+    { at: 1110, kind: 'urchin', count: 2, arrange: 'spread' },
+
+    // --- S6  回落：热流矿物 + 虾 + 两只电水母。间隔已经从 3 屏缩到 2 屏，矿物颗粒是这一屏的"呼吸"。
+    { at: 1180, span: 60, count: 4, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
+    { at: 1230, kind: 'shrimp', count: 3, arrange: 'spread', from: 'left' },
+    { at: 1280, kind: 'zapper', count: 2, arrange: 'spread' },
+
+    // --- S7  **爆发三 · 冠冕（最高点）**：两群电水母 + 海星 + 热流矿物。间隔已缩到 2 屏，
+    // 而且它在最快的区间里（每屏 5.7 秒）——这一关的顶点是"整片都在放电，而你还得选打哪一只"。
+    { at: 1350, kind: 'zapper', count: 5, arrange: 'line' },
+    { at: 1410, kind: 'zapper', count: 3, arrange: 'spread' },
+    { at: 1460, kind: 'starfish', x: 0.5 },
+    { at: 1500, span: 60, count: 4, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
+
+    // --- S8  收一屏：**只有食物，没有一个危险物**。水母林的最上面是光，这一屏留给它。
+    { at: 1560, span: 110, count: 6, kind: 'bubble', arrange: 'spread', sizes: [0.5, 0.6, 0.45] },
+    { at: 1640, kind: 'fish', count: 6, arrange: 'spread', from: 'left' },
   ],
+
 }

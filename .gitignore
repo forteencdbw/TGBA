@@ -59,6 +59,16 @@ msg.txt
 .scratch/**/*.png
 .scratch/**/*.py
 
+# The two scratch directories whose ENTIRE content is output.
+#
+# The per-extension rules above kept leaking: every new extension the tooling invented (`.log`, `.binarypb`,
+# `.jpg`, `.old`, `.db`, …) became a fresh way for one `git add -A` to sweep hundreds of megabytes into a
+# commit -- and it happened a third time, 2284 files and 315 MB, of the driver's screenshots and the asset
+# pipeline's reference photos. Neither directory has ever held a tracked file, so ignore the directories and
+# stop playing whack-a-mole with the extensions.
+.scratch/run-check/
+.scratch/asset-pipeline/
+
 # Python bytecode caches.
 #
 # `refs/__pycache__/asset_pipeline.cpython-312.pyc` was tracked, which is worth a line because of what happens
