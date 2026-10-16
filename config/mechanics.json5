@@ -1983,18 +1983,40 @@
     //     不需要动代码，也不需要动别的 BOSS。
     //
     // 六只都换完之后，旧的 `boss` kind、`hazards.boss` 和这一组 `hazardArt.boss` 一起删掉（那才是最后一步）。
+    //
+    // ---------------------------------------------------------------------------------------------
+    // **BOSS 默认不调头**（`fixedFacing`）
+    // ---------------------------------------------------------------------------------------------
+    //
+    // BOSS 的立绘**永不镜像**——不朝玩家翻、也不按自己漂的方向翻，永远按原图的样子画。
+    //
+    // 为什么：BOSS 是一场仗的布景，立绘是照着那样画的；而且它按 `scale: 2.8` 占掉三分之一泳道，0.4 秒的转身
+    // （横向压扁）放在这么大的东西上，看起来像画面抽了一下，而不是像它转了个身。
+    //
+    // **要让某一只调头，把这一行的 `fixedFacing` 改成 `false`**——那时它会按玩家所在的左右侧镜像，转身动画
+    // 和其它生物一样（`hazardFacing.turnSeconds`）。**六只里没有一只是照"面向玩家"画的**，所以真要打开之前，
+    // 先打开它在游戏里看一眼：站到它右边，如果它看起来朝左，就说明它的立绘本来朝左。
+    //
+    // 注意两件事：
+    //   * 这一行写 `true` 只是把默认值说出来。**代码里的默认值也是"BOSS 不调头"**（`paintHazards` 里
+    //     `fixedFacing ?? 是BOSS`），所以将来加第七只、忘了写这一行，它也不会偷偷调头。
+    //   * `front: "left"` 别删。不调头时它一次都用不上，但哪只以后打开了调头，它决定"哪边算面向玩家"——
+    //     写反了那只就会背对着玩家。
+    //
+    // 另外：**攻击方向不受这个影响**。BOSS 的攻击是从玩家所在的那一侧发出来的（`paintHazards` 里另外一处），
+    // 不看朝向——所以关掉调头不会让它打歪，只是立绘可能看着朝反方向挥手。
     // 第 1 关 —— 烟囱蟹王
-    "boss-crab": { "front": "left", "move": "烟囱蟹王-move", "attack": "烟囱蟹王-attack", "dead": "烟囱蟹王-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    "boss-crab": { "front": "left", "fixedFacing": true, "move": "烟囱蟹王-move", "attack": "烟囱蟹王-attack", "dead": "烟囱蟹王-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
     // 第 2 关 —— 寄居沉船章鱼
-    "boss-octopus": { "front": "left", "move": "寄居沉船章鱼-move", "attack": "寄居沉船章鱼-attack", "dead": "寄居沉船章鱼-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    "boss-octopus": { "front": "left", "fixedFacing": true, "move": "寄居沉船章鱼-move", "attack": "寄居沉船章鱼-attack", "dead": "寄居沉船章鱼-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
     // 第 3 关 —— 冠冕水母
-    "boss-jelly": { "front": "left", "move": "冠冕水母-move", "attack": "冠冕水母-attack", "dead": "冠冕水母-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    "boss-jelly": { "front": "left", "fixedFacing": true, "move": "冠冕水母-move", "attack": "冠冕水母-attack", "dead": "冠冕水母-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
     // 第 4 关 —— 长尾鲨
-    "boss-shark": { "front": "left", "move": "长尾鲨-move", "attack": "长尾鲨-attack", "dead": "长尾鲨-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    "boss-shark": { "front": "left", "fixedFacing": true, "move": "长尾鲨-move", "attack": "长尾鲨-attack", "dead": "长尾鲨-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
     // 第 5 关 —— 废网巨鲨
-    "boss-netshark": { "front": "left", "move": "废网巨鲨-move", "attack": "废网巨鲨-attack", "dead": "废网巨鲨-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    "boss-netshark": { "front": "left", "fixedFacing": true, "move": "废网巨鲨-move", "attack": "废网巨鲨-attack", "dead": "废网巨鲨-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
     // 第 6 关 —— 风暴之眼
-    "boss-eye": { "front": "left", "move": "风暴之眼-move", "attack": "风暴之眼-attack", "dead": "风暴之眼-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
+    "boss-eye": { "front": "left", "fixedFacing": true, "move": "风暴之眼-move", "attack": "风暴之眼-attack", "dead": "风暴之眼-dead", "spriteFlashScale": 1, "scale": 2.8, "alpha": 1 },
 
 
     // ---------------------------------------------------------------------------------------------

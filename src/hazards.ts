@@ -3671,10 +3671,19 @@ export function boxDistance(px: number, py: number, x: number, y: number, halfW:
  * ---------------------------------------------------------------------------------------------
  * WHY THIS IS NOT `h.facing`
  * ---------------------------------------------------------------------------------------------
- * `h.facing` is the creature's MIND. It is +1 or -1, it says which way the creature is looking, and everything that
- * reads it -- where an archer's weapon points, which side a charge comes from, the hitbox -- needs a straight answer
- * from it. A picture that is halfway round is not a fact about the creature; it is a fact about the PICTURE, so it
- * is computed here and reaches exactly one place, which is the sprite.
+ * `h.facing` is the creature's MIND: +1 or -1, which way it is looking, committed in ONE place (`commitFacing`) and
+ * animated separately. A picture that is halfway round is not a fact about the creature; it is a fact about the
+ * PICTURE, so it is computed here and reaches exactly one place, which is the sprite.
+ *
+ * **AND `h.facing` HAS EXACTLY ONE READER: THIS FILE.** There used to be a sentence here saying that an archer's weapon
+ * angle, which side a charge comes from and the hitbox all needed a straight answer from it. That is not true and it has
+ * not been true for a while -- `grep` finds no consumer of `h.facing` outside the painter. The drawn bodies (the
+ * `draw*` functions) work out which way to face from their own position relative to the lane's centre, which is why
+ * `paintLure` and the angler's jaw can agree with each other without asking the creature anything.
+ *
+ * This is written down because it is load-bearing for a decision rather than a curiosity: **a boss no longer turns at
+ * all** (see `fixedFacing`), and that is only safe because nothing mechanical follows the facing. If a mechanic ever
+ * does need it, record that fact HERE before writing it -- the next reader will otherwise trust the paragraph above.
  *
  * ---------------------------------------------------------------------------------------------
  * THE EASING IS THE MOTION, NOT A STYLE
@@ -5098,6 +5107,18 @@ export function paintHazards(
             ? playerIsLeft
             : h.heading <= 0;
         /**
+         * Whether the picture is fixed, which for a BOSS is the default rather than the exception.
+         *
+         * A boss is a set piece the fight is choreographed around: its art was drawn for a reason, it fills a third of the
+         * lane at 2.8x, and a 0.4-second squash across something that big reads as a glitch rather than as a turn. So the
+         * default is that it does not turn, and a boss that SHOULD turn says `"fixedFacing": false` in its own row.
+         *
+         * The default is here rather than only in the config rows on purpose, and the two answer different questions: the
+         * rows say what these six do today, and this says what a boss that nobody has configured does. Without it, a
+         * seventh boss added without that line would quietly start swivelling.
+         */
+        const fixedFacing = art.fixedFacing ?? isBossKind(h.kind);
+        /**
          * The turn is COMMITTED for `cooldownSeconds`, which is the whole point of this block.
          *
          * A creature with the player almost exactly above or below it would otherwise re-decide every frame as the player
@@ -5105,8 +5126,8 @@ export function paintHazards(
          * entering the water should look at the player immediately -- and later ones wait their turn.
          */
         const wantFacing = ((front === 'left') !== wantFrontLeft) ? -1 : 1;
-        if (art.fixedFacing) {
-          // A thing, not a creature: nothing to look at, so no decision to take and no `h.facing` to commit.
+        if (fixedFacing) {
+          // Nothing to look at, so no decision to take and no `h.facing` to commit.
         } else if (h.facing === undefined) {
           commitFacing(h, wantFacing);
           h.facingRest = 0;
@@ -5123,7 +5144,7 @@ export function paintHazards(
          * mirror silently rotates the telegraph instead of breaking it, which is exactly the failure that has no
          * symptom. Opting out of both the turn and the mirror is one decision, and `volleyAligned` carries it.
          */
-        const mirror = art.volleyAligned || art.fixedFacing ? 1 : hazardMirror(h);
+        const mirror = art.volleyAligned || fixedFacing ? 1 : hazardMirror(h);
         sprite.scale.set(unit * mirror, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
         /**
          * SPIN, for a kind whose picture is a radial thing, and NOTHING AT ALL for every other kind.

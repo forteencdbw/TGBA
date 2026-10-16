@@ -1248,8 +1248,15 @@ export interface Mechanisms {
        */
       facesPlayer?: boolean;
       /**
-       * The picture is never mirrored: not towards the player, not towards where it is heading. For things that are not
-       * creatures (a mineral pellet) -- `facesPlayer: false` is not enough for those, because it still mirrors by heading.
+       * The picture is never mirrored: not towards the player, not towards where it is heading.
+       *
+       * For things that are not creatures, where `facesPlayer: false` is not enough -- that one still mirrors by heading,
+       * so a drifting mineral pellet flips as it drifts. Written true on the mineral.
+       *
+       * **FOR A BOSS THE DEFAULT IS TRUE**, which is the other way round from every other kind: a boss is a set piece whose
+       * art is part of the fight's staging, so it does not turn unless its row says `false` (see `paintHazards`). The six
+       * rows say `true` explicitly so the config shows the state rather than implying it; a boss that should turn is the
+       * one that writes `false`.
        */
       fixedFacing?: boolean;
       /**

@@ -130,6 +130,15 @@ const ENEMY_CLASS: Record<string, EnemyClass> = {
   angler: 'ranged',
 };
 
+/**
+ * The `boss-` tests below answer a DIFFERENT question from `isBossKind` in `src/hazards.ts`.
+ *
+ * That one asks "is this the level's win condition" and reads a list; this asks "which family of hit sound does it use"
+ * and reads the name. They agree today, and this file imports nothing on purpose (three modules need these names and none
+ * of them may import another to reach them), so the two are kept apart by hand rather than by a call. **Change one and
+ * look at the other** -- the failure mode is a boss that dies to the right animation and the wrong sound, which is the sort
+ * of thing nobody notices until the sixth level.
+ */
 export function enemyClassOf(kind: string): EnemyClass {
   if (kind === 'boss' || kind.startsWith('boss-')) return 'boss';
   return ENEMY_CLASS[kind] ?? 'small';
