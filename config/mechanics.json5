@@ -2012,7 +2012,9 @@
       "volleyBaseRadians": 0.3491
     },
     // mineral：矿物颗粒。scale 是按"画出来多大"反推的，和旁边那些一样。
-    "mineral": { "move": "矿物颗粒", "scale": 1.7, "alpha": 1 },
+    // `fixedFacing: true`：它是**东西，不是生物**，图永远按原样画，不朝玩家转、也不随漂移方向镜像。
+    // （只设 `facesPlayer: false` 不够：那样它还是会按自己横向漂的方向翻面。）
+    "mineral": { "move": "矿物颗粒", "scale": 1.7, "alpha": 1, "fixedFacing": true },
     // torpedo：失控鱼雷。scale 是按"画出来多大"反推的，和旁边那些一样。
     "torpedo": { "move": "失控鱼雷", "scale": 2, "alpha": 1 },
     // crab：螃蟹。scale 是按"画出来多大"反推的，和旁边那些一样。

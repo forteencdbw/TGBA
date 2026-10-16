@@ -5087,7 +5087,9 @@ export function paintHazards(
          * entering the water should look at the player immediately -- and later ones wait their turn.
          */
         const wantFacing = ((front === 'left') !== wantFrontLeft) ? -1 : 1;
-        if (h.facing === undefined) {
+        if (art.fixedFacing) {
+          // A thing, not a creature: nothing to look at, so no decision to take and no `h.facing` to commit.
+        } else if (h.facing === undefined) {
           commitFacing(h, wantFacing);
           h.facingRest = 0;
         } else if (wantFacing !== h.facing && (h.facingRest ?? 0) <= 0) {
@@ -5103,7 +5105,7 @@ export function paintHazards(
          * mirror silently rotates the telegraph instead of breaking it, which is exactly the failure that has no
          * symptom. Opting out of both the turn and the mirror is one decision, and `volleyAligned` carries it.
          */
-        const mirror = art.volleyAligned ? 1 : hazardMirror(h);
+        const mirror = art.volleyAligned || art.fixedFacing ? 1 : hazardMirror(h);
         sprite.scale.set(unit * mirror, isYFlipped(sprite) ? -Math.abs(unit) : Math.abs(unit));
         /**
          * SPIN, for a kind whose picture is a radial thing, and NOTHING AT ALL for every other kind.

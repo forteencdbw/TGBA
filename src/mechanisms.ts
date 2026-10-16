@@ -1234,6 +1234,11 @@ export interface Mechanisms {
        */
       facesPlayer?: boolean;
       /**
+       * The picture is never mirrored: not towards the player, not towards where it is heading. For things that are not
+       * creatures (a mineral pellet) -- `facesPlayer: false` is not enough for those, because it still mirrors by heading.
+       */
+      fixedFacing?: boolean;
+      /**
        * Radians per second the PICTURE turns about its own centre. Absent or 0 means it does not turn.
        *
        * Distinct from `KIND_TUNING[kind].spin`, which the drawn bodies use for their own shapes; this one turns the
@@ -3063,6 +3068,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
         // catch a string or a NaN, both of which would reach the sprite's `rotation` and turn the arms into nothing.
         if (r.volleyBaseRadians !== undefined && (typeof r.volleyBaseRadians !== 'number' || !Number.isFinite(r.volleyBaseRadians))) return false;
         if (r.facesPlayer !== undefined && typeof r.facesPlayer !== 'boolean') return false;
+        if (r.fixedFacing !== undefined && typeof r.fixedFacing !== 'boolean') return false;
         if (r.attackSeconds !== undefined && (typeof r.attackSeconds !== 'number' || !Number.isFinite(r.attackSeconds))) return false;
         /**
          * EITHER a single look or a LIST of them, and never a quiet mixture of the two.
