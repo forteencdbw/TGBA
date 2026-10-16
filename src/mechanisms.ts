@@ -2017,6 +2017,22 @@ export interface Mechanisms {
     music: {
       volume: number;
       tracks: Record<string, MusicTrackConfig>;
+      /**
+       * The main menu's music: ONE recorded track, streamed, played only while the menu is up (see `src/menuMusic.ts`).
+       *
+       * Unlike the per-level recipes it is a file, because it is a piece somebody composed rather than a mood to be
+       * synthesised.
+       */
+      menu: {
+        /** How loud, 0..1, before the player's volume. Separate from `volume`, which is the level synths'. */
+        volume: number;
+        /** Seconds to fade in when the menu appears, and again after each loop. */
+        fadeInSeconds: number;
+        /** Seconds to fade out when the player leaves the menu. */
+        leaveFadeSeconds: number;
+        /** Seconds before the end of the track at which it fades out, to loop back to the start. */
+        loopFadeSeconds: number;
+      };
     };
     /**
      * The background bed's level relative to the one-shot sounds.
@@ -3443,6 +3459,10 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'summary.buttonColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'summary.buttonLabel', check: (v) => typeof v === 'string' && v.length >= 1, describe: 'a non-empty label' },
   { path: 'audio.music.volume', check: anyNumber, describe: 'a level' },
+  { path: 'audio.music.menu.volume', check: anyNumber, describe: 'a level, 0..1' },
+  { path: 'audio.music.menu.fadeInSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'audio.music.menu.leaveFadeSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'audio.music.menu.loopFadeSeconds', check: anyNumber, describe: 'seconds' },
   {
     path: 'audio.music.tracks',
     check: (v) =>

@@ -29,6 +29,7 @@ import { suctionRadiusFraction } from './suction';
 import { BackSchoolLayer } from './backSchoolLayer';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
+import { MenuMusic } from './menuMusic';
 import { Sprite } from 'pixi.js';
 import { allAssetNames, assetTextureNow, loadAssetTexture, preloadAssets } from './assets';
 import { ParticleField } from './particles';
@@ -111,11 +112,16 @@ class Game {
   /**
    * The level's music.
    *
-   * Starts and stops with the RUN rather than with the page: the menu is silent, each level has its own recipe (see
+   * Starts and stops with the RUN rather than with the page: each level has its own recipe (see
    * config/mechanics.json5's music.tracks), and the settings volume applies to it through the same master bus as
-   * every effect.
+   * every effect. The menu is silent as far as THIS is concerned; its track is `menuMusic`, below.
    */
   private readonly music = new Music();
+  /**
+   * The main menu's recorded track. Plays only while the menu is up, so it is the one piece of music that is not tied to
+   * a run -- see `src/menuMusic.ts`.
+   */
+  private readonly menuMusic = new MenuMusic();
   /** The end-of-run panel, shown once the last level's bubble has left the water. */
   private readonly summary = new RunSummary();
   /** Seconds of play across the whole RUN, which is what the summary reports -- lapsed is per level. */
@@ -598,6 +604,8 @@ class Game {
     // The first real gesture is the only moment a browser lets audio start. Doing it here rather than
     // at boot is why the game is not silently muted on a phone.
     audio.unlock();
+    // Inside the gesture, because iOS only lets the first `play()` through when it is made in one.
+    this.menuMusic.update(0, this.run.phase === 'menu', audio.musicBus());
     this.logPointer('down', pointerId, x, y);
     this.pointerPositions.set(pointerId, { x, y });
 
@@ -859,6 +867,11 @@ class Game {
   /** Test hook: the level music, so a probe can read whether a track is running and which. */
   get musicRef(): Music {
     return this.music;
+  }
+
+  /** Test hook: the menu track's fade and playback state. */
+  get menuMusicRef(): MenuMusic {
+    return this.menuMusic;
   }
 
   /** Test hook: the run's conductive charge (LEVEL 3), 0 to `hazards.charge.max`. */
@@ -1948,6 +1961,7 @@ class Game {
      * is handled here too, and muting while the settings panel is open is exactly when someone would want it.
      */
     this.input.update();
+    this.menuMusic.update(dt, this.run.phase === 'menu', audio.musicBus());
     if (this.run.phase !== 'menu' && this.input.consumeMute()) this.audioMuted = audio.toggleMute();
 
     /**

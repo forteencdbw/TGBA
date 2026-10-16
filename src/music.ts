@@ -4,9 +4,9 @@
  * ---------------------------------------------------------------------------------------------
  * WHY THERE ARE NO AUDIO FILES
  * ---------------------------------------------------------------------------------------------
- * This project has no binary assets at all: every sound it makes is generated with WebAudio (see `src/audio.ts`), and
- * the whole game is a few hundred kilobytes of TypeScript and JSON5. Shipping six music tracks as files would multiply
- * that by orders of magnitude, and would also mean six things to keep in sync with a level list that is edited as data.
+ * The level music is generated with WebAudio (see `src/audio.ts`) rather than loaded. (The one exception is the main
+ * menu's recorded track, which lives in `src/menuMusic.ts`.) Shipping six music tracks as files would multiply
+ * the download by orders of magnitude, and would also mean six things to keep in sync with a level list that is edited as data.
  *
  * So a track is a small recipe -- a key, a tempo, a waveform, a chord progression and a pattern -- and the sound is
  * built from it. That also makes the music TUNABLE in the same way everything else here is: swapping a level's mood is

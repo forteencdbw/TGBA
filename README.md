@@ -273,6 +273,24 @@ levels/03-jelly-forest.json5 (level "jelly-forest"): paths.weave.points[0].y sho
 
 数值都在 `config/mechanics.json5` 的 `menu.backdrop` 段；单位是"屏幕宽度的比例"或"每秒多少屏"，所以换窗口大小观感不变。
 
+### 主菜单的背景音乐（一首录好的曲子）
+
+关卡里的音乐是合成的（`src/music.ts`），**主菜单是项目里唯一一首录好的曲子**：`src/assets/audio/abyssal-menu.mp3`，
+约 190 秒、2.3 MB，播放逻辑在 `src/menuMusic.ts`。
+
+- **只在主菜单界面播**（`phase === 'menu'`，设置面板从菜单打开时不打断）。点开始后淡出 `leaveFadeSeconds`（1 秒）让位给关卡音乐，
+  回到菜单从头淡入。
+- **边下边播，第一次点击后才开始下载**：整首解码成 PCM 要占约 67 MB 内存，手机上不划算；浏览器在第一次手势之前也不允许出声。
+  第一次 `play()` 放在指针按下的那一刻，是因为 iOS 只放行手势里发起的那一次。
+- **循环靠淡入淡出，不追求样本级无缝**（MP3 本来也保证不了）：距曲末 `loopFadeSeconds`（2 秒）时淡出，回到开头再淡入。
+  进入、离开、循环三件事共用同一个 0..1 的包络。
+- 音量走游戏总线，**设置里的音量和静音键都管它**；再乘 `audio.music.menu.volume`（默认 0.5，没做过响度处理，
+  原曲峰值 −3.9 dBFS、平均 −15.7 dBFS，听着偏响就调这个数）。四个旋钮都在 `config/mechanics.json5` 的 `audio.music.menu`。
+
+**导出参数**（原始 WAV 太大、**不入库**，所以这一节就是它的记录）：`scripts/encode-menu-music.py <wav>`，
+MP3、96 kbps CBR、联合立体声、保持源文件的 48 kHz（不重采样）、不裁剪、不改响度。需要 `pip install --user lameenc numpy`。
+换曲子就是用同一个脚本重新导出，覆盖这个文件。
+
 ### 鱼群（Boids）：前景和背景
 
 关卡里一个刷怪块写 `boids: true`（配 `kind: 'fish'` 和 `path`），这一块的 `count` 条鱼就是一个**鱼群**：路径驱动一个看不见的
