@@ -35,7 +35,7 @@
     tint: 0x7a1f18,
     tintStrength: 0.14
   },
-  scrollLength: 2500,
+  scrollLength: 1700,
 
   // ---------------------------------------------------------------------------------------------
   // 路径（spline）：让一串鱼沿同一条曲线游过屏幕
@@ -235,7 +235,7 @@
   },
 
   boss: {
-    at: 2300,
+    at: 1500,
     health: 140,
     // 攀附在巨大热液烟囱上的蟹：横向挥螯、喷矿物颗粒、堵住喷口制造一次猛烈爆发。
     name: '烟囱蟹王',
@@ -245,98 +245,101 @@
     kind: 'boss-crab'
   },
 
-  // 教学关：慢（30 m/s = 50 秒跑完）。
-  scrollSpeed: 30,
+  // 教学关：慢。这个数是**名义速度**——这一关真正用的是下面的曲线，它只作为兜底（曲线缺失时才会被读到）。
+  scrollSpeed: 33,
+  // ---------------------------------------------------------------------------------------------
+  // 节奏曲线：**一关之内也有一条形状**
+  // ---------------------------------------------------------------------------------------------
+  //
+  // 关键帧写成 `[走过多少米, 速度]`，中间线性插值。**用米而不是秒**，所以这一关的内容一个都没动——
+  // 变的是它们**什么时候**到，不是它们在哪。
+  //
+  // 这条形状是 28 → 33 → 42：开头慢下来把"往上、吃泡泡"讲清楚，后段醒过来，最后一次爆发（第 6 屏）
+  // 正好在最快的区间里。每屏秒数因此从 6.8 秒降到 4.6 秒——**那就是这一关在时间轴上的形状**。
+  scrollSpeedCurve: [
+    [0, 28],
+    [500, 33],
+    [1400, 42],
+  ],
   // 生物在**屏幕上**的下落速度（米/秒）。以前它和 scrollSpeed 是同一个数：改关卡节奏会连带改每条鱼的速度。
   // 现在 scrollSpeed 只管关卡推进（时间线、进度、背景视差），生物的速度只看这个。写的是这一关原来的数值，所以屏幕上没变。
   driftSpeed: 30,
   playerLeadLimit: 110,
+  // ---------------------------------------------------------------------------------------------
+  // 三条横幅 = **三次爆发**（见下面 `spawns` 里的 S3 / S5 / S6）
+  // ---------------------------------------------------------------------------------------------
+  //
+  // 它们以前是均匀插在关卡里的时间戳（1100 / 700 / 300 米），和后两条正好落在这一关原来那段 35 秒的
+  // 空水里——横幅在什么都没有的时候弹出来。现在**横幅出现的地方就是该有一波的地方**：同一个概念，
+  // 两种表达。`depth` 是从**海面**量的（所以它随上升而减小），换算成推进米数是 `scrollLength - depth`。
+  //
+  // 三个名字按深度顺序对应三次爆发的**内容**：最深那次起矿物（黑烟囱群）、中间那次有管虫墙（管虫丛）、
+  // 最后一次是喷口（热流区）。
   landmarks: [
-    { depth: 1100, label: '黑烟囱群' },
-    { depth: 700, label: '管虫丛' },
-    { depth: 300, label: '热流区' },
+    { depth: 1100, label: '黑烟囱群' }, // 600m —— 爆发一
+    { depth: 720, label: '管虫丛' }, // 980m —— 爆发二
+    { depth: 540, label: '热流区' }, // 1160m —— 爆发三
   ],
+  // ---------------------------------------------------------------------------------------------
+  // 刷怪表：**安静开场 → 平滑上升 → 三次爆发（间隔 2 屏 → 1 屏 → 1 屏）→ 进 BOSS 前收一屏**
+  // ---------------------------------------------------------------------------------------------
+  //
+  // `S<n>` 是每一块落在第几屏（一屏 190 米，见 `WORLD_HEIGHT`）。形状对不对**看读数**，不要凭感觉：
+  //
+  //     node scripts/probe-pacing.mjs
+  //
+  // 它打出这一关的"每屏威胁"序列。这一关改之前是 `9 10 35 30 38 33 15 0 0 0 0 0 0 0`——
+  // **一半挤爆、一半空掉**；改完应当是中间高、两头低，最后一屏是 0（留给 BOSS 前那一口气）。
+  //
+  // 三次爆发越来越近（S3 → S5 → S6），因为"突然全来了"这件事**靠的是它来得比上一次快**，
+  // 而不是靠底噪一点点升高。
   spawns: [
-    // --- 0-250m：先教形状。追得到的气泡，和第一批随热流上来的矿物颗粒。 ---
-    { at: 30, span: 200, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.4, 0.5, 0.35] },
-    // 第一批颗粒是**从下面上来的**：这一关第一个新方向。
-    { at: 120, span: 60, count: 4, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
-    // **射水鱼**第一位枪手的教学位：3 点血打得跑，是"会开枪的东西也可以被赶走"的第一课。
-    // 放在 120m 矿物颗粒之后、金枪鱼之前，单独一条，让"水里有会开枪的东西"读得出来。
-    { at: 170, kind: 'archer', x: 0.5 },
-    { at: 150, kind: 'tuna', x: 0.9 },
-    { at: 210, kind: 'tuna', x: 0.0 },
-    { at: 260, kind: 'tuna', x: 0.2 },
+    // --- S0  安静开场：只有食物和一点颗粒。玩家在这里学"往上、吃泡泡"。
+    { at: 30, span: 150, count: 10, kind: 'bubble', arrange: 'spread', amplitude: 0.22, sizes: [0.4, 0.5, 0.35] },
+    // 第一批颗粒**从下面上来**：这一关第一个新方向。
+    { at: 120, span: 60, count: 3, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
 
-    // --- 250-500m：第一个喷口。它单独出现，因为它是这一关的招牌机制。 ---
-    //
-    // **火山只出现在泳道的左墙或右墙上**（`side`），喷口只有三种朝向（`aim`：斜向上 / 横向 / 斜向下），
-    // 朝向是**相对它自己那面墙**算的——所以"斜向上"在左右两边都读作"朝上、朝泳道里"。
-    //
-    // **第一个给斜向上**：斜向的水平覆盖是 `长度 / √2`，够不到另一面墙，所以"往另一边挪"躲得掉。
-    // 这是这一关先教的那一半。横贯整条泳道的那种（760）留到后面——那一种横向没地方去，只能等。
-    //
-    // 注意火山**没有 `x`**：位置由 `side` 推出来（贴着那面墙）。格式上没有地方写"火山在泳道中间"。
-    { at: 320, kind: 'vent', side: 'left', aim: 'up' },
-    { at: 340, span: 50, count: 3, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
-    // 第一串"鱼贯"：从右边进来、上下摆两次、从左边出去。单独出现，因为它是新形状。
-    //
-    // **它们从曲线的起点出发**：整串一起在起点（画外）待命，然后每隔 `pathSpacingSeconds` 走一条，
-    // 所以看到的是"一群鱼游进来"，而不是"几条鱼凭空出现在曲线的这个位置"。
-    // **这个数就是鱼群的松紧**：调小更密、调大更散；`count` 决定的是这一串有多长，不是有多密。
-    { at: 400, kind: 'fish', count: 6, path: 'weave', x: 1, pathSpacingSeconds: 0.5 },
-    // 最长的一串（10 条），走的是一条**从左下角升到右上角**的斜线：横跨整块玻璃，最像"一队鱼从你身边游过"。
-    // 它和上面那串前后脚进场，两条不同形状的鱼队同时在场——"这里是有编队的"才读得出来。
-    { at: 455, kind: 'fish', count: 10, path: 'riseLeft', x: 0.2, pathSpacingSeconds: 0.5 },
-    { at: 430, kind: 'shrimp', x: 0.2, from: 'left', depth: 0.6 },
-    { at: 470, kind: 'shrimp', x: 0.8, from: 'right', depth: 0.55 },
+    // --- S1  起：一串会游动的鱼（`weave`），和一只盲虾——它慢，"可以不躲"的那一课。
+    { at: 200, span: 90, count: 5, kind: 'bubble', arrange: 'spread', amplitude: 0.2, sizes: [0.4, 0.5] },
+    { at: 240, kind: 'shrimp', x: 0.5 },
+    { at: 290, kind: 'fish', count: 6, path: 'weave', x: 0.5, pathSpacingSeconds: 0.35 },
+    // **喷口第一次登场，而且是早的**：它的三种朝向（`up` / `down` / `flat`）是这一关的招牌课，
+    // 所以第一次放在一次爆发**之前**的安静里——玩家必须先见过它，才认得出爆发里那一次。
+    // 顺序按难度：`up`（往旁边挪就行）在第二屏，`down` 在回落那屏，`flat`（横贯泳道、只能等时机）留到最后一次爆发。
+    { at: 340, kind: 'vent', side: 'left', aim: 'up' },
 
-    // --- 500-800m：管虫丛。路被一丛丛管子切窄，而它们是活着的东西，会缩回去。 ---
-    { at: 540, kind: 'tube', count: 4, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.2 },
-    { at: 560, kind: 'vent', side: 'right', aim: 'down' },
-    { at: 600, kind: 'crab', x: 0.45 },
-    { at: 640, kind: 'tube', count: 5, arrange: 'barrier', gapAt: 0.68, gapWidth: 0.2 },
-    { at: 680, span: 60, count: 5, kind: 'mineral', arrange: 'spread', x: 0.4, from: 'bottom' },
-    // 第三串：**从屏幕右侧中央进来、朝上拐、从顶边出去**。前两串都是横着过去的，这一串是唯一"往上游走"的，
-    // 所以它读起来是"它们要走了"，而不是"它们要撞过来"。
-    { at: 700, kind: 'fish', count: 7, path: 'rightToTop', x: 1, pathSpacingSeconds: 0.4 },
-    { at: 720, kind: 'shrimp', count: 2, arrange: 'spread', span: 24, x: 0.25, from: 'left', depth: 0.5 },
-    // **横向喷流：升阶位。** 它横贯整条泳道，所以"往另一边挪"这次不管用——墙在两边，火从一边铺到另一边。
-    // 解法换成**时机**：把气泡往下压，等它喷完这一轮再过去。这是这一关第一次用到纵向。
-    { at: 760, kind: 'vent', side: 'left', aim: 'flat' },
+    // --- S2  起：**金枪鱼**——第一个会追你的，单独一条出场，让"它冲着我来了"读得出来。
+    { at: 400, span: 70, count: 4, kind: 'mineral', arrange: 'spread', x: 0.5 },
+    { at: 440, kind: 'tuna', x: 0.85 },
+    { at: 470, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'left', depth: 0.6 },
+    { at: 520, kind: 'crab', x: 0.5 },
 
-    // --- 800-1100m：两个喷口 + 管虫，开始要求连续横移。 ---
-    { at: 820, kind: 'tube', count: 5, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.19 },
-    { at: 870, kind: 'vent', side: 'right', aim: 'up' },
-    // 第二串：换成**半圆**（左 1/4 起、拱过屏幕正中、到左 3/4 收），和 870 的喷口配着读——
-    // 870 是斜向的，躲它是横向挪；而这条弧正好也在玻璃上划一道横线，两件事指的是同一个动作。
-    { at: 890, kind: 'fish', count: 8, path: 'arcLeft', x: 0.25, pathSpacingSeconds: 0.5 },
-    // **深海鱼（灯笼鱼）**：这一关一共 10 点血，比小鱼小虾硬得多，所以它出现在中段以后，而且单独放——
-    // 它的触角是这一关唯一会发光的东西，混在别的敌人里就白瞎了。
-    { at: 520, kind: 'angler', x: 0.28, from: 'left' },
-    { at: 760, kind: 'angler', x: 0.72, from: 'right' },
-    { at: 1010, kind: 'angler', x: 0.5 },
-    // 靠近 BOSS 前再来一条，作为"要打 BOSS 了"的提示。
-    { at: 1180, kind: 'angler', x: 0.35, from: 'left' },
-    { at: 900, kind: 'crab', x: 0.75 },
-    { at: 940, span: 80, count: 6, kind: 'mineral', arrange: 'spread', amplitude: 0.18, x: 0.5, from: 'bottom' },
-    // 第二条射水鱼：中段复习位，和灯笼鱼同一段——一个用触角骗你，一个用子弹追你。
-    { at: 960, kind: 'archer', x: 0.35 },
-    { at: 990, kind: 'shrimp', count: 2, arrange: 'spread', span: 20, x: 0.7, from: 'right', depth: 0.45 },
-    { at: 1030, kind: 'tube', count: 5, arrange: 'barrier', gapAt: 0.25, gapWidth: 0.19 },
-    { at: 1055, kind: 'fish', count: 5, path: 'dive', x: 0.5, pathSpacingSeconds: 0.35 },
-    { at: 1080, kind: 'vent', side: 'left', aim: 'down' },
-    // **电鳗**：这一关唯一的"射手"。它枪打不死（0 血），只能躲——躲得漂亮（子弹擦边）有突变值拿。
-    // 单独放在进 BOSS 前的空档里，让"水里出现了会放电的东西"读得出来；被它的闪电碰到会短暂反向，教学关只放一条。
-    { at: 1120, kind: 'eel', x: 0.6 },
+    // --- S3  **爆发一 · 黑烟囱群**：一串鱼从画外斜插上来，紧接着热流把矿物颗粒推上来。
+    { at: 600, kind: 'fish', count: 12, path: 'riseLeft', x: 0.0, pathSpacingSeconds: 0.28 },
+    { at: 650, span: 70, count: 5, kind: 'mineral', arrange: 'spread', x: 0.45, from: 'bottom' },
 
-    // --- 1100-1300m：进 BOSS 前的最后一段。给一点食物，然后压力上来。 ---
-    { at: 1160, span: 70, count: 7, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.45, 0.6, 0.5] },
-    { at: 1220, kind: 'crab', count: 2, arrange: 'line' },
-    // 进 BOSS 前的最后一道：**两路合围**。同一个 `at` 上左右各一串（`pincerLeft` / `pincerRight`），
-    // 它们从画外斜插到屏幕正中再并流向底，中间只留一条很窄的时间窗口——BOSS 之前最后一次"读窗口"。
-    { at: 1240, kind: 'fish', count: 4, path: 'pincerLeft', x: 0.0, pathSpacingSeconds: 0.3 },
-    { at: 1240, kind: 'fish', count: 4, path: 'pincerRight', x: 1.0, pathSpacingSeconds: 0.3 },
-    { at: 1250, kind: 'shrimp', count: 3, arrange: 'spread', span: 30, x: 0.5, from: 'left', depth: 0.6 },
+    // --- S4  回落：一只鮟鱇 + 一只**向下喷的喷口** + 两只盲虾。刚被打过一顿，这一屏让你把位置找回来；
+    // 喷口放在回落里（不在爆发里）是有意的：它是这一关的招牌危险物，每一次见新朝向都要有一次能看懂的见面。
+    { at: 800, kind: 'angler', x: 0.5 },
+    { at: 850, kind: 'vent', side: 'right', aim: 'down' },
+    { at: 890, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', depth: 0.55 },
+
+    // --- S5  **爆发二 · 管虫丛**：比第一次大，而且这一屏的重点是那排墙——你必须**改道**。
+    { at: 980, kind: 'fish', count: 12, path: 'arcLeft', x: 0.2, pathSpacingSeconds: 0.28 },
+    { at: 1010, kind: 'archer', x: 0.5 },
+    { at: 1040, kind: 'tube', count: 3, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.2 },
+
+    // --- S6  **爆发三 · 热流区（最高点）**：两路合围 + 喷口 + 枪手 + 最后一排管虫墙。
+    // 间隔已经从 2 屏缩到 1 屏，到这里不再留余量——这是"突然全来了"最响的一次。
+    { at: 1160, kind: 'fish', count: 12, path: 'pincerLeft', x: 0.0, pathSpacingSeconds: 0.26 },
+    { at: 1160, kind: 'fish', count: 6, path: 'pincerRight', x: 1.0, pathSpacingSeconds: 0.26 },
+    // **横向喷流**：它从一边铺到另一边，所以"往旁边挪"这次不管用——解法换成**时机**（压住气泡等它喷完）。
+    { at: 1250, kind: 'vent', side: 'left', aim: 'flat' },
+    { at: 1290, kind: 'eel', x: 0.5 },
+    { at: 1320, kind: 'tube', count: 3, arrange: 'barrier', gapAt: 0.28, gapWidth: 0.19 },
+
+    // --- S7  收一屏：**只有食物，没有一个危险物**。BOSS 之前把手腾出来——血看回来、技能留着、怒气想清楚。
+    // 这一段是刻意的：没有它，玩家会带着上一波的慌乱进 BOSS 战，而那场仗要打二十秒以上。
+    { at: 1360, span: 120, count: 8, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.5, 0.6, 0.45] },
   ],
 }

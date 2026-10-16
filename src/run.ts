@@ -74,14 +74,6 @@ export interface WorldView {
  * and the rules are public because the game's `step` still drives them one by one. When the phase machine moves in as
  * well (a smaller job than this one), they become private and the interface becomes `step` plus the events.
  */
-/**
- * What to call each of a level's beats.
- *
- * The beats are announced rather than generated: the timeline decides WHAT is there, and this decides what to call it.
- * Indexed by landmark, so a level states its own beats through `Level.landmarks`.
- */
-const EVENT_CALLOUTS = ['鱼群来了', '气泡潮', '爆发'];
-
 /** Slow-motion pop after the bubble is destroyed, before the next run starts. */
 export const BURST_SECONDS = 1.5;
 
@@ -236,6 +228,16 @@ export class Run {
    * differentiated, and passed down to the three simulations that need it.
    */
   cameraRise = 0;
+  /**
+   * The pace the level is running at RIGHT NOW, in metres per second.
+   *
+   * A field rather than a call to `speedAt` at each reader, because one frame must hand the SAME number to the scroll and
+   * to the collectable field: the diagnostics carry a contract that those two agree (see `scrollSpeedMps` /
+   * `fieldScrollSpeedMps`), and with a pace CURVE there is no single constant left to compare them against. Read from here
+   * by anything that needs "how fast is the water going", so a level with no curve answers with its constant and a level
+   * with one answers with the speed at the depth it has reached.
+   */
+  paceMps = 0;
   timelineEmitted = 0;
   spawnLog: SpawnRecord[] = [];
   spawnedBySide: Record<EntrySide, number> = { top: 0, left: 0, right: 0, bottom: 0 };
@@ -1572,13 +1574,21 @@ export class Run {
     this.player.volume = this.talentEffects.startVolume;
     this.stats.maxVolume = this.talentEffects.startVolume;
   }
-  fireEvent(index: number, label: string): void {
+  fireEvent(label: string): void {
     this.eventsSeen++;
     this.lastEvent = { label, at: this.elapsed };
 
     // A banner and a sound for each beat. No hazards: the level's timeline already placed them, and the
     // job here is to tell the player what they are swimming into.
-    this.banner(`${label}  ·  ${EVENT_CALLOUTS[index] ?? ''}`.trim());
+    /**
+     * The banner is the level's OWN label and nothing else.
+     *
+     * It used to be `label · <one of three hardcoded strings>`, appended by INDEX: `['鱼群来了', '气泡潮', '爆发']`. Those
+     * three were written when the game had one stretch of water and three beats, and by the time there were six levels with
+     * three landmarks each they were saying the same three things in all of them -- "管虫丛 · 鱼群来了" over a screenful
+     * of tube worms. `label` is written by the level and already says what the beat IS.
+     */
+    this.banner(label);
     this.sound('level.banner');
   }
   /**
@@ -1599,7 +1609,7 @@ export class Run {
       if (this.eventsFired.has(i)) continue;
       if (depth > mark.depth) continue; // landmarks are measured from the surface, so depth DECREASES
       this.eventsFired.add(i);
-      this.fireEvent(i, mark.label);
+      this.fireEvent(mark.label);
     }
   }
   /**

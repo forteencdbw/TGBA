@@ -5,7 +5,7 @@ import { bubbleLook } from './bubbleLook';
 import { hasControl } from './bubbleTypes';
 import type { HazardKind } from './hazards';
 import type { LateralAuthority } from './lateral';
-import { LEVEL, TIMELINE, currentSpawnBlocks, secondsPerScreenSeries } from './levels';
+import { LEVEL, TIMELINE, currentSpawnBlocks, secondsPerScreenSeries, threatPerScreenSeries } from './levels';
 import { mech } from './mechanisms';
 import { rageFraction, rageStageName } from './rage';
 import { stageName, stageRadiusFraction, type StageAppearance } from './stages';
@@ -74,6 +74,14 @@ export function diagnosticsOf(g: GameSnapshot): {
       /** The save: which levels are cleared. There is no stored selection -- see `src/progress.ts`. */
       cleared: string[];
       secondsPerScreen: number[];
+      /**
+       * How much room each screenful's content takes away, from `pacing.threat`.
+       *
+       * The vertical axis to `secondsPerScreen`'s horizontal one: that says how fast the level goes past, this says how
+       * much is happening while it does. Both are series, because pacing is a shape and a mean of a shape describes none
+       * of it.
+       */
+      threatPerScreen: number[];
     };
     playerVx: number;
     playerVy: number;
@@ -305,6 +313,7 @@ export function diagnosticsOf(g: GameSnapshot): {
          * a level varies its pace.
          */
         secondsPerScreen: secondsPerScreenSeries(LEVEL).map((v) => +v.toFixed(1)),
+        threatPerScreen: threatPerScreenSeries(LEVEL),
       },
       /** The player's own motion. Vertical and horizontal are symmetric now. */
       playerVx: +g.player.vx.toFixed(4),

@@ -513,6 +513,22 @@ export interface Mechanisms {
    * is the dodge's own helping hand. See `config/mechanics.json5` for the reasoning behind each number.
    */
   /**
+   * The numbers that describe PACING rather than any one mechanic: how much room each thing takes away.
+   *
+   * Nothing here changes what any creature does -- a weight is a reading, not a rule. It exists so that "this stretch is
+   * too crowded" is a number on a curve instead of an impression, which is what makes pacing tunable by hand.
+   */
+  pacing: {
+    /**
+     * How much room each kind of thing takes away, 0-3. See the config for what each band means.
+     *
+     * Keyed by every spawnable kind -- the collectable, every hazard, every obstacle -- and a missing row is a boot
+     * failure, because a kind with no weight does not exist as far as the curve is concerned, which is indistinguishable
+     * from "this level is quiet".
+     */
+    threat: Record<string, number>;
+  };
+  /**
    * The one global timescale, and the two beats that drive it.
    *
    * Shared shape, separate numbers: both are "hard to `factor`, hold for `slowSeconds`, then spend `recoverSeconds`
@@ -2958,6 +2974,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.slowFactor', check: anyNumber, describe: 'a number' },
   { path: 'hazards.slowSeconds', check: anyNumber, describe: 'a number of 0 or more' },
   { path: 'hazards.health', check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0), describe: 'an object of hazard kind to hit points, e.g. { fish: 3, jelly: 0 }; 0 means the bullets pass through' },
+  {
+    path: 'pacing.threat',
+    check: (v) => isNumberTable(v) && Object.values(v as Record<string, number>).every((n) => n >= 0 && n <= 3),
+    describe: 'an object of spawnable kind to a threat weight, 0-3',
+  },
   /**
    * The hitbox multiplier table. The one rule in this file that accepts an EMPTY object, and that is not laxness --
    * empty means "no creature overrides its shape", which is the default rather than an omission. It still checks the
@@ -4098,6 +4119,32 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
       'hazards.health must state hit points for every hazard kind (0 = immune to the bullets)' +
         (missing.length ? `; missing: ${missing.join(', ')}` : '') +
         (extra.length ? `; not a hazard kind: ${extra.join(', ')}` : ''),
+    );
+  }
+}
+
+/**
+ * Every spawnable kind must state its threat weight.
+ *
+ * The list is derived from the config rather than written down: the collectable (spelled out, because it is not a creature
+ * and lives in no hazard table), every hazard kind, and every obstacle kind. Bosses are included even though a level never
+ * places one in a spawn block -- requiring them keeps this check from needing a "which kinds are bosses" predicate, and
+ * that question already has two answers elsewhere (`isBossKind`, and the name prefix in `src/soundIds.ts`).
+ *
+ * Why a missing row is a boot failure rather than a default: a kind with no weight contributes nothing to the curve, and
+ * "this stretch is empty" and "I forgot to score this creature" read identically. The table is only worth having if the
+ * curve can be trusted.
+ */
+{
+  const rows = Object.keys(mech.pacing.threat).sort();
+  const kinds = ['bubble', ...Object.keys(mech.hazards.health), ...Object.keys(mech.obstacles.health)].sort();
+  const missing = kinds.filter((k) => !rows.includes(k));
+  const extra = rows.filter((k) => !kinds.includes(k));
+  if (missing.length || extra.length) {
+    fail(
+      'pacing.threat must state a weight for every kind a level can place' +
+        (missing.length ? `; missing: ${missing.join(', ')}` : '') +
+        (extra.length ? `; not a spawnable kind: ${extra.join(', ')}` : ''),
     );
   }
 }
