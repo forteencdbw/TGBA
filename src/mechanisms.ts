@@ -629,6 +629,13 @@ export interface Mechanisms {
        * is zero does nothing.
        */
       shotgun: ShotgunConfig;
+      /**
+       * The volatile form's deck: the armour's three dials and the burn's one.
+       *
+       * Not a branch the way the shotgun is -- this form ships holding armour and aura, so these cards sharpen what
+       * it already does rather than turning something on. That is why the cards have no `available` gate.
+       */
+      rage: RagePoolConfig;
     };
     /** The gauge under the resource line. The same knobs the rage gauge has. */
     gauge: {
@@ -2296,6 +2303,28 @@ export interface ShotgunConfig {
   knockbackPerPick: number;
 }
 
+/**
+ * The volatile form's four cards. See `mech.mutation.pool.rage`.
+ *
+ * The armour's interval is the one MULTIPLIER here, and it is the one that needs a floor: five picks put it at a
+ * third of the base, and an armour that arrives every second is not a metronome any more but contact immunity.
+ * The rest are additions, and additions cap themselves -- the player's card slots are the ceiling.
+ */
+export interface RagePoolConfig {
+  /** 怒甲更快: the plate interval is multiplied by (1 - this) per pick. */
+  plateSecondsPerPick: number;
+  /** The floor on that, as a fraction of the base interval. */
+  plateSecondsFloor: number;
+  /** 多存一层: plates the cap rises by, per pick. */
+  plateMaxPerPick: number;
+  /** The ceiling on that cap. */
+  plateMaxCap: number;
+  /** 破甲更深: the vulnerability multiplier rises by this, per pick. */
+  breakPerPick: number;
+  /** 灼烧更烈: damage per aura tick rises by this, per pick. */
+  burnPerPick: number;
+}
+
 /** One level's music, as the config writes it. See `src/music.ts` for what each field does to the sound. */
 export interface MusicTrackConfig {
   rootHz: number;
@@ -2701,6 +2730,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'mutation.pool.shotgun.narrowPerPick', check: anyNumber, describe: 'a fraction of the cone' },
   { path: 'mutation.pool.shotgun.narrowFloor', check: anyNumber, describe: 'a fraction of the base cone' },
   { path: 'mutation.pool.shotgun.knockbackPerPick', check: anyNumber, describe: 'a fraction of the base knockback' },
+  { path: 'mutation.pool.rage.plateSecondsPerPick', check: anyNumber, describe: 'a fraction of the plate interval' },
+  { path: 'mutation.pool.rage.plateSecondsFloor', check: anyNumber, describe: 'a fraction of the base interval' },
+  { path: 'mutation.pool.rage.plateMaxPerPick', check: anyNumber, describe: 'plates' },
+  { path: 'mutation.pool.rage.plateMaxCap', check: anyNumber, describe: 'plates' },
+  { path: 'mutation.pool.rage.breakPerPick', check: anyNumber, describe: 'a multiplier on the vulnerability' },
+  { path: 'mutation.pool.rage.burnPerPick', check: anyNumber, describe: 'damage per aura tick' },
   ...popupRules('mutation.callouts'),
   { path: 'mutation.first', check: anyNumber, describe: 'the cost of the first level' },
   { path: 'mutation.growth', check: anyNumber, describe: 'the per-level cost multiplier' },

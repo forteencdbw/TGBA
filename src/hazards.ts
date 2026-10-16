@@ -1867,11 +1867,15 @@ const CONTACT_SHAPES: Partial<Record<HazardKind, (h: Hazard, ctx: HazardContext)
  *
  * The multiplier is COPIED onto the creature here rather than read at damage time, so the mark is a fact about the
  * moment it landed -- see the note on `Hazard.vulnerableMultiplier`.
+ *
+ * It is a PARAMETER with the config's value as its default, rather than a plain config read, because the volatile
+ * form's 破甲更深 card moves it per run. The default keeps the rule callable on its own -- a probe marking a creature
+ * is asking about the mark, not about somebody's deck.
  */
-export function markVulnerable(h: Hazard, seconds: number): void {
+export function markVulnerable(h: Hazard, seconds: number, multiplier: number = mech.angry.armour.vulnerableMultiplier): void {
   if (seconds <= 0) return;
   h.vulnerableLeft = seconds;
-  h.vulnerableMultiplier = mech.angry.armour.vulnerableMultiplier;
+  h.vulnerableMultiplier = multiplier;
 }
 
 /**

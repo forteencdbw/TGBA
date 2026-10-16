@@ -2621,10 +2621,12 @@ class Game {
     // its first frame before the player has seen the cards.
     this.input.consumeLevelUpChoice();
     /**
-     * The branch node is a different QUESTION, and the panel's title is where that is said: the run's first
-     * level-up offers the three routes, every one after it draws from the pool the route left behind.
+     * One title for every level-up, because there is one question now.
+     *
+     * It used to read 选择你的路线 when the run had no route yet, and that state no longer exists: the form is settled
+     * on the picker before the water, so every panel in a run draws from the pool that form left behind.
      */
-    this.levelup.openWith(rollMutationChoices(this.run), this.run.route === null ? '选择你的路线' : '突变 · 三选一');
+    this.levelup.openWith(rollMutationChoices(this.run), '突变 · 三选一');
   }
 
   /**
@@ -2664,7 +2666,7 @@ class Game {
     this.levelup.close();
     sayBanner(this.run.events, `突变  ·  ${choice.name}`);
     if (this.run.xp.pending > 0) {
-      this.levelup.openWith(rollMutationChoices(this.run), this.run.route === null ? '选择你的路线' : '突变 · 三选一');
+      this.levelup.openWith(rollMutationChoices(this.run), '突变 · 三选一');
       return;
     }
     this.run.phase = 'playing';
@@ -2899,7 +2901,11 @@ class Game {
        *
        * A CARRIED run (the walk into the next level) never reaches this branch: the identity is the run's, not the
        * level's, and `pickRoute` is idempotent anyway.
+       *
+       * `forgetForm` first, and it is not a formality: `pickRoute` refuses to do anything once a route is set, so
+       * without it this run would keep the LAST run's form whatever the picker said. See `Run.forgetForm`.
        */
+      this.run.forgetForm();
       this.run.pickRoute(this.selectedRoute);
       this.applyFormToTouch();
     }

@@ -121,6 +121,24 @@ export class Run {
   }
 
   /**
+   * Put the form back to the base bubble. Called once per FRESH run, before `pickRoute`.
+   *
+   * ---------------------------------------------------------------------------------------------
+   * WHY THIS HAS TO EXIST
+   * ---------------------------------------------------------------------------------------------
+   * `pickRoute` is idempotent -- a carried run calls it again with the same id, and it must not re-grant the barrage
+   * route's extra gun row -- so it returns early whenever `route` is already set. That guard is right, and on its own it
+   * makes the picker's answer stick to the FIRST run of the session: run two would be boiled or devoured exactly as run
+   * one was, and the screen would look like it worked while doing nothing. A page reload would hide it.
+   *
+   * So the form is the run's, and a new run starts with none.
+   */
+  forgetForm(): void {
+    this.route = null;
+    this.bubbleType = defaultBubbleType();
+  }
+
+  /**
    * Adopt a form. Called with what the picker returned, at the start of a fresh run.
    *
    * It used to be the FIRST LEVEL-UP's whole question; the identity moved to a screen between 开始游戏 and the load,
@@ -262,6 +280,17 @@ export class Run {
    */
   armourPlates = 0;
   armourSeconds = 0;
+  /**
+   * The armour's dials, and the burn's, as the RUN has them after its cards.
+   *
+   * Derived in `applyMutationPassives` from `angry.armour` / `angry.aura` plus the volatile form's deck, so the
+   * tuning numbers stay in the config and a card never hard-codes a value that the config would then go stale on.
+   * Read here rather than at each use, so there is one answer to "how fast is my armour".
+   */
+  armourSecondsPerPlate: number = mech.angry.armour.secondsPerPlate;
+  armourMax: number = mech.angry.armour.max;
+  armourVulnerableMultiplier: number = mech.angry.armour.vulnerableMultiplier;
+  auraDamagePerTick: number = mech.angry.aura.damagePerTick;
   /** Seconds toward the next burn tick of the attached aura. */
   auraSeconds = 0;
   /** Slams landed this run, for the results panel. */
@@ -787,11 +816,10 @@ export class Run {
      * Fixed, and deliberately NOT scaled by rage (see the config's note): a plate is a thing you have, rage is a
      * thing that is happening to you, and a player who wants more slams takes the card that shortens this.
      */
-    const armour = mech.angry.armour;
-    if (this.armourPlates < armour.max) {
+    if (this.armourPlates < this.armourMax) {
       this.armourSeconds += dt;
-      if (this.armourSeconds >= armour.secondsPerPlate) {
-        this.armourSeconds -= armour.secondsPerPlate;
+      if (this.armourSeconds >= this.armourSecondsPerPlate) {
+        this.armourSeconds -= this.armourSecondsPerPlate;
         this.armourPlates++;
       }
     }
@@ -802,11 +830,10 @@ export class Run {
      * The tick carries its remainder rather than resetting to zero, so the rate is the configured one whatever the
      * frame rate did -- the same carried clock the gun's cadence uses.
      */
-    const aura = mech.angry.aura;
-    if (aura.damagePerTick > 0 && aura.tickSeconds > 0) {
+    if (this.auraDamagePerTick > 0 && mech.angry.aura.tickSeconds > 0) {
       this.auraSeconds += dt;
-      if (this.auraSeconds >= aura.tickSeconds) {
-        this.auraSeconds -= aura.tickSeconds;
+      if (this.auraSeconds >= mech.angry.aura.tickSeconds) {
+        this.auraSeconds -= mech.angry.aura.tickSeconds;
         this.burnNearby(laneWidth);
       }
     }
@@ -840,7 +867,7 @@ export class Run {
       const dx = h.x - px;
       const dy = h.y - py;
       if (dx * dx + dy * dy > r * r) continue;
-      this.hazards.hit(h, vulnerableDamage(h, aura.damagePerTick), { x: h.x, y: h.y, knockScale: 0 });
+      this.hazards.hit(h, vulnerableDamage(h, this.auraDamagePerTick), { x: h.x, y: h.y, knockScale: 0 });
     }
   }
 
@@ -1129,7 +1156,7 @@ export class Run {
         const target = this.hazards.hazards.find((h) => h.id === e.slammed!.id);
         if (target) {
           this.hazards.hit(target, mech.angry.armour.damage, { x: target.x, y: target.y, knockScale: 1 });
-          markVulnerable(target, mech.angry.armour.vulnerableSeconds);
+          markVulnerable(target, mech.angry.armour.vulnerableSeconds, this.armourVulnerableMultiplier);
         }
         this.sound('rage.slam', 0.7);
         continue;

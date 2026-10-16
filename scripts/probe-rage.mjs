@@ -11,7 +11,9 @@
 //   - a contact without one is exactly the hit it always was;
 //   - the mark multiplies everything that lands, and expires;
 //   - the burn ticks on its own clock, only inside its radius, and reads the mark;
-//   - a full gauge fires the burst by itself and empties it.
+//   - a full gauge fires the burst by itself and empties it;
+//   - the form's four cards each move exactly one number, the two dangerous dials have their floor and cap, the cards
+//     are offered only to this form, and a NEW run adopts the NEW form rather than the last one's.
 
 import { resolve } from 'node:path';
 
@@ -34,6 +36,7 @@ try {
   const R = await server.ssrLoadModule('/src/run.ts');
   const H = await server.ssrLoadModule('/src/hazards.ts');
   const B = await server.ssrLoadModule('/src/bubbleTypes.ts');
+  const M = await server.ssrLoadModule('/src/mutations.ts');
   const { mech } = await server.ssrLoadModule('/src/mechanisms.ts');
   const armour = mech.angry.armour;
   const aura = mech.angry.aura;
@@ -171,6 +174,105 @@ try {
     const boil = B.findRoute('boil');
     const form = B.formForRoute(boil);
     check('形态 · 只剩技能钮（那三个动词各有别的去处）', [...form.controls], ['skill']);
+  }
+
+  // --- the deck: four cards, and what each one moves ---------------------------------
+  //
+  // The cards are thin -- each is one number in `applyMutationPassives` -- so what is worth asserting is the derived
+  // value rather than the count. The floor and the cap are the two that can be got wrong silently: without the floor,
+  // five picks put a plate at a third of the base interval; without the cap, 多存一层 eventually stops being a
+  // resource. Both are measured here against the base config, so a retune of `angry.armour` moves the test with it.
+  const rageRun2 = (picks = []) => {
+    const r = new R.Run();
+    r.phase = 'playing';
+    r.pickRoute('boil');
+    for (const id of picks) {
+      const card = M.mutationCard(id);
+      if (!card) throw new Error(`no card ${id}`);
+      r.picks.push(id);
+      r.mutations[id] = (r.mutations[id] ?? 0) + 1;
+    }
+    M.applyMutationPassives(r);
+    return r;
+  };
+  const derived = (id, n) => rageRun2(Array(n).fill(id));
+
+  {
+    const ids = ['plateRate', 'plateMax', 'deeperBreak', 'hotBurn'];
+    const cards = ids.map((id) => M.mutationCard(id));
+    check('卡组 · 四张都在池子里', cards.map((c) => !!c), [true, true, true, true]);
+    check('卡组 · 都只给沸腾', cards.map((c) => c.routes), ['boil', 'boil', 'boil', 'boil']);
+    // No gate: this form ships holding the armour and the aura, so unlike the shotgun's follow-ups there is nothing to
+    // wait for -- and a card drawn before the thing it changes exists is the one thing the pool must never hand out.
+    check('卡组 · 没有前置条件', cards.map((c) => c.available(rageRun())), [true, true, true, true]);
+    const boilOffered = new Set();
+    for (let i = 0; i < 200; i++) for (const c of M.rollMutationChoices(rageRun2(), 3)) boilOffered.add(c.id);
+    check('卡组 · 沸腾的池子真的会抽到它们', ids.filter((id) => boilOffered.has(id)).length, 4);
+  }
+  {
+    // Only this form's own pool sees them: a barrage run must never be offered a card about plates.
+    const r = new R.Run();
+    r.phase = 'playing';
+    r.pickRoute('barrage');
+    M.applyMutationPassives(r);
+    const offered = new Set();
+    for (let i = 0; i < 400; i++) for (const c of M.rollMutationChoices(r, 3)) offered.add(c.id);
+    const leaks = ['plateRate', 'plateMax', 'deeperBreak', 'hotBurn'].filter((id) => offered.has(id));
+    check('卡组 · 弹幕局一张都抽不到', leaks, []);
+  }
+  {
+    const pool = mech.mutation.pool.rage;
+    const one = derived('plateRate', 1);
+    const n = derived('plateRate', 12);
+    check('怒甲更快 · 一张乘 (1 − 每张)', round(one.armourSecondsPerPlate), round(armour.secondsPerPlate * (1 - pool.plateSecondsPerPick)));
+    check('怒甲更快 · 十二张撞到地板', round(n.armourSecondsPerPlate), round(armour.secondsPerPlate * pool.plateSecondsFloor));
+    check('多存一层 · 一张 +1', derived('plateMax', 1).armourMax, armour.max + 1);
+    check('多存一层 · 封顶', derived('plateMax', 40).armourMax, pool.plateMaxCap);
+    check('破甲更深 · 加法不是乘法', round(derived('deeperBreak', 2).armourVulnerableMultiplier), round(armour.vulnerableMultiplier + pool.breakPerPick * 2));
+    check('灼烧更烈 · 加法', round(derived('hotBurn', 3).auraDamagePerTick), round(aura.damagePerTick + pool.burnPerPick * 3));
+  }
+  {
+    // The burn card has to reach the FIRE, not just the field: one tick on a boosted run burns for the sum.
+    const r = rageRun2(['hotBurn', 'hotBurn']);
+    const near = r.hazards.spawnAt('fish', r.player.x * LANE, r.player.y, { deterministic: true });
+    r.hazards.hazards.push(near);
+    const start = near.health;
+    r.updateRage(aura.tickSeconds + 0.001, LANE);
+    check('灼烧更烈 · 真的烧得更疼', round(start - near.health), round(aura.damagePerTick + mech.mutation.pool.rage.burnPerPick * 2));
+  }
+  {
+    // The plate card has to reach the METRONOME: at a moment the boosted run already has a plate, the base run has
+    // none. The moment is picked from the two intervals rather than written down, so retuning either moves both.
+    const boosted = rageRun2(['plateRate', 'plateRate']);
+    const t = boosted.armourSecondsPerPlate + 0.001;
+    boosted.updateRage(t, LANE);
+    check('怒甲更快 · 节拍真的变快', boosted.armourPlates, 1);
+    const base = rageRun();
+    check('（对照）基准节拍在这一刻还短着', t < base.armourSecondsPerPlate, true);
+    base.updateRage(t, LANE);
+    check('（对照）所以还没攒出来', base.armourPlates, 0);
+  }
+
+  // --- a NEW run takes the NEW form --------------------------------------------------
+  //
+  // `pickRoute` refuses to act once a route is set (a carried run calls it again with the same id), so a fresh run has
+  // to clear the form first. Without that the picker's answer sticks to the first run of the session and every run after
+  // it silently keeps the last form -- which a page reload hides.
+  {
+    const r = new R.Run();
+    r.phase = 'playing';
+    r.pickRoute('boil');
+    check('重开 · 第一局是沸腾', r.route, 'boil');
+    r.forgetForm();
+    r.pickRoute('barrage');
+    check('重开 · 第二局换成弹幕', r.route, 'barrage');
+    check('重开 · 形态也跟着换', r.bubbleType.id, 'barrage');
+    check('重开 · 弹幕那一排枪又发了一次', r.gunStreams, 2);
+  }
+
+  // --- the curve arrives earlier than the old one ------------------------------------
+  {
+    check('曲线 · 首级纯时间线（秒）', round(mech.mutation.first / mech.mutation.autoPerSecond), 55);
   }
 
   console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

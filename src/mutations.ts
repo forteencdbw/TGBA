@@ -242,6 +242,59 @@ const POOL: readonly Mutation[] = [
       run.mutations.simmer = (run.mutations.simmer ?? 0) + 1;
     },
   },
+  /**
+   * The volatile form's own deck: the armour's three dials and the burn's one.
+   *
+   * Unlike the shotgun's follow-ups these are NOT gated on another card, because the volatile form ships holding
+   * the armour and the aura -- the gates there exist so a card cannot be drawn before the thing it changes exists,
+   * and here that thing exists from the first frame of the run. So they are plain `available: () => true`, and the
+   * first three-choice of a 暴怒 run can be about being 暴怒 rather than about the gun.
+   *
+   * Each one moves exactly one number, and they are deliberately the three lines the form already has: the plates
+   * arrive sooner, there are more of them in the bank, the break they leave goes deeper, and the burn hurts more.
+   * Nothing here is a new verb -- the form's whole bet is that closing the distance is the interesting decision, and
+   * a card that added a verb would be a second way to play it.
+   */
+  {
+    id: 'plateRate',
+    name: `怒甲更快 −${Math.round(mech.mutation.pool.rage.plateSecondsPerPick * 100)}%`,
+    blurb: '攒出一个怒甲的时间更短，可叠加——撞得更勤',
+    routes: 'boil',
+    available: () => true,
+    apply: (run) => {
+      run.mutations.plateRate = (run.mutations.plateRate ?? 0) + 1;
+    },
+  },
+  {
+    id: 'plateMax',
+    name: `多存一层 +${mech.mutation.pool.rage.plateMaxPerPick}`,
+    blurb: '怒甲上限 +1，可叠加——连着撞两三个不用等',
+    routes: 'boil',
+    available: () => true,
+    apply: (run) => {
+      run.mutations.plateMax = (run.mutations.plateMax ?? 0) + 1;
+    },
+  },
+  {
+    id: 'deeperBreak',
+    name: `破甲更深 +${mech.mutation.pool.rage.breakPerPick} 倍`,
+    blurb: '被撞的敌人受到的所有伤害更重，可叠加——贴脸那一枪就是靠它',
+    routes: 'boil',
+    available: () => true,
+    apply: (run) => {
+      run.mutations.deeperBreak = (run.mutations.deeperBreak ?? 0) + 1;
+    },
+  },
+  {
+    id: 'hotBurn',
+    name: `灼烧更烈 +${mech.mutation.pool.rage.burnPerPick}/跳`,
+    blurb: '贴身灼烧每跳更疼，可叠加——不用等怒气也有输出',
+    routes: 'boil',
+    available: () => true,
+    apply: (run) => {
+      run.mutations.hotBurn = (run.mutations.hotBurn ?? 0) + 1;
+    },
+  },
   {
     id: 'bulletSpeed',
     name: '弹速 +25%',
@@ -492,6 +545,23 @@ export function applyMutationPassives(run: Run): void {
   run.bulletCloseRangeMeters = sg.closeRangeMeters;
   run.bulletCloseDamageRate = sg.closeDamagePerPick * count('closeDamage');
   run.bulletKnockbackScale = 1 + sg.knockbackPerPick * count('knock');
+  /**
+   * The volatile form's deck: three dials off the armour, one off the burn.
+   *
+   * Read from the config every time rather than stored on the card, so the armour's own numbers stay in one place --
+   * a card that hard-coded "4 seconds" would go stale the day `angry.armour.secondsPerPlate` was tuned.
+   *
+   * The interval is the one MULTIPLIER, and it is floored for the reason `plateSecondsFloor` gives: five picks of a
+   * -20% would put a plate down to a third of the base interval, and plates arriving that fast stop being a rhythm.
+   * The other three are additions, which cap themselves.
+   */
+  const rage = pool.rage;
+  const armour = mech.angry.armour;
+  run.armourSecondsPerPlate =
+    armour.secondsPerPlate * Math.max(rage.plateSecondsFloor, (1 - rage.plateSecondsPerPick) ** count('plateRate'));
+  run.armourMax = Math.min(rage.plateMaxCap, armour.max + rage.plateMaxPerPick * count('plateMax'));
+  run.armourVulnerableMultiplier = armour.vulnerableMultiplier + rage.breakPerPick * count('deeperBreak');
+  run.auraDamagePerTick = mech.angry.aura.damagePerTick + rage.burnPerPick * count('hotBurn');
   // The two state-driven cards are RATES, not multipliers, because neither collapses into one number for the run:
   // the size one is applied to each round's own growth at the moment it lands (see `damageOf`).
   run.bulletSizeDamageRate = pool.sizeDamagePerPick * count('sizeDamage');

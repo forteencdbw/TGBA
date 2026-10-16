@@ -32,6 +32,7 @@ function bar(values, scale = 1) {
 
 try {
   const L = await server.ssrLoadModule('/src/levels.ts');
+  const { mech } = await server.ssrLoadModule('/src/mechanisms.ts');
 
   for (const level of L.LEVELS) {
     const total = L.nominalScrollSeconds(level);
@@ -118,6 +119,22 @@ try {
       }
     }
   }
+
+  /**
+   * When the first mutation card arrives, measured rather than asserted.
+   *
+   * The shape of the mutation ladder is `first` points for the first one, and two things feed it: the timeline, which
+   * runs for everybody, and the collectables, which only the player who swims over them gets. So the honest answer is a
+   * WINDOW, and it is computed from LEVEL 1's own food (the level the first card is drawn in) rather than from a rate
+   * typed into this file -- move the food and this number moves with it.
+   */
+  const l1 = L.LEVELS[0];
+  const food1 = l1.entries.filter((e) => e.kind === 'bubble').length;
+  const collecting = mech.mutation.autoPerSecond + (food1 / L.nominalScrollSeconds(l1)) * mech.mutation.gain.absorb;
+  console.log(
+    `\n  first card: ${(mech.mutation.first / mech.mutation.autoPerSecond).toFixed(0)}s on the clock alone, ` +
+      `${(mech.mutation.first / collecting).toFixed(0)}s taking every collectable in ${l1.id}`,
+  );
 } finally {
   await server.close();
 }
