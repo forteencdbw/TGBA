@@ -275,6 +275,37 @@ try {
     check('曲线 · 首级纯时间线（秒）', round(mech.mutation.first / mech.mutation.autoPerSecond), 55);
   }
 
+  // --- the plate is the only way through a wall no volume can -------------------------------------
+  //
+  // The other half of the deleted charge test. `封路木箱` is the one obstacle in the game that volume cannot open at any
+  // size, and since the charge went, a plate is the ONLY way through it -- for any form. `breaksUnrammable` lives in the
+  // config rather than on the form's descriptor because it is a question about the WALL (does this bubble get to ignore
+  // masonry?), and setting it to false has to leave the bubble unable to open one.
+  {
+    const r = rageRun();
+    r.armourPlates = 2;
+    const wall = r.obstacles.spawn('wall', r.player.x * LANE, r.player.y);
+    const alive = wall.health;
+    const hits = r.stats.hits;
+    r.resolveContacts(1 / 60, { laneWidth: LANE });
+    // A ram is 2 points of damage against a 3-point wall: one plate is a LAYER, not the whole wall. That is the
+    // difference between "the plate opens walls" and "the plate deletes walls", and it is worth pinning down.
+    check('怒甲 · 一撞削掉一层', round(alive - wall.health), round(armour.obstacleDamage));
+    check('怒甲 · 这一下花掉一个甲', r.armourPlates, 1);
+    check('怒甲 · 撞击不算挨打', r.stats.hits, hits);
+    // Second plate, same wall: now it goes.
+    r.resolveContacts(1 / 60, { laneWidth: LANE });
+    check('怒甲 · 第二撞撞开', r.obstacles.broken, 1);
+    check('怒甲 · 又花掉一个甲', r.armourPlates, 0);
+  }
+  {
+    const r = rageRun();
+    const wall = r.obstacles.spawn('wall', r.player.x * LANE, r.player.y);
+    const alive = wall.health;
+    r.resolveContacts(1 / 60, { laneWidth: LANE });
+    check('（对照）没有甲撞不动', [r.obstacles.broken, wall.health], [0, alive]);
+  }
+
   console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
   process.exitCode = failures === 0 ? 0 : 1;
 } finally {
