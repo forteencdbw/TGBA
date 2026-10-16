@@ -14,6 +14,7 @@ import { mech } from './mechanisms';
 import type { HazardKind, HazardField } from './hazards';
 import type { Player } from './player';
 import type { Bubble } from './entities';
+import { SKILL_SOUNDS } from './soundIds';
 import { saySound, type RunEvent } from './runEvents';
 
 export type SkillId = 'dash' | 'vortex' | 'stink' | 'shell' | 'burst';
@@ -276,6 +277,8 @@ export function useSkill(world: SkillWorld): SkillUsed | null {
   }
 
   world.carried.uses -= 1;
-  saySound(world.events, 'skill');
+  // By SKILL rather than one chime for all five: a dash and a stink cloud are different verbs, and the whole point of the
+  // carried skill is that the player chose which one they have. See `SKILL_SOUNDS`.
+  saySound(world.events, SKILL_SOUNDS[skill.id] ?? 'skill.dash');
   return { invulnerableSeconds, usesLeft: world.carried.uses };
 }

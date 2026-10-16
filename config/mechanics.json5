@@ -4600,6 +4600,17 @@
   },
 
   "audio": {
+    // **Boss 还有多少秒登场时出预警声。** 距离是用这个秒数乘本关的 `scrollSpeed` 算出来的，所以换关卡节奏不用改这里。
+    "bossWarnSeconds": 4,
+
+    // -----------------------------------------------------------------------------------------
+    // 血量告急的心跳声
+    // -----------------------------------------------------------------------------------------
+    // 血量低于这个比例（0..1）之后开始按固定间隔播放心跳。0.3 = 三成血。
+    "lowHealthFraction": 0.3,
+    // 心跳的间隔（秒）。太密会盖过战斗音，太疏就不像警告。1.1 约等于静息心率的一半。
+    "lowHealthIntervalSeconds": 1.1,
+
     // ---------------------------------------------------------------------------------------------
     // 背景音乐：每关一段，**合成而不是文件**
     // ---------------------------------------------------------------------------------------------
@@ -4626,22 +4637,361 @@
       // 气泡向上飞出屏幕的速度（屏幕高/秒）。
       "ascendScreensPerSecond": 1.1,
 
+    "sfx": {
+      // 音效：每个声音一行配方，名字是 src/soundIds.ts 里的 id。想换成真实录音，把 <名字>.wav（或 .mp3）放进 src/assets/audio/sfx/，
+      // 同名文件会自动盖过这里的配方，不用改任何别的东西。每个 id 都必须有一行（启动时会检查）。
+      //
+      // 配方 = 若干层。tone 层：wave 波形、hz 起始频率、endRatio 结束频率是起始的几倍（默认 1，不滑音）、seconds 时长、gain 音量、
+      //   delay 延后多久开始、attack 起音时间、vibratoHz/vibratoDepth 音高颤动。
+      // noise 层：filter 滤波类型、hz 滤波中心（或截止）、endRatio 结束时是起始的几倍、q 滤波锐度、seconds/gain/delay 同上。
+      // 整行：gap 同一个声音最少隔多久才能再响（防叠成一团）、gain 整体音量、pitchJitter 每次随机偏多少音高、
+      //   pitchPerIntensity / gainPerIntensity 强度越大音高 / 音量越高（强度由触发处决定，例如吸收的泡泡越大）、fileGain 录音版的音量。
+      //
+      // 分组音量（界面 / 战斗 / 玩家 / 环境）：
+      "buses": { "ui": 1, "combat": 0.9, "player": 1, "env": 0.8 },
+      // 世界里的声音按位置分配左右声道的幅度（0 = 全部居中，1 = 最边上的声音完全在一侧）。手机外放基本听不出，耳机下才明显。
+      "panWidth": 0.7,
+      // 同时发声的上限。超过就不再响新的（界面音不受限）。
+      "maxVoices": 20,
+      "sounds": {
+        // ---- 界面与流程
+        "ui.click": { "label": "按钮按下", "bus": "ui", "gap": 0.03, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 1200, "endRatio": 0.6, "seconds": 0.05, "gain": 0.18 },
+          { "type": "noise", "filter": "bandpass", "hz": 3000, "seconds": 0.02, "gain": 0.05 }
+        ] },
+        "ui.back": { "label": "返回 / 关闭", "bus": "ui", "gap": 0.03, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 800, "endRatio": 0.6, "seconds": 0.07, "gain": 0.16 }
+        ] },
+        "ui.toggle": { "label": "开关切换", "bus": "ui", "gap": 0.05, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 700, "endRatio": 1.5, "seconds": 0.05, "gain": 0.14 },
+          { "type": "tone", "wave": "triangle", "hz": 1050, "seconds": 0.05, "gain": 0.12, "delay": 0.05 }
+        ] },
+        "ui.slider": { "label": "滑条刻度", "bus": "ui", "gap": 0.05, "pitchJitter": 0.05, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 900, "seconds": 0.025, "gain": 0.08 }
+        ] },
+        "menu.start": { "label": "点「开始游戏」：气泡出发", "bus": "ui", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 300, "endRatio": 2.5, "seconds": 0.5, "gain": 0.22, "attack": 0.05 },
+          { "type": "tone", "wave": "triangle", "hz": 450, "endRatio": 2.5, "seconds": 0.5, "gain": 0.14 },
+          { "type": "noise", "filter": "bandpass", "hz": 1200, "endRatio": 2.5, "seconds": 0.45, "gain": 0.1 }
+        ] },
+        "ui.pause": { "label": "打开设置 / 暂停", "bus": "ui", "gap": 0.2, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 500, "endRatio": 0.5, "seconds": 0.15, "gain": 0.16 },
+          { "type": "tone", "wave": "sine", "hz": 350, "endRatio": 0.6, "seconds": 0.18, "gain": 0.12, "delay": 0.05 }
+        ] },
+        "ui.resume": { "label": "关闭设置 / 继续", "bus": "ui", "gap": 0.2, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 350, "endRatio": 1.6, "seconds": 0.15, "gain": 0.16 },
+          { "type": "tone", "wave": "sine", "hz": 520, "endRatio": 1.5, "seconds": 0.15, "gain": 0.12, "delay": 0.05 }
+        ] },
+        "levelup.open": { "label": "突变三选一弹出", "bus": "ui", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 523, "seconds": 0.25, "gain": 0.16 },
+          { "type": "tone", "wave": "sine", "hz": 659, "seconds": 0.25, "gain": 0.16, "delay": 0.08 },
+          { "type": "tone", "wave": "sine", "hz": 784, "seconds": 0.3, "gain": 0.16, "delay": 0.16 },
+          { "type": "noise", "filter": "highpass", "hz": 5000, "seconds": 0.3, "gain": 0.05, "delay": 0.1 }
+        ] },
+        "levelup.pick": { "label": "选定一张突变卡", "bus": "ui", "gap": 0.2, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 660, "endRatio": 1.5, "seconds": 0.12, "gain": 0.2 },
+          { "type": "tone", "wave": "square", "hz": 990, "seconds": 0.18, "gain": 0.1, "delay": 0.06 },
+          { "type": "noise", "filter": "highpass", "hz": 4000, "seconds": 0.2, "gain": 0.07 }
+        ] },
+        "level.start": { "label": "关卡开始：气泡出生", "bus": "ui", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 3, "seconds": 0.4, "gain": 0.2, "attack": 0.02 },
+          { "type": "noise", "filter": "bandpass", "hz": 800, "endRatio": 3, "seconds": 0.35, "gain": 0.1 }
+        ] },
+        "level.banner": { "label": "关卡事件横幅", "bus": "ui", "gap": 0.2, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 880, "seconds": 0.1, "gain": 0.1 },
+          { "type": "tone", "wave": "triangle", "hz": 1175, "seconds": 0.12, "gain": 0.09, "delay": 0.09 }
+        ] },
+        // level.surface：原来的 surface
+        "level.surface": { "label": "到达水面 / 过关", "bus": "ui", "gap": 0.2, "layers": [
+          { "type": "noise", "filter": "bandpass", "hz": 4200, "seconds": 0.5, "gain": 0.42 },
+          { "type": "tone", "wave": "sine", "hz": 720, "endRatio": 2.4, "seconds": 0.5, "gain": 0.3 }
+        ] },
+        "boss.warn": { "label": "Boss 预警", "bus": "ui", "gap": 0.5, "layers": [
+          { "type": "tone", "wave": "sawtooth", "hz": 110, "endRatio": 0.8, "seconds": 0.8, "gain": 0.2, "attack": 0.1, "vibratoHz": 6, "vibratoDepth": 0.03 },
+          { "type": "tone", "wave": "sine", "hz": 55, "seconds": 0.9, "gain": 0.25 }
+        ] },
+        "boss.enter": { "label": "Boss 登场", "bus": "ui", "gap": 0.5, "layers": [
+          { "type": "tone", "wave": "sawtooth", "hz": 70, "endRatio": 0.5, "seconds": 0.9, "gain": 0.28 },
+          { "type": "noise", "filter": "lowpass", "hz": 400, "seconds": 0.8, "gain": 0.3 },
+          { "type": "tone", "wave": "sine", "hz": 40, "seconds": 1, "gain": 0.3 }
+        ] },
+        "summary.show": { "label": "结算页出现", "bus": "ui", "gap": 0.5, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 523, "seconds": 0.4, "gain": 0.18 },
+          { "type": "tone", "wave": "triangle", "hz": 659, "seconds": 0.4, "gain": 0.18, "delay": 0.12 },
+          { "type": "tone", "wave": "triangle", "hz": 784, "seconds": 0.4, "gain": 0.18, "delay": 0.24 },
+          { "type": "tone", "wave": "triangle", "hz": 1046, "seconds": 0.7, "gain": 0.2, "delay": 0.36 }
+        ] },
+        // ---- 战斗反馈
+        // gun.fire：原来的 bulletFire；强度来自 audio.bulletFireVolume
+        "gun.fire": { "label": "小泡泡子弹射出", "bus": "combat", "gap": 0.04, "pitchJitter": 0.04, "gainPerIntensity": 0.83, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 430, "endRatio": 0.55, "seconds": 0.055, "gain": 0.06 },
+          { "type": "noise", "filter": "bandpass", "hz": 1300, "seconds": 0.022, "gain": 0.03 }
+        ] },
+        // gun.hit：原来的 bulletHit；强度来自 audio.bulletHitVolume
+        "gun.hit": { "label": "小泡泡子弹命中", "bus": "combat", "gap": 0.05, "gainPerIntensity": 0.8, "layers": [
+          { "type": "tone", "wave": "square", "hz": 1050, "endRatio": 1.5, "seconds": 0.045, "gain": 0.09 },
+          { "type": "noise", "filter": "bandpass", "hz": 3200, "seconds": 0.028, "gain": 0.05 }
+        ] },
+        "enemy.hit.small": { "label": "小型鱼类被打中", "bus": "combat", "gap": 0.08, "pitchJitter": 0.08, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 700, "endRatio": 0.7, "seconds": 0.06, "gain": 0.14 },
+          { "type": "noise", "filter": "bandpass", "hz": 2500, "seconds": 0.03, "gain": 0.06 }
+        ] },
+        "enemy.hit.predator": { "label": "大型捕食者被打中", "bus": "combat", "gap": 0.1, "pitchJitter": 0.05, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 180, "endRatio": 0.6, "seconds": 0.1, "gain": 0.22 },
+          { "type": "noise", "filter": "lowpass", "hz": 900, "seconds": 0.08, "gain": 0.12 }
+        ] },
+        "enemy.hit.jelly": { "label": "水母 / 电类被打中", "bus": "combat", "gap": 0.1, "pitchJitter": 0.06, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 400, "endRatio": 2.2, "seconds": 0.1, "gain": 0.16 },
+          { "type": "noise", "filter": "bandpass", "hz": 600, "seconds": 0.1, "gain": 0.08 }
+        ] },
+        "enemy.hit.shell": { "label": "硬壳带刺被打中", "bus": "combat", "gap": 0.08, "pitchJitter": 0.06, "layers": [
+          { "type": "tone", "wave": "square", "hz": 900, "endRatio": 0.5, "seconds": 0.04, "gain": 0.12 },
+          { "type": "noise", "filter": "bandpass", "hz": 4000, "seconds": 0.04, "gain": 0.12 }
+        ] },
+        "enemy.hit.ranged": { "label": "远程射手被打中", "bus": "combat", "gap": 0.08, "pitchJitter": 0.06, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 520, "endRatio": 0.8, "seconds": 0.07, "gain": 0.15 },
+          { "type": "noise", "filter": "bandpass", "hz": 1800, "seconds": 0.04, "gain": 0.07 }
+        ] },
+        "enemy.hit.boss": { "label": "Boss 被打中", "bus": "combat", "gap": 0.1, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 110, "endRatio": 0.5, "seconds": 0.18, "gain": 0.26 },
+          { "type": "noise", "filter": "lowpass", "hz": 1200, "seconds": 0.12, "gain": 0.18 },
+          { "type": "tone", "wave": "sine", "hz": 70, "endRatio": 0.8, "seconds": 0.2, "gain": 0.2 }
+        ] },
+        "enemy.leave.small": { "label": "小型鱼类逃走", "bus": "combat", "gap": 0.08, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 500, "endRatio": 2.5, "seconds": 0.15, "gain": 0.2 },
+          { "type": "noise", "filter": "bandpass", "hz": 2800, "seconds": 0.05, "gain": 0.08 }
+        ] },
+        "enemy.leave.predator": { "label": "大型捕食者逃走", "bus": "combat", "gap": 0.1, "layers": [
+          { "type": "tone", "wave": "sawtooth", "hz": 120, "endRatio": 2.2, "seconds": 0.3, "gain": 0.18 },
+          { "type": "noise", "filter": "lowpass", "hz": 700, "seconds": 0.2, "gain": 0.12 }
+        ] },
+        "enemy.leave.jelly": { "label": "水母 / 电类逃走", "bus": "combat", "gap": 0.1, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 350, "endRatio": 0.4, "seconds": 0.3, "gain": 0.18, "vibratoHz": 12, "vibratoDepth": 0.12 },
+          { "type": "noise", "filter": "bandpass", "hz": 500, "endRatio": 0.5, "seconds": 0.2, "gain": 0.08 }
+        ] },
+        "enemy.leave.shell": { "label": "硬壳带刺逃走", "bus": "combat", "gap": 0.1, "layers": [
+          { "type": "tone", "wave": "square", "hz": 300, "endRatio": 0.3, "seconds": 0.12, "gain": 0.15 },
+          { "type": "noise", "filter": "highpass", "hz": 3000, "seconds": 0.15, "gain": 0.18 }
+        ] },
+        "enemy.leave.ranged": { "label": "远程射手逃走", "bus": "combat", "gap": 0.1, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 400, "endRatio": 2, "seconds": 0.2, "gain": 0.18 },
+          { "type": "tone", "wave": "triangle", "hz": 600, "endRatio": 2, "seconds": 0.2, "gain": 0.12, "delay": 0.08 }
+        ] },
+        "enemy.leave.boss": { "label": "Boss 被击败", "bus": "combat", "gap": 0.5, "layers": [
+          { "type": "noise", "filter": "lowpass", "hz": 1500, "endRatio": 0.13, "seconds": 1.2, "gain": 0.4 },
+          { "type": "tone", "wave": "sawtooth", "hz": 100, "endRatio": 0.3, "seconds": 1, "gain": 0.3 },
+          { "type": "tone", "wave": "sine", "hz": 50, "endRatio": 0.6, "seconds": 1.2, "gain": 0.3 }
+        ] },
+        "hit.heavy": { "label": "重击", "bus": "combat", "gap": 0.12, "layers": [
+          { "type": "noise", "filter": "bandpass", "hz": 1000, "endRatio": 0.5, "seconds": 0.1, "gain": 0.2 },
+          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 0.5, "seconds": 0.12, "gain": 0.25 }
+        ] },
+        // enemy.fire：原来是 hit 的 0.25 强度
+        "enemy.fire": { "label": "敌人开火", "bus": "combat", "gap": 0.12, "pitchJitter": 0.06, "layers": [
+          { "type": "tone", "wave": "sawtooth", "hz": 300, "endRatio": 0.5, "seconds": 0.08, "gain": 0.1 },
+          { "type": "noise", "filter": "bandpass", "hz": 1500, "seconds": 0.05, "gain": 0.07 }
+        ] },
+        "enemy.charge": { "label": "敌人冲锋", "bus": "combat", "gap": 0.15, "layers": [
+          { "type": "noise", "filter": "bandpass", "hz": 400, "endRatio": 5, "seconds": 0.35, "gain": 0.15, "q": 1 },
+          { "type": "tone", "wave": "sawtooth", "hz": 150, "endRatio": 2.5, "seconds": 0.3, "gain": 0.1 }
+        ] },
+        "enemy.discharge": { "label": "放电", "bus": "combat", "gap": 0.2, "layers": [
+          { "type": "tone", "wave": "sawtooth", "hz": 1200, "endRatio": 0.2, "seconds": 0.25, "gain": 0.14, "vibratoHz": 40, "vibratoDepth": 0.2 },
+          { "type": "noise", "filter": "highpass", "hz": 3000, "seconds": 0.25, "gain": 0.12 }
+        ] },
+        "chain.zap": { "label": "连锁放电", "bus": "combat", "gap": 0.3, "layers": [
+          { "type": "noise", "filter": "highpass", "hz": 4000, "seconds": 0.4, "gain": 0.2 },
+          { "type": "tone", "wave": "square", "hz": 800, "endRatio": 0.3, "seconds": 0.4, "gain": 0.12, "vibratoHz": 60, "vibratoDepth": 0.3 }
+        ] },
+        // bomb.blast：原来是 pop
+        "bomb.blast": { "label": "炸弹鱼爆炸", "bus": "combat", "gap": 0.2, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 120, "endRatio": 0.3, "seconds": 0.6, "gain": 0.35 },
+          { "type": "noise", "filter": "lowpass", "hz": 2500, "endRatio": 0.08, "seconds": 0.7, "gain": 0.4 }
+        ] },
+        "puffer.counter": { "label": "河豚反击", "bus": "combat", "gap": 0.2, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 200, "endRatio": 2.5, "seconds": 0.15, "gain": 0.2 },
+          { "type": "noise", "filter": "bandpass", "hz": 1500, "seconds": 0.12, "gain": 0.12 }
+        ] },
+        "boss.attack": { "label": "Boss 攻击", "bus": "combat", "gap": 0.3, "layers": [
+          { "type": "noise", "filter": "bandpass", "hz": 3000, "endRatio": 0.17, "seconds": 0.3, "gain": 0.22 },
+          { "type": "tone", "wave": "sawtooth", "hz": 200, "endRatio": 0.4, "seconds": 0.3, "gain": 0.15 }
+        ] },
+        "bullet.hurt": { "label": "弹幕命中玩家", "bus": "combat", "gap": 0.08, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 260, "endRatio": 0.5, "seconds": 0.1, "gain": 0.22 },
+          { "type": "noise", "filter": "bandpass", "hz": 2000, "seconds": 0.05, "gain": 0.15 }
+        ] },
+        // graze：原来借用 skill
+        "graze": { "label": "擦边", "bus": "combat", "gap": 0.12, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 1400, "endRatio": 1.3, "seconds": 0.08, "gain": 0.1 },
+          { "type": "noise", "filter": "highpass", "hz": 5000, "seconds": 0.05, "gain": 0.08 }
+        ] },
+        // ---- 玩家动作与警告
+        // player.hurt：原来的 hit
+        "player.hurt": { "label": "玩家受伤", "bus": "player", "gap": 0.09, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 150, "endRatio": 0.55, "seconds": 0.18, "gain": 0.3 },
+          { "type": "noise", "filter": "bandpass", "hz": 700, "seconds": 0.09, "gain": 0.22 }
+        ] },
+        // player.pop：原来的 pop
+        "player.pop": { "label": "气泡破裂（死亡）", "bus": "player", "gap": 0.2, "layers": [
+          { "type": "noise", "filter": "bandpass", "hz": 2600, "seconds": 0.22, "gain": 0.5 },
+          { "type": "tone", "wave": "sine", "hz": 660, "endRatio": 0.35, "seconds": 0.26, "gain": 0.34 }
+        ] },
+        // player.eat：原来借用 pop
+        "player.eat": { "label": "吞下一只敌人", "bus": "player", "gap": 0.1, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 300, "endRatio": 2.6, "seconds": 0.16, "gain": 0.26 },
+          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 0.5, "seconds": 0.2, "gain": 0.2, "delay": 0.12 },
+          { "type": "noise", "filter": "lowpass", "hz": 700, "seconds": 0.12, "gain": 0.15 }
+        ] },
+        // player.absorb：原来的 absorb：音高随泡泡大小升高
+        "player.absorb": { "label": "吸收小泡泡", "bus": "player", "gap": 0.045, "pitchPerIntensity": 1.24, "gainPerIntensity": 0.625, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 420, "endRatio": 1.9, "seconds": 0.09, "gain": 0.16 }
+        ] },
+        // stage.grow：原来借用 skill
+        "stage.grow": { "label": "成长阶段提升", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 400, "seconds": 0.2, "gain": 0.2 },
+          { "type": "tone", "wave": "sine", "hz": 500, "seconds": 0.2, "gain": 0.2, "delay": 0.09 },
+          { "type": "tone", "wave": "sine", "hz": 630, "seconds": 0.35, "gain": 0.22, "delay": 0.18 }
+        ] },
+        "mutation.gain": { "label": "获得突变", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 880, "endRatio": 1.5, "seconds": 0.2, "gain": 0.14 },
+          { "type": "tone", "wave": "sine", "hz": 1320, "endRatio": 1.2, "seconds": 0.25, "gain": 0.12, "delay": 0.08 },
+          { "type": "noise", "filter": "highpass", "hz": 6000, "seconds": 0.3, "gain": 0.08 }
+        ] },
+        "skill.dash": { "label": "技能：冲刺", "bus": "player", "gap": 0.2, "layers": [
+          { "type": "noise", "filter": "bandpass", "hz": 500, "endRatio": 7, "seconds": 0.25, "gain": 0.25 },
+          { "type": "tone", "wave": "sawtooth", "hz": 200, "endRatio": 3, "seconds": 0.2, "gain": 0.12 }
+        ] },
+        "skill.vortex": { "label": "技能：漩涡", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 300, "endRatio": 2.2, "seconds": 0.7, "gain": 0.2, "vibratoHz": 5, "vibratoDepth": 0.25 },
+          { "type": "noise", "filter": "bandpass", "hz": 600, "endRatio": 2.5, "seconds": 0.7, "gain": 0.15 }
+        ] },
+        "skill.stink": { "label": "技能：臭云", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sawtooth", "hz": 100, "endRatio": 0.7, "seconds": 0.5, "gain": 0.2, "vibratoHz": 8, "vibratoDepth": 0.1 },
+          { "type": "noise", "filter": "lowpass", "hz": 500, "seconds": 0.5, "gain": 0.15 }
+        ] },
+        "skill.shell": { "label": "技能：硬壳", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "square", "hz": 800, "endRatio": 0.5, "seconds": 0.12, "gain": 0.16 },
+          { "type": "tone", "wave": "sine", "hz": 400, "endRatio": 0.8, "seconds": 0.2, "gain": 0.2 },
+          { "type": "noise", "filter": "bandpass", "hz": 3000, "seconds": 0.06, "gain": 0.15 }
+        ] },
+        "skill.burst": { "label": "技能：爆散", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 3, "seconds": 0.35, "gain": 0.28 },
+          { "type": "noise", "filter": "bandpass", "hz": 1200, "endRatio": 2.5, "seconds": 0.35, "gain": 0.25 }
+        ] },
+        "suction.on": { "label": "开始吸附", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 250, "endRatio": 0.5, "seconds": 0.3, "gain": 0.14 },
+          { "type": "noise", "filter": "bandpass", "hz": 800, "endRatio": 0.4, "seconds": 0.3, "gain": 0.1 }
+        ] },
+        // rage.slam：原来借用 crab / hit
+        "rage.slam": { "label": "怒气冲撞 / 撞碎障碍", "bus": "player", "gap": 0.15, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 100, "endRatio": 0.4, "seconds": 0.25, "gain": 0.35 },
+          { "type": "noise", "filter": "lowpass", "hz": 1500, "seconds": 0.15, "gain": 0.3 }
+        ] },
+        // rage.burst：原来借用 crab
+        "rage.burst": { "label": "怒气释放（冲击波）", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 80, "endRatio": 0.3, "seconds": 0.8, "gain": 0.35 },
+          { "type": "noise", "filter": "lowpass", "hz": 3000, "endRatio": 0.07, "seconds": 0.8, "gain": 0.3 },
+          { "type": "tone", "wave": "sawtooth", "hz": 300, "endRatio": 0.2, "seconds": 0.5, "gain": 0.15 }
+        ] },
+        // rage.overload：原来借用 slow
+        "rage.overload": { "label": "怒气失控警告", "bus": "player", "gap": 0.5, "layers": [
+          { "type": "tone", "wave": "square", "hz": 660, "seconds": 0.12, "gain": 0.16 },
+          { "type": "tone", "wave": "square", "hz": 440, "seconds": 0.12, "gain": 0.16, "delay": 0.18 },
+          { "type": "tone", "wave": "square", "hz": 660, "seconds": 0.12, "gain": 0.16, "delay": 0.36 }
+        ] },
+        // rage.punish：原来借用 pop
+        "rage.punish": { "label": "怒气失控惩罚", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sawtooth", "hz": 200, "endRatio": 0.3, "seconds": 0.5, "gain": 0.28 },
+          { "type": "noise", "filter": "lowpass", "hz": 800, "seconds": 0.4, "gain": 0.25 }
+        ] },
+        "health.low": { "label": "血量告急（心跳）", "bus": "player", "gap": 0.5, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 60, "endRatio": 0.8, "seconds": 0.12, "gain": 0.4 },
+          { "type": "tone", "wave": "sine", "hz": 55, "endRatio": 0.8, "seconds": 0.12, "gain": 0.3, "delay": 0.16 }
+        ] },
+        // player.slow：原来的 slow
+        "player.slow": { "label": "被减速 / 被缠住", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sawtooth", "hz": 300, "endRatio": 0.4, "seconds": 0.4, "gain": 0.26 }
+        ] },
+        // crab.launch：原来的 crab
+        "crab.launch": { "label": "螃蟹把你弹起来", "bus": "player", "gap": 0.2, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 240, "endRatio": 3.4, "seconds": 0.3, "gain": 0.3 }
+        ] },
+        // talent.fart：原来的 fart
+        "talent.fart": { "label": "天赋：放屁", "bus": "player", "gap": 0.3, "layers": [
+          { "type": "tone", "wave": "sawtooth", "hz": 90, "endRatio": 0.62, "seconds": 0.34, "gain": 0.34 },
+          { "type": "tone", "wave": "square", "hz": 120, "endRatio": 0.5, "seconds": 0.3, "gain": 0.2 }
+        ] },
+        // defeat.sting：死亡那一小段曲子，你做好后用 sting 录音替换这一个
+        "defeat.sting": { "label": "死亡 sting（占位）", "bus": "player", "gap": 1, "layers": [
+          { "type": "tone", "wave": "triangle", "hz": 392, "seconds": 0.9, "gain": 0.2, "attack": 0.04 },
+          { "type": "tone", "wave": "triangle", "hz": 330, "seconds": 0.9, "gain": 0.2, "delay": 0.55, "attack": 0.04 },
+          { "type": "tone", "wave": "triangle", "hz": 262, "seconds": 0.9, "gain": 0.2, "delay": 1.1, "attack": 0.04 },
+          { "type": "tone", "wave": "sine", "hz": 196, "endRatio": 0.97, "seconds": 2, "gain": 0.22, "delay": 1.65, "attack": 0.05 }
+        ] },
+        // ---- 环境
+        "vent.erupt": { "label": "喷口喷发", "bus": "env", "gap": 0.4, "layers": [
+          { "type": "noise", "filter": "lowpass", "hz": 600, "endRatio": 3, "seconds": 0.8, "gain": 0.25 },
+          { "type": "tone", "wave": "sine", "hz": 70, "seconds": 0.8, "gain": 0.2 }
+        ] },
+        "obstacle.break.crate": { "label": "木箱被撞碎", "bus": "env", "gap": 0.1, "layers": [
+          { "type": "noise", "filter": "bandpass", "hz": 1500, "seconds": 0.18, "gain": 0.3 },
+          { "type": "tone", "wave": "square", "hz": 200, "endRatio": 0.4, "seconds": 0.1, "gain": 0.15 }
+        ] },
+        "obstacle.break.coral": { "label": "珊瑚被撞碎", "bus": "env", "gap": 0.1, "layers": [
+          { "type": "noise", "filter": "bandpass", "hz": 3500, "seconds": 0.25, "gain": 0.3 },
+          { "type": "tone", "wave": "triangle", "hz": 500, "endRatio": 0.3, "seconds": 0.15, "gain": 0.15 }
+        ] },
+        "obstacle.break.net": { "label": "渔网被撕开", "bus": "env", "gap": 0.1, "layers": [
+          { "type": "noise", "filter": "highpass", "hz": 2000, "endRatio": 1.8, "seconds": 0.3, "gain": 0.2 }
+        ] },
+        "obstacle.hit.wall": { "label": "撞上岩壁", "bus": "env", "gap": 0.15, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 90, "endRatio": 0.6, "seconds": 0.2, "gain": 0.3 },
+          { "type": "noise", "filter": "lowpass", "hz": 600, "seconds": 0.12, "gain": 0.2 }
+        ] },
+        "rain.press": { "label": "雨压下来", "bus": "env", "gap": 0.2, "layers": [
+          { "type": "noise", "filter": "highpass", "hz": 3000, "endRatio": 0.5, "seconds": 0.3, "gain": 0.15 },
+          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 0.5, "seconds": 0.25, "gain": 0.12 }
+        ] },
+        "foam.pop": { "label": "泡沫破裂", "bus": "env", "gap": 0.08, "layers": [
+          { "type": "tone", "wave": "sine", "hz": 900, "endRatio": 0.4, "seconds": 0.05, "gain": 0.14 },
+          { "type": "noise", "filter": "highpass", "hz": 6000, "seconds": 0.04, "gain": 0.1 }
+        ] },
+        "mineral.hit": { "label": "矿物颗粒撞上", "bus": "env", "gap": 0.08, "layers": [
+          { "type": "tone", "wave": "square", "hz": 1200, "endRatio": 0.5, "seconds": 0.05, "gain": 0.1 },
+          { "type": "noise", "filter": "bandpass", "hz": 5000, "seconds": 0.04, "gain": 0.1 }
+        ] }
+      }
+    },
       // 音乐总音量（再乘以设置里的音量）。
     "music": {
       "volume": 0.5,
-      // 主菜单的背景音乐：一首录好的曲子（src/assets/audio/abyssal-menu.mp3，约 190 秒），只在主菜单界面播放。
-      // 边下边播，第一次点击屏幕之后才开始下载（浏览器在那之前不允许出声）；设置里的音量和静音照常管它。
-      // 导出参数见 scripts/encode-menu-music.py（原始 WAV 不在仓库里）。
-      "menu": {
-        // 音量（0..1），再乘以设置里的音量。原曲峰值 -3.9 dBFS、平均 -15.7 dBFS，没有做过响度处理，
-        // 所以和关卡里的合成音乐比会偏响；这里一个数就能调。
-        "volume": 0.5,
-        // 菜单出现（以及每次循环回到开头）时淡入多久，秒。
+      // -----------------------------------------------------------------------------------------
+      // **录好的曲子**（和上面按关卡合成的那套并存，两条路各自独立）
+      // -----------------------------------------------------------------------------------------
+      //
+      // 文件放在 `src/assets/audio/music/`，文件名就是槽位名：
+      //   <关卡 id>.mp3   这一关的曲子（替换掉上面 tracks 里同名的合成版；没有文件就用合成版）
+      //   boss.mp3        Boss 战。Boss 登场时从关卡曲淡出、淡入这一首；Boss 死后回到关卡曲或结算曲
+      //   summary.mp3     通关结算页
+      // 主菜单那一首固定在 `src/assets/audio/menu/`（见 menuMusic.ts 顶部）。死亡的一小段是音效 `defeat.sting`，
+      // 用 `src/assets/audio/sfx/defeat.sting.wav` 替换。
+      //
+      // 全部边下边播，第一次点击屏幕之后才开始下载；设置里的音乐滑条和静音键照常管它们。
+      // **现在一个文件都没有**，所以听到的还是合成版——这是支持的状态，不是缺东西。
+      "menu": { "volume": 0.5 },
+      "recorded": {
+        // 淡入多久（秒）：曲子开始播，以及每次循环回到开头。
         "fadeInSeconds": 2,
-        // 离开主菜单（点开始）时淡出多久，秒。
+        // 淡出多久（秒）：这首不再是当前要播的（换关、Boss 登场、离开菜单）。
         "leaveFadeSeconds": 1,
-        // 距曲末还剩多少秒时开始淡出，然后回到开头重新淡入，秒。曲末本来就渐弱到 -36 dB，所以这里不用很长。
-        "loopFadeSeconds": 2
+        // 距曲末还剩多少秒时开始淡出并绕回开头（秒）。曲末本来就在渐弱时，这个数不用很大。
+        "loopFadeSeconds": 2,
+        // 四个槽位各自的音量（0..1，再乘设置里的音乐滑条）。分开是因为它们的录制响度不会一样：
+        // 主菜单那首原曲峰值 -3.9 dBFS、平均 -15.7 dBFS，没做过响度归一，所以偏响。
+        "menuVolume": 0.5,
+        "levelVolume": 0.5,
+        "bossVolume": 0.55,
+        "summaryVolume": 0.6
       },
       // 每关一段。键是关卡的 id；没写的关卡就是没有音乐。
       "tracks": {

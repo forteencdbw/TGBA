@@ -1,14 +1,16 @@
 /**
- * Audio (D6). Fully synthesised, no assets.
+ * Audio: the water's bed, the mix, and the door every cue goes through.
  *
- * The design asks for "ambient only, no BGM, and the deeper it is the quieter and the brighter it gets
- * near the surface -- the ambience itself is free progress feedback". Synthesising rather than
- * shipping a CC0 pack is not a shortcut here: the whole visual layer is procedural geometry with no
- * art assets, and a sampled water loop would be the one thing in the game that could not be re-tuned
- * by changing a number. Every parameter below is a filter cutoff or a rate.
+ * The ambience is synthesised here (a filtered noise bed with a slow wobble). Every ONE-SHOT is a cue in `src/sfx.ts`: a
+ * recipe in `audio.sfx.sounds` of the config, or a recording dropped into `src/assets/audio/sfx/` under the same name.
+ * The two sliders map to two buses below the mute: effects (the bed and every cue) and music (the level synths and the
+ * menu track).
  *
- * "No BGM" means no composed music track: the bed IS the soundtrack, and `audio.musicVolume` in the config
- * sets its level against the one-shot effects.
+ *   destination <- master (mute) <- sfxBus (effects slider) <- ambience bed, and the four cue buses (ui/combat/player/env)
+ *                                 <- musicBus (music slider) <- level music, menu track
+ *
+ * The ambience is parameterised by depth, which is the original brief: it was meant as free progress feedback. Every
+ * parameter below is a filter cutoff or a rate.
  *
  * ---------------------------------------------------------------------------------------------
  * THE PROGRESS FEEDBACK IS THE POINT
@@ -19,8 +21,7 @@
  *     sounds like underwater
  *   - the bubble density rises, so the water is busier near the light
  *
- * A player with the screen covered could still tell roughly how deep they were. That is the whole
- * brief for this module, and it is why there is no music: a loop would fight it.
+ * A player with the screen covered could still tell roughly how deep they were.
  *
  * ---------------------------------------------------------------------------------------------
  * BROWSERS BLOCK AUDIO UNTIL A GESTURE
@@ -30,38 +31,22 @@
  * and hoping is the usual way this ends up silently muted on a phone.
  */
 
-/** Events worth a sound. Kept small: a game this busy needs few, distinct cues, not many. */
 import { mech } from './mechanisms';
+import { SfxEngine } from './sfx';
+import type { SoundId } from './soundIds';
 
-export type SoundEvent =
-  | 'absorb'
-  | 'hit'
-  | 'pop'
-  | 'surface'
-  | 'skill'
-  | 'slow'
-  | 'crab'
-  | 'fart'
-  /**
-   * A small-bubble round landing on a creature.
-   *
-   * Its own cue rather than a quiet `hit`, because it says something different: `hit` is "that was done to ME"
-   * and this is "I am doing that to IT". The gun fires several times a second, so this is the shortest and
-   * highest sound in the game -- it has to register without ever crowding the mix.
-   */
-  | 'bulletHit'
-  /**
-   * A small-bubble round LEAVING the bubble.
-   *
-   * The other half of the gun's voice, and quieter than the hit on purpose: the shot is the rhythm and the hit is
-   * the information. Its pitch wanders a little per shot, because a cue that repeats four times a second at exactly
-   * the same frequency stops being a sound and becomes a metronome.
-   */
-  | 'bulletFire';
+/** Every cue the game can ask for. The names, and which group each belongs to, are in `src/soundIds.ts`. */
+export type SoundEvent = SoundId;
 
 export class GameAudio {
   private ctx: AudioContext | null = null;
+  /** Mute only: 1 when sound is on, 0 when muted. Everything passes through it. */
   private master: GainNode | null = null;
+  /** The effects slider: the ambience bed and every one-shot hang off this. */
+  private sfxBus: GainNode | null = null;
+  /** The music slider: the level music and the menu track hang off this. */
+  private musicBus_: GainNode | null = null;
+  private readonly sfx = new SfxEngine();
   private ambientGain: GainNode | null = null;
   /**
    * The background music's own level, separate from the player's master volume.
@@ -88,8 +73,8 @@ export class GameAudio {
    * game at a volume the player did not choose.
    */
   private volume = 0.8;
-  /** Throttle, so a swarm of pickups cannot stack into a buzz. */
-  private lastPlayed = new Map<SoundEvent, number>();
+  /** The music slider, 0..1. Separate from `volume`, which is the effects'. */
+  private musicSlider = 0.8;
   private now = 0;
 
   /**
@@ -200,6 +185,17 @@ export class GameAudio {
     return this.volume;
   }
 
+  /** The music slider, 0..1: how loud the level music and the menu track are. */
+  setMusicSlider(volume: number): void {
+    this.musicSlider = Math.min(1, Math.max(0, volume));
+    this.applyMaster();
+    if (this.musicSlider > 0) this.unlock();
+  }
+
+  getMusicSlider(): number {
+    return this.musicSlider;
+  }
+
   /**
    * The game's audio context and master bus, for the music to hang off.
    *
@@ -207,21 +203,25 @@ export class GameAudio {
    * and ONE volume control: the settings slider already moves this master, so the music follows it for free.
    * `null` until the first gesture, which is the signal to the music that it may not make a sound yet.
    */
-  musicBus(): { ctx: AudioContext; destination: AudioNode } | null {
-    if (!this.ctx || !this.master) return null;
-    return { ctx: this.ctx, destination: this.master };
+musicBus(): { ctx: AudioContext; destination: AudioNode } | null {
+    if (!this.ctx || !this.musicBus_) return null;
+    return { ctx: this.ctx, destination: this.musicBus_ };
   }
 
   /**
-   * Push the effective master gain: zero when muted, the player's volume otherwise.
+   * Push the effective levels: mute on the master, and one number per slider on its own bus.
    *
-   * The single place the two are combined. Computing it at each call site is how "muted" and "quiet" end up
+   * The single place the three are combined. Computing it at each call site is how "muted" and "quiet" end up
    * fighting, each restoring a gain the other had just set.
    */
   private applyMaster(): void {
-    const target = this.enabled ? this.volume : 0;
-    if (this.master && this.ctx) this.master.gain.setTargetAtTime(target, this.ctx.currentTime, 0.05);
-    this.requested.master = target;
+    if (this.master && this.ctx) {
+      const now = this.ctx.currentTime;
+      this.master.gain.setTargetAtTime(this.enabled ? 1 : 0, now, 0.05);
+      this.sfxBus?.gain.setTargetAtTime(this.volume, now, 0.05);
+      this.musicBus_?.gain.setTargetAtTime(this.musicSlider, now, 0.05);
+    }
+    this.requested.master = this.enabled ? this.volume : 0;
   }
 
   toggleMute(): boolean {
@@ -239,16 +239,23 @@ export class GameAudio {
     this.master = ctx.createGain();
     // The player's volume, not 1: a graph built after the slider was moved must start at the right level,
     // which is what happens on the FIRST gesture if the settings panel was opened before any input.
-    this.master.gain.value = this.enabled ? this.volume : 0;
-    this.requested.master = this.master.gain.value;
+    this.master.gain.value = this.enabled ? 1 : 0;
+    this.requested.master = this.enabled ? this.volume : 0;
     this.master.connect(ctx.destination);
+    this.sfxBus = ctx.createGain();
+    this.sfxBus.gain.value = this.volume;
+    this.sfxBus.connect(this.master);
+    this.musicBus_ = ctx.createGain();
+    this.musicBus_.gain.value = this.musicSlider;
+    this.musicBus_.connect(this.master);
+    this.sfx.attach(ctx, this.sfxBus);
 
     this.filter = ctx.createBiquadFilter();
     this.filter.type = 'lowpass';
     // Starts muffled; `setDepth` opens it as the bubble rises.
     this.filter.frequency.value = 260;
     this.filter.Q.value = 0.7;
-    this.filter.connect(this.master);
+    this.filter.connect(this.sfxBus);
 
     this.ambientGain = ctx.createGain();
     this.ambientGain.gain.value = 0.0; // faded in by `setDepth`
@@ -380,95 +387,16 @@ export class GameAudio {
    * Play a one-shot.
    *
    * @param intensity 0..1, scales level and brightness. Used for things like how big a bubble was.
+   * @param pan -1..1, where in the lane it happened (0 for something that is not in the water: a button, a banner).
    */
-  play(event: SoundEvent, intensity = 0.5): void {
-    if (!this.ctx || !this.master || !this.enabled) return;
-    /**
-     * Throttle identical cues: a swarm of fish can trigger many hits in one frame, and stacking them
-     * clips into a click.
-     *
-     * `bulletHit` is throttled hardest of all, and that is not a detail: several rounds can land in the same
-     * frame on a swarm, and a gun that fired four cues at once would be a click, not a sound. `bulletFire` is
-     * allowed to repeat faster than the rest because it IS a rhythm -- but not without a floor, or a very high
-     * `bullets.rateTiers` at its top tier would stack into a buzz.
-     */
-    const minGap = event === 'absorb' ? 0.045 : event === 'bulletHit' ? 0.05 : event === 'bulletFire' ? 0.04 : 0.09;
-    const previous = this.lastPlayed.get(event) ?? -1;
-    if (this.now - previous < minGap) return;
-    this.lastPlayed.set(event, this.now);
+  play(event: SoundEvent, intensity = 0.5, pan = 0): void {
+    if (!this.ctx || !this.sfxBus || !this.enabled) return;
+    this.sfx.play(event, intensity, pan);
+  }
 
-    const ctx = this.ctx;
-    const t = ctx.currentTime;
-    const level = Math.min(1, Math.max(0, intensity));
-
-    switch (event) {
-      case 'absorb':
-        // A rising blip: pitch rises with the bubble's size, so a big one announces itself.
-        this.tone(420 + level * 520, 0.09, 0.16 + level * 0.1, 'sine', t, 1.9);
-        break;
-      case 'hit':
-        // A dull low thud with a touch of noise. Not a "damage" sting -- the comedy tone forbids it.
-        this.tone(150, 0.18, 0.3, 'triangle', t, 0.55);
-        this.burst(0.09, 700, 0.22, t);
-        break;
-      case 'pop':
-        // The death pop: a sharp noise crack plus a fast downward tone.
-        this.burst(0.22, 2600, 0.5, t);
-        this.tone(660, 0.26, 0.34, 'sine', t, 0.35);
-        break;
-      case 'surface':
-        // Brighter and longer than the death pop: this one is a reward.
-        this.burst(0.5, 4200, 0.42, t);
-        this.tone(720, 0.5, 0.3, 'sine', t, 2.4);
-        break;
-      case 'skill':
-        this.tone(520, 0.22, 0.24, 'square', t, 2.6);
-        this.tone(780, 0.18, 0.16, 'sine', t, 2.2);
-        break;
-      case 'slow':
-        // A downward slur, matching "something got hold of you".
-        this.tone(300, 0.4, 0.26, 'sawtooth', t, 0.4);
-        break;
-      case 'crab':
-        // The launch is the one hazard that can HELP, so it gets an upward flick rather than a thud.
-        this.tone(240, 0.3, 0.3, 'triangle', t, 3.4);
-        break;
-      case 'fart':
-        // Deliberately silly: a low buzz with a wobble. The talent is a joke and should sound like one.
-        this.tone(90, 0.34, 0.34, 'sawtooth', t, 0.62);
-        this.tone(120, 0.3, 0.2, 'square', t, 0.5);
-        break;
-      case 'bulletHit':
-        /**
-         * A dry, high tick: a bead of water cracking against something.
-         *
-         * Two parts, both of them tiny -- a short square pip that rises slightly, and a 30ms band-passed noise
-         * click for the "crack". The rise is what keeps it from sounding like a metronome at four rounds a second:
-         * each hit chirps UP, which reads as impact rather than as a repeating beep.
-         *
-         * `level` is the caller's, and the caller gets it from `audio.bulletHitVolume` in the config, because how
-         * loud this one is matters more than for any other cue: it is the only sound in the game that plays several
-         * times a second, so it is also the only one that can ruin the mix single-handed.
-         */
-        this.tone(1050, 0.045, 0.09 + level * 0.07, 'square', t, 1.5);
-        this.burst(0.028, 3200, 0.05 + level * 0.06, t);
-        break;
-      case 'bulletFire':
-        /**
-         * A soft downward chirp with a puff of air behind it: a bubble being pushed out, not a gunshot.
-         *
-         * FALLING where the hit RISES, so the two halves of the gun are told apart by direction alone -- the shot
-         * leaves and drops away, the impact snaps upward. It is deliberately the quieter of the two: this one is
-         * the rhythm, and the hit is the information.
-         *
-         * The frequency wanders a few percent per shot. A cue that repeats four times a second at exactly one pitch
-         * stops being a sound and becomes a metronome, which is the one thing a fire sound must not be.
-         */
-        const detune = 0.96 + Math.random() * 0.08;
-        this.tone(430 * detune, 0.055, 0.06 + level * 0.05, 'triangle', t, 0.55);
-        this.burst(0.022, 1300 * detune, 0.03 + level * 0.04, t);
-        break;
-    }
+  /** Test hook: what the one-shot engine has been asked to play. See `SfxEngine.probe`. */
+  sfxProbe(): ReturnType<SfxEngine['probe']> {
+    return this.sfx.probe();
   }
 
   /** Advance the internal clock used for throttling. Called once per frame by the game. */
@@ -487,53 +415,6 @@ export class GameAudio {
     // `music` is the bed's own level, which is NOT part of the master and so has to be reported separately --
     // a test checking "the music got quieter" cannot see it in the master at all.
     return { ...this.requested, music: mech.audio.musicVolume };
-  }
-
-  /** A short tone with an exponential frequency sweep and a percussive envelope. */
-  private tone(freq: number, seconds: number, gain: number, type: OscillatorType, at: number, endRatio: number): void {
-    const ctx = this.ctx;
-    if (!ctx || !this.master) return;
-    const osc = ctx.createOscillator();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, at);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq * endRatio), at + seconds);
-
-    const g = ctx.createGain();
-    // Fast attack, exponential decay. `linearRampToValueAtTime(0)` would click, so the tail uses a
-    // small floor.
-    g.gain.setValueAtTime(0, at);
-    g.gain.linearRampToValueAtTime(gain, at + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + seconds);
-
-    osc.connect(g);
-    g.connect(this.master);
-    osc.start(at);
-    osc.stop(at + seconds + 0.02);
-  }
-
-  /** A filtered noise burst, for anything percussive. */
-  private burst(seconds: number, cutoff: number, gain: number, at: number): void {
-    const ctx = this.ctx;
-    if (!ctx || !this.master) return;
-    const frames = Math.max(1, Math.floor(ctx.sampleRate * seconds));
-    const buffer = ctx.createBuffer(1, frames, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < frames; i++) {
-      // Decaying white noise, so the buffer itself carries the envelope.
-      data[i] = (Math.random() * 2 - 1) * (1 - i / frames) ** 2;
-    }
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = cutoff;
-    filter.Q.value = 0.8;
-    const g = ctx.createGain();
-    g.gain.value = gain;
-    src.connect(filter);
-    filter.connect(g);
-    g.connect(this.master);
-    src.start(at);
   }
 }
 

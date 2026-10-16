@@ -28,6 +28,7 @@ import { isOverloaded, rageFraction } from './rage';
 import { obstacleHealth, obstacleName } from './obstacles';
 import { placeEntry } from './placement';
 import { endOverload, gainRage, hitRage, slamDamage, spendRage, tickRage } from './rage';
+import { OBSTACLE_BLOCK_SOUND, OBSTACLE_BREAK_SOUNDS } from './soundIds';
 import { sayBlast, sayCallout, sayGraze } from './runEvents';
 import { findSkill } from './skills';
 import { recordAbsorb, stageName, stageRadiusFraction } from './stages';
@@ -184,8 +185,21 @@ export class Run {
     sayBanner(this.events, text);
   }
 
-  private sound(event: SoundEvent, intensity = 0.5): void {
-    saySound(this.events, event, intensity);
+  /**
+   * The lane's width in metres, kept here so a cue can be panned to where it happened.
+   *
+   * Set by the game each frame (it is the camera's number, not the run's), and only read by `panAt`.
+   */
+  laneWidth = 0;
+
+  /** -1 (left edge of the lane) .. 1 (right), for a cue at world x. 0 when the lane is not known yet. */
+  panAt(x: number): number {
+    if (this.laneWidth <= 0) return 0;
+    return Math.max(-1, Math.min(1, (x / this.laneWidth) * 2 - 1));
+  }
+
+  private sound(event: SoundEvent, intensity = 0.5, pan = 0): void {
+    saySound(this.events, event, intensity, pan);
   }
 
   private scorePopup(x: number, y: number, points: number): void {
@@ -436,7 +450,7 @@ export class Run {
      */
     if (this.infiniteHealth) return;
     this.stats.hits++;
-    this.sound('hit');
+    this.sound('player.hurt', 0.5);
     // The base window is the config's; the mutation ladder's picks widen it in 0.2s steps.
     this.invulnerable = tuning.invulnerableSeconds + this.invulnBonusSeconds;
     /**
@@ -554,10 +568,10 @@ export class Run {
      * and firing the cue per round would turn one stutter into a burst of clicks. Its volume is its own config key
      * because it is the rhythm rather than the information: the hit should be the one that stands out.
      */
-    if (shots.fired > 0) this.sound('bulletFire', mech.audio.bulletFireVolume);
+    if (shots.fired > 0) this.sound('gun.fire', mech.audio.bulletFireVolume);
     if (shots.hits > 0) {
       const volume = mech.audio.bulletHitVolume;
-      this.sound('bulletHit', shots.drivenOff > 0 ? Math.min(1, volume * 1.4) : volume);
+      this.sound('gun.hit', shots.drivenOff > 0 ? Math.min(1, volume * 1.4) : volume);
     }
     /**
      * Points for the kill, told apart from the hit: the ledger is meant to show which act paid, not just that the
@@ -631,7 +645,7 @@ export class Run {
     const live = this.phase === 'playing';
     if (live) {
       for (const shot of shots) {
-        this.sound('hit', 0.25);
+        this.sound('enemy.fire', 0.25, this.panAt(shot.x));
         this.enemyBullets.fire(shot.kind, shot.x, shot.y, this.player.x * laneWidth, this.player.y, laneWidth);
       }
     }
@@ -720,7 +734,7 @@ export class Run {
     if (!wasOverloaded && isOverloaded(this.rage)) {
       // Announced once, on the frame it starts: a warning that repeats every frame is noise.
       this.banner(`失控  ·  ${mech.angry.overload.seconds.toFixed(1)} 秒内把怒气放掉`);
-this.sound('slow');
+      this.sound('rage.overload');
     }
     if (overloadExpired) this.punishOverload();
   }
@@ -778,10 +792,10 @@ this.sound('slow');
     this.player.impulseVx += dir.x * mech.angry.charge.launchLateralSpeed;
     this.slamSeconds = Math.max(this.slamSeconds, mech.angry.charge.slamSeconds);
     /**
-     * The launch cue is the crab's: a heavy, water-laden shove. There is no bespoke sound for the slam yet, and
-     * reusing the closest existing one is honest -- a new sound is the owner's call, not something to invent here.
+     * Its own cue rather than the crab's, which it borrowed until now: the crab is something done TO the bubble and the
+     * slam is something the bubble does, so a player charging on purpose should hear their own move.
      */
-    this.sound('crab');
+    this.sound('rage.slam', 0.7);
   }
   /**
    * The boss fight: arrival, the health bar, and the win condition.
@@ -838,7 +852,7 @@ this.sound('slow');
     this.chargeBurstRadius = cfg.chainJumpMeters * 0.5;
     this.chargeBurst = cfg.burstSeconds;
     this.charge = 0;
-    this.sound('surface');
+    this.sound('chain.zap');
     for (const h of this.hazards.hazards) {
       if (!reached.has(h.id)) continue;
       // Through `hit`, so the discharge is ordinary damage: health, the driven-off score, the popup and the knockback
@@ -1027,7 +1041,7 @@ this.sound('slow');
          */
         this.xp.gain('graze');
         sayGraze(this.events, e.graze.x, e.graze.y);
-        this.sound('skill');
+        this.sound('graze', 0.5, this.panAt(e.graze.x));
         continue;
       }
       if (e.pushDown) {
@@ -1040,7 +1054,7 @@ this.sound('slow');
         // The ring and the shake are the drain's to build: the shake is measured against the WINDOW, and a rule that
         // has to ask how big the window is cannot run without one. The blast says where and how wide.
         sayBlast(this.events, e.blast.x, e.blast.y, e.blast.radius);
-        this.sound('pop');
+        this.sound('bomb.blast', 0.6, this.panAt(e.blast.x));
         this.lastComedyBeat = { what: e.kind, at: this.elapsed };
         /**
          * The blast hurts the player, through the ordinary hit path.
@@ -1066,7 +1080,7 @@ this.sound('slow');
         this.scorePopup(this.player.x * laneWidth, this.player.y, this.score.award('eaten'));
         this.xp.gain('eaten');
         this.invulnerable = Math.max(this.invulnerable, mech.consumption.eatInvulnerableSeconds + this.eatInvulnBonusSeconds);
-        this.sound('pop');
+        this.sound('player.eat');
         continue;
       }
 
@@ -1082,7 +1096,7 @@ this.sound('slow');
       }
       if (e.slowSeconds && e.slowFactor) {
         this.player.applySlow(e.slowSeconds, e.slowFactor);
-        this.sound('slow');
+        this.sound('player.slow');
       }
       if (e.impulse) {
         /**
@@ -1101,8 +1115,15 @@ this.sound('slow');
         this.player.impulseVy = Math.max(this.player.impulseVy, asScreenFraction);
         this.lastComedyBeat = { what: 'crab', at: this.elapsed };
         // The crab is the one hazard that can HELP, so it gets an upward cue rather than a thud.
-        this.sound('crab');
+        this.sound('crab.launch');
       }
+      /**
+       * The water's own three, each by name: rain that presses the bubble down, foam that pops against it, and mineral
+       * grit. They are `broke: true` contacts like the scenery, so this is the branch that already knows they happened.
+       */
+      if (e.kind === 'rain') this.sound('rain.press');
+      else if (e.kind === 'foam') this.sound('foam.pop');
+      else if (e.kind === 'mineral') this.sound('mineral.hit');
       if (e.drainPerSecond) {
         // Continuous, so it is applied as a fraction of a hit point per second rather than as whole
         // hits -- otherwise being grabbed would be instant death at any frame rate.
@@ -1179,7 +1200,9 @@ this.sound('slow');
     );
     if (contact.hit?.broke) {
       this.lastComedyBeat = { what: 'crab', at: this.elapsed };
-      this.sound('hit');
+      // By MATERIAL rather than one thud: a crate, a coral and a net are three different things to break, and the wall
+      // is the one the bubble bounces off instead. See `OBSTACLE_BREAK_SOUNDS`.
+      this.sound(OBSTACLE_BREAK_SOUNDS[contact.hit.kind] ?? 'rage.slam');
       /**
        * Breaking something LARGE is one of the document's ways to release the rage, and it is checked here because
        * this is the only place that knows what was broken.
@@ -1219,6 +1242,9 @@ this.sound('slow');
        * get through cost, which would remove the reason it exists.
        */
       if (contact.hurt) this.takeHit(mech.obstacles.contactDamage);
+      // The bump itself, whether or not it hurt: a net stops the bubble without costing anything, and the player still
+      // needs to hear that they have been stopped.
+      this.sound(OBSTACLE_BLOCK_SOUND);
       // Pushed back down the screen, out of the obstacle, so one crate cannot cost several hits.
       this.player.impulseVy = -Math.max(this.player.impulseVy, 0.25);
     }
@@ -1283,7 +1309,7 @@ this.sound('slow');
             this.player.stageSpeedMultiplier = this.stage.speedMultiplier;
             this.invulnerable = Math.max(this.invulnerable, mech.stages.growInvulnerableSeconds);
             this.banner(`${stageName(this.stage.stage)}  ·  ${this.stage.stage} 阶段  ·  速度 ×${this.stage.speedMultiplier.toFixed(2)}`);
-            this.sound('skill');
+            this.sound('stage.grow');
           }
         } else {
           const points = this.score.award('absorb');
@@ -1291,7 +1317,7 @@ this.sound('slow');
         }
         this.stats.absorbed++;
         eaten++;
-        this.sound('absorb', Math.min(1, bubbleR / Math.max(1e-6, playerR)));
+        this.sound('player.absorb', Math.min(1, bubbleR / Math.max(1e-6, playerR)));
         this.field.bubbles.splice(i, 1);
       } else if (this.invulnerable <= 0) {
         // Too big to eat: it hurts -- the standard price of running into something, same as a fish or a crate.
@@ -1331,7 +1357,7 @@ this.sound('slow');
     this.health = Math.max(1, this.health - mech.angry.overload.punishDamage);
     this.stats.overloads++;
     this.banner(`怒气失控  ·  血量 ${Math.round(before)} → ${Math.round(this.health)}`);
-this.sound('pop');
+    this.sound('rage.punish');
   }
   /** The bubble pops: slow-motion burst, then a brief result card, then a fresh run. */
   startBurst(): void {
@@ -1339,7 +1365,10 @@ this.sound('pop');
     this.phaseTimer = BURST_SECONDS;
     this.stats.ended++;
     this.recordBest();
-    this.sound('pop');
+    this.sound('player.pop', 0.7);
+    // And the ending's own music over it: a few bars that say the run is over, rather than a sound that says something
+    // just happened. Both play -- the sting is deliberately longer than the pop.
+    this.sound('defeat.sting');
     this.banner(`破裂  ·  深度 ${Math.round(this.player.depth(LEVEL.scrollLength))}m  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×`);
 }
   /**
@@ -1411,7 +1440,7 @@ this.sound('pop');
     endOverload(this.rage);
     this.burst = { radius, seconds: 0, kills, pushes };
     this.bursts++;
-    this.sound('crab');
+    this.sound('rage.burst', 0.8);
   }
   /**
    * The 鱼屁泡 talent's reflex: shove nearby fish off, then leave bait behind.
@@ -1462,7 +1491,7 @@ this.sound('pop');
     }
     this.lastComedyBeat = { what: 'fish', at: this.elapsed };
     // Deliberately silly, because the talent is a joke and should sound like one.
-    this.sound('fart');
+    this.sound('talent.fart');
   }
   /**
    * Keep the best run, so the results card has something to beat.
@@ -1532,7 +1561,7 @@ this.sound('pop');
     // A banner and a sound for each beat. No hazards: the level's timeline already placed them, and the
     // job here is to tell the player what they are swimming into.
     this.banner(`${label}  ·  ${EVENT_CALLOUTS[index] ?? ''}`.trim());
-this.sound('skill');
+    this.sound('level.banner');
   }
   /**
    * The level's scripted events, at the depths its landmarks announce.

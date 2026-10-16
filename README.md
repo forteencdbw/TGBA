@@ -273,23 +273,58 @@ levels/03-jelly-forest.json5 (level "jelly-forest"): paths.weave.points[0].y sho
 
 数值都在 `config/mechanics.json5` 的 `menu.backdrop` 段；单位是"屏幕宽度的比例"或"每秒多少屏"，所以换窗口大小观感不变。
 
-### 主菜单的背景音乐（一首录好的曲子）
+### 音效：一个声音一行配置，录音可以直接盖掉
 
-关卡里的音乐是合成的（`src/music.ts`），**主菜单是项目里唯一一首录好的曲子**：`src/assets/audio/abyssal-menu.mp3`，
-约 190 秒、2.3 MB，播放逻辑在 `src/menuMusic.ts`。
+每一个音效都是 `config/mechanics.json5` 里 `audio.sfx.sounds` 的一行：名字（`src/soundIds.ts` 里那份 id 表）、
+分组、若干层 tone/noise，以及它们的频率、时长、音量、延后、颤动。**名字就是接口**：
 
-- **只在主菜单界面播**（`phase === 'menu'`，设置面板从菜单打开时不打断）。点开始后淡出 `leaveFadeSeconds`（1 秒）让位给关卡音乐，
-  回到菜单从头淡入。
-- **边下边播，第一次点击后才开始下载**：整首解码成 PCM 要占约 67 MB 内存，手机上不划算；浏览器在第一次手势之前也不允许出声。
-  第一次 `play()` 放在指针按下的那一刻，是因为 iOS 只放行手势里发起的那一次。
-- **循环靠淡入淡出，不追求样本级无缝**（MP3 本来也保证不了）：距曲末 `loopFadeSeconds`（2 秒）时淡出，回到开头再淡入。
-  进入、离开、循环三件事共用同一个 0..1 的包络。
-- 音量走游戏总线，**设置里的音量和静音键都管它**；再乘 `audio.music.menu.volume`（默认 0.5，没做过响度处理，
-  原曲峰值 −3.9 dBFS、平均 −15.7 dBFS，听着偏响就调这个数）。四个旋钮都在 `config/mechanics.json5` 的 `audio.music.menu`。
+- **换成真实录音**：把 `<名字>.wav`（或 `.mp3`）放进 `src/assets/audio/sfx/`，同名文件自动盖过配方。
+  不用改代码，也不用改配置。**短音效用 WAV**（MP3 每个文件开头会有约 25ms 空白，对命中音这种几十毫秒的声音很明显）。
+- **调参数**：改那一行里的数字。`gap` 是同一个声音最少隔多久才能再响（防止一串敌人叠成一团）、
+  `pitchJitter` 是每次随机偏多少音高（防止连发听起来像节拍器）、
+  `pitchPerIntensity` / `gainPerIntensity` 让强度越大音高 / 音量越高（强度由触发处给，例如吸收的泡泡越大）。
+- 现在 **68 个**，分四组（`ui` 界面 / `combat` 战斗 / `player` 玩家 / `env` 环境），每组在 `audio.sfx.buses` 里
+  各有自己的相对音量。界面的音不受同时发声上限（`maxVoices`）限制。
+- **世界里的声音按位置分左右**（`panWidth`）：左边的鱼偏左耳，界面音和玩家自己的声音居中。
+- **试听**：设置面板作弊区里的「试听音效」，一页 12 个，点一下就放。我这边听不到，所以占位音效的好坏只能靠你耳朵判断。
 
-**导出参数**（原始 WAV 太大、**不入库**，所以这一节就是它的记录）：`scripts/encode-menu-music.py <wav>`，
+敌人按**六类**共用「被打中 / 逃走」两个声音（小鱼群游 / 大型捕食者 / 水母与电 / 硬壳带刺 / 远程射手 / BOSS），
+分类表在 `src/soundIds.ts` 的 `ENEMY_CLASS`。想给某一种单独的声音，就在那张表里把它挪到自己的类，或者再加一类。
+
+### 背景音乐：合成的当后备，录音放进去就自动替换
+
+两条路并存，`src/recordedMusic.ts` 决定哪条在响：
+
+- **每关一段合成曲**（`src/music.ts`，配方在 `audio.music.tracks`）——这是**后备**，不是过时的东西。
+- **录好的曲子**放 `src/assets/audio/music/`，文件名就是槽位：
+
+| 文件 | 什么时候播 |
+|---|---|
+| `<关卡 id>.mp3` | 这一关，替换掉同名合成曲（`black-smokers`、`wreck-gorge`、`jelly-forest`、`thermocline`、`storm-surge`、`dawn-surface`） |
+| `boss.mp3` | BOSS 战：BOSS 登场时切过去，被击败后回到关卡曲 |
+| `summary.mp3` | 通关结算页 |
+
+**一个文件都没有是支持的状态**，不是缺东西：没有文件的关卡照旧播合成曲，没有 `boss.mp3` 就继续播关卡曲。
+
+- **主菜单那一首**固定在 `src/assets/audio/abyssal-menu.mp3`（约 190 秒、2.3 MB），只在 `phase === 'menu'` 时播，
+  点开始后淡出让位给关卡。
+- 全部**边下边播，第一次点击之后才开始下载**：整首解码成 PCM 要占约 67 MB 内存，手机上不划算；
+  浏览器在第一次手势之前也不允许出声。第一次 `play()` 放在指针按下的那一刻，是因为 iOS 只放行手势里发起的那一次。
+- **循环靠淡入淡出，不追求样本级无缝**（MP3 本来也保证不了）：距曲末 `loopFadeSeconds` 时淡出，回到开头再淡入。
+  进入、离开、循环三件事共用同一个包络。
+- 四个槽位各有自己的音量（`audio.music.recorded.*Volume`），因为录制的响度不会一样。没有做过响度归一，
+  听着偏响或偏轻就调那一格。
+
+**死亡那一下**是一段短的 sting（不循环），它是音效 `defeat.sting`，所以换成录音就是放一个
+`src/assets/audio/sfx/defeat.sting.wav`。
+
+**主菜单那首的导出参数**（原始 WAV 太大、**不入库**，所以这一节就是它的记录）：`scripts/encode-menu-music.py <wav>`，
 MP3、96 kbps CBR、联合立体声、保持源文件的 48 kHz（不重采样）、不裁剪、不改响度。需要 `pip install --user lameenc numpy`。
-换曲子就是用同一个脚本重新导出，覆盖这个文件。
+
+### 设置面板里的两个滑条
+
+**音乐**和**音效**各一条，都是 `src/audio.ts` 里自己的总线（主增益只管静音）。关卡合成曲、录好的曲子走音乐那条；
+环境底噪和全部音效走音效那条。设置里的音量不再乘进音乐，否则同一个设置会被算两遍。
 
 ### 鱼群（Boids）：前景和背景
 

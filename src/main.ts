@@ -2,7 +2,8 @@ import { Application, FillGradient, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, rgba, waterColourForTest } from './background';
 import { tuning } from './config';
 import { DEBUG_LEVEL, LEVEL, LEVELS, START_LEVEL_ID, TIMELINE, installSpawnBlocks, isDebugLevel, levelIndex, selectLevel, type Level } from './levels';
-import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, isBossKind, LURE_PROBE, paintHazards, setReducedFlash, warmAnimations, type HazardKind } from './hazards';
+import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, isBossKind, LURE_PROBE, paintHazards, setReducedFlash, ventErupting, warmAnimations, type HazardKind } from './hazards';
+import { hitSoundOf, leaveSoundOf } from './soundIds';
 import { paintHitboxes, setDebugHitboxes, isDebugHitboxes } from './hitboxes';
 import { paintBullets, radiusOf } from './bullets';
 import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
@@ -29,7 +30,7 @@ import { suctionRadiusFraction } from './suction';
 import { BackSchoolLayer } from './backSchoolLayer';
 import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
-import { MenuMusic } from './menuMusic';
+import { RecordedMusic } from './recordedMusic';
 import { Sprite } from 'pixi.js';
 import { allAssetNames, assetTextureNow, loadAssetTexture, preloadAssets } from './assets';
 import { ParticleField } from './particles';
@@ -114,14 +115,31 @@ class Game {
    *
    * Starts and stops with the RUN rather than with the page: each level has its own recipe (see
    * config/mechanics.json5's music.tracks), and the settings volume applies to it through the same master bus as
-   * every effect. The menu is silent as far as THIS is concerned; its track is `menuMusic`, below.
+   * every effect. The menu is silent as far as THIS is concerned; its own track is one of the RECORDED slots below, and a
+   * level uses this synthesiser only while that level has no recording of its own.
    */
   private readonly music = new Music();
   /**
    * The main menu's recorded track. Plays only while the menu is up, so it is the one piece of music that is not tied to
-   * a run -- see `src/menuMusic.ts`.
+   * a run -- see `src/recordedMusic.ts`.
    */
-  private readonly menuMusic = new MenuMusic();
+  private readonly recordedMusic = new RecordedMusic();
+  /**
+   * Which hazards were in each of the four watched states last frame, so `watchHazardsForSound` can fire on the edge.
+   *
+   * Replaced wholesale each frame rather than mutated, which is what makes a creature that left the water stop being
+   * remembered without a second place that knows about the cull.
+   */
+  private soundedCharging = new Set<number>();
+  private soundedDischarging = new Set<number>();
+  private soundedErupting = new Set<number>();
+  private soundedAttacking = new Set<number>();
+  /** Seconds since the last low-health beat. */
+  private healthClock = 0;
+  /** Whether the suction field was up last frame, for the cue that says it just came on. */
+  private wasSucking = false;
+  /** Whether the boss's approach has been announced this level. */
+  private bossWarned = false;
   /** The end-of-run panel, shown once the last level's bubble has left the water. */
   private readonly summary = new RunSummary();
   /** Seconds of play across the whole RUN, which is what the summary reports -- lapsed is per level. */
@@ -396,6 +414,11 @@ class Game {
     // The game opens on the menu, so the gear must not be showing behind it.
     this.settings.root.visible = false;
     this.settings.onVolume = (v) => audio.setVolume(v);
+    this.settings.onMusicVolume = (v) => audio.setMusicSlider(v);
+    // Every control in the panel makes its own sound, through the same one-shot engine the game uses. The panel does not
+    // call `audio` itself -- it says WHICH cue, and the game decides what that means, exactly like every other callback
+    // on it.
+    this.settings.onCue = (id) => audio.play(id, 0.8);
     this.settings.onOpen = () => this.openSettings();
     this.settings.onClose = () => this.closeSettings();
     this.settings.onRestart = () => this.restartLevel();
@@ -604,8 +627,10 @@ class Game {
     // The first real gesture is the only moment a browser lets audio start. Doing it here rather than
     // at boot is why the game is not silently muted on a phone.
     audio.unlock();
-    // Inside the gesture, because iOS only lets the first `play()` through when it is made in one.
-    this.menuMusic.update(0, this.run.phase === 'menu', audio.musicBus());
+    // Inside the gesture, because iOS only lets the first `play()` through when it is made in one, and the menu's track is
+    // the one that starts there. `dt` of 0 because there is no frame to advance.
+    this.recordedMusic.play(this.run.phase === 'menu' ? 'menu' : this.recordedMusic.playing === 'menu' ? null : this.recordedMusic.playing);
+    this.recordedMusic.update(0, audio.musicBus());
     this.logPointer('down', pointerId, x, y);
     this.pointerPositions.set(pointerId, { x, y });
 
@@ -869,9 +894,9 @@ class Game {
     return this.music;
   }
 
-  /** Test hook: the menu track's fade and playback state. */
-  get menuMusicRef(): MenuMusic {
-    return this.menuMusic;
+  /** Test hook: every recorded slot's fade and playback state, and which one is playing. */
+  get recordedMusicRef(): RecordedMusic {
+    return this.recordedMusic;
   }
 
   /** Test hook: the run's conductive charge (LEVEL 3), 0 to `hazards.charge.max`. */
@@ -1961,7 +1986,15 @@ class Game {
      * is handled here too, and muting while the settings panel is open is exactly when someone would want it.
      */
     this.input.update();
-    this.menuMusic.update(dt, this.run.phase === 'menu', audio.musicBus());
+    /**
+     * The recorded side of the music, every frame and in every phase.
+     *
+     * During a run the synth's `update` is what plays a level's notes, and that one only ticks while the level does -- so
+     * this has to be here rather than beside it, or the menu's track would stop the moment a run began and a boss track
+     * could not start while the pick was open.
+     */
+    this.recordedMusic.play(this.run.phase === 'menu' ? 'menu' : this.recordedMusic.playing === 'menu' ? null : this.recordedMusic.playing);
+    this.recordedMusic.update(dt, audio.musicBus());
     if (this.run.phase !== 'menu' && this.input.consumeMute()) this.audioMuted = audio.toggleMute();
 
     /**
@@ -2196,6 +2229,17 @@ class Game {
          * which is the only place that knows how wide the lane is.
          */
         for (const event of this.run.hazards.takeHitEvents()) {
+          /**
+           * The creature's own answer, by family, over the gun's dry tick.
+           *
+           * Here rather than at the gun, because this queue is the single place that knows a round CONNECTED -- every
+           * source of damage goes through `HazardField.hit` (the gun, the chain, the burst), so one emission covers all
+           * of them and cannot be missed by a caller that forgot.
+           */
+          this.sound(event.kind === 'hit' ? hitSoundOf(event.hazard) : leaveSoundOf(event.hazard), 0.5, this.panAt(event.x));
+          // Nothing to draw for an escape: the creature is still in the water and on its way out, and the particles it
+          // would get are the ones a DESTROYED thing earns. The sound is the whole of that event.
+          if (event.kind === 'escaped') continue;
           this.hitParticles.emit({
             x: event.x,
             y: event.y,
@@ -2264,6 +2308,8 @@ class Game {
      * more bite on its way out. And it fires from the bubble's position as of NOW rather than after the player
      * moves, so the stream comes out of the bubble the player is looking at.
      */
+    // The run needs the lane's width to pan a cue to where it happened; it is the camera's number, so it is handed over here.
+    this.run.laneWidth = world.laneWidth;
     this.run.updateBullets(dt, viewport.laneWidthMeters, min, max);
     this.run.obstacles.update(dt, min, max);
 
@@ -2351,6 +2397,7 @@ class Game {
     this.music.update(dt);
     this.updateBoss();
     this.run.updateConductiveCharge(dt, viewport.laneWidthMeters);
+    this.watchHazardsForSound(dt);
 
     /**
      * THE MUTATION PICK OPENS HERE, at the end of the step that filled the bar.
@@ -2418,6 +2465,7 @@ class Game {
    * on the water through the freeze would resume a drag the player has already stopped thinking about.
    */
   private openLevelUp(): void {
+    this.sound('levelup.open', 0.6);
     this.run.phase = 'levelup';
     this.touch.releaseAll();
     // A number key pressed before the freeze is stale here -- flush it, or the modal would answer it on
@@ -2450,6 +2498,9 @@ class Game {
      * would not land until the next `startRun` folded it in.
      */
     pickMutationCard(this.run, choice);
+    // The route card is not another mutation: it is the moment the run picks its identity, so it gets its own sound
+    // rather than the card click every other pick gets.
+    this.sound(choice.id.startsWith('route:') ? 'mutation.gain' : 'levelup.pick', 0.7);
     /**
      * A route card changes the FORM, not just the counts: the new verbs have to reach the touch layer on this
      * frame, or the panel closes on a bubble whose buttons it does not have yet.
@@ -2490,6 +2541,7 @@ class Game {
    * the player could steer a bubble through a level that had not started.
    */
   private async beginWithLoading(): Promise<void> {
+    this.sound('menu.start', 0.7);
     this.pendingStart = true;
     this.run.phase = 'loading';
     this.menu.root.visible = false;
@@ -2657,6 +2709,7 @@ class Game {
     this.run.surfaced = false;
     this.skillSlot(this.run.skill !== null);
     this.run.elapsed = 0;
+    this.sound('level.start', 0.6);
     this.run.phase = 'intro';
     this.run.phaseTimer = INTRO_SECONDS;
     this.run.invulnerable = 0;
@@ -2713,6 +2766,7 @@ class Game {
      * panel to match.
      */
     const fromMenu = this.run.phase === 'menu';
+    this.sound(fromMenu ? 'ui.click' : 'ui.pause');
     if (!fromMenu) {
       this.phaseBeforePause = this.run.phase;
       this.run.phase = 'paused';
@@ -2724,6 +2778,7 @@ class Game {
     // The run's growth, as of this pause -- or nothing from the menu, where there is no run to describe.
     this.settings.setGrowth(fromMenu ? null : growthView(this.run));
     this.settings.setVolume(audio.getVolume());
+    this.settings.setMusicVolume(audio.getMusicSlider());
     this.settings.setOpen(true);
   }
 
@@ -2731,6 +2786,7 @@ class Game {
   private closeSettings(): void {
     // The two cases are told apart by the PHASE rather than by a flag of their own: from the menu the panel never
     // changed it, so there is nothing to restore and no way for a second flag to disagree with what is on screen.
+    this.sound(this.run.phase === 'paused' ? 'ui.resume' : 'ui.click');
     if (this.run.phase === 'paused') this.run.phase = this.phaseBeforePause;
     else if (this.run.phase !== 'menu') return;
     this.settings.setInRun(true);
@@ -2776,6 +2832,20 @@ class Game {
     selectLevel(DEBUG_LEVEL.id);
     this.closeSettings();
     void this.beginWithLoading();
+  }
+
+  /**
+   * Point the music back at the current level: its recording, or the synthesiser if it has none.
+   *
+   * One function rather than the line repeated, because there are three ways to arrive back at a level's own music (beating
+   * a boss with no results track, and the two endings) and a level's recording and its recipe are alternatives that must be
+   * decided together -- playing both, or neither, is the failure a second call site would produce.
+   */
+  private restoreLevelMusic(): void {
+    const track = (mech.audio.music.tracks as Record<string, MusicTrack | undefined>)[LEVEL.looksLike ?? LEVEL.id];
+    const synth = !this.recordedMusic.has('level');
+    this.music.setTrack(synth ? (track ?? null) : null);
+    this.recordedMusic.play(synth ? null : 'level');
   }
 
   /** Leave the level and show the main menu. */
@@ -2877,9 +2947,11 @@ class Game {
   private startLevelMusic(): void {
     const bus = audio.musicBus();
     if (bus) this.music.attach(bus.ctx, bus.destination);
-    const track = (mech.audio.music.tracks as Record<string, MusicTrack | undefined>)[LEVEL.looksLike ?? LEVEL.id];
-    this.music.setVolume(audio.getVolume() * mech.audio.music.volume);
-    this.music.setTrack(track ?? null);
+    this.music.setVolume(mech.audio.music.volume);
+    // The level's slot is pointed at this level's file (or at nothing), and then the same decision `restoreLevelMusic` makes
+    // is taken -- one function, so "recording or recipe" cannot be answered two different ways.
+    this.recordedMusic.setLevel(LEVEL.looksLike ?? LEVEL.id);
+    this.restoreLevelMusic();
   }
 
   private enterFromMenu(): void {
@@ -2976,8 +3048,80 @@ class Game {
     this.run.phase = 'menu';
   }
 
+/**
+ * Sounds for the things a hazard DOES, which nothing announces.
+ *
+ * A charge, a zapper's ring, a vent coming up and a boss swinging are all STATE on the creature rather than events it
+ * reports (the hit queue reports rounds landing, and nothing else). So each is read as a TRANSITION: the ids in the
+ * state this frame, less the ids in it last frame, are the ones that just entered it, and that is one sound each.
+ *
+ * A transition is the honest reading of all four -- "it is charging" is not something to hear sixty times a second, and
+ * "it started charging" is exactly the beat the player reacts to.
+ */
+private watchHazardsForSound(dt: number): void {
+  const charging = new Set<number>();
+  const discharging = new Set<number>();
+  const erupting = new Set<number>();
+  const attacking = new Set<number>();
+  for (const h of this.run.hazards.hazards) {
+    const pan = this.panAt(h.x);
+    if (h.charge) {
+      charging.add(h.id);
+      if (!this.soundedCharging.has(h.id)) this.sound('enemy.charge', 0.5, pan);
+    }
+    if (h.discharge > 0) {
+      discharging.add(h.id);
+      if (!this.soundedDischarging.has(h.id)) this.sound('enemy.discharge', 0.6, pan);
+    }
+    if (ventErupting(h)) {
+      erupting.add(h.id);
+      if (!this.soundedErupting.has(h.id)) this.sound('vent.erupt', 0.6, pan);
+    }
+    if (h.attackSince !== null && h.attackSince !== undefined && isBossKind(h.kind)) {
+      attacking.add(h.id);
+      if (!this.soundedAttacking.has(h.id)) this.sound('boss.attack', 0.7, pan);
+    }
+  }
+  this.soundedCharging = charging;
+  this.soundedDischarging = discharging;
+  this.soundedErupting = erupting;
+  this.soundedAttacking = attacking;
+
+  /**
+   * And the heartbeat, which is the one cue that is about a NUMBER rather than an event.
+   *
+   * A steady interval rather than a beat per frame: the point of a warning is that it is audible over the fight, and
+   * something that fires sixty times a second is a hum. The clock resets the moment the health is back up, so the first
+   * beat after the hit that took it low is immediate rather than up to an interval late.
+   */
+  const low = this.run.health / Math.max(1, this.run.healthMax) < mech.audio.lowHealthFraction;
+  if (!low) this.healthClock = 0;
+  else {
+    this.healthClock += dt;
+    if (this.healthClock >= mech.audio.lowHealthIntervalSeconds) {
+      this.healthClock -= mech.audio.lowHealthIntervalSeconds;
+      this.sound('health.low', 0.6);
+    }
+  }
+
+  // The suction field's own cue, on the edge where it comes up.
+  const sucking = this.run.suctionUp(this.input);
+  if (sucking && !this.wasSucking) this.sound('suction.on', 0.6);
+  this.wasSucking = sucking;
+}
+
 private updateBoss(): void {
     const spec = LEVEL.boss;
+    /**
+     * A warning a few seconds out.
+     *
+     * `scrolled` is metres and the level's own `scrollSpeed` turns that into seconds, so the lead is a TIME in the
+     * config rather than a distance that would mean different things at different speeds.
+     */
+    if (!this.run.bossSpawned && !this.bossWarned && this.run.scrolled >= spec.at - mech.audio.bossWarnSeconds * LEVEL.scrollSpeed) {
+      this.bossWarned = true;
+      this.sound('boss.warn', 0.8);
+    }
     if (!this.run.bossSpawned && this.run.scrolled >= spec.at) {
       this.run.bossSpawned = true;
       const lane = this.camera.viewport.laneWidthMeters;
@@ -3001,7 +3145,13 @@ private updateBoss(): void {
        */
       const boss = this.run.makeHazard(this.worldView(), spec.kind, this.run.player.x * lane, this.camera.y + band * 0.42, null, spec.health);
       this.run.hazards.hazards.push(boss);
-      this.sound('surface');
+      this.sound('boss.enter', 0.9);
+      // The fight gets its own music when there is one, over the level's. With no boss recording the level's track simply
+      // carries on, which is the honest reading of "the owner has not written that one yet" -- silence would read as a bug.
+      if (this.recordedMusic.has('boss')) {
+        this.music.setTrack(null);
+        this.recordedMusic.play('boss');
+      }
       this.banner(`${spec.name}  ·  击败它才能离开这一关`);
     }
     const boss = this.run.hazards.hazards.find((h) => isBossKind(h.kind));
@@ -3052,7 +3202,11 @@ private updateBoss(): void {
      */
     this.run.xp.gain('boss');
     this.run.recordBest();
-    this.sound('surface');
+    this.sound('level.surface');
+    // The results screen's own piece if there is one, and otherwise back to the level's -- see `startLevelMusic`, which is
+    // the only other place that decides which of the two kinds is playing.
+    if (this.recordedMusic.has('summary')) this.recordedMusic.play('summary');
+    else this.restoreLevelMusic();
     saySplash(this.run.events);
     // The results card is not a banner: it stays up until the run moves on, so it is shown here and faded by
     // `updateTransientOverlays` -- which is also what writes its TEXT, because the layout is its business.
@@ -3126,6 +3280,7 @@ private updateBoss(): void {
     this.run.runComplete = true;
     this.run.phase = 'summary';
     this.music.stop();
+    this.sound('summary.show', 0.7);
     this.summary.show({
       score: this.run.score.value,
       levels: this.run.levelsClearedInRun,
@@ -3217,8 +3372,15 @@ private updateBoss(): void {
   }
 
   /** A cue for the synth. Same signature as `audio.play`, because the drain is a forward to it. */
-  private sound(event: SoundEvent, intensity = 0.5): void {
-    saySound(this.run.events, event, intensity);
+  private sound(event: SoundEvent, intensity = 0.5, pan = 0): void {
+    saySound(this.run.events, event, intensity, pan);
+  }
+
+  /** -1 (left edge of the lane) .. 1 (right), for a cue at world x -- the same mapping `Run.panAt` uses. */
+  private panAt(x: number): number {
+    const lane = this.camera.viewport.laneWidthMeters;
+    if (lane <= 0) return 0;
+    return Math.max(-1, Math.min(1, (x / lane) * 2 - 1));
   }
 
   /** A number rising off a place in the water, in WORLD metres: the drain hands the camera to the popup layer. */
@@ -3251,7 +3413,7 @@ private updateBoss(): void {
           this.bannerSeen = true;
           break;
         case 'sound':
-          audio.play(e.event, e.intensity);
+          audio.play(e.event, e.intensity, e.pan);
           break;
         case 'scorePopup':
           this.popups.add(e.x, e.y, e.points, this.camera);

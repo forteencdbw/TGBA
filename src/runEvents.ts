@@ -25,7 +25,7 @@ import type { SoundEvent } from './audio';
  */
 export type RunEvent =
   | { kind: 'banner'; text: string }
-  | { kind: 'sound'; event: SoundEvent; intensity: number }
+  | { kind: 'sound'; event: SoundEvent; intensity: number; pan: number }
   | { kind: 'scorePopup'; x: number; y: number; points: number }
   | { kind: 'damagePopup'; x: number; y: number; amount: number }
   | { kind: 'graze'; x: number; y: number }
@@ -45,8 +45,9 @@ export function sayBanner(events: RunEvent[], text: string): void {
   events.push({ kind: 'banner', text });
 }
 
-export function saySound(events: RunEvent[], event: SoundEvent, intensity = 0.5): void {
-  events.push({ kind: 'sound', event, intensity });
+/** `pan` is -1 (left) .. 1 (right): where in the lane it happened, 0 for a sound that is not somewhere in the water. */
+export function saySound(events: RunEvent[], event: SoundEvent, intensity = 0.5, pan = 0): void {
+  events.push({ kind: 'sound', event, intensity, pan });
 }
 
 /** A number rising off a place in the water, in WORLD metres: the drain hands the camera to the popup layer. */

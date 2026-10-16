@@ -1338,7 +1338,7 @@ function stepVent(_field: HazardField, h: Hazard, dt: number, _ctx: HazardContex
  * `phase`; now that a delay can hold the cycle off, a second reading of the same state is exactly how the picture
  * and the hitbox would come apart.
  */
-function ventErupting(h: Hazard): boolean {
+export function ventErupting(h: Hazard): boolean {
   if (!h.vent) return false;
   if (h.fed < h.vent.startDelaySeconds) return false;
   return h.phase < mech.hazards.vent.activeSeconds;
@@ -2132,7 +2132,7 @@ export class HazardField {
     }
     if (hazard.health > 0) {
       this.damaged++;
-      this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'hit', colour: KIND_TUNING[hazard.kind].colour });
+      this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'hit', colour: KIND_TUNING[hazard.kind].colour, hazard: hazard.kind });
       return 'damaged';
     }
     /**
@@ -2145,7 +2145,7 @@ export class HazardField {
     if (hazard.kind === 'bombfish') {
       hazard.blastFuse = 0;
       this.fled++;
-      this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour });
+      this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour, hazard: hazard.kind });
       return 'fled';
     }
     /**
@@ -2166,7 +2166,7 @@ export class HazardField {
        */
       startDeath(hazard);
       // The boss is the one thing that is KILLED rather than driven off, and it breaks like anything else.
-      this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour });
+      this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour, hazard: hazard.kind });
       return 'killed';
     }
     /**
@@ -2181,6 +2181,9 @@ export class HazardField {
     hazard.flee = FLEE_DIRECTIONS[Math.floor(Math.random() * FLEE_DIRECTIONS.length)]!;
     hazard.flee = FLEE_DIRECTIONS[Math.floor(Math.random() * FLEE_DIRECTIONS.length)]!;
     this.fled++;
+    // Reported like every other outcome of a round landing, because the sound of a creature being driven off is the beat
+    // that says the shot finished the job -- and until now nothing downstream could tell it had happened at all.
+    this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'escaped', colour: KIND_TUNING[hazard.kind].colour, hazard: hazard.kind });
     return 'fled';
   }
 
@@ -4109,8 +4112,23 @@ export interface HazardHitEvent {
   x: number;
   y: number;
   radiusFraction: number;
-  kind: 'hit' | 'defeat';
+  /**
+   * What happened: a round landed, the thing was destroyed for good, or it was DRIVEN OFF and is on its way out.
+   *
+   * `escaped` is its own case rather than folded into `defeat` because the two differ in what the screen does: a bomb or a
+   * boss comes apart where it stands, and an ordinary creature just leaves. Reporting them as one would have given every
+   * fish driven off a bomb's burst of debris, which is a visual the escape never had.
+   */
+  kind: 'hit' | 'defeat' | 'escaped';
   colour: number;
+  /**
+   * WHICH creature it was, which `kind` above cannot say.
+   *
+   * `kind` is what HAPPENED (a hit, or a defeat) and drives the particles; this is what it happened TO, and it is what
+   * the sound needs -- six families of creature each answer a round differently (`enemy.hit.<class>`), and the class is
+   * a property of the species rather than of the event.
+   */
+  hazard: string;
 }
 
 /**

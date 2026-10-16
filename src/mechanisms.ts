@@ -1,3 +1,5 @@
+import type { SfxConfig } from './sfx';
+import { SOUND_BUSES, SOUND_IDS } from './soundIds';
 import JSON5 from 'json5';
 import rawText from '../config/mechanics.json5?raw';
 
@@ -2004,6 +2006,12 @@ export interface Mechanisms {
       notes: number[];
       gapSeconds: number;
     };
+    /** Seconds before a boss arrives that its approach is announced, measured against the level's scroll speed. */
+    bossWarnSeconds: number;
+    /** The health fraction below which the heartbeat starts, 0..1. */
+    lowHealthFraction: number;
+    /** Seconds between heartbeats while the health is low. */
+    lowHealthIntervalSeconds: number;
     /** Extra beat after the flourish before the bubble starts to rise, in seconds. */
     clearHoldSeconds: number;
     /** How fast the bubble flies off the top of the screen when a level is cleared, in screen heights per second. */
@@ -2026,14 +2034,31 @@ export interface Mechanisms {
       menu: {
         /** How loud, 0..1, before the player's volume. Separate from `volume`, which is the level synths'. */
         volume: number;
-        /** Seconds to fade in when the menu appears, and again after each loop. */
+      };
+      /**
+       * The RECORDED tracks: one envelope for all of them, and one level each.
+       *
+       * The envelope is shared rather than repeated per slot because it is four fades of the same kind, and two copies of
+       * a fade length is two things to keep in step when the owner tunes one by ear.
+       */
+      recorded: {
+        /** Seconds to fade in when a track starts, and again after each loop. */
         fadeInSeconds: number;
-        /** Seconds to fade out when the player leaves the menu. */
+        /** Seconds to fade out when a track is no longer the one playing. */
         leaveFadeSeconds: number;
-        /** Seconds before the end of the track at which it fades out, to loop back to the start. */
+        /** Seconds before the end of a track at which it fades out, to loop back to the start. */
         loopFadeSeconds: number;
+        /** Levels, 0..1, one per slot: the menu, a level, a boss fight, and the results screen. */
+        menuVolume: number;
+        levelVolume: number;
+        bossVolume: number;
+        summaryVolume: number;
       };
     };
+    /**
+     * Every one-shot sound: a recipe per cue, plus the mix. See `src/sfx.ts` for what a recipe is and `src/soundIds.ts` for the names.
+     */
+    sfx: SfxConfig;
     /**
      * The background bed's level relative to the one-shot sounds.
      *
@@ -3458,11 +3483,55 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'summary.scrimAlpha', check: anyNumber, describe: 'an opacity' },
   { path: 'summary.buttonColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'summary.buttonLabel', check: (v) => typeof v === 'string' && v.length >= 1, describe: 'a non-empty label' },
+  { path: 'audio.bossWarnSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'audio.lowHealthFraction', check: anyNumber, describe: 'a fraction, 0..1' },
+  { path: 'audio.lowHealthIntervalSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'audio.sfx.panWidth', check: anyNumber, describe: 'a fraction, 0..1' },
+  { path: 'audio.sfx.maxVoices', check: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1, describe: 'a whole number of voices' },
+  {
+    path: 'audio.sfx.buses',
+    check: (v) =>
+      v !== null && typeof v === 'object' && !Array.isArray(v) && SOUND_BUSES.every((b) => typeof (v as Record<string, unknown>)[b] === 'number'),
+    describe: `an object with a level for each of ${SOUND_BUSES.join(', ')}`,
+  },
+  {
+    path: 'audio.sfx.sounds',
+    check: (v) => {
+      if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+      const table = v as Record<string, unknown>;
+      // Every name must have a recipe, and no recipe may be for a name nobody can ask for.
+      if (SOUND_IDS.some((id) => !(id in table)) || Object.keys(table).some((id) => !(SOUND_IDS as readonly string[]).includes(id))) return false;
+      const optionalNumber = (x: unknown) => x === undefined || (typeof x === 'number' && Number.isFinite(x));
+      const waves = ['sine', 'square', 'sawtooth', 'triangle'];
+      const filters = ['bandpass', 'lowpass', 'highpass'];
+      return Object.values(table).every((row) => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        if (typeof r.label !== 'string' || !(SOUND_BUSES as readonly string[]).includes(r.bus as string)) return false;
+        if (![r.gap, r.gain, r.fileGain, r.pitchJitter, r.pitchPerIntensity, r.gainPerIntensity].every(optionalNumber)) return false;
+        if (!Array.isArray(r.layers) || r.layers.length < 1) return false;
+        return r.layers.every((layer) => {
+          if (!layer || typeof layer !== 'object') return false;
+          const l = layer as Record<string, unknown>;
+          if (typeof l.hz !== 'number' || l.hz <= 0 || typeof l.seconds !== 'number' || l.seconds <= 0 || typeof l.gain !== 'number') return false;
+          if (![l.endRatio, l.delay, l.attack].every(optionalNumber)) return false;
+          if (l.type === 'tone') return (l.wave === undefined || waves.includes(l.wave as string)) && optionalNumber(l.vibratoHz) && optionalNumber(l.vibratoDepth);
+          if (l.type === 'noise') return (l.filter === undefined || filters.includes(l.filter as string)) && optionalNumber(l.q);
+          return false;
+        });
+      });
+    },
+    describe: 'an object of sound id to a recipe ({ label, bus, layers: [...] }) with a row for EVERY id in src/soundIds.ts',
+  },
   { path: 'audio.music.volume', check: anyNumber, describe: 'a level' },
   { path: 'audio.music.menu.volume', check: anyNumber, describe: 'a level, 0..1' },
-  { path: 'audio.music.menu.fadeInSeconds', check: anyNumber, describe: 'seconds' },
-  { path: 'audio.music.menu.leaveFadeSeconds', check: anyNumber, describe: 'seconds' },
-  { path: 'audio.music.menu.loopFadeSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'audio.music.recorded.fadeInSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'audio.music.recorded.leaveFadeSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'audio.music.recorded.loopFadeSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'audio.music.recorded.menuVolume', check: anyNumber, describe: 'a level, 0..1' },
+  { path: 'audio.music.recorded.levelVolume', check: anyNumber, describe: 'a level, 0..1' },
+  { path: 'audio.music.recorded.bossVolume', check: anyNumber, describe: 'a level, 0..1' },
+  { path: 'audio.music.recorded.summaryVolume', check: anyNumber, describe: 'a level, 0..1' },
   {
     path: 'audio.music.tracks',
     check: (v) =>

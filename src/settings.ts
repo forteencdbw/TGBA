@@ -1,5 +1,17 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { mech } from './mechanisms';
+import { SOUND_IDS, type SoundId } from './soundIds';
+
+/**
+ * The audition list's shape: how many cues a page holds, and how many pages that makes.
+ *
+ * Two columns by six rows, because a single column of twelve would be taller than the panel on a phone. The page count is
+ * derived from the list rather than written down, so a cue added to `src/soundIds.ts` is one more row on the last page
+ * instead of a page nobody can reach.
+ */
+const AUDITION_PER_PAGE = 12;
+const AUDITION_COLUMNS = 2;
+const AUDITION_PAGES = Math.max(1, Math.ceil(SOUND_IDS.length / AUDITION_PER_PAGE));
 import { designScale } from './viewport';
 import type { Viewport } from './viewport';
 import type { GrowthView } from './growth';
@@ -63,6 +75,7 @@ export class SettingsUi {
   private readonly panelBg = new Graphics();
   private readonly title: Text;
   private readonly volumeLabel: Text;
+  private readonly musicLabel: Text;
   /** The accessibility section's heading and its toggle. */
   private readonly accessLabel: Text;
   private readonly flashButton: Button;
@@ -95,7 +108,21 @@ export class SettingsUi {
   private readonly sliderTrack = new Graphics();
   private readonly sliderFill = new Graphics();
   private readonly sliderKnob = new Graphics();
+  /** The music slider's own three pieces: the two rows are the same control drawn twice, not one control shared. */
+  private readonly musicTrack = new Graphics();
+  private readonly musicFill = new Graphics();
+  private readonly musicKnob = new Graphics();
   private readonly closeButton: Button;
+
+  /** 试听音效: opens the audition list. */
+  private readonly auditionButton: Button;
+  private readonly auditionLayer = new Container();
+  private readonly auditionBg = new Graphics();
+  private readonly auditionTitle: Text;
+  private readonly auditionButtons: Button[] = [];
+  private readonly auditionPrev: Button;
+  private readonly auditionNext: Button;
+  private readonly auditionClose: Button;
 
   private readonly restartButton: Button;
   private readonly exitButton: Button;
@@ -180,8 +207,15 @@ export class SettingsUi {
   /** Called when the player taps a level that is selectable. */
   onPickLevel: (levelId: string) => void = () => {};
 
-  /** Called when the slider moves, with 0..1. The game applies it to the audio immediately. */
+  /**
+   * The two sliders, one per mixer bus. The player's own volume is gone as a separate concept: "effects" IS it, and it
+   * is what the ambience bed and every one-shot hang off. See `src/audio.ts`.
+   */
   onVolume: (volume: number) => void = () => {};
+  /** Called when the music slider moves, with 0..1. */
+  onMusicVolume: (volume: number) => void = () => {};
+  /** Called whenever a control here is used, so the panel can be heard as well as seen. */
+  onCue: (id: SoundId) => void = () => {};
   /**
    * Called when the panel OPENS, so the game can pause.
    *
@@ -226,8 +260,11 @@ export class SettingsUi {
   private gearCircle = { x: 0, y: 0, radius: 0 };
   private panelRect = { x: 0, y: 0, w: 0, h: 0 };
   private slider = { x: 0, y: 0, w: 0, h: 0 };
-  /** 0..1, the value the slider currently shows. */
+  private musicSlider = { x: 0, y: 0, w: 0, h: 0 };
+  /** 0..1, the value the effects slider currently shows. */
   private volume = 0.8;
+  /** 0..1, the value the music slider currently shows. */
+  private musicVolume = 0.8;
   /** Whether the cheat is on. Kept here so the panel can draw its own state, and not persisted. */
   private infiniteHealth = false;
   /** Whether the debug overlay is on. Defaults ON, and resets to that on every load. */
@@ -236,8 +273,21 @@ export class SettingsUi {
   private showHitboxes = true;
   /** Whether the reduced-flash setting is on, likewise. */
   private reducedFlash = false;
-  /** The pointer dragging the slider, or null. */
+  /** The slider value the last tick was played at, so a drag ticks in steps rather than per pixel. */
+  private lastSliderTick = -1;
+  /** The pointer dragging a slider, or null -- one per slider, because two fingers may hold both at once. */
   private sliderPointer: number | null = null;
+  private musicSliderPointer: number | null = null;
+  /**
+   * The audition: a list of every cue, one page at a time, so the owner can hear a sound without playing until it
+   * happens.
+   *
+   * Inside the settings panel rather than a developer page of its own, and hidden behind 试听音效 in the cheat section:
+   * the panel is where every other "look at the machinery" control already lives, and this is the ear's version of the
+   * hitbox overlay.
+   */
+  private auditionOpen = false;
+  private auditionPage = 0;
   /** The HUD scale from the last layout, so a redraw from a pointer handler needs no viewport. */
   private scale = 1;
   /** Canvas size from the last layout, for the full-canvas scrim. */
@@ -253,6 +303,9 @@ export class SettingsUi {
     this.sliderTrack.eventMode = 'none';
     this.sliderFill.eventMode = 'none';
     this.sliderKnob.eventMode = 'none';
+    this.musicTrack.eventMode = 'none';
+    this.musicFill.eventMode = 'none';
+    this.musicKnob.eventMode = 'none';
     this.levelRow.eventMode = 'none';
     this.growthLayer.eventMode = 'none';
     this.growthWindowBg.eventMode = 'none';
@@ -261,9 +314,11 @@ export class SettingsUi {
     this.growthBar.eventMode = 'none';
 
     this.title = mkText('设置 / SETTINGS', 0xeaf9ff, 22);
+    this.auditionTitle = mkText('', 0xeaf9ff, 17);
     this.growthHeading = mkText('成长 / GROWTH', mech.settings.growth.headingColour, mech.settings.growth.headingSize);
     this.volumeLabel = mkText('', 0xbfe9ff, 15);
-    this.closeButton = this.mkButton('×', () => this.setOpen(false));
+    this.musicLabel = mkText('', 0xbfe9ff, 15);
+    this.closeButton = this.mkButton('×', () => this.setOpen(false), 'ui.back');
 
     /**
      * The accessibility section, above the cheats.
@@ -272,7 +327,7 @@ export class SettingsUi {
      * game is, and someone looking for it should not have to read the cheat section to find it.
      */
     this.accessLabel = mkText('显示 / DISPLAY', 0x8fd6ff, 13);
-    this.flashButton = this.mkButton('降低闪烁：关', () => this.setReducedFlash(!this.reducedFlash));
+    this.flashButton = this.mkButton('降低闪烁：关', () => this.setReducedFlash(!this.reducedFlash), 'ui.toggle');
 
     /**
      * The cheats section.
@@ -281,22 +336,23 @@ export class SettingsUi {
      * the game IS rather than how it looks or sounds, and it should be findable without reading the whole panel.
      */
     this.cheatLabel = mkText('作弊 / CHEATS', 0xffb46b, 13);
-    this.cheatButton = this.mkButton('无限血量：关', () => this.setInfiniteHealth(!this.infiniteHealth));
+    this.cheatButton = this.mkButton('无限血量：关', () => this.setInfiniteHealth(!this.infiniteHealth), 'ui.toggle');
     // Already on at construction, so the label starts in the ON form -- `redraw` keeps it in step from here.
-    this.debugButton = this.mkButton('调试模式：开', () => this.setDebugMode(!this.debugMode));
-    this.hitboxButton = this.mkButton('碰撞盒：开', () => this.setShowHitboxes(!this.showHitboxes));
+    this.debugButton = this.mkButton('调试模式：开', () => this.setDebugMode(!this.debugMode), 'ui.toggle');
+    this.hitboxButton = this.mkButton('碰撞盒：开', () => this.setShowHitboxes(!this.showHitboxes), 'ui.toggle');
     this.debugLevelButton = this.mkButton('进入调试关', () => this.onEnterDebugLevel());
     // Whether it is offered is decided by `syncDebugEntry`; this is its state at construction (in a run: not offered).
     this.debugLevelButton.bg.visible = false;
     this.debugLevelButton.label.visible = false;
 
+    this.auditionButton = this.mkButton('试听音效', () => this.openAudition());
     this.restartButton = this.mkButton('重开本关', () => this.onRestart());
     this.exitButton = this.mkButton('退出到主菜单', () => this.onExit());
     // Both simply close. Saving is instantaneous -- the volume is already applied -- and the pair exists
     // because a settings panel without them reads as unfinished, and because there WILL be data that needs
     // confirming later.
-    this.saveButton = this.mkButton('保存', () => this.setOpen(false));
-    this.cancelButton = this.mkButton('取消', () => this.setOpen(false));
+    this.saveButton = this.mkButton('保存', () => this.setOpen(false), 'ui.back');
+    this.cancelButton = this.mkButton('取消', () => this.setOpen(false), 'ui.back');
 
     this.growthContent.mask = this.growthMask;
     this.panel.addChild(
@@ -309,6 +365,10 @@ export class SettingsUi {
       this.growthBar,
       this.growthHeading,
       this.title,
+      this.musicLabel,
+      this.musicTrack,
+      this.musicFill,
+      this.musicKnob,
       this.volumeLabel,
       this.sliderTrack,
       this.sliderFill,
@@ -329,6 +389,8 @@ export class SettingsUi {
       this.hitboxButton.label,
       this.debugLevelButton.bg,
       this.debugLevelButton.label,
+      this.auditionButton.bg,
+      this.auditionButton.label,
       this.restartButton.bg,
       this.restartButton.label,
       this.exitButton.bg,
@@ -338,20 +400,44 @@ export class SettingsUi {
       this.cancelButton.bg,
       this.cancelButton.label,
     );
+    for (let i = 0; i < AUDITION_PER_PAGE; i++) this.auditionButtons.push(this.mkButton('', () => undefined, 'ui.click'));
+    this.auditionPrev = this.mkButton('上一页', () => this.turnAuditionPage(-1));
+    this.auditionNext = this.mkButton('下一页', () => this.turnAuditionPage(1));
+    this.auditionClose = this.mkButton('返回设置', () => this.closeAudition(), 'ui.back');
+    this.auditionLayer.addChild(
+      this.auditionBg,
+      this.auditionTitle,
+      this.auditionPrev.bg,
+      this.auditionPrev.label,
+      this.auditionNext.bg,
+      this.auditionNext.label,
+      this.auditionClose.bg,
+      this.auditionClose.label,
+    );
+    for (const b of this.auditionButtons) this.auditionLayer.addChild(b.bg, b.label);
+    this.auditionLayer.visible = false;
     // The gear is a sibling of the panel so it can be drawn over it... it is not, so the panel must cover it.
-    this.root.addChild(this.scrim, this.gear, this.panel);
+    this.root.addChild(this.scrim, this.gear, this.panel, this.auditionLayer);
     this.setOpen(false);
   }
-  /** Build a button and wire its own press handling through the shared callback. */
-  private mkButton(label: string, onPress: () => void): Button {
+  /**
+   * Build a button and wire its own press handling through the shared callback.
+   *
+   * `cue` is which sound it makes when it fires. Defaulted rather than required so the eleven call sites that do not care
+   * stay as they were, and set to `ui.back` on the three that close the panel -- a close is a different gesture from a
+   * press, and hearing the difference is most of what makes a menu feel finished.
+   */
+  private mkButton(label: string, onPress: () => void, cue: SoundId = 'ui.click'): Button {
     const bg = new Graphics();
     bg.eventMode = 'none';
     const text = mkText(label, 0xeaf9ff, 16);
     text.anchor.set(0.5);
     text.eventMode = 'none';
     const button: Button = { label: text, bg, x: 0, y: 0, w: 0, h: 0, pressed: false };
-    // `onPress` is stored on the button so `handlePointerUp` can invoke it after a matching down.
-    (button as Button & { onPress: () => void }).onPress = onPress;
+    // `onPress` and the cue are stored on the button so `handlePointerUp` can use them after a matching down.
+    const extra = button as Button & { onPress: () => void; cue: SoundId };
+    extra.onPress = onPress;
+    extra.cue = cue;
     return button;
   }
 
@@ -372,6 +458,7 @@ export class SettingsUi {
       this.debugButton,
       this.hitboxButton,
       this.debugLevelButton,
+      this.auditionButton,
       this.restartButton,
       this.exitButton,
       this.saveButton,
@@ -408,6 +495,11 @@ export class SettingsUi {
     return (button as Button & { onPress: () => void }).onPress;
   }
 
+  /** The cue a button makes when it fires. */
+  private cueOf(button: Button): SoundId {
+    return (button as Button & { cue?: SoundId }).cue ?? 'ui.click';
+  }
+
   get isOpen(): boolean {
     return this.open;
   }
@@ -436,6 +528,9 @@ export class SettingsUi {
 
   setOpen(open: boolean): void {
     const wasOpen = this.open;
+    // The list is a page OF this panel, so it goes when the panel does: leaving it up would leave a full-screen layer over
+    // a game that has started again.
+    if (!open) this.closeAudition();
     this.open = open;
     this.panel.visible = open;
     // The scrim dims the game, so it belongs with the panel.
@@ -534,6 +629,12 @@ export class SettingsUi {
     this.redraw();
   }
 
+  /** Reflect the actual music level, the same way. */
+  setMusicVolume(volume: number): void {
+    this.musicVolume = Math.min(1, Math.max(0, volume));
+    this.redraw();
+  }
+
   layout(viewport: Viewport): void {
     const s = designScale(viewport.width, viewport.height);
     this.scale = s;
@@ -589,12 +690,14 @@ export class SettingsUi {
      * what caught it, which is why the rows are checked against each other rather than trusted.
      */
     const ROW0 = {
-      volumeLabel: 78,
-      slider: 112,
-      accessLabel: 156,
-      accessRow: 177,
-      cheatsLabel: 227,
-      cheatsRow: 248,
+      musicLabel: 78,
+      musicSlider: 112,
+      volumeLabel: 148,
+      slider: 182,
+      accessLabel: 226,
+      accessRow: 247,
+      cheatsLabel: 297,
+      cheatsRow: 318,
       rowHeight: 42,
       rowGap: 10,
     };
@@ -617,10 +720,10 @@ export class SettingsUi {
      */
     const modeRow = [this.debugButton, this.hitboxButton];
     const lowerRows: Button[][] = this.inRun
-      ? [[this.cheatButton], modeRow, [this.restartButton], [this.exitButton]]
+      ? [[this.cheatButton], modeRow, [this.auditionButton], [this.restartButton], [this.exitButton]]
       : this.showsDebugEntry
-        ? [[this.cheatButton], modeRow, [this.debugLevelButton]]
-        : [[this.cheatButton], modeRow];
+        ? [[this.cheatButton], modeRow, [this.auditionButton], [this.debugLevelButton]]
+        : [[this.cheatButton], modeRow, [this.auditionButton]];
 
     /**
      * The level block, and its height in DESIGN PIXELS -- which is the same unit as `ROW` above.
@@ -661,6 +764,8 @@ export class SettingsUi {
     const shift = growthShift(windowH);
     ROW = {
       ...ROW0,
+      musicLabel: ROW0.musicLabel + shift,
+      musicSlider: ROW0.musicSlider + shift,
       volumeLabel: ROW0.volumeLabel + shift,
       slider: ROW0.slider + shift,
       accessLabel: ROW0.accessLabel + shift,
@@ -698,19 +803,22 @@ export class SettingsUi {
 
     this.layoutGrowth(showGrowth, windowH, GROWTH, s, contentPx);
 
-    // Volume, near the top: it is the only setting, so it gets the prominent slot.
+    // The two sliders, at the top: music over effects, which reads as "the backdrop, then what happens in front of it".
+    const sliderW = w - 48 * s;
+    const sliderX = this.panelRect.x + 24 * s;
     this.volumeLabel.scale.set(s);
     this.volumeLabel.anchor.set(0, 0.5);
-    this.volumeLabel.x = this.panelRect.x + 24 * s;
+    this.volumeLabel.x = sliderX;
     this.volumeLabel.y = this.panelRect.y + ROW.volumeLabel * s;
+    this.slider = { x: sliderX, y: this.panelRect.y + ROW.slider * s, w: sliderW, h: 14 * s };
 
-    const sliderW = w - 48 * s;
-    this.slider = {
-      x: this.panelRect.x + 24 * s,
-      y: this.panelRect.y + ROW.slider * s,
-      w: sliderW,
-      h: 14 * s,
-    };
+    this.musicLabel.scale.set(s);
+    this.musicLabel.anchor.set(0, 0.5);
+    this.musicLabel.x = sliderX;
+    this.musicLabel.y = this.panelRect.y + ROW.musicLabel * s;
+    this.musicSlider = { x: sliderX, y: this.panelRect.y + ROW.musicSlider * s, w: sliderW, h: 14 * s };
+
+    if (this.auditionOpen) this.layoutAudition();
 
     const closeSize = 34 * s;
     this.place(this.closeButton, this.panelRect.x + w - closeSize - 12 * s, this.panelRect.y + 12 * s, closeSize, closeSize, s);
@@ -1072,19 +1180,10 @@ export class SettingsUi {
     const s = this.scale;
     if (!this.open) return;
 
-    const sl = this.slider;
-    const knobX = sl.x + sl.w * this.volume;
-    this.sliderFill.clear();
-    if (this.volume > 0.001) {
-      this.sliderFill
-        .roundRect(sl.x, sl.y - sl.h / 2, sl.w * this.volume, sl.h, sl.h / 2)
-        .fill({ color: 0x6fe3ff, alpha: 0.85 });
-    }
-    this.sliderKnob.clear();
-    this.sliderKnob.circle(knobX, sl.y, 12 * s).fill({ color: 0xffffff, alpha: 0.96 });
-    this.sliderKnob.circle(knobX, sl.y, 12 * s).stroke({ color: 0x6fe3ff, alpha: 0.9, width: 2 * s });
-
-    this.volumeLabel.text = `音量 / VOLUME   ${Math.round(this.volume * 100)}`;
+    this.drawSlider(this.slider, this.volume, this.sliderFill, this.sliderKnob, s);
+    this.drawSlider(this.musicSlider, this.musicVolume, this.musicFill, this.musicKnob, s);
+    this.volumeLabel.text = `音效 / EFFECTS   ${Math.round(this.volume * 100)}`;
+    this.musicLabel.text = `音乐 / MUSIC   ${Math.round(this.musicVolume * 100)}`;
 
     for (const b of this.buttons()) {
       const primary = b === this.saveButton;
@@ -1182,6 +1281,18 @@ export class SettingsUi {
     }
   }
 
+  /** One slider, drawn from its geometry and its value. Both rows are the same three shapes. */
+  private drawSlider(sl: { x: number; y: number; w: number; h: number }, value: number, fill: Graphics, knob: Graphics, s: number): void {
+    fill.clear();
+    if (value > 0.001) {
+      fill.roundRect(sl.x, sl.y - sl.h / 2, sl.w * value, sl.h, sl.h / 2).fill({ color: 0x6fe3ff, alpha: 0.85 });
+    }
+    knob.clear();
+    const x = sl.x + sl.w * value;
+    knob.circle(x, sl.y, 12 * s).fill({ color: 0xffffff, alpha: 0.96 });
+    knob.circle(x, sl.y, 12 * s).stroke({ color: 0x6fe3ff, alpha: 0.9, width: 2 * s });
+  }
+
   /** Build everything that depends on the canvas: the scrim, the panel, the slider track and the button frames. */
   private buildStatic(): void {
     const s = this.scale;
@@ -1202,12 +1313,13 @@ export class SettingsUi {
       .fill({ color: 0x0e1c2f, alpha: 0.97 })
       .stroke({ color: 0x6dc7e8, alpha: 0.5, width: 1.5 * s });
 
-    const sl = this.slider;
-    this.sliderTrack.clear();
-    this.sliderTrack
-      .roundRect(sl.x, sl.y - sl.h / 2, sl.w, sl.h, sl.h / 2)
-      .fill({ color: 0x08131f, alpha: 0.95 })
-      .stroke({ color: 0x3d7fa8, alpha: 0.6, width: 1 });
+    for (const [sl, track] of [[this.slider, this.sliderTrack], [this.musicSlider, this.musicTrack]] as const) {
+      track.clear();
+      track
+        .roundRect(sl.x, sl.y - sl.h / 2, sl.w, sl.h, sl.h / 2)
+        .fill({ color: 0x08131f, alpha: 0.95 })
+        .stroke({ color: 0x3d7fa8, alpha: 0.6, width: 1 });
+    }
 
     this.drawGear();
   }
@@ -1266,6 +1378,14 @@ export class SettingsUi {
     return dx * dx + dy * dy <= c.radius * c.radius * 1.35 * 1.35;
   }
 
+  /** The three buttons along the bottom of the audition list: previous, next, back to the settings. */
+  private auditionControls(): Button[] {
+    return [this.auditionPrev, this.auditionNext, this.auditionClose];
+  }
+
+  /** Which of the three bottom buttons the finger is holding, or null. */
+  private auditionPress: number | null = null;
+
   handlePointerDown(pointerId: number, x: number, y: number): boolean {
     if (!this.open) {
       if (this.inCircle(x, y, this.gearCircle)) {
@@ -1273,6 +1393,14 @@ export class SettingsUi {
         return true;
       }
       return false;
+    }
+
+    if (this.auditionOpen) {
+      for (const b of this.auditionButtons) if (this.inRect(x, y, b)) b.pressed = true;
+      this.auditionPress = this.auditionControls().findIndex((b) => this.inRect(x, y, b));
+      if (this.auditionPress === -1) this.auditionPress = null;
+      this.drawAuditionButtons();
+      return true;
     }
 
     // While the panel is open it swallows EVERY pointer: the game behind it must not receive taps that were
@@ -1292,7 +1420,11 @@ export class SettingsUi {
     }
     if (this.inRect(x, y, { x: this.slider.x - 14, y: this.slider.y - 20, w: this.slider.w + 28, h: 40 })) {
       this.sliderPointer = pointerId;
-      this.moveSlider(x);
+      this.moveSlider(x, false);
+    }
+    if (this.inRect(x, y, { x: this.musicSlider.x - 14, y: this.musicSlider.y - 20, w: this.musicSlider.w + 28, h: 40 })) {
+      this.musicSliderPointer = pointerId;
+      this.moveSlider(x, true);
     }
     // A press inside the card window starts a drag-scroll. Nothing in the window is a button, so there is no tap to tell
     // apart from the drag: the press just takes hold of the content.
@@ -1306,6 +1438,12 @@ export class SettingsUi {
 
   handlePointerMove(pointerId: number, x: number, y: number): boolean {
     if (!this.open) return false;
+    if (this.auditionOpen) {
+      for (const b of this.auditionButtons) if (b.pressed && !this.inRect(x, y, b)) b.pressed = false;
+      if (this.auditionPress !== null && !this.inRect(x, y, this.auditionControls()[this.auditionPress] ?? { x: 0, y: 0, w: 0, h: 0 })) this.auditionPress = null;
+      this.drawAuditionButtons();
+      return true;
+    }
     // A button that the finger has slid off stops looking pressed, so the press cannot fire on release.
     for (const b of this.buttons()) {
       if (b.pressed && !this.inRect(x, y, b)) b.pressed = false;
@@ -1314,7 +1452,8 @@ export class SettingsUi {
     if (this.pressedPill >= 0 && !this.inRect(x, y, this.levelRects[this.pressedPill] ?? { x: 0, y: 0, w: 0, h: 0 })) {
       this.pressedPill = -1;
     }
-    if (this.sliderPointer === pointerId) this.moveSlider(x);
+    if (this.sliderPointer === pointerId) this.moveSlider(x, false);
+    if (this.musicSliderPointer === pointerId) this.moveSlider(x, true);
     // The content follows the finger: dragging up moves it up, which is scrolling DOWN the list.
     if (this.growthPointer === pointerId) {
       this.setGrowthScroll(this.growthScroll - (y - this.growthLastY));
@@ -1326,13 +1465,47 @@ export class SettingsUi {
 
   handlePointerUp(pointerId: number, x: number, y: number): boolean {
     if (!this.open) return false;
+    if (this.auditionOpen) {
+      /**
+       * The list's own controls, and the cues themselves.
+       *
+       * A row plays its cue on RELEASE over it, the same rule every other button on this panel follows -- a finger that
+       * slid off has changed its mind. The three controls are the other three buttons and are told apart by index, so
+       * there is one list rather than two.
+       */
+      const ids = this.auditionIds();
+      this.auditionButtons.forEach((button, i) => {
+        const wasPressed = button.pressed;
+        button.pressed = false;
+        const id = ids[i];
+        if (wasPressed && id && this.inRect(x, y, button)) this.onCue(id);
+      });
+      const controls = this.auditionControls();
+      const pressed = this.auditionPress;
+      this.auditionPress = null;
+      if (pressed !== null) {
+        const control = controls[pressed];
+        if (control && this.inRect(x, y, control)) {
+          this.onCue(pressed === 2 ? 'ui.back' : 'ui.click');
+          if (pressed === 0) this.turnAuditionPage(-1);
+          else if (pressed === 1) this.turnAuditionPage(1);
+          else this.closeAudition();
+        }
+      }
+      this.drawAuditionButtons();
+      return true;
+    }
     if (this.sliderPointer === pointerId) this.sliderPointer = null;
+    if (this.musicSliderPointer === pointerId) this.musicSliderPointer = null;
     if (this.growthPointer === pointerId) this.growthPointer = null;
     for (const b of this.buttons()) {
       const wasPressed = b.pressed;
       b.pressed = false;
       // Fire only if the release is still inside: a finger that slid away has changed its mind.
-      if (wasPressed && this.inRect(x, y, b)) this.onPressOf(b)();
+      if (wasPressed && this.inRect(x, y, b)) {
+        this.onCue(this.cueOf(b));
+        this.onPressOf(b)();
+      }
     }
     /**
      * The pill, fired the same way and for the same reason: only if the release is still over it.
@@ -1351,11 +1524,132 @@ export class SettingsUi {
     return true;
   }
 
-  /** Update the volume from a pointer x, and tell the game so the audio follows live. */
-  private moveSlider(x: number): void {
-    const t = (x - this.slider.x) / Math.max(1, this.slider.w);
-    this.volume = Math.min(1, Math.max(0, t));
-    this.onVolume(this.volume);
+  // ------------------------------------------------------------------------------------------------
+  // The audition list
+  // ------------------------------------------------------------------------------------------------
+
+  /** Open the list of every cue, at its first page. */
+  private openAudition(): void {
+    this.auditionOpen = true;
+    this.auditionPage = 0;
+    this.auditionLayer.visible = true;
+    this.layoutAudition();
+  }
+
+  /** Close it, back to the settings panel it was opened from. */
+  private closeAudition(): void {
+    this.auditionOpen = false;
+    this.auditionLayer.visible = false;
+  }
+
+  /** Turn a page, wrapping: the owner is listening for the one they are looking for, not browsing an ordered thing. */
+  private turnAuditionPage(delta: number): void {
+    this.auditionPage = (this.auditionPage + delta + AUDITION_PAGES) % AUDITION_PAGES;
+    this.layoutAudition();
+  }
+
+  /** Which cues this page shows, in the order `src/soundIds.ts` lists them. */
+  private auditionIds(): (SoundId | null)[] {
+    const from = this.auditionPage * AUDITION_PER_PAGE;
+    return Array.from({ length: AUDITION_PER_PAGE }, (_, i) => SOUND_IDS[from + i] ?? null);
+  }
+
+  /** Place the list: a title, a grid of cues, and the three controls along the bottom. */
+  private layoutAudition(): void {
+    const s = this.scale;
+    const p = this.panelRect;
+    const rowH = 40 * s;
+    const gap = 6 * s;
+    const pad = 24 * s;
+
+    this.auditionBg.clear();
+    this.auditionBg
+      .roundRect(p.x, p.y, p.w, p.h, 18 * s)
+      .fill({ color: 0x0a1626, alpha: 0.98 })
+      .stroke({ color: 0x6dc7e8, alpha: 0.5, width: 1.5 * s });
+
+    this.auditionTitle.scale.set(s);
+    this.auditionTitle.anchor.set(0, 0.5);
+    this.auditionTitle.x = p.x + pad;
+    this.auditionTitle.y = p.y + 24 * s;
+    // The page number is in the title rather than a separate label: "which page am I on" is the same question as "what is
+    // this list", and one string is one thing to keep in step with the page.
+    this.auditionTitle.text = `试听音效 / SOUND TEST   ${this.auditionPage + 1} / ${AUDITION_PAGES}`;
+
+    /**
+     * The grid, sized from what is LEFT rather than from a fixed row height.
+     *
+     * The panel's height depends on how many rows the game has put on it (a run has two more than the menu), so a fixed
+     * 12 × 46px would run off the bottom in one case and float in the other. The rows are placed to fill the space between
+     * the title and the footer, which is the same height whatever the panel did.
+     */
+    const footer = 56 * s;
+    const top = p.y + 48 * s;
+    const gridH = Math.max(rowH, p.h - 48 * s - footer - pad);
+    const rows = Math.ceil(AUDITION_PER_PAGE / AUDITION_COLUMNS);
+    const cellH = gridH / rows - gap;
+    const colW = (p.w - pad * 2 - gap * (AUDITION_COLUMNS - 1)) / AUDITION_COLUMNS;
+    const ids = this.auditionIds();
+    this.auditionButtons.forEach((button, i) => {
+      const id = ids[i];
+      const col = i % AUDITION_COLUMNS;
+      const row = Math.floor(i / AUDITION_COLUMNS);
+      button.pressed = false;
+      button.label.text = id ? this.cueLabel(id) : '';
+      const cell = { x: p.x + pad + col * (colW + gap), y: top + row * (cellH + gap), w: colW, h: cellH };
+      this.place(button, cell.x, cell.y, cell.w, cell.h, s);
+      button.bg.visible = id !== null;
+      button.label.visible = id !== null;
+    });
+
+    const bottomY = p.y + p.h - footer - pad * 0.5 - rowH * 0.5;
+    const third = (p.w - pad * 2 - gap * 2) / 3;
+    this.place(this.auditionPrev, p.x + pad, bottomY, third, rowH, s);
+    this.place(this.auditionNext, p.x + pad + third + gap, bottomY, third, rowH, s);
+    this.place(this.auditionClose, p.x + pad + (third + gap) * 2, bottomY, third, rowH, s);
+    this.drawAuditionButtons();
+  }
+
+  /** The name a cue is listed under: the config's own Chinese label, which is what the owner wrote it as. */
+  private cueLabel(id: SoundId): string {
+    const label = mech.audio.sfx.sounds[id]?.label ?? id;
+    // Kept short enough for a button half the panel wide; the id itself is on the row below it.
+    return `${label}\n${id}`;
+  }
+
+  /** The list's buttons, drawn with the same flat frame the cheat toggles use. */
+  private drawAuditionButtons(): void {
+    const s = this.scale;
+    const flat = (b: Button): void => {
+      b.bg.clear();
+      b.bg
+        .roundRect(b.x, b.y, b.w, b.h, 8 * s)
+        .fill({ color: b.pressed ? 0x1d3c58 : 0x14283d, alpha: 0.95 })
+        .stroke({ color: b.pressed ? 0x8fe0ff : 0x3d7fa8, alpha: 0.7, width: 1 * s });
+    };
+    for (const b of this.auditionButtons) flat(b);
+    flat(this.auditionPrev);
+    flat(this.auditionNext);
+    flat(this.auditionClose);
+  }
+
+  /** Update one slider from a pointer x, tell the game, and tick. */
+  private moveSlider(x: number, music: boolean): void {
+    const sl = music ? this.musicSlider : this.slider;
+    const t = Math.min(1, Math.max(0, (x - sl.x) / Math.max(1, sl.w)));
+    if (music) {
+      this.musicVolume = t;
+      this.onMusicVolume(t);
+    } else {
+      this.volume = t;
+      this.onVolume(t);
+    }
+    // A step rather than every pixel: dragging the knob would otherwise be a machine-gun of ticks. A twentieth of the
+    // track is close to the smallest move a finger makes on a phone.
+    if (Math.abs(t - this.lastSliderTick) >= 0.05) {
+      this.lastSliderTick = t;
+      this.onCue('ui.slider');
+    }
     this.draw(1);
   }
 
@@ -1364,6 +1658,14 @@ export class SettingsUi {
     gear: { x: number; y: number; radius: number };
     panel: { x: number; y: number; w: number; h: number };
     slider: { x: number; y: number; w: number; h: number };
+    musicSlider: { x: number; y: number; w: number; h: number };
+    /**
+     * Whether the audition list is up, the page it is on, and the rectangles of its rows.
+     *
+     * The rows are reported the way the panel's own buttons are, because a probe driving this list has no other way to
+     * find them: they are a page of the list rather than members of `buttons()`.
+     */
+    audition: { open: boolean; page: number; pages: number; rows: { id: string; rect: { x: number; y: number; w: number; h: number } }[] };
     /**
      * Whether the panel is offering the run's own controls.
      *
@@ -1391,6 +1693,13 @@ export class SettingsUi {
       gear: { ...this.gearCircle },
       panel: { ...this.panelRect },
       slider: { ...this.slider },
+      musicSlider: { ...this.musicSlider },
+      audition: {
+        open: this.auditionOpen,
+        page: this.auditionPage,
+        pages: AUDITION_PAGES,
+        rows: this.auditionIds().flatMap((id, i) => (id ? [{ id, rect: rectOf(this.auditionButtons[i]!) }] : [])),
+      },
       inRun: this.inRun,
       debugEntry: this.showsDebugEntry,
       levels: this.levels.map((level, i) => ({
@@ -1411,13 +1720,19 @@ export class SettingsUi {
         exit: rectOf(this.exitButton),
         save: rectOf(this.saveButton),
         cancel: rectOf(this.cancelButton),
+        audition: rectOf(this.auditionButton),
       },
     };
   }
 
-  /** The volume the slider is showing, 0..1. */
+  /** The volume the effects slider is showing, 0..1. */
   get sliderValue(): number {
     return this.volume;
+  }
+
+  /** The volume the music slider is showing, 0..1. */
+  get musicSliderValue(): number {
+    return this.musicVolume;
   }
 }
 
