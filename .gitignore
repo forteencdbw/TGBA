@@ -69,6 +69,13 @@ msg.txt
 .scratch/run-check/
 .scratch/asset-pipeline/
 
+# `.mcp.json` is machine-local here, not a shared convention.
+#
+# It names `http://127.0.0.1:8188` -- a ComfyUI server running on THIS machine -- so a clone would inherit a
+# config pointing at a port nobody is listening on. It was untracked, and `git add -A` published it anyway
+# because nothing told it not to. The file itself is untouched on disk.
+.mcp.json
+
 # Python bytecode caches.
 #
 # `refs/__pycache__/asset_pipeline.cpython-312.pyc` was tracked, which is worth a line because of what happens
