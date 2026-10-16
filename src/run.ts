@@ -315,6 +315,22 @@ export class Run {
   /** Bullet life multiplier from stacked 弹幕路线 · 射程 picks, which is the gun's range. */
   bulletLifeMultiplier = 1;
   /**
+   * The shotgun branch's four run-level numbers, all derived in `applyMutationPassives`.
+   *
+   * `gunPellets` is rounds per stream and `gunSpreadDegrees` is the whole cone, so the ordinary gun is "1 pellet, 0
+   * degrees" and needs no special case anywhere downstream: a cone of zero puts every pellet on the same line, which
+   * is the gun it already was. `gunRateScale` multiplies the rate TIER rather than replacing it, so the ladder still
+   * says which gun you have and the HUD can still report the tier it is on.
+   */
+  gunPellets = 1;
+  gunSpreadDegrees = 0;
+  gunRateScale = 1;
+  /** The close-range card: how near counts, in metres above the player, and the damage bonus inside it. 0 = no card. */
+  bulletCloseRangeMeters = 0;
+  bulletCloseDamageRate = 0;
+  /** The shove card: a multiplier on every hit's knockback. */
+  bulletKnockbackScale = 1;
+  /**
    * The two 「伤害跟着子弹状态走」 cards, as RATES rather than multipliers.
    *
    * Neither resolves to one number for the run, which is why they are not multipliers like the three above:
@@ -540,7 +556,18 @@ export class Run {
        * `rateTier` is 1-based and the ladder's first entry is what a run starts at, so the array's length IS the number
        * of tiers there are -- see `bullets.rateTiers`.
        */
-      perSecond: mech.bullets.rateTiers[Math.min(this.rateTier, mech.bullets.rateTiers.length) - 1] ?? 0,
+      perSecond: (mech.bullets.rateTiers[Math.min(this.rateTier, mech.bullets.rateTiers.length) - 1] ?? 0) * this.gunRateScale,
+      /**
+       * The shotgun branch, in the same breath as the rate: a spread volley is a change to what one shot IS, so it
+       * belongs where the shot is described rather than where the hits are resolved. `gunRateScale` multiplies the
+       * tier above rather than replacing it, so "第 N 档" keeps meaning what it means and the shotgun is a modifier
+       * on top -- which is also how the two compose for a player who upgrades the ladder after taking it.
+       */
+      pellets: this.gunPellets,
+      spreadDegrees: this.gunSpreadDegrees,
+      closeRangeMeters: this.bulletCloseRangeMeters,
+      closeDamageRate: this.bulletCloseDamageRate,
+      knockbackScale: this.bulletKnockbackScale,
       /**
        * What one round takes off, config price times the mutation ladder's stacked multiplier.
        *

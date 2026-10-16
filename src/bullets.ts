@@ -47,6 +47,17 @@ export interface Bullet {
    * also what lets the two bullet probes keep building rounds as bare `{ x, y, age }` literals.
    */
   homing?: HomingState;
+  /**
+   * Set only on a round from a shotgun's volley: how far off straight-up it flies, in RADIANS, signed.
+   *
+   * An angle rather than a sideways speed, and that is the whole mechanic. The round's SPEED is a function of its
+   * age (`speedOf`), so a fixed `vx` would make the pellet's flight curve as it accelerated; holding the angle means
+   * a straight diagonal whose sideways rate grows with its forward rate, which is what a barrel does.
+   *
+   * Absent on every round of the ordinary gun, so the cost of the shotgun's geometry is paid only by shotguns -- the
+   * same bargain `homing` makes on the line above.
+   */
+  angle?: number;
 }
 
 /**
@@ -204,6 +215,19 @@ export interface BulletContext {
    * picked up, and "how fast may I shoot right now" is a question about the RUN, not about the weapon in general.
    */
   perSecond: number;
+  /**
+   * The shotgun branch, handed in like every other run-level number: rounds per stream, the whole cone in degrees,
+   * the close-range bonus and its distance, and the knockback multiplier.
+   *
+   * All five are the RUN's picks rather than the weapon's nature, which is why the module is told them instead of
+   * reading them -- and all five are inert at their defaults (1 pellet, 0 degrees, no bonus, 1x knock), so a run
+   * that never took a shotgun card behaves exactly as it did before the branch existed.
+   */
+  pellets: number;
+  spreadDegrees: number;
+  closeRangeMeters: number;
+  closeDamageRate: number;
+  knockbackScale: number;
   /**
    * Hit points one round takes off.
    *
@@ -473,6 +497,21 @@ export class BulletField {
       // `cameraRise` first: a round is on the screen, so the camera's climb must not be added to how fast it flies.
       b.y += ctx.cameraRise + speedOf(b, ctx.laneWidth, ctx.speedMultiplier) * dt;
       /**
+       * A shotgun pellet also slides, in proportion to how fast it is going -- that IS the cone.
+       *
+       * `tan` of the round's own angle, times the same speed the climb above used, so the pellet holds a straight
+       * diagonal however its speed changes: at launch it barely diverges and by the top of its flight it is well off
+       * the line. That is the geometry the archetype runs on -- a target at arm's length is inside every pellet's
+       * path and a target across the lane is inside one or two of them -- and it needs no falloff curve to say so.
+       *
+       * Here rather than folded into the climb, because the climb is what every round does and this is what a
+       * shotgun's rounds do on top of it. Skipped entirely for a round with no angle, which is every round of every
+       * other gun.
+       */
+      if (b.angle !== undefined) {
+        b.x += Math.tan(b.angle) * speedOf(b, ctx.laneWidth, ctx.speedMultiplier) * dt;
+      }
+      /**
        * Sideways, AFTER the climb, and only for a round that is tracking.
        *
        * After, because the climb is what a round always does and the slide is what this one does on top of it --
@@ -522,8 +561,19 @@ export class BulletField {
           // Damage is asked for HERE rather than read off the context, because it depends on the round: by the time a
           // slow one arrives it has swollen, and 「越大伤害越高」 pays for exactly that. The same number goes to the
           // floating digit, so what the player reads over the creature is what came off it.
-          const damage = damageOf(b, ctx);
-          const outcome = ctx.hazards.hit(h, damage, { x: b.x, y: b.y });
+          /**
+           * Damage is asked for HERE rather than read off the context, because it depends on the round: by the time a
+           * slow one arrives it has swollen, and 「越大伤害越高」 pays for exactly that. The same number goes to the
+           * floating digit, so what the player reads over the creature is what came off it.
+           *
+           * The close-range card is applied on top, and it is the only card whose factor is about the TARGET rather
+           * than the round: the gun fires up the lane, so the range to a creature is the vertical gap between it and
+           * the player, and "close" is that gap being inside the card's distance.
+           */
+          const close =
+            ctx.closeDamageRate > 0 && h.y - ctx.playerY <= ctx.closeRangeMeters ? 1 + ctx.closeDamageRate : 1;
+          const damage = damageOf(b, ctx) * close;
+          const outcome = ctx.hazards.hit(h, damage, { x: b.x, y: b.y, knockScale: ctx.knockbackScale });
           this.hits++;
           landed++;
           // Reported at the CREATURE, not at the round: the round is a few pixels wide and has already been removed by
@@ -557,36 +607,41 @@ export class BulletField {
      * a WIDER gun, and this is meant to be a stronger one. The caller decides how many muzzles there are.
      *
      * A round is born with a position and an age of zero: its speed and its size are both functions of that age
-     * (`speedOf`, `radiusOf`), so there is no launch state to get wrong here.
+     * (`speedOf`, `radiusOf`), so there is no launch state to get wrong here except its ANGLE, which is the one
+     * thing about a round that no function of its age could recover.
      *
      * ---------------------------------------------------------------------------------------------
-     * THE ONE THING DECIDED AT BIRTH
+     * THE SHOTGUN IS A FAN OF THE SAME ROUNDS, NOT A DIFFERENT ROUND
      * ---------------------------------------------------------------------------------------------
-     * Whether this round tracks. The roll is PER ROUND and not per volley, which is the whole reason the property
-     * lives on the bullet instead of on the gun: a two-row gun rolling one dice for both rounds would always fire
-     * two of a kind, and the card's 30% would be a property of the volley rather than of the round. Rolling here
-     * means one tick can put a tracking round and a straight one in the water side by side, which is what the
-     * player is meant to see.
-     *
-     * The target is drawn NOW, from where the bubble is at this instant, and the arc's direction is only rolled if
-     * there was nothing to draw -- see `HomingState.side`.
+     * A volley is `pellets` rounds leaving ONE muzzle at angles spread evenly across `spreadDegrees`, and each of
+     * them is an ordinary round in every other respect: same damage, same speed curve, same roll for tracking. That
+     * is what makes the archetype work without a distance falloff written anywhere -- the pellets diverge as they
+     * fly, so a target at arm's length eats all of them and one across the lane eats whichever its own width catches.
      */
+    const pellets = Math.max(1, Math.round(ctx.pellets));
+    // Half the cone, in radians: the pellets sit at the CENTRES of `pellets` slices, so `pellets / 2` of it is where
+    // the outermost ones go. A single pellet divides by zero, which is why the count is guarded rather than the sum.
+    const half = (ctx.spreadDegrees * Math.PI) / 360;
     for (const muzzle of ctx.muzzles) {
-      const bullet: Bullet = {
-        x: muzzle.x,
-        y: muzzle.y,
-        age: 0,
-      };
-      if (ctx.homingChance > 0 && ctx.random() < ctx.homingChance) {
-        const targetId = pickTarget(ctx);
-        bullet.homing = {
-          targetId,
-          vx: 0,
-          side: targetId === null ? arcSide(ctx) : 1,
+      for (let i = 0; i < pellets; i++) {
+        const along = pellets <= 1 ? 0 : (i / (pellets - 1)) * 2 - 1;
+        const bullet: Bullet = {
+          x: muzzle.x,
+          y: muzzle.y,
+          age: 0,
         };
+        if (pellets > 1) bullet.angle = half * along;
+        if (ctx.homingChance > 0 && ctx.random() < ctx.homingChance) {
+          const targetId = pickTarget(ctx);
+          bullet.homing = {
+            targetId,
+            vx: 0,
+            side: targetId === null ? arcSide(ctx) : 1,
+          };
+        }
+        this.bullets.push(bullet);
+        this.fired++;
       }
-      this.bullets.push(bullet);
-      this.fired++;
     }
   }
 }

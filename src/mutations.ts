@@ -320,6 +320,65 @@ const POOL: readonly Mutation[] = [
       run.mutations.speedDamage = (run.mutations.speedDamage ?? 0) + 1;
     },
   },
+  // ---------------------------------------------------------------------------------------------
+  // 霰弹：弹幕路线的一条支线（一次打出一把，间隔拉长）
+  // ---------------------------------------------------------------------------------------------
+  //
+  // 转型卡改的是"一枪是什么"，不是数值，所以它**只拿一次**——用 `picks` 而不是计数，和「追踪弹」同一条路
+  // （见那张卡上的说明：能叠加的东西才会有一个计数）。
+  //
+  // 四张配套卡全部**以"拿过转型卡"为条件**，所以在支线开始之前它们根本不进池子。这不是流程洁癖：单独拿到它们
+  // 没有意义（"多一发"没有张角就是白送 DPS，"收束"收一个零度角什么都没发生），而一张会在错误的时候被抽到的
+  // 废卡就是这个池子最不该有的东西。
+  {
+    id: 'shotgun',
+    name: '霰弹枪',
+    blurb: `射速减半，但每排一次打出 ${1 + mech.mutation.pool.shotgun.pellets} 颗：贴脸才全中`,
+    routes: 'barrage',
+    available: (run) => !run.picks.includes('shotgun'),
+    // 空实现：这一张的"记下来"就是 `picks` 里那一笔，四个数值在 `applyMutationPassives` 里派生。
+    apply: () => {},
+  },
+  {
+    id: 'pellets',
+    name: '多一发',
+    blurb: '每一枪多一颗弹丸，可叠加',
+    routes: 'barrage',
+    available: (run) => run.picks.includes('shotgun'),
+    apply: (run) => {
+      run.mutations.pellets = (run.mutations.pellets ?? 0) + 1;
+    },
+  },
+  {
+    id: 'closeDamage',
+    name: '抵近射击',
+    blurb: `目标在 ${Math.round(mech.mutation.pool.shotgun.closeRangeMeters)} 米内时弹丸更疼，可叠加`,
+    routes: 'barrage',
+    available: (run) => run.picks.includes('shotgun'),
+    apply: (run) => {
+      run.mutations.closeDamage = (run.mutations.closeDamage ?? 0) + 1;
+    },
+  },
+  {
+    id: 'narrow',
+    name: '收束',
+    blurb: `张角收窄 ${Math.round(mech.mutation.pool.shotgun.narrowPerPick * 100)}%：打得更远，可叠加`,
+    routes: 'barrage',
+    available: (run) => run.picks.includes('shotgun'),
+    apply: (run) => {
+      run.mutations.narrow = (run.mutations.narrow ?? 0) + 1;
+    },
+  },
+  {
+    id: 'knock',
+    name: '顶开',
+    blurb: '命中把敌人推开，可叠加',
+    routes: 'barrage',
+    available: (run) => run.picks.includes('shotgun'),
+    apply: (run) => {
+      run.mutations.knock = (run.mutations.knock ?? 0) + 1;
+    },
+  },
   ...SKILLS.map((skill) => ({
     id: `skill:${skill.id}`,
     name: `技能 · ${skill.name}`,
@@ -432,6 +491,25 @@ export function applyMutationPassives(run: Run): void {
   run.bulletSpeedMultiplier = 1 + pool.bulletSpeedPerPick * count('bulletSpeed');
   run.bulletRadiusMultiplier = 1 + pool.bulletRadiusPerPick * count('bulletRadius');
   run.bulletLifeMultiplier = 1 + pool.bulletRangePerPick * count('bulletRange');
+  /**
+   * The shotgun branch: one transform, four stacks on top of it.
+   *
+   * The transform is `picks` rather than a count (it cannot be taken twice), so everything below is inert until that
+   * pick exists -- 1 pellet and 0 degrees IS the ordinary gun, which is why no other module needs to know this branch
+   * is there. The cone is the one that needs a floor: 收束 multiplies it, and without a floor four picks would
+   * collapse it to nothing, at which point every pellet is on the same line and the spread has stopped being visible
+   * while still being paid for.
+   */
+  const shotgun = run.picks.includes('shotgun');
+  const sg = pool.shotgun;
+  run.gunRateScale = shotgun ? sg.rateScale : 1;
+  run.gunPellets = shotgun ? 1 + sg.pellets + sg.pelletsPerPick * count('pellets') : 1;
+  run.gunSpreadDegrees = shotgun
+    ? sg.totalSpreadDegrees * Math.max(sg.narrowFloor, (1 - sg.narrowPerPick) ** count('narrow'))
+    : 0;
+  run.bulletCloseRangeMeters = sg.closeRangeMeters;
+  run.bulletCloseDamageRate = sg.closeDamagePerPick * count('closeDamage');
+  run.bulletKnockbackScale = 1 + sg.knockbackPerPick * count('knock');
   // The two state-driven cards are RATES, not multipliers, because neither collapses into one number for the run:
   // the size one is applied to each round's own growth at the moment it lands (see `damageOf`).
   run.bulletSizeDamageRate = pool.sizeDamagePerPick * count('sizeDamage');

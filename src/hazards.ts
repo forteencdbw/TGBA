@@ -2072,7 +2072,7 @@ export class HazardField {
    *   Defaulted rather than required so that a caller which does not have it still compiles -- and one that passes nothing
    *   gets a flash that starts at zero, which is wrong but harmless, rather than a NaN that draws nothing at all.
    */
-  hit(hazard: Hazard, damage: number, impact?: { x: number; y: number }, elapsed = hazard.phase): 'immune' | 'damaged' | 'fled' | 'killed' {
+  hit(hazard: Hazard, damage: number, impact?: { x: number; y: number; knockScale?: number }, elapsed = hazard.phase): 'immune' | 'damaged' | 'fled' | 'killed' {
     // Immune covers both "this kind is not shootable" and "this one is already leaving": firing at something that
     // is on its way out should not keep re-triggering the same event, and it should certainly not re-roll its exit.
     if (hazard.maxHealth <= 0 || hazard.flee) return 'immune';
@@ -2873,15 +2873,22 @@ export class HazardField {
    * With no impact point (a chain discharge has no projectile) it is straight up the screen, which is where everything
    * the player fires comes from.
    */
-  private applyKnock(h: Hazard, impact?: { x: number; y: number }): void {
+  private applyKnock(h: Hazard, impact?: { x: number; y: number; knockScale?: number }): void {
     const cfg = mech.hitKnockback;
     /**
      * Per-creature multiplier, and there is exactly one creature that needs one: the boss holds station instead of
      * riding the current, so the same metres move a hovering giant rather than nudging something already drifting --
      * which reads as a shove. `hazards.boss.knockbackScale` is that judgement, and setting it to 0 makes the boss
      * immune to recoil (the flash is then the whole of its hit feedback).
+     *
+     * The caller's `knockScale` multiplies on top of it, and that is the shove CARD -- the one way a run changes how
+     * hard its own rounds push. It arrives with the hit rather than being read from a field here because the field
+     * is the creature's and this is the shooter's.
      */
-    const meters = cfg.meters * (isBossKind(h.kind) ? Math.max(0, bossDossier(h.kind).knockbackScale) : 1);
+    const meters =
+      cfg.meters *
+      (isBossKind(h.kind) ? Math.max(0, bossDossier(h.kind).knockbackScale) : 1) *
+      Math.max(0, impact?.knockScale ?? 1);
     if (meters <= 0 || cfg.seconds <= 0) return;
     let dirX = 0;
     let dirY = 1;

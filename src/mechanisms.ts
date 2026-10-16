@@ -621,6 +621,14 @@ export interface Mechanisms {
        */
       sizeDamagePerPick: number;
       speedDamagePerPick: number;
+      /**
+       * The shotgun branch of the barrage route: one transform, four cards that deepen it.
+       *
+       * The four are only ever OFFERED once the transform has been taken -- see the cards' `available` -- because
+       * each of them is meaningless alone: "+1 pellet" without a spread is free damage, and narrowing an angle that
+       * is zero does nothing.
+       */
+      shotgun: ShotgunConfig;
     };
     /** The gauge under the resource line. The same knobs the rage gauge has. */
     gauge: {
@@ -2220,6 +2228,33 @@ export interface SlowMotionConfig {
   recoverSeconds: number;
 }
 
+/**
+ * The shotgun: one transform plus the four cards that deepen it. See `mech.mutation.pool.shotgun`.
+ *
+ * The transform is a rate MULTIPLIER rather than a rung on the `rateTiers` ladder, so the two compose predictably:
+ * the ladder says which gun you have, this says what you did to it, and the HUD can still report the tier.
+ */
+export interface ShotgunConfig {
+  /** The transform: firing rate is multiplied by this. */
+  rateScale: number;
+  /** The transform: pellets per stream, ON TOP of the one every gun fires. */
+  pellets: number;
+  /** The transform: the TOTAL cone, in degrees, that the pellets are spread evenly across. */
+  totalSpreadDegrees: number;
+  /** Pellets per pick of the pellet card. */
+  pelletsPerPick: number;
+  /** How close counts as close, in metres above the player. */
+  closeRangeMeters: number;
+  /** Damage per pick of the close-range card, as a fraction. */
+  closeDamagePerPick: number;
+  /** The narrowing card: the cone is multiplied by (1 - this) per pick. */
+  narrowPerPick: number;
+  /** The floor on that, as a fraction of the base cone: below this the pellets overlap and the spread stops reading. */
+  narrowFloor: number;
+  /** Knockback per pick of the shove card, as a fraction of the base. */
+  knockbackPerPick: number;
+}
+
 /** One level's music, as the config writes it. See `src/music.ts` for what each field does to the sound. */
 export interface MusicTrackConfig {
   rootHz: number;
@@ -2616,6 +2651,15 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     describe: 'mutation points for this event; 0 takes the event out of the economy',
   })),
   { path: 'mutation.pointBlankRadius', check: anyNumber, describe: 'a multiple of the contact radius' },
+  { path: 'mutation.pool.shotgun.rateScale', check: anyNumber, describe: 'a multiplier on the firing rate' },
+  { path: 'mutation.pool.shotgun.pellets', check: anyNumber, describe: 'rounds per stream, on top of one' },
+  { path: 'mutation.pool.shotgun.totalSpreadDegrees', check: anyNumber, describe: 'degrees' },
+  { path: 'mutation.pool.shotgun.pelletsPerPick', check: anyNumber, describe: 'rounds' },
+  { path: 'mutation.pool.shotgun.closeRangeMeters', check: anyNumber, describe: 'metres' },
+  { path: 'mutation.pool.shotgun.closeDamagePerPick', check: anyNumber, describe: 'a fraction of the damage' },
+  { path: 'mutation.pool.shotgun.narrowPerPick', check: anyNumber, describe: 'a fraction of the cone' },
+  { path: 'mutation.pool.shotgun.narrowFloor', check: anyNumber, describe: 'a fraction of the base cone' },
+  { path: 'mutation.pool.shotgun.knockbackPerPick', check: anyNumber, describe: 'a fraction of the base knockback' },
   ...popupRules('mutation.callouts'),
   { path: 'mutation.first', check: anyNumber, describe: 'the cost of the first level' },
   { path: 'mutation.growth', check: anyNumber, describe: 'the per-level cost multiplier' },
