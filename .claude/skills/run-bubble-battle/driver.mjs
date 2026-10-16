@@ -111,6 +111,10 @@ async function ensureChrome() {
     [
       '--headless=new',
       '--disable-gpu',
+      // SILENT, and not for tidiness: the game is played on a real audio device even headless, so every cue the agent
+      // triggers comes out of the machine's speakers. Driving the sfx work meant the owner heard a few hundred
+      // placeholder blips from the next room -- an agent tool must not make noise on somebody else's computer.
+      '--mute-audio',
       // Software GL. The container has no GPU, and without this Pixi gets a context it cannot draw to
       // and the screenshots come back uniformly black -- which reads as "the game is broken".
       '--use-gl=swiftshader',
