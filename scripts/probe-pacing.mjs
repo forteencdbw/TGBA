@@ -56,6 +56,22 @@ try {
     console.log(`             peak ${Math.max(...threat)} in screen ${threat.indexOf(Math.max(...threat))}, mean ${(threat.reduce((a, b) => a + b, 0) / threat.length).toFixed(1)}`);
     console.log(`             last content in screen ${lastContent}, then ${emptyBeforeBoss} empty screen(s) before the boss`);
     if (emptyBeforeBoss > 1) console.log(`  !! ${emptyBeforeBoss} screens with nothing before the boss (${(emptyBeforeBoss * L.WORLD_HEIGHT / level.scrollSpeed).toFixed(0)} s)`);
+
+    // A banner is an announcement, so it has to arrive with the thing it announces. `depth` counts DOWN from the
+    // surface and a block's `at` counts UP, so the two agree when `at === scrollLength - depth` -- and they were
+    // written by hand in six different files, which is exactly how they drifted apart before.
+    for (const mark of level.landmarks ?? []) {
+      const at = level.scrollLength - mark.depth;
+      let nearest = null;
+      for (const block of level.blocks) {
+        if (block.at > at) break;
+        nearest = block;
+      }
+      const gap = nearest ? at - nearest.at : at;
+      const flag = Math.abs(gap) > L.WORLD_HEIGHT / 2 ? '  !!' : '';
+      const where = nearest ? `${nearest.kind} at ${nearest.at}m (${gap >= 0 ? '+' : ''}${gap.toFixed(0)}m)` : 'the level start';
+      console.log(`  banner     ${String(mark.depth).padStart(5)}m深 = ${String(at).padStart(5)}m  ${mark.label.padEnd(12)} <- ${where}${flag}`);
+    }
   }
 
   // The campaign, in the order a player meets it: is the pressure climbing?
