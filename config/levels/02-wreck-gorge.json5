@@ -66,6 +66,7 @@
   spawns: [
     // --- S0  安静开场：只有食物和两只螃蟹。螃蟹是"机会不是敌人"——它把你弹上去，这一关先教这个。
     { at: 20, span: 120, count: 6, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.45] },
+    { at: 40, kind: 'net', count: 6, arrange: 'line' },
     { at: 60, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
     // 下落木箱：每段一次，列由屏幕三等分里随机选。预警 2 秒，木箱本身不可推、只垂直下落。
     { at: 150, kind: 'fallcrate' },

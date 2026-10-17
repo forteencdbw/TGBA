@@ -1,6 +1,7 @@
 import { Graphics, Sprite } from 'pixi.js';
 import { assetTextureNow } from './assets';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
+import { boxDistance } from './hazards';
 
 /**
  * The four kinds, and they are four different ANSWERS rather than four durability tiers.
@@ -110,6 +111,25 @@ export function obstacleHealth(kind: ObstacleKind): number {
 /** A kind's drawn and collided radius, as a fraction of the lane width. */
 export function obstacleRadius(kind: ObstacleKind): number {
   return mech.obstacles.radius[kind] ?? 0.05;
+}
+
+/**
+ * The rectangular contact box for a kind whose picture is not a circle, or null for the kinds that stay circles.
+ *
+ * Only the net: its picture is bottom-anchored and wider than it is tall, so a circle centred on the obstacle's point
+ * left the visible corners outside the hitbox. The box is the PICTURE's own bounding rectangle -- the same art scale
+ * and texture aspect the painter uses -- and `offsetY` is the distance from the obstacle's point to the box centre,
+ * because the sprite's anchor is its bottom. If the picture has not loaded, this answers null and the old circle is
+ * used, exactly as the drawn body is the fallback for the picture.
+ */
+export function obstacleBox(kind: ObstacleKind): { halfW: number; halfH: number; offsetY: number } | null {
+  if (kind !== 'net') return null;
+  const variant = mech.obstacles.art.net?.variants[0];
+  const texture = variant ? assetTextureNow(variant.image) : null;
+  if (!texture || texture.width <= 0 || texture.height <= 0) return null;
+  const halfW = obstacleRadius(kind) * (variant?.scale ?? 1);
+  const halfH = halfW * (texture.height / texture.width);
+  return { halfW, halfH, offsetY: halfH };
 }
 
 /**
@@ -295,22 +315,26 @@ export class ObstacleField {
   }
 
   /**
-   * Whether an obstacle is in the way of a projectile at this point.
+   * Which obstacle stops a projectile at this point, or null.
    *
-   * The bullets are small bubbles rather than thrown creatures: scenery stops them (a crate in front of a fish
-   * should stop what you are shooting at it) but they leave no mark on it. That needs its own query rather than
-   * `hitByProjectile(..., 0)`, which would route a block through the damage code and make a zero-damage hit
-   * indistinguishable from a real one in the counters.
+   * The net is deliberately absent: it is a soft mesh, and rounds pass through it. Every other kind stops one. The
+   * caller that damages scenery (the player's gun) asks this rather than `blocks`, because it needs to know WHICH
+   * obstacle it hit; enemy fire only needs the boolean.
    */
-  blocks(x: number, y: number, hitRadius: number): boolean {
+  blockerAt(x: number, y: number, hitRadius: number): { id: number; kind: ObstacleKind } | null {
     for (const o of this.obstacles) {
+      if (o.kind === 'net') continue;
       const r = mech.obstacles.radius[o.kind] ?? 0.05;
       const reach = hitRadius + r;
       const dx = o.x - x;
       const dy = o.y - y;
-      if (dx * dx + dy * dy <= reach * reach) return true;
+      if (dx * dx + dy * dy <= reach * reach) return { id: o.id, kind: o.kind };
     }
-    return false;
+    return null;
+  }
+
+  blocks(x: number, y: number, hitRadius: number): boolean {
+    return this.blockerAt(x, y, hitRadius) !== null;
   }
 
   /**
@@ -340,6 +364,7 @@ export class ObstacleField {
   resolvePlayer(
     x: number,
     y: number,
+    laneWidth: number,
     playerRadius: number,
     playerVolume: number,
     invulnerable: boolean,
@@ -351,7 +376,23 @@ export class ObstacleField {
       const reach = playerRadius + r;
       const dx = o.x - x;
       const dy = o.y - y;
-      if (dx * dx + dy * dy > reach * reach) continue;
+      const box = obstacleBox(o.kind);
+      /**
+       * The net is the one kind that is not a circle, and the only reason this branch exists. The box is measured in
+       * lane fractions and anchored at the picture's bottom, so both the centre offset and the half-extents become
+       * metres here -- the same conversion the painter uses.
+       */
+      const touching = box
+        ? boxDistance(
+            x,
+            y,
+            o.x,
+            o.y + laneWidth * box.offsetY,
+            laneWidth * box.halfW,
+            laneWidth * box.halfH,
+          ) <= playerRadius
+        : dx * dx + dy * dy <= reach * reach;
+      if (!touching) continue;
 
       /**
        * A slam, first, because it OVERRIDES the ordinary rules rather than adding to them.
@@ -625,7 +666,9 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
    * and the next breakable thing someone adds gets it without being told.
    */
   for (const o of field.obstacles) {
-    if (o.hitFlash <= 0) continue;
+    // The net re-arms its hit flash every contact frame as it is torn, which reads as a sustained white glow over
+    // the bubble inside it. That is not the feedback a net should give; everything else keeps its flash.
+    if (o.kind === 'net' || o.hitFlash <= 0) continue;
     const flash = mech.hitFlash;
     const strength = Math.min(1, o.hitFlash / Math.max(0.001, flash.seconds));
     const r = laneWidth * o.radiusFraction * flash.radiusScale;

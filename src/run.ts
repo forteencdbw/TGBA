@@ -678,6 +678,16 @@ export class Run {
       this.sound('gun.hit', shots.drivenOff > 0 ? Math.min(1, volume * 1.4) : volume);
     }
     /**
+     * A round that broke a CRATE: the obstacle path's own break cue, at the round's position.
+     *
+     * Obstacles have had material-specific break sounds since the four-gunner batch; this is the first time a BULLET
+     * can cause one, so it plays the same table rather than inventing a second cue. A hit that does not break the
+     * crate is already visible as its hit flash.
+     */
+    for (const at of shots.obstacleHits) {
+      if (at.broke) this.sound(OBSTACLE_BREAK_SOUNDS[at.kind] ?? 'rage.slam', 1, this.panAt(at.x));
+    }
+    /**
      * Points for the kill, told apart from the hit: the ledger is meant to show which act paid, not just that the
      * gun was busy. One floating number per creature, AT the creature -- a swarm driven off in one frame is several
      * events and reads as several numbers, which is the truth of what happened.
@@ -1363,6 +1373,7 @@ export class Run {
     const contact = this.obstacles.resolvePlayer(
       playerX,
       this.player.y,
+      laneWidth,
       /**
        * The bubble's reach, and nothing else.
        *

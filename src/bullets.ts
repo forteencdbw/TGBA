@@ -1,7 +1,7 @@
 import { Graphics } from 'pixi.js';
 import { mech } from './config';
 import { boxDistance, hazardBoxFractions, hazardSizeFraction, type Hazard, type HazardField, type HazardKind } from './hazards';
-import type { ObstacleField } from './obstacles';
+import type { ObstacleField, ObstacleKind } from './obstacles';
 
 /**
  * The small bubbles the player's bubble fires on its own.
@@ -474,6 +474,8 @@ export class BulletField {
     fired: number;
     driven: readonly HitMark[];
     struck: readonly (HitMark & { amount: number })[];
+    /** Crates the rounds hit (and possibly broke); the run turns a break into the crate's sound. */
+    obstacleHits: readonly { x: number; y: number; kind: ObstacleKind; broke: boolean }[];
   } {
     const cfg = mech.bullets;
     let landed = 0;
@@ -483,6 +485,8 @@ export class BulletField {
   const driven: HitMark[] = [];
     /** Every round that landed on a creature this frame, with the damage it dealt. */
     const struck: (HitMark & { amount: number })[] = [];
+    /** Rounds that were stopped by a destructible crate. */
+    const obstacleHits: { x: number; y: number; kind: ObstacleKind; broke: boolean }[] = [];
 
     if (ctx.armed && ctx.perSecond > 0) {
       /**
@@ -546,13 +550,20 @@ export class BulletField {
       /**
        * Scenery first, then creatures.
        *
-       * A bullet is stopped by a crate because a crate you can see in front of a fish should stop what you shoot at
-       * it; it does NOT damage the obstacle, because the bullets are not ordnance. The charge and the burst are what
-       * open scenery up, and a gun that quietly chipped it away would make both of them pointless.
+       * A bullet is stopped by the scenery in front of a fish. The CRATE is the one destructible piece: a round that
+       * hits it takes the BASE config damage off its 50 hit points, and a break is reported for the crate's sound.
+       * The other kinds stop the round without taking damage -- the charge and the burst are their answers. The net
+       * is not here at all: it is soft, and `blockerAt` lets rounds pass through it.
        */
-      const blocked = ctx.obstacles.blocks(b.x, b.y, radius);
-      let spent = blocked;
-      if (blocked) this.hits++;
+      const blocker = ctx.obstacles.blockerAt(b.x, b.y, radius);
+      let spent = blocker !== null;
+      if (blocker) {
+        this.hits++;
+        if (blocker.kind === 'crate') {
+          const hit = ctx.obstacles.damage(blocker.id, cfg.damage);
+          if (hit) obstacleHits.push({ x: b.x, y: b.y, kind: hit.kind, broke: hit.broke });
+        }
+      }
 
       if (!spent) {
         for (const h of ctx.hazards.hazards) {
@@ -623,7 +634,7 @@ export class BulletField {
       }
     }
 
-    return { hits: landed, drivenOff, fired, driven, struck };
+    return { hits: landed, drivenOff, fired, driven, struck, obstacleHits };
   }
 
   private spawn(ctx: BulletContext): void {

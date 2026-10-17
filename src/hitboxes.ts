@@ -3,7 +3,7 @@ import { mech } from './config';
 import { radiusOf, type BulletField } from './bullets';
 import type { EnemyBulletField } from './enemyBullets';
 import { chargeWindow, hazardBoxFractions, hazardSizeFraction, type Hazard, type HazardField, type HazardKind } from './hazards';
-import type { ObstacleField } from './obstacles';
+import { obstacleBox, type ObstacleField } from './obstacles';
 
 /**
  * The debug hitbox overlay: every collision shape in the game, drawn as an outline.
@@ -195,7 +195,14 @@ export function paintHitboxes(g: Graphics, s: HitboxScene): void {
   stroke(cfg.environmentColour);
 
   // --- scenery the bubble can ram ------------------------------------------------------------------------
-  for (const o of s.obstacles.obstacles) outlineCircle(g, o.x, o.y, s.laneWidth * o.radiusFraction);
+  for (const o of s.obstacles.obstacles) {
+    const box = obstacleBox(o.kind);
+    if (box) {
+      outlineBox(g, o.x, o.y + s.laneWidth * box.offsetY, s.laneWidth * box.halfW, s.laneWidth * box.halfH);
+    } else {
+      outlineCircle(g, o.x, o.y, s.laneWidth * o.radiusFraction);
+    }
+  }
   stroke(cfg.obstacleColour);
 
   // --- the two kinds of round ----------------------------------------------------------------------------
