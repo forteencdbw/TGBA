@@ -550,16 +550,16 @@ export class BulletField {
       /**
        * Scenery first, then creatures.
        *
-       * A bullet is stopped by the scenery in front of a fish. The CRATE is the one destructible piece: a round that
-       * hits it takes the BASE config damage off its 50 hit points, and a break is reported for the crate's sound.
-       * The other kinds stop the round without taking damage -- the charge and the burst are their answers. The net
-       * is not here at all: it is soft, and `blockerAt` lets rounds pass through it.
+       * A bullet is stopped by the scenery in front of a fish. The two wooden kinds -- the crate and the wall -- are
+       * destructible: a round that hits one takes the BASE config damage off its hit points, and a break is reported
+       * for its sound. Coral and tube stop the round without taking damage -- the charge and the burst are their
+       * answers. The net is not here at all: it is soft, and `blockerAt` lets rounds pass through it.
        */
       const blocker = ctx.obstacles.blockerAt(b.x, b.y, radius, ctx.laneWidth);
       let spent = blocker !== null;
       if (blocker) {
         this.hits++;
-        if (blocker.kind === 'crate') {
+        if (blocker.kind === 'crate' || blocker.kind === 'wall') {
           const hit = ctx.obstacles.damage(blocker.id, cfg.damage);
           if (hit) obstacleHits.push({ x: b.x, y: b.y, kind: hit.kind, broke: hit.broke });
         }

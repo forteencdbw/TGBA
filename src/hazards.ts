@@ -3795,7 +3795,7 @@ export function isReducedFlash(): boolean {
  * `peak` comes in rather than being read here so that a kind may dim its own flash (see `hazardArt.*.spriteFlashScale`),
  * and the hazard is not a parameter at all: the curve is a function of TIME, which keeps it answerable without a creature.
  */
-function flashIntensity(elapsed: number, peak: number): number {
+export function flashIntensity(elapsed: number, peak: number): number {
   const cfg = mech.hitFlash;
   const life = Math.max(0.001, cfg.seconds);
   if (REDUCED_FLASH || peak <= 0 || elapsed < 0 || elapsed >= life) return 0;
@@ -3854,7 +3854,7 @@ function critOutlineIntensity(h: Hazard, elapsed: number): number {
  */
 const SPRITE_FLASH = new WeakMap<Sprite, ColorMatrixFilter>();
 
-function whiteOutFilter(sprite: Sprite, strength: number): ColorMatrixFilter {
+export function whiteOutFilter(sprite: Sprite, strength: number): ColorMatrixFilter {
   let filter = SPRITE_FLASH.get(sprite);
   if (!filter) {
     filter = new ColorMatrixFilter();

@@ -1,7 +1,7 @@
 import { Graphics, Sprite } from 'pixi.js';
 import { assetTextureNow } from './assets';
 import { OBSTACLE_KINDS, mech } from './mechanisms';
-import { boxDistance } from './hazards';
+import { boxDistance, flashIntensity, whiteOutFilter } from './hazards';
 
 /**
  * The four kinds, and they are four different ANSWERS rather than four durability tiers.
@@ -116,15 +116,17 @@ export function obstacleRadius(kind: ObstacleKind): number {
 /**
  * The rectangular contact box for a kind whose picture is not a circle, or null for the kinds that stay circles.
  *
- * The net and the crate. The net's picture is wider than it is tall, and the crate's is a box, so a circle centred on
- * the obstacle's point leaves the visible corners outside the hitbox (and, for the crate, sits at the picture's bottom
- * edge rather than in its middle). The box is the PICTURE's own bounding rectangle -- the same art scale and texture
- * aspect the painter uses -- and `offsetY` is the distance from the obstacle's point to the box centre, because the
- * sprite's anchor is its bottom. If the picture has not loaded, this answers null and the old circle is used, exactly
- * as the drawn body is the fallback for the picture.
+ * The net, the crate and the wall: pictures that are not circles. A circle centred on the obstacle's point leaves the
+ * visible corners outside the hitbox (and, for the bottom-anchored pictures, sits at the picture's bottom edge rather
+ * than in its middle). The box is the PICTURE's own bounding rectangle -- the same art scale and texture aspect the
+ * painter uses -- and `offsetY` is the distance from the obstacle's point to the box centre, because the sprite's
+ * anchor is its bottom. If the picture has not loaded, this answers null and the old circle is used, exactly as the
+ * drawn body is the fallback for the picture.
  */
+const BOXED_OBSTACLES: readonly ObstacleKind[] = ['net', 'crate', 'wall'];
+
 export function obstacleBox(kind: ObstacleKind): { halfW: number; halfH: number; offsetY: number } | null {
-  if (kind !== 'net' && kind !== 'crate') return null;
+  if (!BOXED_OBSTACLES.includes(kind)) return null;
   const variant = mech.obstacles.art[kind]?.variants[0];
   const texture = variant ? assetTextureNow(variant.image) : null;
   if (!texture || texture.width <= 0 || texture.height <= 0) return null;
@@ -580,6 +582,21 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
       // Damage darkens the picture the same way it darkens the drawn colours, by tinting rather than by shading
       // anything -- `shade` on white is what `darken` already means.
       sprite.tint = shade(0xffffff, darken);
+      /**
+       * The whole-picture flash, the same colour matrix the creatures use.
+       *
+       * A pictured obstacle used to flash as an ellipse in the shared Graphics layer, drawn at its point -- which for a
+       * bottom-anchored picture (the crate, the wall) is the bottom edge rather than the body, so the crate lit up
+       * below itself. A picture flashes as a picture; the ellipse remains only for the drawn fallback.
+       *
+       * `o.hitFlash` counts DOWN from the config's life, while the curve counts UP from the hit, so the elapsed time
+       * the curve wants is the difference. The net opts out entirely: its flash re-arms every tear frame.
+       */
+      const flash =
+        o.kind === 'net'
+          ? 0
+          : flashIntensity(mech.hitFlash.seconds - o.hitFlash, mech.hitFlash.peakIntensity);
+      sprite.filters = flash > 0 ? [whiteOutFilter(sprite, flash)] : [];
       // Negative Y counters the world's flip, so the picture is not upside down; see the player bubble.
       sprite.scale.set(unit, -unit);
       /**
@@ -686,7 +703,12 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
   for (const o of field.obstacles) {
     // The net re-arms its hit flash every contact frame as it is torn, which reads as a sustained white glow over
     // the bubble inside it. That is not the feedback a net should give; everything else keeps its flash.
+    //
+    // A pictured obstacle has already flashed its own sprite above, so the ellipse is the DRAWN body's feedback and
+    // nothing else's. Asking the sprite pool rather than the config covers the frame where a texture is late.
     if (o.kind === 'net' || o.hitFlash <= 0) continue;
+    const sprite = ART_SPRITES.get(o.id);
+    if (sprite?.visible) continue;
     const flash = mech.hitFlash;
     const strength = Math.min(1, o.hitFlash / Math.max(0.001, flash.seconds));
     const r = laneWidth * o.radiusFraction * flash.radiusScale;
