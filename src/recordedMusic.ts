@@ -48,9 +48,14 @@ export class RecordedMusic {
   /** The world's timescale, so a recorded track can be slowed the only way an element can: played slower. */
   private rate = 1;
 
-  /** Point the level slot at a level's file, or at nothing when that level has no recording yet. */
-  setLevel(levelId: string): void {
-    this.tracks.level.setUrl(musicFileUrl(levelId));
+  /**
+   * Point the level slot at a track's file, or at nothing when that track has no recording yet.
+   *
+   * The name is a TRACK, not necessarily a level id: two levels can name the same stem in their `music` field, and
+   * the game falls back to the level's own id (then `looksLike`) when the field is absent.
+   */
+  setLevel(track: string): void {
+    this.tracks.level.setUrl(musicFileUrl(track));
   }
 
   /** Whether a slot has a file at all, which is what decides between the recording and the synthesiser. */

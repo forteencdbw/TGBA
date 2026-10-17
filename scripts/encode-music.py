@@ -5,14 +5,14 @@ The source WAVs (tens of megabytes each) are NOT in the repository; this is the 
 so any of them can be redone from its original.
 
     pip install --user lameenc numpy
-    python scripts/encode-music.py "C:/Users/<you>/Downloads/战斗2.wav" black-smokers
+    python scripts/encode-music.py "C:/Users/<you>/Downloads/战斗2.wav" battle-1
     python scripts/encode-music.py "C:/Users/<you>/Downloads/Abyssal Menu.wav" abyssal-menu --kbps 96
 
-The NAME is which slot it becomes, and it decides where the file lands:
+The NAME is the track name, and it decides where the file lands:
 
     abyssal-menu          -> src/assets/audio/abyssal-menu.mp3   the main menu (see `src/recordedMusic.ts`)
-    <a level's id>        -> src/assets/audio/music/<id>.mp3     that level, replacing its synthesised recipe
-    boss / summary        -> src/assets/audio/music/<name>.mp3   the boss fight, the results screen
+    <a track name>        -> src/assets/audio/music/<name>.mp3   a level's `music` field, the boss, the results
+    <a level's id>        -> src/assets/audio/music/<id>.mp3     the old fallback: a level with no `music` field
 
 Four things are deliberately NOT done, and each one is a place a "boring" import step would quietly change the sound:
 
@@ -48,7 +48,7 @@ def output_path(name: str) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('wav', help='the source WAV')
-    parser.add_argument('name', help='the slot: abyssal-menu, a level id, boss, or summary')
+    parser.add_argument('name', help='the track name: abyssal-menu, a level\'s music value, boss, or summary')
     parser.add_argument('--kbps', type=int, default=128, help='MP3 bitrate (default 128)')
     args = parser.parse_args()
 

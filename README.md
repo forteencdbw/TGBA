@@ -168,6 +168,8 @@ config/levels/
   是空的，加载器会跳过空列表；关卡数据不在那儿了。
 
 每一关的文件是**一个 JSON5 对象**，字段见 `config/levels.json5`（那份注释就是字段说明文档）。
+**这一关用哪首录好的曲子**写在顶层的 `music` 字段里（曲名，不带扩展名，文件在 `src/assets/audio/music/`）；
+两关可以写同一个名字，共用一份文件。不写就按关卡 id 找（旧约定），再找不到就播该关的合成曲。
 中文注释和机制配置一样**逐项校验并指名报错**，而且报错**直接说文件名**：
 
 ```
@@ -400,13 +402,17 @@ scrollSpeedCurve: [ [0, 24], [900, 32], [2090, 41] ],
 两条路并存，`src/recordedMusic.ts` 决定哪条在响：
 
 - **每关一段合成曲**（`src/music.ts`，配方在 `audio.music.tracks`）——这是**后备**，不是过时的东西。
-- **录好的曲子**放 `src/assets/audio/music/`，文件名就是槽位：
+- **录好的曲子**放 `src/assets/audio/music/`，文件名是**曲名**；关卡在顶层 `music` 字段里点名，两关可以共用一首：
 
 | 文件 | 什么时候播 | 现在有吗 |
 |---|---|---|
-| `<关卡 id>.mp3` | 这一关，替换掉同名合成曲 | **`black-smokers.mp3`（第一关）有了**；`wreck-gorge`、`jelly-forest`、`thermocline`、`storm-surge`、`dawn-surface` 还没有 |
+| `slow-100.mp3` | 第一、二关（`music: 'slow-100'`），替换掉那两关的合成曲 | 有 |
+| `black-smokers.mp3` | 第三、四关（`music: 'black-smokers'`）；它是**原第一关主题** | 有 |
+| `battle-1.mp3` | 第五、六关（`music: 'battle-1'`） | 有 |
 | `boss.mp3` | BOSS 战：BOSS 登场时切过去，被击败后回到关卡曲 | 还没有 |
 | `summary.mp3` | 通关结算页 | 还没有 |
+
+关卡没写 `music` 时仍按 `<关卡 id>.mp3` 找（旧约定），找不到就播该关的合成曲。调试关沿用第一关的曲子。
 
 **某几个槽位空着是支持的状态**，不是缺东西：没有文件的关卡照旧播合成曲，没有 `boss.mp3` 就继续播关卡曲。
 
@@ -429,7 +435,7 @@ pip install --user lameenc numpy
 python scripts/encode-music.py "<原始 wav 路径>" <槽位名> [--kbps 128]
 ```
 
-槽位名就是上表第一列（`black-smokers`、`boss`、`abyssal-menu`……），脚本据此决定文件落在哪。四件**故意不做**的事，
+槽位名就是曲名（`slow-100`、`battle-1`、`black-smokers`、`boss`、`abyssal-menu`……），脚本据此决定文件落在哪。四件**故意不做**的事，
 每一件都是"顺手优化"会悄悄改掉声音的地方：**不重采样**（保留源文件的 48 kHz，重采样等于白白多一道有损）、
 **不裁首尾**（循环靠淡入淡出处理，见下；裁一刀只会冒着削掉一个音头的风险）、**不做响度归一**（混音是你的，
 每一格音量在 `audio.music.recorded.*Volume` 里调，而不是在这里压扁）、**不动循环点**（MP3 本来也放不下样本级接缝）。

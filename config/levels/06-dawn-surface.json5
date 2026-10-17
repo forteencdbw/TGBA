@@ -22,6 +22,8 @@
 {
   id: 'dawn-surface',
   name: '破晓海面',
+  // 与风暴暗流共用战斗曲（`battle-1.mp3`）。
+  music: 'battle-1',
   // 破晓海面：阳光穿透水层。暖金 + 浅青，是全场最亮的一关。
   palette: {
     deep: 0x10304a,

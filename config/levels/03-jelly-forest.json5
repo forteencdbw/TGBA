@@ -20,6 +20,8 @@
 {
   id: 'jelly-forest',
   name: '发光水母林',
+  // 与猎食者温跃层共用原第一关主题（`black-smokers.mp3`）。
+  music: 'black-smokers',
   // 发光水母林：中层海域，蓝紫 / 青 / 粉。
   palette: {
     deep: 0x0a0a24,

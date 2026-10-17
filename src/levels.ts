@@ -489,6 +489,14 @@ export interface Level {
    * borrows from, rather than copying that level's track under a second key, keeps one definition of what level 1 sounds like.
    */
   looksLike?: string;
+  /**
+   * The recorded track this level plays, as a stem under `src/assets/audio/music/` (no extension).
+   *
+   * Absent means "the level's own id", which is the old one-file-per-level convention; `looksLike` and then the id
+   * remain the fallback for the debug level. Two levels naming the same stem share one file, which is how a theme can
+   * cover a pair of levels without duplicating the MP3.
+   */
+  music?: string;
 }
 export interface BackdropSpec {
   /** Path under public/, e.g. levels/black-smokers-backdrop.jpg. */
@@ -729,6 +737,7 @@ const BLOCK_KEYS: readonly string[] = [
 const LEVEL_KEYS: readonly string[] = [
   'id',
   'name',
+  'music',
   'scrollLength',
   'scrollSpeed',
   'scrollSpeedCurve',
@@ -1080,6 +1089,11 @@ function optColour(node: Record<string, unknown>, key: string, where: string, fa
 function readLevel(node: Record<string, unknown>, where: string): Level {
   const id = pick(node, 'id', where, null, [String(node['id'])]);
   const name = typeof node['name'] === 'string' ? (node['name'] as string) : id;
+  const musicRaw = node['music'];
+  if (musicRaw !== undefined && (typeof musicRaw !== 'string' || musicRaw.trim() === '')) {
+    fail(`${where} (level "${id}")`, `"music" is ${JSON.stringify(musicRaw)}, but it should be a non-empty track name.`);
+  }
+  const music = musicRaw === undefined ? undefined : (musicRaw as string);
   const extra = Object.keys(node).filter((k) => !LEVEL_KEYS.includes(k));
   if (extra.length) fail(`${where} (level "${id}")`, `has keys that do nothing here: ${extra.join(', ')}. Known keys: ${LEVEL_KEYS.join(', ')}.`);
 
@@ -1284,6 +1298,7 @@ const boss: BossSpec = {
   return {
     id,
     name,
+    ...(music ? { music } : {}),
     scrollLength,
     scrollSpeed,
     ...(scrollSpeedCurve ? { scrollSpeedCurve } : {}),

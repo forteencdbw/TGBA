@@ -3017,7 +3017,7 @@ class Game {
     this.music.setVolume(mech.audio.music.volume);
     // The level's slot is pointed at this level's file (or at nothing), and then the same decision `restoreLevelMusic` makes
     // is taken -- one function, so "recording or recipe" cannot be answered two different ways.
-    this.recordedMusic.setLevel(LEVEL.looksLike ?? LEVEL.id);
+    this.recordedMusic.setLevel(LEVEL.music ?? LEVEL.looksLike ?? LEVEL.id);
     this.restoreLevelMusic();
   }
 

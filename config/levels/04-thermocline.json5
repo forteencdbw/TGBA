@@ -19,6 +19,8 @@
 {
   id: 'thermocline',
   name: '猎食者温跃层',
+  // 与发光水母林共用原第一关主题（`black-smokers.mp3`）。
+  music: 'black-smokers',
   // 猎食者温跃层：水体折射与温差，开阔、偏冷绿。
   palette: {
     deep: 0x04202a,

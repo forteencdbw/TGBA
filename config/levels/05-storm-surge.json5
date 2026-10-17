@@ -19,6 +19,8 @@
 {
   id: 'storm-surge',
   name: '风暴暗流',
+  // 与破晓海面共用战斗曲（`battle-1.mp3`）。
+  music: 'battle-1',
   // 风暴暗流：接近海面但正在暴风雨。明亮的铅灰蓝，闪电感。
   palette: {
     deep: 0x0a1420,
