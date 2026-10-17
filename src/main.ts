@@ -2890,7 +2890,6 @@ class Game {
     const index = levelIndex(id);
     this.run.levelsClearedInRun = Math.max(this.run.levelsClearedInRun, index);
     this.startRun(carryScore);
-    this.banner(`第 ${index + 1} 关  ·  ${LEVEL.name}  ·  分数继承 ${this.run.score.value}`);
   }
 
   /**
