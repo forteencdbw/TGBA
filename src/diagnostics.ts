@@ -30,7 +30,7 @@ export function diagnosticsOf(g: GameSnapshot): {
     /**
      * The build this page is running.
      *
-     * Reported here as well as drawn on the menu and in the debug readout, so a probe can assert that what is on
+     * Reported here as well as drawn on the menu, so a probe can assert that what is on
      * screen is what was compiled in -- rather than reading the version module, which would pass while the drawing
      * showed nothing.
      */

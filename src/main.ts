@@ -1298,7 +1298,7 @@ class Game {
    *
    * The same class and the same mechanism, a different style: a score number is an event and a damage number is a
    * rate, so they get their own cap, their own life, and -- the reason it is an instance rather than a flag -- their
-   * own count, so "the score numbers are gone" stays answerable in the debug readout and in the probes.
+   * own count, so "the score numbers are gone" stays answerable in the probes.
    */
   private readonly damagePopups = new NumberPopups(mech.damagePopups);
   /**
@@ -1501,7 +1501,7 @@ class Game {
     const bannerScale = designScale(screenW, screenH);
     this.runBanner.scale.set(bannerScale);
     this.runBanner.x = screenW / 2;
-    // Just under the stage line, inside the HUD block rather than floating over the debug readout below it.
+    // Just under the stage line, inside the HUD block.
     this.runBanner.y = 56 * bannerScale;
     this.runBanner.style.align = 'center';
     this.runBanner.style.wordWrap = true;
@@ -3525,17 +3525,6 @@ private updateBoss(): void {
         score: this.run.score.value,
         boss: this.bossView,
         health: this.run.healthView,
-        player: this.run.player,
-        fps: this.fps,
-        nominalSeconds: this.run.nominalSeconds,
-        elapsed: this.run.elapsed,
-        lateral: this.run.lateral,
-        scrolled: this.run.scrolled,
-        level: LEVEL,
-        world: {
-          laneWidthMeters: this.camera.viewport.laneWidthMeters,
-          visibleDepthMeters: this.camera.viewport.visibleDepthMeters,
-        },
         stage: {
           /**
          * The mutation meter, for every type -- the bar that fills toward the next freeze.

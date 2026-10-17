@@ -32,7 +32,7 @@
  * They are separate INSTANCES rather than one field with two styles, and the reason is what the two are FOR: a score
  * number is an event (a creature died, and the number says what that paid) while a damage number is a rate (the gun
  * lands several a second, and the numbers are a stream). Sharing one list would make "how many are in flight" -- the
- * question the debug readout and every probe asks -- stop having an answer, and would let a burst of damage numbers
+ * question every probe asks -- stop having an answer, and would let a burst of damage numbers
  * push a just-earned score number out of the pool. Each instance keeps its own cap, its own life, and its own count.
  *
  * The style is held BY REFERENCE to the config object, so the live console tuning this project relies on
@@ -89,7 +89,7 @@ export class NumberPopups {
     this.scale = designScale(viewport.width, viewport.height);
   }
 
-  /** How many are in flight, for probes and for the debug readout. */
+  /** How many are in flight, for probes. */
   get count(): number {
     return this.live.length;
   }

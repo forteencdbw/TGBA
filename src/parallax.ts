@@ -128,7 +128,7 @@ export class Backdrop {
     return this.loaded;
   }
 
-  /** The load failure's message, for the debug readout and for probes. */
+  /** The load failure's message, for probes. */
   get error(): string {
     return this.loadError;
   }

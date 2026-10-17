@@ -57,22 +57,6 @@ test.describe('the main loop', () => {
 
     await startFromMenu(page);
     await waitForPhase(page, 'playing');
-
-    /**
-     * And the same line in the level's debug readout.
-     *
-     * It is the readout a screenshot usually contains, so it is the one that gets read back to you when something
-     * looks wrong on somebody else's device.
-     */
-    await expect
-      .poll(
-        () =>
-          page.evaluate(
-            () => (window as unknown as { __GB: { game: { hudRef: { debugText: string } } } }).__GB.game.hudRef.debugText,
-          ),
-        { message: 'the debug readout should name the build', timeout: 5000 },
-      )
-      .toContain(shown.compiled.label);
   });
 
   test('the world scrolls on its own, and the player does NOT carry it', async ({ page }) => {

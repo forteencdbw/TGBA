@@ -260,7 +260,7 @@ test.describe('screen captures @screenshots', () => {
       g.player.volume = 6;
       g.player.x = 0.5;
       // Low on the screen, because both obstacles are placed ABOVE the player and the top of the canvas is where
-      // the debug readout lives. The first capture put the net behind that overlay.
+      // the overlay lives. The first capture put the net behind it.
       g.player.screenY = 0.62;
       const lane = g.game.camera.viewport.laneWidthMeters;
 

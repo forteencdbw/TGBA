@@ -148,7 +148,7 @@ export class MainMenu {
   /**
    * Which build this is, at the bottom of the menu.
    *
-   * On the MENU rather than only in the in-level debug readout, because the menu is what you see when you open a URL
+   * On the MENU rather than only in a probe, because the menu is what you see when you open a URL
    * to check whether a deploy worked -- and "did my change actually reach this device" is the question that screen
    * exists to answer. It is also the only screen that is legible in a screenshot somebody sends you.
    *

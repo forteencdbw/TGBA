@@ -1,9 +1,8 @@
 import { Application, Container, FillGradient, Graphics, Text } from 'pixi.js';
-import { LATERAL_DAMPING, VIEW } from './config';
+import { VIEW } from './config';
 import { mech } from './mechanisms';
 import { Backdrop, Parallax } from './parallax';
 import type { Level } from './levels';
-import type { LateralAuthority } from './lateral';
 import type { Player } from './player';
 import { computeViewport, designScale, type Viewport } from './viewport';
 
@@ -83,19 +82,17 @@ export class Camera {
  *
  * The family comes from `mech.text.fontFamily` rather than being written here, and that is not cosmetic: see the
  * config's note on Pixi measuring the line box from the FIRST family while Chinese glyphs come from a fallback.
- * Pass `mech.text.monoFontFamily` for ASCII-only text whose column alignment needs a monospace face.
  */
 export function makeLabel(
   text: string,
   colour: number,
   size: number,
   weight: 'normal' | 'bold' = 'bold',
-  family: string = mech.text.fontFamily,
 ): Text {
   const label = new Text({
     text,
     style: {
-      fontFamily: family,
+      fontFamily: mech.text.fontFamily,
       fontSize: size,
       fill: colour,
       fontWeight: weight,
@@ -517,9 +514,8 @@ export interface Landmark {
 
 /**
  * Fixed HUD, in screen pixels: the "metres to surface" headline, the depth gauge on the right
- * edge, the prototype landmark markers, and a live tuning readout.
+ * edge, the prototype landmark markers.
  */
-import { buildLabel } from './version';
 
 /**
  * Everything the HUD reads, once per frame.
@@ -554,17 +550,6 @@ export interface HudState {
    * alone cannot do the second, and the ceiling moves under the bar on both routes (a 「血上限」 pick, or eating).
    */
   health: { current: number; max: number };
-  /** The frame's own numbers, for the debug readout. */
-  player: Player;
-  fps: number;
-  nominalSeconds: number;
-  elapsed: number;
-  lateral: LateralAuthority;
-  /** How far the level has scrolled, and which level it is. */
-  scrolled: number;
-  level: Level;
-  /** The lane's metrics in metres, quoted by the debug readout. */
-  world: { laneWidthMeters: number; visibleDepthMeters: number };
   /**
    * The readouts that belong to the form rather than to the run: the second meter and the mutation gauge.
    *
@@ -607,7 +592,6 @@ export class Hud {
    */
   private readonly mutationLabel: Text;
   private readonly mutationGauge = new Graphics();
-  private readonly debug: Text;
   /**
    * The score, in the top-left corner.
    *
@@ -658,9 +642,6 @@ export class Hud {
   /** The lane's width and centre in canvas pixels, remembered from layout for the resource gauge. */
   private laneWidthPx = 0;
   private laneCentreX = 0;
-  private debugTimer = 0;
-  /** Metres to the surface as the last `update` computed it: used by the debug line, not by any gauge. */
-  private levelDepthMeters = 0;
 
   constructor() {
 
@@ -677,16 +658,6 @@ export class Hud {
     this.mutationLabel = makeLabel('', mech.mutation.gauge.labelColour, mech.mutation.gauge.labelSize);
     this.mutationLabel.anchor.set(0.5, 0);
     this.mutationLabel.visible = false;
-
-    /**
-     * The debug readout, the one label that stays monospace.
-     *
-     * Its lines align their values into columns with spaces, which only reads as columns in a monospace face -- and
-     * it is pure ASCII, so it never touches the CJK fallback that forced the rest of the UI onto a different stack.
-     * See `config/mechanics.json5`.
-     */
-    this.debug = makeLabel('', 0x7fc4e8, 11, 'normal', mech.text.monoFontFamily);
-    this.debug.alpha = 0.8;
 
     /**
      * The score.
@@ -716,7 +687,6 @@ export class Hud {
       this.bossName,
       this.healthGauge,
       this.healthLabel,
-      this.debug,
     );
 
     /**
@@ -769,18 +739,8 @@ export class Hud {
     this.mutationLabel.scale.set(s);
     this.mutationLabel.x = centreX;
 
-    this.debug.scale.set(s * 0.9);
     /**
-     * Pinned to the column edge, but never so far left that it runs off a narrow desktop window.
-     *
-     * Shifted clear of the gauge when the gauge is on the left: the readout is nine lines of small text starting at
-     * the top of the lane, and the bar would run straight through its first characters.
-     */
-    this.debug.x = Math.max(6, viewport.left + 3 * s);
-    this.debug.y = 116 * s;
-
-    /**
-     * The score: the top-left corner, above the gauge and above the readout.
+     * The score: the top-left corner.
      *
      * The one piece of HUD furniture whose job is to be noticed when it changes, so it owns a corner rather than
      * sharing the centred block with the depth.
@@ -936,17 +896,6 @@ export class Hud {
     return this.scoreLabel.text;
   }
 
-
-  /**
-   * The debug readout, exactly as the player reads it.
-   *
-   * Same reasoning as the headline: the build line is only useful if it is really on the screen, and a test that
-   * asked the version module directly would pass while the readout showed nothing.
-   */
-  get debugText(): string {
-    return this.debug.text;
-  }
-
   /**
    * The rage gauge: a bar under the resource line, filled in the live stage's colour.
    *
@@ -1071,7 +1020,7 @@ export class Hud {
    * HUD" is answered by reading this method rather than by finding its seven callers. See `HudState`.
    */
   update(state: HudState): void {
-    const { player, fps, nominalSeconds, elapsed, lateral, level, scrolled, stage } = state;
+    const { stage } = state;
     this.updateRunReadouts(state);
     /**
      * The metres-to-surface readout is DELETED rather than hidden.
@@ -1100,35 +1049,6 @@ export class Hud {
       this.resourceGauge.clear();
     }
     this.drawMutationGauge(stage.mutation);
-
-    // The level gauge is gone; the boss bar comes in with the rest of the state.
-    //
-    // `scrolled` still matters because the level's DEPTH remains a real reading -- the water colour and the debug line
-    // both use it -- even though it no longer drives a progress bar.
-    this.levelDepthMeters = Math.max(0, level.scrollLength - scrolled);
-
-    if (++this.debugTimer % 10 === 0) {
-      this.debug.text = [
-        /**
-         * The build, first, because it is the line that answers "am I looking at the code I think I am".
-         *
-         * First rather than last on purpose: this readout is 9 monospace lines on a phone screen and the bottom of
-         * it is the part that gets cropped out of a screenshot -- which is exactly when somebody needs to read it.
-         */
-        `build   ${buildLabel()}`,
-        `fps     ${fps.toFixed(0)}`,
-        `depth   player ${player.depth(level.scrollLength).toFixed(1)} m   level ${this.levelDepthMeters.toFixed(0)} m to surface`,
-        // The player's own motion, on both axes, and the SCREEN fraction the vertical is expressed in:
-        // "depth" alone no longer describes where the bubble is, because the world moves under it.
-        `vy      ${player.vy.toFixed(3)} screen/s`,
-        `vx      ${player.vx.toFixed(3)} lane/s`,
-        `x       ${(player.x * 100).toFixed(1)}% of lane   screenY ${(player.screenY * 100).toFixed(0)}%`,
-        `time    ${elapsed.toFixed(1)}s   level ${nominalSeconds.toFixed(0)}s`,
-        `lane    ${state.world.laneWidthMeters.toFixed(1)} m   depth view ${state.world.visibleDepthMeters.toFixed(0)} m`,
-        `lateral ${lateral.keyboardSpeed.toFixed(3)} lane/s keyboard  damp ${LATERAL_DAMPING}`,
-        `cross   ${lateral.crossingSeconds}s rest / ${lateral.boostCrossingSeconds}s with boost penalty`,
-      ].join('\n');
-    }
   }
 }
 

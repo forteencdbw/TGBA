@@ -28,7 +28,7 @@ export const GIT_HASH = __GIT_HASH__;
 export const GIT_DIRTY = __GIT_DIRTY__;
 
 /**
- * One short line for the menu and the debug readout.
+ * One short line for the menu.
  *
  * The dirty marker is a WORD rather than a `*`, because it is read by a person on a phone who has no legend: `*`
  * could mean anything, and `(uncommitted)` says exactly what is true -- this page is a commit plus some edits

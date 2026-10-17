@@ -449,8 +449,6 @@ export interface Mechanisms {
    */
   text: {
     fontFamily: string;
-    /** ASCII-only text whose column alignment depends on a monospace face: the debug readout. */
-    monoFontFamily: string;
   };
   stages: StageConfig;
   volume: {
@@ -2782,11 +2780,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     path: 'text.fontFamily',
     check: (v) => typeof v === 'string' && v.trim().length > 0,
     describe: 'a CSS font-family list, with a font that has the Chinese glyphs FIRST',
-  },
-  {
-    path: 'text.monoFontFamily',
-    check: (v) => typeof v === 'string' && v.trim().length > 0,
-    describe: 'a CSS font-family list for ASCII-only text (the debug readout)',
   },
   { path: 'stages.speedMultiplier', check: (v) => Array.isArray(v) && v.length >= 2 && v.every((n) => typeof n === 'number'), describe: 'an array of at least two numbers' },
   { path: 'stages.minSpeedMultiplier', check: anyNumber, describe: 'a number' },
