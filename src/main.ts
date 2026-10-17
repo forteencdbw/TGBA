@@ -7,6 +7,7 @@ import { hitSoundOf, leaveSoundOf } from './soundIds';
 import { paintHitboxes, setDebugHitboxes, isDebugHitboxes } from './hitboxes';
 import { paintBullets, radiusOf } from './bullets';
 import { EnemyBulletField, paintEnemyBullets, type EnemyBullet } from './enemyBullets';
+import { paintParalysisRing } from './paralysis';
 import { diagnosticsOf } from './diagnostics';
 import { BURST_SECONDS, Run, type WorldView } from './run';
 import type { Phase } from './snapshot';
@@ -4319,40 +4320,13 @@ private updateBoss(): void {
     }
 
     /**
-     * Paralysed by an eel: a jagged ring flickering around the bubble.
+     * Paralysed by an eel: the shared jagged ring, on the bubble's own radius.
      *
-     * ---------------------------------------------------------------------------------------------
-     * WHY THIS ONE MATTERS MORE THAN THE OTHER CUES
-     * ---------------------------------------------------------------------------------------------
-     * Every other penalty in this game changes what the bubble does; this one changes what the CONTROLS do, and
-     * that is the only failure a player will read as the game being broken. So it has to be unmistakable and
-     * instant: a spiky ring that strobes while the inversion lasts, drawn on the bubble rather than anywhere else,
-     * because the player's hands are already being told the wrong thing and this is the only other source of truth.
-     *
-     * Drawn as a polygon rather than a circle because a smooth ring reads as a status effect and a JAGGED one reads
-     * as electricity -- the same reason the urchin is drawn as needles: silhouette first, colour second.
+     * It is the same drawing the eel's rounds wear -- one function, so the round's cue and the bubble's effect cannot
+     * drift apart. See `src/paralysis.ts` for why the shape is jagged and the strobe is this fast.
      */
     if (this.run.player.paralysed) {
-      const colour = mech.hazards.eel.paralysisColour;
-      const strobe = 0.45 + 0.55 * Math.abs(Math.sin(this.run.elapsed * 34));
-      const points: number[] = [];
-      const steps = 22;
-      for (let i = 0; i < steps; i++) {
-        const a = (i / steps) * Math.PI * 2;
-        // Alternating in and out, so the ring is a sawtooth rather than a circle with a wobble.
-        const jag = i % 2 === 0 ? 1.34 : 1.2;
-        points.push(worldX + Math.cos(a) * radius * jag, worldY + Math.sin(a) * radius * jag);
-      }
-      points.push(points[0]!, points[1]!);
-      g.poly(points);
-      g.stroke({ color: colour, alpha: strobe * alpha, width: radius * mech.hazards.eel.paralysisWidthRatio });
-      // A few bolts off the rim, so it reads as discharge rather than as a decorative outline.
-      for (let i = 0; i < 3; i++) {
-        const a = this.run.elapsed * 5 + (i / 3) * Math.PI * 2;
-        g.moveTo(worldX + Math.cos(a) * radius * 1.3, worldY + Math.sin(a) * radius * 1.3)
-          .lineTo(worldX + Math.cos(a + 0.35) * radius * 1.75, worldY + Math.sin(a + 0.35) * radius * 1.75)
-          .stroke({ color: colour, alpha: 0.7 * strobe * alpha, width: radius * mech.hazards.eel.paralysisWidthRatio * 0.6 });
-      }
+      paintParalysisRing(g, worldX, worldY, radius, this.run.elapsed, alpha);
     }
 
     const bodyRim = look.rim;
