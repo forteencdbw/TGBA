@@ -5142,7 +5142,14 @@ function paintVentArt(g: Graphics, h: Hazard, laneWidth: number): boolean {
   const frame = frames[animationFrameAt(animation, clock)] ?? frames[frames.length - 1]!;
 
   const lengthFactor = erupting ? 1 : cfg.warnLengthFraction;
-  const flameWidth = 2 * laneWidth * cfg.jetHalfWidthRatio;
+  /**
+   * The picture is deliberately a little wider than the capsule.
+   *
+   * The texture's alpha has side margins and its bright core is narrower than its frame, so mapping it 1:1 onto
+   * `jetHalfWidthRatio` made the fire look thinner than the hitbox -- the bug where a player is burned by what looks
+   * like empty water. `flameWidthScale` closes that gap without touching the collision test.
+   */
+  const flameWidth = 2 * laneWidth * cfg.jetHalfWidthRatio * Math.max(0, cfg.flameWidthScale);
   const flameHeight = laneWidth * h.vent.lengthRatio * lengthFactor;
   let alpha = cfg.flameAlpha;
   if (erupting) {

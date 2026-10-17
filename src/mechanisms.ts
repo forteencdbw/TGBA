@@ -818,6 +818,14 @@ export interface Mechanisms {
       /** Overall opacity of the flame picture, on top of what the picture itself carries. */
       flameAlpha: number;
       /**
+       * How much wider the flame PICTURE is drawn than the collision capsule.
+       *
+       * The texture has transparent side margins and a narrower bright core, so drawing it at exactly
+       * `jetHalfWidthRatio` reads as "the fire is thinner than the thing that hit me". This stretches the picture
+       * only -- the capsule stays the honest hitbox. 1 is the old, mismatched drawing.
+       */
+      flameWidthScale: number;
+      /**
        * How much of the flame's TOP fades to nothing, as a fraction of its height.
        *
        * The source render reaches the edge of its frame, so the imported texture ends in a flat cut; a smoothstep
@@ -2979,6 +2987,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.vent.art.base', check: (v) => typeof v === 'string', describe: 'a picture name' },
   { path: 'hazards.vent.art.flame', check: (v) => typeof v === 'string', describe: 'an animation name' },
   { path: 'hazards.vent.flameAlpha', check: anyNumber, describe: 'an opacity' },
+  { path: 'hazards.vent.flameWidthScale', check: anyNumber, describe: 'a multiplier on the collision width' },
   { path: 'hazards.vent.tipFadeFraction', check: anyNumber, describe: 'a fraction of the flame height' },
   { path: 'hazards.vent.artFadeSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'hazards.vent.warnLengthFraction', check: anyNumber, describe: 'a fraction of the erupting length' },
