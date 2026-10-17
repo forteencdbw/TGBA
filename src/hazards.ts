@@ -4926,8 +4926,11 @@ export function paintFallcrateWarning(
   const wave = 0.5 + 0.5 * Math.sin(phase * Math.PI * 2 * cfg.warnFlashHz);
   const alpha = cfg.warnAlphaMin + (cfg.warnAlphaMax - cfg.warnAlphaMin) * wave;
   const left = x - width / 2;
-  // The strip hangs DOWN from the top edge at the hazard's y, which is the visible top of the screen.
-  const top = y - height;
+  /**
+   * Screen y grows DOWNWARD. `y` is the top edge of the play area, so the strip hangs from `y` to `y + height`;
+   * the world-space version this replaced hung from `h.y - height` because world y grows upward.
+   */
+  const top = y;
   g.rect(left, top, width, height).fill({ color: cfg.warnColour, alpha });
   const barW = height * 0.16;
   const barH = height * 0.46;
