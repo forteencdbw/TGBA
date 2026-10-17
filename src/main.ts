@@ -464,7 +464,7 @@ class Game {
      * phase is \`loading\`, which the frame loop treats like any other non-playing phase: no input, no hazards, no timers, so
      * nothing can happen to the player while the pictures arrive.
      */
-    this.menu.onStart = () => this.openFormPick();
+    this.menu.onStart = () => this.startFromMenu();
     /**
      * The picker's answer: remember it, then load.
      *
@@ -2634,6 +2634,35 @@ class Game {
    * the player could steer a bubble through a level that had not started.
    */
   /**
+   * The menu's 开始, which may or may not be a decision.
+   *
+   * Before the campaign has been cleared, the only form a player can take is the base bubble, so the picker
+   * would be a screen with one available card and two locked ones -- a menu with one option. The run starts
+   * instead, exactly as it would have if 原样开局 had been pressed, and the picker first appears when there is
+   * something to choose.
+   */
+  private startFromMenu(): void {
+    if (!this.hasFormChoice()) {
+      this.selectedRoute = null;
+      void this.beginWithLoading();
+      return;
+    }
+    this.openFormPick();
+  }
+
+  /**
+   * Whether the picker has anything to ask.
+   *
+   * One completed campaign earns the evolved forms, and until then the base bubble is the only answer. The lock
+   * rule below reads the same predicate, so the screen cannot be shown while everything on it is locked, nor
+   * skipped while something is unlocked.
+   */
+  private hasFormChoice(): boolean {
+    const last = LEVELS[LEVELS.length - 1]?.id ?? '';
+    return formsUnlocked(this.run.progress.cleared, last);
+  }
+
+  /**
    * Open the form picker: the run's first decision, before the water exists.
    *
    * The options are rebuilt on every open rather than cached, because the SAVE changes between one run and the next --
@@ -2651,15 +2680,19 @@ class Game {
   }
 
   /**
-   * The three cards, with the save's answer about which are earned.
+   * The cards, with the save's answer about which are earned.
    *
    * The base form leads and is always available -- it is "nothing added", so there is nothing to earn. The two
-   * evolved forms are locked until the campaign has been cleared once, and they are LISTED while locked: a player
-   * who cannot see what they are working towards is not working towards anything.
+   * evolved forms are unlocked by the campaign's first clear.
+   *
+   * `locked` is always false by the time this runs, because `startFromMenu` opens the picker only once
+   * `hasFormChoice` is true. The lock rendering in `src/routePick.ts` is kept rather than deleted: it is exactly
+   * what a segmented unlock -- one form per milestone -- would draw, and a dormant branch costs nothing. The
+   * consequence worth knowing is that a fresh player is never shown the two forms they have not earned, so the
+   * game no longer advertises what it is holding back.
    */
   private formOptions(): RouteOption[] {
-    const last = LEVELS[LEVELS.length - 1]?.id ?? '';
-    const unlocked = formsUnlocked(this.run.progress.cleared, last);
+    const unlocked = this.hasFormChoice();
     return [
       { id: BASE_TYPE.id, name: BASE_TYPE.name, title: BASE_FORM_TITLE, blurb: BASE_TYPE.tagline, locked: false },
       ...ROUTES.map((route) => ({ id: route.id, name: route.name, title: route.title, blurb: route.blurb, locked: !unlocked })),
