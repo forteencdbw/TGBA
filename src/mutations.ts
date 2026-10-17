@@ -146,9 +146,21 @@ const POOL: readonly Mutation[] = [
     routes: 'all',
     available: () => true,
     apply: (run) => {
-      // Both numbers, so the new ceiling arrives full: see `applyMutationPassives`.
-      run.health += mech.health.maxPerPick;
-      run.healthMax = healthMaxFor((run.mutations['maxHp'] ?? 0) + 1);
+      /**
+       * BOTH numbers, and the COUNT first.
+       *
+       * The count is the source of truth every other passive is re-derived from (`applyMutationPassives` reads
+       * `run.mutations[id]`). This card used to set `healthMax` from `count + 1` without storing that count, so the
+       * passives pass immediately recomputed the ceiling from the OLD count and undid it -- the card was a 20-point
+       * heal with the word "上限" on it.
+       *
+       * The new ceiling arrives FILLED: the card buys 20 points of room and the 20 points in it, so current health
+       * moves with the maximum rather than leaving a hole the player never took damage for.
+       */
+      const next = (run.mutations['maxHp'] ?? 0) + 1;
+      run.mutations['maxHp'] = next;
+      run.healthMax = healthMaxFor(next);
+      run.health = Math.min(run.healthMax, run.health + mech.health.maxPerPick);
     },
   },
   {

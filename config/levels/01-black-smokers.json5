@@ -275,7 +275,9 @@
     { at: 380, span: 180, count: 4, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S3  **爆发一 · 黑烟囱群**：一串鱼从画外斜插上来，紧接着热流把矿物颗粒推上来。
     { at: 600, kind: 'fish', count: 14, path: 'rise', x: 0.0, pathSpacingSeconds: 0.28 },
-    { at: 660, span: 70, count: 5, kind: 'mineral', arrange: 'spread', x: 0.45, from: 'bottom' },
+    { at: 660, span: 70, count: 5, kind: 'mineral', arrange: 'spread', x: 0.25, from: 'bottom' },
+    { at: 660, span: 70, count: 5, kind: 'mineral', arrange: 'spread', x: 0.75, from: 'bottom' },
+
 
     // --- S4  回落：一只鮟鱇 + 一只**向下喷的喷口** + 两只盲虾。刚被打过一顿，这一屏把位置找回来；
     // 喷口放在回落里（不在爆发里）是有意的：每一次见新朝向都要有一次能看懂的见面。

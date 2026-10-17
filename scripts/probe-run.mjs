@@ -148,6 +148,24 @@ try {
     check('eel body · and it paralyses', r.player.paralysed, true);
   }
 
+  // --- the health-ceiling card raises BOTH numbers, and the extra 20 is usable
+  {
+    const { rollMutationChoices, pickMutationCard } = await server.ssrLoadModule('/src/mutations.ts');
+    const r = new Run();
+    r.phase = 'playing';
+    r.resetHealth();
+    const before = r.healthView;
+    let card = null;
+    for (let i = 0; i < 500 && !card; i++) card = rollMutationChoices(r, 3).find((c) => c.id === 'maxHp') ?? null;
+    if (!card) {
+      check('maxHp · the card is in the pool', false, true);
+    } else {
+      pickMutationCard(r, card);
+      check('maxHp · ceiling and current both rise by 20', [r.healthMax, r.health], [before.max + 20, before.current + 20]);
+      check('maxHp · the pick was counted', r.mutations.maxHp, 1);
+    }
+  }
+
   // --- stepping the water moves the creatures, and a run can do it for five seconds
   {
     const r = new Run();
