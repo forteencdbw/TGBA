@@ -2157,7 +2157,13 @@ class Game {
            * source of damage goes through `HazardField.hit` (the gun, the chain, the burst), so one emission covers all
            * of them and cannot be missed by a caller that forgot.
            */
-          this.sound(event.kind === 'hit' ? hitSoundOf(event.hazard) : leaveSoundOf(event.hazard), 0.5, this.panAt(event.x));
+          const cue =
+            event.hazard === 'fallcrate' && event.kind === 'defeat'
+              ? 'obstacle.break.crate'
+              : event.kind === 'hit'
+                ? hitSoundOf(event.hazard)
+                : leaveSoundOf(event.hazard);
+          this.sound(cue, 0.5, this.panAt(event.x));
           // Nothing to draw for an escape: the creature is still in the water and on its way out, and the particles it
           // would get are the ones a DESTROYED thing earns. The sound is the whole of that event.
           if (event.kind === 'escaped') continue;

@@ -289,6 +289,8 @@ export interface BulletContext {
  * most visible bug this feature could have.
  */
 function targetable(h: Hazard): boolean {
+  // The falling crate's warning is a marker, not a body: rounds pass through until the crate is released.
+  if (h.kind === 'fallcrate' && h.phase < mech.hazards.fallcrate.warnSeconds) return false;
   // Not shootable, or already leaving: a creature driven off is on its way out and must not be re-engaged.
   return h.maxHealth > 0 && !h.flee;
 }

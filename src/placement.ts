@@ -117,6 +117,19 @@ export function placeEntry(
         : authoredVentSide
       : null;
   if (ventSide) spawnX = ventX(ventSide, laneWidth);
+  /**
+   * THE FALLING CRATE'S COLUMN, chosen here and not by the level.
+   *
+   * The level says WHEN (the block's `at`) and nothing else: the three columns are a property of the screen, and the
+   * randomness is the mechanic -- a written `x` would make the drop predictable, which is the one thing it must not be.
+   * Spawned AT the visible top rather than above it: the warning strip is drawn at that point, and the crate itself is
+   * hidden until the warning ends.
+   */
+  if (entry.kind === 'fallcrate') {
+    const column = Math.floor(Math.random() * 3);
+    spawnX = (laneWidth * (column * 2 + 1)) / 6;
+    spawnY = view.max;
+  }
   const entering = side === 'top' ? null : { from: side, speed: entry.enterSpeed ?? mech.spawning.enterSpeedMps };
 
   const record: SpawnRecord = {

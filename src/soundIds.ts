@@ -82,6 +82,8 @@ export const SOUND_IDS = [
   // --- env: the water itself
   'vent.erupt',
   'obstacle.break.crate',
+  'crate.warn',
+  'crate.drop',
   'obstacle.break.coral',
   'obstacle.break.net',
   'obstacle.hit.wall',
@@ -118,6 +120,7 @@ const ENEMY_CLASS: Record<string, EnemyClass> = {
   starfish: 'shell',
   puffer: 'shell',
   bombfish: 'shell',
+  fallcrate: 'shell',
   archer: 'ranged',
   pistol: 'ranged',
   angler: 'ranged',

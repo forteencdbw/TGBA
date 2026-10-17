@@ -948,6 +948,21 @@ export interface Mechanisms {
       colour: number;
       lengthRatio: number;
     };
+    /** LEVEL 2: a crate that drops from the top after a telegraphed warning. */
+    fallcrate: {
+      /** Seconds the red column banner runs before the crate is released. */
+      warnSeconds: number;
+      /** Constant fall speed in lane widths per second. */
+      fallSpeedFactor: number;
+      /** Banner height as a fraction of the lane width; its width is always one third of the lane. */
+      warnStripHeightRatio: number;
+      warnColour: number;
+      warnExclamationColour: number;
+      /** Flashes per second. */
+      warnFlashHz: number;
+      warnAlphaMin: number;
+      warnAlphaMax: number;
+    };
     torpedo: {
       runSpeedFactor: number;
       runMeters: number;
@@ -3097,6 +3112,14 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.rain.pushMeters', check: anyNumber, describe: 'metres' },
   { path: 'hazards.rain.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.rain.lengthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
+  { path: 'hazards.fallcrate.warnSeconds', check: anyNumber, describe: 'seconds of telegraph before the crate is released' },
+  { path: 'hazards.fallcrate.fallSpeedFactor', check: anyNumber, describe: 'lane widths per second' },
+  { path: 'hazards.fallcrate.warnStripHeightRatio', check: anyNumber, describe: 'a fraction of the lane width' },
+  { path: 'hazards.fallcrate.warnColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.fallcrate.warnExclamationColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.fallcrate.warnFlashHz', check: anyNumber, describe: 'flashes per second' },
+  { path: 'hazards.fallcrate.warnAlphaMin', check: anyNumber, describe: 'an opacity' },
+  { path: 'hazards.fallcrate.warnAlphaMax', check: anyNumber, describe: 'an opacity' },
   { path: 'hazards.torpedo.runSpeedFactor', check: anyNumber, describe: 'lane widths per second' },
   { path: 'hazards.torpedo.runMeters', check: anyNumber, describe: 'metres' },
   { path: 'hazards.torpedo.seekSpeedFactor', check: anyNumber, describe: 'lane widths per second' },

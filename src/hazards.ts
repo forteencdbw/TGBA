@@ -101,6 +101,14 @@ export type HazardKind =
   | 'angler'
   | 'torpedo'
   /**
+   * LEVEL 2 -- the falling crate.
+   *
+   * A crate that drops from the top of the screen after a two-second telegraphed warning. It is a hazard rather than
+   * scenery because it has health, deals contact damage and has a lifecycle; the level timeline schedules the drops.
+   * Its one twist is that it is push-immune: shooting it hurts it, but nothing moves it off its column.
+   */
+  | 'fallcrate'
+  /**
    * LEVEL 3 -- 发光水母林.
    *
    * zapper discharges when it is touched OR shot, which makes it the one creature in the game that gets more
@@ -284,6 +292,13 @@ export interface HazardEffect {
    * A push rather than a stun: it must be recoverable, and it must cost the player the height they just earned.
    */
   pushDown?: number;
+  /**
+   * A one-shot cue from a hazard: the falling crate's warning and its release.
+   *
+   * Carried as an effect with its position for the same reason every other entry here is: the field knows WHEN the
+   * thing happened, and the caller owns the audio and where it should be panned.
+   */
+  cue?: { what: 'fallcrateWarn' | 'fallcrateDrop'; x: number; y: number };
   /**
    * A NEAR-MISS: a charging creature passed inside the graze circle without touching.
    *
@@ -946,6 +961,8 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   pistol: { radius: 0.058, colour: 0xff7d6b, spin: 0 },
   puffer: { radius: 0.05, colour: 0x5a6a94, spin: 0 },
   starfish: { radius: 0.052, colour: 0xffc9a3, spin: 0.35 },
+  // The falling crate wears the same colours as the obstacle it is made of: it should read as "that crate" falling.
+  fallcrate: { radius: 0.075, colour: 0xb98a4e, spin: 0 },
 };
 /**
  * The table above is the DEFAULT; the config's `hazards.radius` overrides it, kind by kind.
@@ -1171,7 +1188,8 @@ const WORLD_BOUND_KINDS: readonly HazardKind[] = ['vent', 'mineral', 'foam', 'ra
 function carryFor(h: Hazard, dt: number, ctx: HazardContext): number {
   if (isBossKind(h.kind) || WORLD_BOUND_KINDS.includes(h.kind)) return 0;
   if (h.flee === 'dead') return 0;
-  if (h.boid || h.path || h.charge || h.flee) return ctx.cameraRise;
+  // The falling crate's own motion is a screen-space fall, so the camera must not add to it.
+  if (h.kind === 'fallcrate' || h.boid || h.path || h.charge || h.flee) return ctx.cameraRise;
   return ctx.cameraRise - ctx.driftSpeed * dt;
 }
 function stepFish(field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
@@ -1547,6 +1565,20 @@ function stepRain(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext
   h.y -= ctx.laneWidth * mech.hazards.rain.fallSpeedFactor * dt;
   return;
 }
+function stepFallcrate(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
+  const cfg = mech.hazards.fallcrate;
+  /**
+   * The first `warnSeconds` of its own clock are the WARNING, and it does not move at all.
+   *
+   * The level schedules the crate at the top of the screen; `carryFor` hands it the camera's rise so "stand still"
+   * means standing still on the GLASS, not in the world. The banner is drawn for exactly this phase (see
+   * `paintHazards`), so the place it will fall is the place the player is told about before anything drops.
+   */
+  if (h.phase < cfg.warnSeconds) return;
+  // Straight down, in screen terms. Its x is never touched: no drift, no tracking, no knockback.
+  h.y -= ctx.laneWidth * cfg.fallSpeedFactor * dt;
+  return;
+}
 function stepEel(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
   /**
    * Swims in a wide S, and that is a fairness requirement rather than decoration.
@@ -1612,6 +1644,7 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
   zapper: stepZapper,
   foam: stepFoam,
   rain: stepRain,
+  fallcrate: stepFallcrate,
   eel: stepEel,
   // THE GUNNERS: one shared movement (see `stepGunner`), four rhythms and four reasons to be there.
   archer: stepArcher,
@@ -1708,6 +1741,18 @@ function contactPlain(_field: HazardField, h: Hazard, ctx: HazardContext, effect
   if (ctx.invulnerable) return;
   effects.push({ kind: h.kind, damage: contactDamageOf(h.kind), broke: false });
   return;
+}
+
+/**
+ * The falling crate's contact, which does not exist until the crate does.
+ *
+ * During the warning the entity is only a place and a banner: it has not fallen yet, so touching that column's top edge
+ * must not hurt. Once the warning is over it is the plain contact rule -- including the i-frame check, so a bubble that
+ * is still inside it when the frames end is hit again.
+ */
+function contactFallcrate(field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  if (h.phase < mech.hazards.fallcrate.warnSeconds) return;
+  contactPlain(field, h, ctx, effects);
 }
 
 /**
@@ -1856,6 +1901,9 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   mineral: contactMineral,
   foam: contactFoam,
   rain: contactRain,
+  // The falling crate uses the plain rule: its own row of the damage table, and the standard i-frame check. A crate
+  // that is still overlapping the bubble when the i-frames end hits again, which is exactly what it looks like.
+  fallcrate: contactFallcrate,
   // THE GUNNERS: touching one is the same event as touching an eel -- a bite from a thing whose real threat
   // is already in the water. The plain rule (the kind's own row of the damage table, and nothing else) is the whole
   // of it.
@@ -2188,7 +2236,9 @@ export class HazardField {
    *   Defaulted rather than required so that a caller which does not have it still compiles -- and one that passes nothing
    *   gets a flash that starts at zero, which is wrong but harmless, rather than a NaN that draws nothing at all.
    */
-  hit(hazard: Hazard, damage: number, impact?: { x: number; y: number; knockScale?: number }, elapsed = hazard.phase): 'immune' | 'damaged' | 'fled' | 'killed' {
+  hit(hazard: Hazard, damage: number, impact?: { x: number; y: number; knockScale?: number }, elapsed = hazard.phase): 'immune' | 'damaged' | 'fled' | 'shattered' | 'killed' {
+    // The warning is a promise, not a crate: there is nothing there to shoot yet.
+    if (hazard.kind === 'fallcrate' && hazard.phase < mech.hazards.fallcrate.warnSeconds) return 'immune';
     // Immune covers both "this kind is not shootable" and "this one is already leaving": firing at something that
     // is on its way out should not keep re-triggering the same event, and it should certainly not re-roll its exit.
     if (hazard.maxHealth <= 0 || hazard.flee) return 'immune';
@@ -2292,6 +2342,25 @@ export class HazardField {
       // The boss is the one thing that is KILLED rather than driven off, and it breaks like anything else.
       this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour, hazard: hazard.kind });
       return 'killed';
+    }
+    /**
+     * THE FALLING CRATE SHATTERS IN PLACE.
+     *
+     * It has nowhere to flee to and it must not pay `drivenOff`: the reward the other creatures pay is for driving a
+     * threat out of the water, and a crate that breaks where it stood is not that. The short `dead` state is what
+     * takes it out of the fight on this frame; the cull removes it on the next, and the defeat event is what turns
+     * into the same ring of debris an obstacle gives up.
+     */
+    if (hazard.kind === 'fallcrate') {
+      hazard.flee = 'dead';
+      hazard.deadSince = 0;
+      hazard.deadDeadline = 0;
+      // The crate leaves from the middle of the screen, unlike a creature that leaves by flying off one; its pooled sprite
+      // would otherwise sit at the shatter point until the one-second TTL sweep noticed nobody was asking for it.
+      const sprite = ART_SPRITES.get(hazard.id);
+      if (sprite) sprite.visible = false;
+      this.hitEvents.push({ x: impact?.x ?? hazard.x, y: impact?.y ?? hazard.y, radiusFraction: hazard.radiusFraction, kind: 'defeat', colour: KIND_TUNING[hazard.kind].colour, hazard: hazard.kind });
+      return 'shattered';
     }
     /**
      * A creature that has been driven off DROPS ITS CHARGE.
@@ -2435,6 +2504,23 @@ export class HazardField {
        * place for that reason; the cull below still retires the finished bodies in every phase.
        */
       this.advance(h, dt, ctx);
+      /**
+       * The falling crate's two cues, emitted on the frames the state changes.
+       *
+       * `fired` and `armed` are reused per kind elsewhere (the trash bag and the crab), and this kind has no other use
+       * for either: the first frame announces the warning, and the frame the warning ends announces the drop.
+       */
+      if (h.kind === 'fallcrate') {
+        const cfg = mech.hazards.fallcrate;
+        if (!h.fired) {
+          h.fired = true;
+          effects.push({ kind: 'fallcrate', broke: false, cue: { what: 'fallcrateWarn', x: h.x, y: h.y } });
+        }
+        if (!h.armed && h.phase >= cfg.warnSeconds) {
+          h.armed = true;
+          effects.push({ kind: 'fallcrate', broke: false, cue: { what: 'fallcrateDrop', x: h.x, y: h.y } });
+        }
+      }
       /**
        * A creature's trigger finger, kept out of `advance` on purpose.
        *
@@ -2937,7 +3023,7 @@ export class HazardField {
        * random offset on top of it would make the promise false. A level that wants two vents out of step gives them
        * different delays, which is a decision it can see rather than a coin flip it cannot.
        */
-      phase: kind === 'vent' ? 0 : opts.deterministic ? 0 : Math.random() * Math.PI * 2,
+      phase: kind === 'vent' || kind === 'fallcrate' ? 0 : opts.deterministic ? 0 : Math.random() * Math.PI * 2,
       seed: opts.deterministic ? 0 : Math.random() * 1000,
       heading: 0,
       variety: opts.variety ?? 0,
@@ -3032,7 +3118,11 @@ export class HazardField {
      */
     const meters =
       cfg.meters *
-      (isBossKind(h.kind) ? Math.max(0, bossDossier(h.kind).knockbackScale) : 1) *
+      (h.kind === 'fallcrate'
+        ? 0
+        : isBossKind(h.kind)
+          ? Math.max(0, bossDossier(h.kind).knockbackScale)
+          : 1) *
       Math.max(0, impact?.knockScale ?? 1);
     if (meters <= 0 || cfg.seconds <= 0) return;
     let dirX = 0;
@@ -4623,6 +4713,54 @@ function drawRain(g: Graphics, h: Hazard, r: number, laneWidth: number, _elapsed
   return;
 }
 
+function drawFallcrate(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  /**
+   * The drawn fallback, which is the crate obstacle's own two colours and cross-brace.
+   *
+   * It only appears until the crate's picture loads (or if it never does); the `hazardArt` row normally draws the same
+   * wooden crate everyone already knows. Matching the obstacle's palette here is what keeps the fallback reading as
+   * "a crate" rather than as a new brown square.
+   */
+  const side = r * 2;
+  g.rect(h.x - r, h.y - r, side, side).fill({ color: mech.obstacles.crateColor, alpha: 1 });
+  g.rect(h.x - r, h.y - r, side, side).stroke({
+    color: mech.obstacles.crateRimColor,
+    alpha: 0.95,
+    width: Math.max(1, r * 0.12),
+  });
+  g.moveTo(h.x - r, h.y - r).lineTo(h.x + r, h.y + r)
+    .moveTo(h.x + r, h.y - r).lineTo(h.x - r, h.y + r)
+    .stroke({ color: mech.obstacles.crateRimColor, alpha: 0.55, width: Math.max(1, r * 0.08) });
+  return;
+}
+
+/**
+ * The red warning strip that stands in for the crate before it falls.
+ *
+ * The strip is the COLUMN (a third of the lane), not the crate, because the player's question is "which of the three
+ * lanes is about to be dangerous", and a crate-sized mark would answer a narrower question than the one being asked.
+ * The exclamation is inside the strip so it survives the strip fading in and out; every colour, the flash rate and
+ * the height are config.
+ */
+function paintFallcrateWarning(g: Graphics, h: Hazard, laneWidth: number): void {
+  const cfg = mech.hazards.fallcrate;
+  const width = laneWidth / 3;
+  const height = laneWidth * cfg.warnStripHeightRatio;
+  // 0.5 + 0.5 sin: the full range on both sides, so the strip is visibly pulsing rather than merely present.
+  const wave = 0.5 + 0.5 * Math.sin(h.phase * Math.PI * 2 * cfg.warnFlashHz);
+  const alpha = cfg.warnAlphaMin + (cfg.warnAlphaMax - cfg.warnAlphaMin) * wave;
+  const left = h.x - width / 2;
+  // The strip hangs DOWN from the top edge at the hazard's y, which is the visible top of the screen.
+  const top = h.y - height;
+  g.rect(left, top, width, height).fill({ color: cfg.warnColour, alpha });
+  const barW = height * 0.16;
+  const barH = height * 0.46;
+  const barTop = top + height * 0.14;
+  g.rect(h.x - barW / 2, barTop, barW, barH).fill({ color: cfg.warnExclamationColour, alpha });
+  g.circle(h.x, barTop + barH + height * 0.14, barW * 0.6).fill({ color: cfg.warnExclamationColour, alpha });
+  return;
+}
+
 function drawZapper(g: Graphics, h: Hazard, r: number, laneWidth: number, elapsed: number): void {
   /**
    * An electric jellyfish: a violet bell, a few thick tentacles, and the discharge ring.
@@ -4987,6 +5125,7 @@ const CREATURE_DRAWING: Record<HazardKind, CreatureDraw> = {
   zapper: drawZapper,
   foam: drawFoam,
   rain: drawRain,
+  fallcrate: drawFallcrate,
   // THE GUNNERS' placeholder bodies: code-drawn until an art row replaces them, and each says its ONE thing
   // -- the archer is a fish with a muzzle, the pistol shrimp is a claw, the puffer's spikes dim while its
   // answer is cooling, and the starfish's arms ARE its next volley's directions.
@@ -5264,6 +5403,20 @@ export function paintHazards(
      * creature follows.
      */
     if (h.kind === 'vent' && paintVentArt(g, h, laneWidth)) continue;
+
+    /**
+     * THE FALLING CRATE'S WARNING, and no crate yet.
+     *
+     * Drawn before the art branch because it is not the body: the crate does not exist on the glass until the warning
+     * has run. The strip spans the whole third of the lane the crate will fall through, which is the unit the player
+     * has to read ("which column is dangerous"), while the crate itself keeps its real size.
+     */
+    if (h.kind === 'fallcrate' && h.phase < mech.hazards.fallcrate.warnSeconds) {
+      const stale = ART_SPRITES.get(h.id);
+      if (stale) stale.visible = false;
+      paintFallcrateWarning(g, h, laneWidth);
+      continue;
+    }
 
     /**
      * THE WARNING FOR A LUNGE, drawn before anything else the creature is made of.

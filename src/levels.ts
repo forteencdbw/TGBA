@@ -278,9 +278,10 @@ export type SpawnKind =
   | 'vent'
   | 'mineral'
   | 'shrimp'
-  /** LEVEL 2's lanternfish and rogue torpedoes. */
+  /** LEVEL 2's lanternfish and rogue torpedoes, plus the telegraphed falling crate. */
   | 'angler'
   | 'torpedo'
+  | 'fallcrate'
   /** LEVEL 3's electric jellyfish: the ignition source for the conductive chain. */
   | 'zapper'
   /** LEVEL 6's foam and rain. */

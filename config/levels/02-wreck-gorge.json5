@@ -53,12 +53,12 @@
   //
   // `S<n>` 是每一块落在第几屏（一屏 190 米）。形状看读数，不要凭感觉：`node scripts/probe-pacing.mjs`。
   //
-  // 这一关的**身份是布景**（木箱/渔网/封路墙/珊瑚，占它威胁值的一半以上），所以三次爆发都长在障碍上：
-  // "你必须改道"这一件事在这一关是最贵的一种压力。**种类和编排一个都没换，换的是它们什么时候到**，
-  // 以及**它们之间隔多远**——三次爆发的间隔从 3 屏收到 2 屏，而这一关本身被拉长了一倍。
+  // 这一关的**身份是布景**（木箱/渔网/封路墙/珊瑚），三次爆发都长在障碍上：
+  // "你必须改道"这一件事在这一关是最贵的一种压力。这一轮又加了一种会改道的压力：
+  // **下落木箱**——每段一次，2 秒预警后从三列之一垂直砸下。
   //
-  // **10 屏 / 66 秒 / 约 139 分威胁 / 13.8 每屏**：密度比第一关高一档（第一关 11.7），时长几乎一样
-  // （66 对 65）——它比第一关难，但不比第一关长，因为第三关还要在它之上。
+  // **10 屏 / 66 秒 / 约 165 分威胁 / 16.5 每屏**：比第一关高一档（11.7）。加入下落木箱后，
+  // 它暂时比第三关还密（15.4）——`pacing.threat.fallcrate` 是调这个贡献的旋钮。
   //
   // **收集物铺在每一屏的缝隙里**：起/落屏各 3-4 颗（一小串 `spread`，顺手就能吃到一颗），爆发屏**一颗都不放**
   // （那一屏只有威胁），开场那一屏 6 颗、收尾那屏 8 颗。它的定位是「击败怪物的间隙顺手捡到」，所以它得
@@ -67,12 +67,15 @@
     // --- S0  安静开场：只有食物和两只螃蟹。螃蟹是"机会不是敌人"——它把你弹上去，这一关先教这个。
     { at: 20, span: 120, count: 6, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.45] },
     { at: 60, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
+    // 下落木箱：每段一次，列由屏幕三等分里随机选。预警 2 秒，木箱本身不可推、只垂直下落。
+    { at: 150, kind: 'fallcrate' },
 
     // --- S1  起：第一排木箱（缺口是给你的）、一串渔网、第一位枪手，再补两只螃蟹把这一屏收住。
     { at: 200, kind: 'crate', count: 4, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.2 },
     { at: 260, kind: 'net', count: 3, arrange: 'line' },
     { at: 320, kind: 'archer', x: 0.5 },
     { at: 350, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
+    { at: 370, kind: 'fallcrate' },
 
     { at: 280, span: 95, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S2  **爆发一 · 船首残骸**：木箱之后紧接着一排**撞不开的**封路墙——同一屏里两种答案，
@@ -82,12 +85,14 @@
     { at: 510, kind: 'angler', x: 0.5 },
     { at: 540, kind: 'crab', count: 3, arrange: 'spread', from: 'random' },
     { at: 560, kind: 'net', count: 3, arrange: 'line' },
+    { at: 580, kind: 'fallcrate' },
 
     // --- S3  回落：水母（减速）和一张网，再补两只螃蟹。减速之后撞上网是这一关最有教育意义的一次挫折——
     // 而这次挫折现在**多了一屏**来读：被打完之后有三屏才到下一次爆发。
     { at: 600, kind: 'jelly', count: 3, arrange: 'line', from: 'random' },
     { at: 640, kind: 'net', count: 3, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.2 },
     { at: 700, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
+    { at: 730, kind: 'fallcrate' },
 
     { at: 700, span: 50, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S4  起（第二次爬升）：木箱 + 枪手 + 两条鱼雷。**这是全关最长的一段安静**，所以它得自己站住：
@@ -97,6 +102,7 @@
     { at: 880, kind: 'torpedo', count: 2, arrange: 'spread', from: 'random' },
     { at: 910, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
     { at: 920, kind: 'jelly', count: 2, arrange: 'spread', from: 'random' },
+    { at: 940, kind: 'fallcrate' },
 
     { at: 900, span: 40, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S5  **爆发二 · 货舱通道**：珊瑚（硬，变小有优势）+ 两条鱼雷 + 一排封路墙。
@@ -104,11 +110,13 @@
     { at: 980, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.2 },
     { at: 1040, kind: 'torpedo', count: 2, arrange: 'spread', from: 'random' },
     { at: 1080, kind: 'wall', count: 3, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
+    { at: 1100, kind: 'fallcrate' },
 
     // --- S6  回落：水母 + 网 + 一排木箱。间隔已经从 3 屏缩到 2 屏，所以这一屏比上一次回落更短也更急。
     { at: 1160, kind: 'jelly', count: 3, arrange: 'line', from: 'random' },
     { at: 1200, kind: 'net', count: 3, arrange: 'line' },
     { at: 1250, kind: 'crate', count: 3, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.2 },
+    { at: 1270, kind: 'fallcrate' },
 
     { at: 1290, span: 30, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S7  **爆发三 · 锚链（最高点）**：最后一排封路墙 + 三条鱼雷 + 两只鮟鱇 + 水母。
@@ -117,9 +125,11 @@
     { at: 1400, kind: 'torpedo', count: 3, arrange: 'spread', from: 'random' },
     { at: 1450, kind: 'angler', count: 2, arrange: 'line' },
     { at: 1490, kind: 'jelly', count: 2, arrange: 'spread', from: 'random' },
+    { at: 1520, kind: 'fallcrate' },
 
     // --- S8  收一屏：**只有食物**，外加两只螃蟹（它们是往上的推力，不是威胁）。
     { at: 1560, span: 140, count: 8, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.45] },
+    { at: 1600, kind: 'fallcrate' },
     { at: 1650, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
   ],
 

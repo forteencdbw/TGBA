@@ -1143,6 +1143,16 @@ export class Run {
 
     for (const e of effects) {
       /**
+       * A hazard's one-shot cue: the falling crate's warning and release.
+       *
+       * Played here rather than in the field for the usual split -- the field says WHAT happened and WHERE, and the run
+       * owns the audio. Returned early for the same reason: a cue has no damage and no state to apply.
+       */
+      if (e.cue) {
+        this.sound(e.cue.what === 'fallcrateWarn' ? 'crate.warn' : 'crate.drop', 0.7, this.panAt(e.cue.x));
+        continue;
+      }
+      /**
        * THE REVERSAL, handled before anything else.
        *
        * An `eaten` effect carries no damage, so this cannot conflict with the branches below -- but it is checked

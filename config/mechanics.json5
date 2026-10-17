@@ -972,6 +972,8 @@
       "coral": 3,
       // 管虫：一排留一个缺口，第一关用它做了四道门。
       "tube": 3,
+      // 下落木箱：预警 2 秒后砸下，拿走的是"这一列现在不能待"——它是一次强制改道，不是一条命。
+      "fallcrate": 3,
 
       // ---- BOSS：关卡不在刷怪表里放它（它由关卡自己的 `boss` 字段登场），所以这几行**不会出现在曲线里**。
       // 写它们是为了让"每个种类都必须有一行"这条检查不需要第三个"哪些算 BOSS"的判断——
@@ -2312,7 +2314,10 @@
     // bombfish：炸弹鱼。scale 是按"画出来多大"反推的，和旁边那些一样。
     "bombfish": { "move": "炸弹鱼-move", "scale": 1.5, "alpha": 1 },
     // zapper：电击水母。scale 是按"画出来多大"反推的，和旁边那些一样。
-    "zapper": { "move": "电击水母-move", "scale": 1.5, "alpha": 1 }
+    "zapper": { "move": "电击水母-move", "scale": 1.5, "alpha": 1 },
+    // fallcrate：下落木箱。复用场景木箱的同一张图与同一档大小；`fixedFacing` 因为箱子没有朝向，
+    // 不该朝玩家转或随漂移方向镜像。
+    "fallcrate": { "move": "木箱", "scale": 1.4, "alpha": 1, "fixedFacing": true }
   },
 
   "hazards": {
@@ -2366,6 +2371,8 @@
       "torpedo": 0.036,
       "zapper": 0.058,
       "rain": 0.014,
+      // 下落木箱：与场景木箱同尺寸（场景那边是 `obstacles.radius.crate`），所以看起来就是同一种箱子。
+      "fallcrate": 0.075,
       "eel": 0.058,
       "rot": 0.056,
       "oil": 0.066,
@@ -2459,6 +2466,8 @@
       "urchin": 75,
       // 炸弹鱼：你可以在它靠近之前打爆它——但那是**原地**爆炸，离太近照样挨。
       "bombfish": 50,
+      // 下落木箱：50 点，和炸弹鱼同档；它是一块木头，而且下落途中一直可以打。
+      "fallcrate": 50,
       // BOSS 的血量在**关卡**里给（见 config/levels.json5 的 boss.health）：同一只 BOSS 在第二关可以更厚，
       // 那是关卡强度，不是机制。这里留一行是为了让"每种危险物一行"这条约定继续成立。
       "boss": 0,
@@ -2526,6 +2535,8 @@
       "archer": 20,
       "starfish": 20,
       "puffer": 20,
+      // 下落木箱：和普通鱼/障碍同档。
+      "fallcrate": 20,
 
       // 电鳗：**撞上本体也会麻痹**（两轴操作反向），所以伤害只给环境档的 10——它的代价在操作，不在掉血。
       "eel": 10,
@@ -2992,6 +3003,26 @@
       // 命中扣几点。
       "colour": 0xbfe8ff,
       "lengthRatio": 0.09
+    },
+
+    // ---------------------------------------------------------------------------------------------
+    // 第二关：下落木箱
+    // ---------------------------------------------------------------------------------------------
+    //
+    // 从屏幕顶部坠落，落下前 2 秒在目标整列画红色条幅和感叹号。它不受 push，也不看玩家：只垂直下落。
+    // 伤害与血量在 `contactDamage` / `health` 两张表里，这里只放"预警 + 下落"本身的数值。
+    "fallcrate": {
+      // **预警多久（秒）**：条幅亮这么久后木箱才离开顶部。改这个数就是改玩家的反应时间。
+      "warnSeconds": 2.0,
+      // **下落速度（泳道宽/秒）**：0.42 ≈ 152 m/s。恒定速度，不加速。
+      "fallSpeedFactor": 0.42,
+      // 条幅：高度相对泳道宽度；宽度固定为整列（1/3 泳道）。颜色、闪烁频率、透明度范围都在这里。
+      "warnStripHeightRatio": 0.06,
+      "warnColour": 0xd83232,
+      "warnExclamationColour": 0xff2b2b,
+      "warnFlashHz": 3.0,
+      "warnAlphaMin": 0.35,
+      "warnAlphaMax": 0.95
     },
 
     // ---------------------------------------------------------------------------------------------
@@ -3486,7 +3517,9 @@
       "archer": 0.3,
       "pistol": 0.55,
       "puffer": 0.45,
-      "starfish": 0.35
+      "starfish": 0.35,
+      // 下落木箱：不可吃，质量只用于满足"两张表键必须一致"的加载期检查。
+      "fallcrate": 5
     },
 
     // 吃下每种危险物所需的**档位**，对应上面 tierVolume 的下标 + 1。
@@ -3540,7 +3573,9 @@
       "archer": 3,
       "pistol": 3,
       "puffer": 3,
-      "starfish": 3
+      "starfish": 3,
+      // 下落木箱：不可吃（最高档）。
+      "fallcrate": 5
     },
 
     // 吃下危险物得到的质量，相对它自身 mass 的比例。
@@ -4857,6 +4892,8 @@
         "pistol": "push",
         "puffer": "push",
         "starfish": "destroy",
+        // 下落木箱：爆破直接清掉。它是一块会碎的木头，不是被推开的软体。
+        "fallcrate": "destroy",
         // BOSS 也是 push：怒气爆发推得动它，但清不掉。**这是刻意的**——一个能被技能删掉的 BOSS
         // 会让"这一关的终点"取决于你有没有那个技能，那它就不是终点了。
         "boss": "push",
@@ -5259,6 +5296,14 @@
         "obstacle.break.crate": { "label": "木箱被撞碎", "bus": "env", "gap": 0.1, "layers": [
           { "type": "noise", "filter": "bandpass", "hz": 1500, "seconds": 0.18, "gain": 0.3 },
           { "type": "tone", "wave": "square", "hz": 200, "endRatio": 0.4, "seconds": 0.1, "gain": 0.15 }
+        ] },
+        "crate.warn": { "label": "下落木箱预警", "bus": "env", "gap": 2.0, "layers": [
+          { "type": "tone", "wave": "square", "hz": 880, "endRatio": 0.9, "seconds": 0.12, "gain": 0.12 },
+          { "type": "tone", "wave": "square", "hz": 660, "seconds": 0.12, "gain": 0.11, "delay": 0.16 }
+        ] },
+        "crate.drop": { "label": "下落木箱释放", "bus": "env", "gap": 0.3, "layers": [
+          { "type": "noise", "filter": "lowpass", "hz": 500, "endRatio": 0.6, "seconds": 0.3, "gain": 0.2 },
+          { "type": "tone", "wave": "sine", "hz": 90, "endRatio": 0.6, "seconds": 0.3, "gain": 0.18 }
         ] },
         "obstacle.break.coral": { "label": "珊瑚被撞碎", "bus": "env", "gap": 0.1, "layers": [
           { "type": "noise", "filter": "bandpass", "hz": 3500, "seconds": 0.25, "gain": 0.3 },
