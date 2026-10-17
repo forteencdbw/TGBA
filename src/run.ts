@@ -811,7 +811,7 @@ export class Run {
       playerRadius,
       invulnerable: this.invulnerable > 0,
       // Scenery is cover for both sides -- the same call the player's own rounds make.
-      blocks: (x, y, hitRadius) => this.obstacles.blocks(x, y, hitRadius),
+      blocks: (x, y, hitRadius) => this.obstacles.blocks(x, y, hitRadius, laneWidth),
     });
     if (live && landed.length > 0) {
       for (const kind of landed) {

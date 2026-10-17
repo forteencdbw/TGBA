@@ -116,15 +116,16 @@ export function obstacleRadius(kind: ObstacleKind): number {
 /**
  * The rectangular contact box for a kind whose picture is not a circle, or null for the kinds that stay circles.
  *
- * Only the net: its picture is bottom-anchored and wider than it is tall, so a circle centred on the obstacle's point
- * left the visible corners outside the hitbox. The box is the PICTURE's own bounding rectangle -- the same art scale
- * and texture aspect the painter uses -- and `offsetY` is the distance from the obstacle's point to the box centre,
- * because the sprite's anchor is its bottom. If the picture has not loaded, this answers null and the old circle is
- * used, exactly as the drawn body is the fallback for the picture.
+ * The net and the crate. The net's picture is wider than it is tall, and the crate's is a box, so a circle centred on
+ * the obstacle's point leaves the visible corners outside the hitbox (and, for the crate, sits at the picture's bottom
+ * edge rather than in its middle). The box is the PICTURE's own bounding rectangle -- the same art scale and texture
+ * aspect the painter uses -- and `offsetY` is the distance from the obstacle's point to the box centre, because the
+ * sprite's anchor is its bottom. If the picture has not loaded, this answers null and the old circle is used, exactly
+ * as the drawn body is the fallback for the picture.
  */
 export function obstacleBox(kind: ObstacleKind): { halfW: number; halfH: number; offsetY: number } | null {
-  if (kind !== 'net') return null;
-  const variant = mech.obstacles.art.net?.variants[0];
+  if (kind !== 'net' && kind !== 'crate') return null;
+  const variant = mech.obstacles.art[kind]?.variants[0];
   const texture = variant ? assetTextureNow(variant.image) : null;
   if (!texture || texture.width <= 0 || texture.height <= 0) return null;
   const halfW = obstacleRadius(kind) * (variant?.scale ?? 1);
@@ -320,10 +321,27 @@ export class ObstacleField {
    * The net is deliberately absent: it is a soft mesh, and rounds pass through it. Every other kind stops one. The
    * caller that damages scenery (the player's gun) asks this rather than `blocks`, because it needs to know WHICH
    * obstacle it hit; enemy fire only needs the boolean.
+   *
+   * The shape is the same `obstacleBox` the player's contact uses, so a round is stopped by the crate's rectangle
+   * rather than by a circle inscribed in it. `laneWidth` is needed because the box is stored in lane fractions and
+   * the projectile is in metres.
    */
-  blockerAt(x: number, y: number, hitRadius: number): { id: number; kind: ObstacleKind } | null {
+  blockerAt(x: number, y: number, hitRadius: number, laneWidth: number): { id: number; kind: ObstacleKind } | null {
     for (const o of this.obstacles) {
       if (o.kind === 'net') continue;
+      const box = obstacleBox(o.kind);
+      if (box) {
+        const distance = boxDistance(
+          x,
+          y,
+          o.x,
+          o.y + laneWidth * box.offsetY,
+          laneWidth * box.halfW,
+          laneWidth * box.halfH,
+        );
+        if (distance <= hitRadius) return { id: o.id, kind: o.kind };
+        continue;
+      }
       const r = mech.obstacles.radius[o.kind] ?? 0.05;
       const reach = hitRadius + r;
       const dx = o.x - x;
@@ -333,8 +351,8 @@ export class ObstacleField {
     return null;
   }
 
-  blocks(x: number, y: number, hitRadius: number): boolean {
-    return this.blockerAt(x, y, hitRadius) !== null;
+  blocks(x: number, y: number, hitRadius: number, laneWidth: number): boolean {
+    return this.blockerAt(x, y, hitRadius, laneWidth) !== null;
   }
 
   /**

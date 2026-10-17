@@ -555,7 +555,7 @@ export class BulletField {
        * The other kinds stop the round without taking damage -- the charge and the burst are their answers. The net
        * is not here at all: it is soft, and `blockerAt` lets rounds pass through it.
        */
-      const blocker = ctx.obstacles.blockerAt(b.x, b.y, radius);
+      const blocker = ctx.obstacles.blockerAt(b.x, b.y, radius, ctx.laneWidth);
       let spent = blocker !== null;
       if (blocker) {
         this.hits++;
