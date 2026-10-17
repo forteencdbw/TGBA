@@ -5017,12 +5017,18 @@ function paintVentArt(g: Graphics, h: Hazard, laneWidth: number): boolean {
   /**
    * The aim, as a rotation of art drawn pointing UP.
    *
-   * `aimX/aimY` is a world vector with +y up; the sprite's local up is (0,-1) before the parent's Y flip. Working the
-   * two transforms through gives `atan2(aimX, aimY)` in either layer -- see the derivation in `drawVent`'s hitbox
-   * twin if this ever needs checking against the drawn band.
+   * `aimX/aimY` is a world vector with +y up; the sprite's local up is (0,-1), and the layer may flip Y. Working the
+   * transforms through:
+   *
+   *   flipped layer (the water):  scale.y=-1 turns local up into (0,+1); rotating by θ and flipping Y again gives
+   *                              (-sinθ, -cosθ), so matching the world aim needs θ = atan2(-aimX, aimY).
+   *   plain layer:                local up stays (0,-1); rotating by θ gives (sinθ, -cosθ), so θ = atan2(aimX, aimY).
+   *
+   * The X sign is therefore the layer's. Getting it wrong mirrors the flame about the aim: the jet points up-left
+   * while the capsule goes up-right, which is exactly what the first screenshot showed.
    */
-  const angle = Math.atan2(h.vent.aimX, h.vent.aimY);
   const ySign = isYFlipped(pair.base) ? -1 : 1;
+  const angle = Math.atan2(ySign * h.vent.aimX, h.vent.aimY);
   const departing = h.flee ? mech.hazards.fleeAlpha : 1;
 
   // The same radius `ventTouchesPlayer` tests, including any `hazards.hitboxScale.vent` -- so the rock's picture
