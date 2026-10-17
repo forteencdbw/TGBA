@@ -106,6 +106,23 @@ for (const [kind, art] of Object.entries(mech.hazardArt ?? {})) {
     }
   }
 }
+/**
+ * The vent is the one kind whose art is not in `hazardArt`: a rock and a flame, both under `hazards.vent.art`.
+ * Checked here so adding or renaming either cannot silently fall back to the drawn vent.
+ */
+const ventArt = mech.hazards?.vent?.art;
+if (ventArt?.base) wanted.push(['hazards.vent.art.base', ventArt.base]);
+if (ventArt?.flame) {
+  const animation = (mech.animations ?? {})[ventArt.flame];
+  if (animation) {
+    const names = Array.isArray(animation.frames)
+      ? animation.frames
+      : Array.from({ length: animation.count ?? 1 }, (_, i) => animation.frames.replace('{n}', String(i + 1)));
+    for (const frameName of names) wanted.push(['hazards.vent.art.flame', frameName]);
+  } else {
+    wanted.push(['hazards.vent.art.flame', ventArt.flame]);
+  }
+}
 for (const [path, name] of [
   ['bullets.image', mech.bullets?.image],
   ['playerBubble.image', mech.playerBubble?.image],

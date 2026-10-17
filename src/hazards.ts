@@ -3603,6 +3603,17 @@ function whiteOutFilter(sprite: Sprite, strength: number): ColorMatrixFilter {
 const ART_SPRITES = new Map<number, Sprite>();
 /** When each pooled sprite was last asked for, for the time-based sweep. */
 const ART_SEEN = new Map<number, number>();
+
+/**
+ * The vent's TWO pictures, keyed by hazard id: a flame and the rock that covers its root.
+ *
+ * A separate pool rather than a second entry in `ART_SPRITES`, because the vent is the only kind whose picture is
+ * two sprites with two different anchors and a shared rotation. Everything else is one centred sprite. Keeping the
+ * exception in its own map means the generic branch keeps its one-sprite rule instead of growing a nullable second
+ * member that every other creature would have to ignore.
+ */
+const VENT_ART = new Map<number, { base: Sprite; flame: Sprite }>();
+const VENT_SEEN = new Map<number, number>();
 /** A monotonic clock for the sweep, set by the painter on each pass. */
 let ART_NOW = 0;
 
@@ -4054,6 +4065,20 @@ function pruneArtSprites(): void {
   }
 }
 
+/** The same sweep for the vent's two-layer pool. */
+function pruneVentSprites(): void {
+  if (VENT_ART.size === 0) return;
+  const now = ART_NOW;
+  for (const [id, pair] of VENT_ART) {
+    if (now - (VENT_SEEN.get(id) ?? 0) > ART_SPRITE_TTL_SECONDS) {
+      pair.base.destroy();
+      pair.flame.destroy();
+      VENT_ART.delete(id);
+      VENT_SEEN.delete(id);
+    }
+  }
+}
+
 /**
  * Where a lure's stem starts and its bulb sits.
  *
@@ -4095,6 +4120,11 @@ export function lureTip(
 /** Test hook: the art sprite for a creature, so a probe can check what is on it. */
 export function hazardArtSpriteForTest(id: number): Sprite | null {
   return ART_SPRITES.get(id) ?? null;
+}
+
+/** Test hook: a vent's two pictures, so a probe can check the rotation and which layer is showing. */
+export function ventArtSpritesForTest(id: number): { base: Sprite; flame: Sprite } | null {
+  return VENT_ART.get(id) ?? null;
 }
 
 /**
@@ -4932,6 +4962,129 @@ function isStillDying(h: Hazard): boolean {
   return h.deadSince !== undefined && h.deadSince < (h.deadDeadline ?? 0);
 }
 
+/**
+ * The vent's two pictures: a flame under a rock, the pair turned to the aim.
+ *
+ * Returns FALSE when either picture is not available, so the caller can fall through to `drawVent` and keep the
+ * procedural vent. That fallback is not decoration: the atlas is the only source of these textures, and a vent that
+ * vanished because a picture 404'd would be a hole in the level's signature hazard.
+ *
+ * The flame is drawn from its BOTTOM-CENTRE and the rock from its CENTRE, both at `(h.x, h.y)`. That is what makes
+ * the seam free: the flame's root is under the rock, and the rock's centre is the nozzle the flame comes out of.
+ * The rock is inserted after the flame, so it covers the root; both go under the painter's Graphics layer, where
+ * every other art sprite is drawn.
+ *
+ * SIZES COME FROM THE HITBOX, not from the pictures: the rock is `2 * baseRadiusRatio` wide and the flame is
+ * `2 * jetHalfWidthRatio` wide by `lengthRatio` long. The pictures are stretched to those numbers, which is what
+ * keeps "what you see is what hits you" true after the art arrived.
+ */
+function paintVentArt(g: Graphics, h: Hazard, laneWidth: number): boolean {
+  const cfg = mech.hazards.vent;
+  if (!h.vent) return false;
+  const baseTexture = assetTextureNow(cfg.art.base);
+  const animation = mech.animations[cfg.art.flame];
+  const frames = animation ? animationTextures(cfg.art.flame) : null;
+  const existing = VENT_ART.get(h.id);
+  if (!baseTexture || !animation || !frames) {
+    // No picture: hide whatever this slot held last, and let the drawn vent stand in. See the `ART_SPRITES` note.
+    if (existing) {
+      existing.base.visible = false;
+      existing.flame.visible = false;
+    }
+    return false;
+  }
+
+  let pair = existing;
+  if (!pair) {
+    const flame = new Sprite();
+    flame.anchor.set(0.5, 1);
+    flame.eventMode = 'none';
+    const base = new Sprite();
+    base.anchor.set(0.5, 0.5);
+    base.eventMode = 'none';
+    const parent = g.parent;
+    if (parent) {
+      const at = Math.max(0, parent.getChildIndex(g));
+      parent.addChildAt(flame, at);
+      // Inserted second, so it is ABOVE the flame and still below the painter's layer.
+      parent.addChildAt(base, at);
+    }
+    pair = { base, flame };
+    VENT_ART.set(h.id, pair);
+  }
+  VENT_SEEN.set(h.id, ART_NOW);
+
+  /**
+   * The aim, as a rotation of art drawn pointing UP.
+   *
+   * `aimX/aimY` is a world vector with +y up; the sprite's local up is (0,-1) before the parent's Y flip. Working the
+   * two transforms through gives `atan2(aimX, aimY)` in either layer -- see the derivation in `drawVent`'s hitbox
+   * twin if this ever needs checking against the drawn band.
+   */
+  const angle = Math.atan2(h.vent.aimX, h.vent.aimY);
+  const ySign = isYFlipped(pair.base) ? -1 : 1;
+  const departing = h.flee ? mech.hazards.fleeAlpha : 1;
+
+  // The same radius `ventTouchesPlayer` tests, including any `hazards.hitboxScale.vent` -- so the rock's picture
+  // and the rock's circle are one number rather than two that happen to agree today.
+  const baseWidth = 2 * laneWidth * hazardSizeFraction('vent');
+  const baseUnit = baseWidth / Math.max(1, baseTexture.width);
+  pair.base.texture = baseTexture;
+  pair.base.visible = true;
+  pair.base.x = h.x;
+  pair.base.y = h.y;
+  pair.base.rotation = angle;
+  pair.base.alpha = departing;
+  pair.base.tint = 0xffffff;
+  pair.base.scale.set(baseUnit, ySign * baseUnit);
+
+  const erupting = ventErupting(h);
+  const warning = ventWarning(h);
+  if (!erupting && !warning) {
+    pair.flame.visible = false;
+    return true;
+  }
+
+  /**
+   * The flame's own clock.
+   *
+   * During the start delay `h.phase` is held at zero, so the warning would be a still picture; `h.fed` is the
+   * clock that actually runs then. Once the cycle begins it is `h.phase`, which is what the frame rate was chosen
+   * against. The join is a single frame index, and the frames loop, so the change is invisible.
+   */
+  const duringDelay = h.vent.startDelaySeconds > 0 && h.fed < h.vent.startDelaySeconds;
+  const clock = duringDelay ? h.fed : h.phase;
+  const frame = frames[animationFrameAt(animation, clock)] ?? frames[frames.length - 1]!;
+
+  const lengthFactor = erupting ? 1 : cfg.warnLengthFraction;
+  const flameWidth = 2 * laneWidth * cfg.jetHalfWidthRatio;
+  const flameHeight = laneWidth * h.vent.lengthRatio * lengthFactor;
+  let alpha = cfg.flameAlpha;
+  if (erupting) {
+    // Fade in and out at the ends of the active window, so the flame arrives rather than switching on.
+    const fade = Math.min(
+      1,
+      h.phase / Math.max(0.01, cfg.artFadeSeconds),
+      (cfg.activeSeconds - h.phase) / Math.max(0.01, cfg.artFadeSeconds),
+    );
+    alpha *= Math.max(0, Math.min(1, fade));
+  } else {
+    // Warning: a short flame pulsing, which reads as "it is about to" rather than as a second, weaker eruption.
+    const pulse = 0.5 + 0.5 * Math.sin(clock * Math.PI * 2 * cfg.warnFlickerHz);
+    alpha *= cfg.warnAlphaMin + (cfg.warnAlphaMax - cfg.warnAlphaMin) * pulse;
+  }
+
+  pair.flame.texture = frame;
+  pair.flame.visible = true;
+  pair.flame.x = h.x;
+  pair.flame.y = h.y;
+  pair.flame.rotation = angle;
+  pair.flame.alpha = alpha * departing;
+  pair.flame.tint = 0xffffff;
+  pair.flame.scale.set(flameWidth / Math.max(1, frame.width), ySign * (flameHeight / Math.max(1, frame.height)));
+  return true;
+}
+
 export function paintHazards(
   g: Graphics,
   field: HazardField,
@@ -4951,7 +5104,10 @@ export function paintHazards(
   playerX = Number.NaN,
 ): void {
   ART_NOW += 1;
-  if (which === 'in-play') pruneArtSprites();
+  if (which === 'in-play') {
+    pruneArtSprites();
+    pruneVentSprites();
+  }
   for (const h of field.hazards) {
     // A creature is in exactly one of the two passes, so nothing is drawn twice and nothing is missed. A dead one is in
     // the FIRST pass: it is still part of what is happening, not something on its way out (see `isDeparting`).
@@ -4969,6 +5125,16 @@ export function paintHazards(
      * the way DOWN rather than up. One clock per creature, and this is where the painter switches to it.
      */
     const elapsed = h.phase;
+
+    /**
+     * THE VENT, drawn from its two pictures when they are available.
+     *
+     * Before the generic art branch and before the drawn body, because a vent is neither: it is a rock AND a flame,
+     * with a rotation and a length the one-sprite branch cannot express. `paintVentArt` returns false when either
+     * picture is missing, and then `drawVent` below is the fallback -- the same "art is an upgrade" rule every other
+     * creature follows.
+     */
+    if (h.kind === 'vent' && paintVentArt(g, h, laneWidth)) continue;
 
     /**
      * THE WARNING FOR A LUNGE, drawn before anything else the creature is made of.

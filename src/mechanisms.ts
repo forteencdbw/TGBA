@@ -803,6 +803,22 @@ export interface Mechanisms {
       glowColour: number;
       edgeColour: number;
       edgeAlpha: number;
+      /**
+       * The vent's two pictures: a rock that is always there, and a flame (an `animations` key) that appears with
+       * the plume. They are drawn as two sprites so the rock can cover the flame's root; the whole pair turns to
+       * the aim. Either missing means the procedural `drawVent` still stands in.
+       */
+      art: { base: string; flame: string };
+      /** Overall opacity of the flame picture, on top of what the picture itself carries. */
+      flameAlpha: number;
+      /** Seconds the flame takes to fade in at the start of an eruption and out at the end. */
+      artFadeSeconds: number;
+      /** How much of the flame's length the warning shows, as a fraction of the eruption's reach. */
+      warnLengthFraction: number;
+      /** The warning flame's pulse: cycles per second, and the opacity it pulses between. */
+      warnFlickerHz: number;
+      warnAlphaMin: number;
+      warnAlphaMax: number;
     };
     /** Mineral grit on the heat flow: slow, fragile, and mostly in the way. */
     mineral: {
@@ -2944,6 +2960,14 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.vent.glowColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.vent.edgeColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.vent.edgeAlpha', check: anyNumber, describe: 'an opacity' },
+  { path: 'hazards.vent.art.base', check: (v) => typeof v === 'string', describe: 'a picture name' },
+  { path: 'hazards.vent.art.flame', check: (v) => typeof v === 'string', describe: 'an animation name' },
+  { path: 'hazards.vent.flameAlpha', check: anyNumber, describe: 'an opacity' },
+  { path: 'hazards.vent.artFadeSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'hazards.vent.warnLengthFraction', check: anyNumber, describe: 'a fraction of the erupting length' },
+  { path: 'hazards.vent.warnFlickerHz', check: anyNumber, describe: 'cycles per second' },
+  { path: 'hazards.vent.warnAlphaMin', check: anyNumber, describe: 'an opacity' },
+  { path: 'hazards.vent.warnAlphaMax', check: anyNumber, describe: 'an opacity' },
   { path: 'hazards.mineral.riseSpeedFactor', check: anyNumber, describe: 'lane widths per second' },
   { path: 'hazards.mineral.wobbleAmplitude', check: anyNumber, describe: 'a fraction of the lane width' },
   { path: 'hazards.mineral.wobblePeriodSeconds', check: anyNumber, describe: 'seconds' },
