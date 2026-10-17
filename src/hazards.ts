@@ -4719,17 +4719,23 @@ function drawFallcrate(g: Graphics, h: Hazard, r: number, _laneWidth: number, _e
    *
    * It only appears until the crate's picture loads (or if it never does); the `hazardArt` row normally draws the same
    * wooden crate everyone already knows. Matching the obstacle's palette here is what keeps the fallback reading as
-   * "a crate" rather than as a new brown square.
+   * "a crate" rather than as a new brown square. The rotation is applied here too, so the fallback falls corner-down
+   * exactly as the picture does.
    */
-  const side = r * 2;
-  g.rect(h.x - r, h.y - r, side, side).fill({ color: mech.obstacles.crateColor, alpha: 1 });
-  g.rect(h.x - r, h.y - r, side, side).stroke({
+  const angle = (mech.hazards.fallcrate.rotationDegrees * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const corner = (x: number, y: number): [number, number] => [h.x + x * cos - y * sin, h.y + x * sin + y * cos];
+  const points = [corner(-r, -r), corner(r, -r), corner(r, r), corner(-r, r)];
+  g.poly(points.flat()).fill({ color: mech.obstacles.crateColor, alpha: 1 });
+  g.poly(points.flat()).stroke({
     color: mech.obstacles.crateRimColor,
     alpha: 0.95,
     width: Math.max(1, r * 0.12),
   });
-  g.moveTo(h.x - r, h.y - r).lineTo(h.x + r, h.y + r)
-    .moveTo(h.x + r, h.y - r).lineTo(h.x - r, h.y + r)
+  // The cross-brace, through the rotated square's own corners rather than the screen's axes.
+  g.moveTo(...corner(-r, -r)).lineTo(...corner(r, r))
+    .moveTo(...corner(r, -r)).lineTo(...corner(-r, r))
     .stroke({ color: mech.obstacles.crateRimColor, alpha: 0.55, width: Math.max(1, r * 0.08) });
   return;
 }
@@ -5656,6 +5662,14 @@ export function paintHazards(
          */
         const spin = art.spin ?? 0;
         /**
+         * A static art angle, in radians, plus whatever the spin adds.
+         *
+         * The falling crate wants a corner down rather than a flat face, which is a fixed 45 degrees; `spin` remains a
+         * RATE for the kinds that turn over time (the urchin), so the two compose rather than replace each other. The
+         * sign follows the layer for the same reason as the spin above.
+         */
+        const artRotation = h.kind === 'fallcrate' ? (mech.hazards.fallcrate.rotationDegrees * Math.PI) / 180 : 0;
+        /**
          * `volleyAligned` reads the ANGLE rather than running a clock, and the sign follows the layer.
          *
          * The point of it is that the picture and the bullets agree, so it would be a poor joke to then get the
@@ -5665,7 +5679,7 @@ export function paintHazards(
          */
         sprite.rotation = art.volleyAligned
           ? (h.volleySpin - (art.volleyBaseRadians ?? 0)) * (isYFlipped(sprite) ? 1 : -1)
-          : spin * (h.phase + (h.seed ?? 0));
+          : artRotation * (isYFlipped(sprite) ? 1 : -1) + spin * (h.phase + (h.seed ?? 0));
         /**
          * The white flash, as a filter ON THE SPRITE.
          *

@@ -962,6 +962,8 @@ export interface Mechanisms {
       warnFlashHz: number;
       warnAlphaMin: number;
       warnAlphaMax: number;
+      /** Angle of the picture, in degrees. 45 puts a corner down; 0 falls on a flat face. */
+      rotationDegrees: number;
     };
     torpedo: {
       runSpeedFactor: number;
@@ -3120,6 +3122,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.fallcrate.warnFlashHz', check: anyNumber, describe: 'flashes per second' },
   { path: 'hazards.fallcrate.warnAlphaMin', check: anyNumber, describe: 'an opacity' },
   { path: 'hazards.fallcrate.warnAlphaMax', check: anyNumber, describe: 'an opacity' },
+  { path: 'hazards.fallcrate.rotationDegrees', check: anyNumber, describe: 'degrees; 45 puts a corner down, 0 falls on a flat face' },
   { path: 'hazards.torpedo.runSpeedFactor', check: anyNumber, describe: 'lane widths per second' },
   { path: 'hazards.torpedo.runMeters', check: anyNumber, describe: 'metres' },
   { path: 'hazards.torpedo.seekSpeedFactor', check: anyNumber, describe: 'lane widths per second' },
