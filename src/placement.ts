@@ -85,7 +85,13 @@ export function placeEntry(
   const side: ResolvedSide = authoredFrom === 'random' ? (flip ? 'right' : 'left') : authoredFrom;
   const mirrored = (fraction: number): number => (flip ? 1 - fraction : fraction);
   let spawnX = mirrored(entry.x) * laneWidth;
-  let spawnY = worldY;
+  /**
+   * A TOP entry may be handed a spot above the view, so whatever it reaches downward enters first.
+   *
+   * Only the `top` side uses this; the side and bottom branches below overwrite `spawnY` with their own edge, and
+   * the loader refuses `aboveMeters` on those entries rather than letting it do nothing.
+   */
+  let spawnY = worldY + (entry.aboveMeters ?? 0);
   if (side === 'left' || side === 'right') {
     const off = laneWidth * mech.spawning.offscreenMarginRatio;
     spawnX = side === 'left' ? -off : laneWidth + off;
@@ -208,6 +214,7 @@ export function placeEntry(
     const hazard = world.hazards.spawnAt(entry.kind as HazardKind, seed.x, seed.y, {
       boid: { school: entry.school, ...seed.boid },
       scale: mech.hazards.boids.scale,
+      ...(entry.aboveMeters !== undefined ? { aboveMeters: entry.aboveMeters } : {}),
       ...(entry.variety !== undefined ? { variety: entry.variety } : {}),
     });
     hazard.heading = facing;
@@ -228,6 +235,7 @@ export function placeEntry(
   const opts: SpawnOptions = {};
   if (entering) opts.entry = entering;
   if (path) opts.path = path;
+  if (entry.aboveMeters !== undefined) opts.aboveMeters = entry.aboveMeters;
   // The block's look, carried to the creature that has to draw it. Undefined for anything that is not a hazard.
   if (entry.variety !== undefined) opts.variety = entry.variety;
   // A vent's geometry, carried the same way: the wall decides the plume's direction as well as its position.

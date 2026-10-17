@@ -53,6 +53,13 @@ try {
     check('top · not entering', w.hazards.hazards[0].entry, null);
   }
 
+  // A top entry can be parked above the view, so a long downward reach (a vent's plume) enters before its body.
+  {
+    const { record, w } = place({ kind: 'vent', side: 'left', aim: 'down', aboveMeters: 250 }, 750);
+    check('above · placed above the visible top', [record.worldY, record.visibleTop], [1000, 800]);
+    check('above · the creature knows how far above it began', w.hazards.hazards[0].spawnAbove, 250);
+  }
+
   // A side arrival is placed OFF the lane, at the authored height, and is told it is arriving.
   for (const side of ['left', 'right']) {
     const { record, w } = place({ kind: 'fish', x: 0.5, from: side }, 750);

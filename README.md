@@ -203,6 +203,8 @@ levels/03-jelly-forest.json5 (level "jelly-forest"): paths.weave.points[0].y sho
   **停在 `x` 指定的位置**（像被水冲过来的木箱），不会一路漂穿泳道。
 - 每块可以覆盖 `enterSpeed`；默认值和"出生点在画面外多远""切入高度"这些手感数字在
   `config/mechanics.json5` 的 `spawning` 段，全关卡共用。
+- `aboveMeters`：在视野顶边**上方**多少米生成（默认 0 = 贴着顶边）。只给从 `top` 来的生物用——朝下的喷口
+  用它把本体停在屏幕外，让更长的火焰先从顶边探进来。它不改 `at`：还是同一时刻放进水面，只是晚几秒才被看见。
 
 **例子**（第一关 `config/levels/01-black-smokers.json5` 里就有这几块，可以改也可以删）：
 

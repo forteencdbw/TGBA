@@ -231,6 +231,17 @@ export interface LevelEntry {
    */
   depth?: number;
   /**
+   * Metres ABOVE the visible top to place it, for a top-borne creature.
+   *
+   * Absent (0) is the old rule: the entry appears at the top edge. A positive value parks it further up, so whatever
+   * it reaches DOWNWARD -- a vent's plume -- can enter the view before its body does. It does not change `at`: the
+   * level hands the entry over at the same moment, and it simply takes longer to be seen.
+   *
+   * Creatures only. A collectable comes down with the current and scenery has nothing that reaches ahead of it, so
+   * the loader refuses the key on those rather than letting it do nothing.
+   */
+  aboveMeters?: number;
+  /**
    * Vents only: which wall the rock is mounted on.
    *
    * There is no `x` for a vent, and that is the point. A vent used to be placed anywhere across the lane, so the file
@@ -357,6 +368,8 @@ export interface SpawnBlock {
   from: EntrySide;
   enterSpeed: number;
   depth: number;
+  /** Metres above the visible top a top-borne creature begins; see `LevelEntry.aboveMeters`. */
+  aboveMeters?: number;
   /**
    * Vents, and only vents -- the loader refuses these on anything else.
    *
@@ -728,6 +741,7 @@ const BLOCK_KEYS: readonly string[] = [
   'from',
   'enterSpeed',
   'depth',
+  'aboveMeters',
   // Vents, and only vents: see the `side`/`aim` checks in `readBlock`.
   'side',
   'aim',
@@ -811,6 +825,7 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
   const count = Math.round(optNum(node, 'count', where, 1, 1, 200));
   const arrange = pick(node, 'arrange', where, count <= 1 ? 'single' : 'line', ARRANGEMENTS) as Arrange;
   const from = pick(node, 'from', where, 'top', SIDES) as EntrySide;
+  const aboveMeters = optNum(node, 'aboveMeters', where, 0, 0, 100000);
 
   const sizesRaw = node['sizes'];
   let sizeTable: number[] | null = null;
@@ -902,6 +917,24 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
   if (boids && from !== 'top') {
     fail(where, `is a Boids school arriving from the ${from}: a school is born where its path starts, so it has no edge to arrive from.`);
   }
+  /**
+   * `aboveMeters` is for an entry that has a VIEW above it to wait in, which means a creature arriving from the top.
+   *
+   * Both refusals are about a key that would otherwise look like it did something: a side arrival's position is
+   * decided by `depth`, and a collectable or a piece of scenery has nothing that reaches ahead of its body, so
+   * parking it above the view would change nothing visible and only delay it.
+   */
+  if (aboveMeters > 0) {
+    if (from !== 'top') {
+      fail(where, `has "aboveMeters" and arrives from the ${from}: only a top-borne entry has a view above it to wait in.`);
+    }
+    if (kind === 'bubble' || isScenery(kind)) {
+      fail(
+        where,
+        `gives a "${kind}" "aboveMeters", but only creatures can wait above the view: a collectable comes down with the current and scenery has nothing that reaches ahead of it.`,
+      );
+    }
+  }
 
   return {
     at,
@@ -924,6 +957,7 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
      */
     enterSpeed: optNum(node, 'enterSpeed', where, mech.spawning.enterSpeedMps, 1, 500),
     depth: optNum(node, 'depth', where, mech.spawning.entryDepth, 0, 1),
+    ...(aboveMeters > 0 ? { aboveMeters } : {}),
     // The block's PATH, if it names one. Checked against the level's own path table later (the block is read before the
     // level finishes parsing), so a typo here is reported once the table is known rather than silently ignored.
     ...(typeof node['path'] === 'string' ? { path: node['path'] } : {}),
@@ -992,13 +1026,21 @@ function expandBlock(block: SpawnBlock, variety = 0, index = 0): LevelEntry[] {
           ...(block.startDelaySeconds === undefined ? {} : { startDelaySeconds: block.startDelaySeconds }),
         };
   /**
+   * The off-screen-above offset, carried like the vent keys.
+   *
+   * It is about WHERE the entry begins, but it is not one of the `place.*` helpers' positions: those are x and
+   * spread, and this is the one number that moves the whole block above the view.
+   */
+  const above: Pick<LevelEntry, 'aboveMeters'> =
+    block.aboveMeters === undefined ? {} : { aboveMeters: block.aboveMeters };
+  /**
    * EVERY CREATURE THE BLOCK PLACES GETS THE SAME `variety`.
    *
    * A block is a school: `{ kind: 'fish', count: 6 }` is six fish that arrived together, and a shoal drawn half
    * sardine and half perch is two shoals pretending to be one. A string on a spline is one school for the same
    * reason, and it arrives here as one block.
    */
-  const tag = (entries: LevelEntry[]): LevelEntry[] => entries.map((e) => ({ ...e, ...side, ...vent, variety }));
+  const tag = (entries: LevelEntry[]): LevelEntry[] => entries.map((e) => ({ ...e, ...side, ...vent, ...above, variety }));
 
   /**
    * A block on a PATH is a STRING: `count` creatures, spread along the curve by their own index.

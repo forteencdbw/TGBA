@@ -396,6 +396,14 @@ export interface Hazard {
   /** Radius in metres of the lane, matching how collectables are measured relative to the player. */
   radiusFraction: number;
   /**
+   * Metres ABOVE the visible top this was placed, from the level block's `aboveMeters`.
+   *
+   * Zero for nearly everything. A downward vent is the case that needs it: its plume reaches further than its body is
+   * tall, so the level parks the whole vent above the view and the flame enters first. The cull at the top of the
+   * working area adds this, or the vent would be retired on the frame it spawned.
+   */
+  spawnAbove: number;
+  /**
    * This creature's own size multiplier, 1 for nearly everything.
    *
    * It scales the DRAWING and the HITBOX together -- `hazardSizeFraction` and `hazardBoxFractions` both take it -- so a
@@ -1067,6 +1075,13 @@ export interface SpawnOptions {
   health?: number;
   /** Set while it is still arriving from a screen edge. The caller places it outside the lane; the factory leaves it. */
   entry?: Hazard['entry'];
+  /**
+   * Metres above the visible top it was placed, so the cull above the view can be widened by exactly that much.
+   *
+   * Not how far it currently is above the edge -- it is where it BEGAN, which is the only thing the cull needs to
+   * keep a long-reached creature alive until its body has arrived.
+   */
+  aboveMeters?: number;
   /** The spline it follows, if a level put it on one. */
   path?: Hazard['path'];
   /** Its place in a Boids school, if its block said `boids: true`. The caller seeds it; see `seedMember` in `src/boids.ts`. */
@@ -2678,7 +2693,13 @@ export class HazardField {
        * `tickDeaths`, which is the path that runs while the level is holding still.
        */
       if (h.deadSince !== undefined) return isStillDying(h);
-      const inside = h.y > ctx.min - 80 && h.y < ctx.max + 120;
+      /**
+       * The top margin grows by the creature's own `spawnAbove`.
+       *
+       * A vent parked above the view so its flame can enter before its body would otherwise be retired on the frame it
+       * spawned -- its centre is deliberately further above the top than the ordinary 120m working margin.
+       */
+      const inside = h.y > ctx.min - 80 && h.y < ctx.max + 120 + h.spawnAbove;
       /**
        * A creature leaving through a SIDE needs retiring on the X axis, because the band above is a y test only.
        *
@@ -2879,6 +2900,7 @@ export class HazardField {
       x,
       y,
       radiusFraction,
+      spawnAbove: opts.aboveMeters ?? 0,
       scale: opts.scale ?? 1,
       /**
        * A vent's cycle starts at ZERO, unlike everything else.
