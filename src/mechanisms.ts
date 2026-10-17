@@ -1095,6 +1095,8 @@ export interface Mechanisms {
      */
     eel: {
       paralysisSeconds: number;
+      /** Whether the vertical axis is inverted too while paralysed. The horizontal axis always is. */
+      invertVertical: boolean;
       paralysisColour: number;
       paralysisWidthRatio: number;
       /**
@@ -3184,6 +3186,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.trash.minGripSeconds', check: anyNumber, describe: 'seconds' },
 
 { path: 'hazards.eel.paralysisSeconds', check: anyNumber, describe: "seconds between 0 and 10; 0 disables the control loss an eel's touch or bolt causes" },
+  { path: 'hazards.eel.invertVertical', check: (v) => typeof v === 'boolean', describe: 'whether the vertical axis is inverted as well while paralysed' },
   ...['archer', 'pistol', 'puffer', 'starfish'].map((kind) => ({
     path: `hazards.${kind}.driftFactor`,
     check: anyNumber,

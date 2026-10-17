@@ -183,15 +183,14 @@ export class Player {
    * Two things apply it -- an eel's bolt landing and touching the eel's body -- and both come from the same config
    * duration, because they are the same mechanic.
    *
-   * While this is running the LATERAL axis is inverted: push left and the bubble goes right. Nothing else in the
-   * game touches the controls, and the design asks for exactly one thing that does ("让气泡短暂失控"), so it lives
-   * here as its own state rather than as a modifier buried in the steering product -- which also means the drawing
-   * code can show it without knowing anything about eels.
+   * While this is running BOTH axes are inverted: push left and the bubble goes right; push up and it goes down.
+   * Nothing else in the game touches the controls, and the design asks for exactly one thing that does
+   * ("让气泡短暂失控"), so it lives here as its own state rather than as a modifier buried in the steering
+   * product -- which also means the drawing code can show it without knowing anything about eels.
    *
-   * Only the LATERAL axis, deliberately. The level is a vertical ascent, so inverting the vertical would read as
-   * the LEVEL being broken rather than as the bubble being paralysed, and the whole point of the eel is that the
-   * failure is felt as belonging to the player's own hands. Aim is left alone too: the paralysis breaks steering, not
-   * the ability to fire, or being paralysed with a full stomach would be a death sentence with no play in it.
+   * The vertical flip can be turned off with `hazards.eel.invertVertical`; the horizontal one is the mechanic's
+   * identity and always applies. Aim is left alone either way: the paralysis breaks steering, not the ability to
+   * fire, or being paralysed with a full stomach would be a death sentence with no play in it.
    */
   paralysisSeconds = 0;
 
@@ -270,11 +269,12 @@ export class Player {
      * instead of a lurch. Touch does NOT go through this (see the drag below): a finger asks for a distance, not a
      * speed, and there is nothing to coast.
      *
-     * `axisX` is flipped on the way IN when an eel has paralysed the bubble, rather than the input itself being
-     * rewritten: the raw axis is what the spit aims with, so inverting it at the source would also make the shots
-     * fly backwards. What breaks is the bubble's obedience, and that is what this line is.
+     * The axes are flipped on the way IN when an eel has paralysed the bubble, rather than the input itself being
+     * rewritten: what breaks is the bubble's OBEDIENCE to the input, not the input the rest of the game might read.
      */
-    const axisX = this.paralysisSeconds > 0 ? -input.axisX : input.axisX;
+    const inverted = this.paralysisSeconds > 0;
+    const axisX = inverted ? -input.axisX : input.axisX;
+    const axisY = inverted && mech.hazards.eel.invertVertical ? -input.axisY : input.axisY;
     if (axisX === 0) {
       this.vx -= this.vx * Math.min(lateral.damping * dt, 1);
       if (Math.abs(this.vx) < lateral.stopSpeed) this.vx = 0;
@@ -287,7 +287,7 @@ export class Player {
     // horizontal uses so the two axes feel identical. `verticalSpeedScale` converts between a window height and
     // a lane width, which are different lengths in metres but should take the same time to cross.
     const verticalSpeed = lateral.keyboardSpeed * tuning.verticalSpeedScale * steer;
-    this.vy = input.axisY * verticalSpeed * this.slowMultiplier;
+    this.vy = axisY * verticalSpeed * this.slowMultiplier;
     this.screenY += this.vy * dt;
 
     /**
@@ -304,14 +304,15 @@ export class Player {
      * drag's contribution is never scaled by anything.
      *
      * `penaltiesApply` is the one exception, and it is off by default: see `config/mechanics.json5`. The eel's
-     * inversion is not a penalty and applies either way -- it inverts the LATERAL axis only, which on a phone is
-     * the drag, and losing obedience is the whole point of being paralysed.
+     * inversion is not a penalty and applies either way -- on a phone the drag is the control, and losing
+     * obedience is the whole point of being paralysed. Both axes mirror the finger while it lasts.
      */
     const drag = input.consumeDrag();
     const dragScale = mech.movement.drag.sensitivity * (mech.movement.drag.penaltiesApply ? steer * this.slowMultiplier : 1);
-    const dragX = this.paralysisSeconds > 0 ? -drag.x : drag.x;
+    const dragX = inverted ? -drag.x : drag.x;
+    const dragY = inverted && mech.hazards.eel.invertVertical ? -drag.y : drag.y;
     this.x += dragX * dragScale;
-    this.screenY += drag.y * dragScale;
+    this.screenY += dragY * dragScale;
 
     // A launch impulse is added on top of whichever input is driving, so being shoved does not cancel
     // the player's own control of the other axis.
