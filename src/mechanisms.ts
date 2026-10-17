@@ -1761,8 +1761,8 @@ export interface Mechanisms {
        */
       jelly: {
         climbSpeed: number;
-        diagonalRatio: number;
         entrySeconds: number;
+        entryTargetRatio: number;
         pulse: number[];
       };
       backCoralCount: number;
@@ -3447,6 +3447,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['crawlerBandTop', 'a fraction of the screen height'],
     ['jelly.climbSpeed', 'screen heights per second'],
     ['jelly.entrySeconds', 'seconds'],
+    ['jelly.entryTargetRatio', 'a fraction of the lane width'],
     ['backCoralCount', 'a count of corals'],
     ['backCoralHalfWidth', 'a fraction of the screen width'],
     ['backCoralBottom', 'a fraction of the screen height; negative is below the edge'],
@@ -3467,11 +3468,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     path: 'menu.backdrop.loners',
     check: (v) => Array.isArray(v) && v.every((k) => typeof k === 'string'),
     describe: 'a list of hazard kind names that never arrive in a batch',
-  },
-  {
-    path: 'menu.backdrop.jelly.diagonalRatio',
-    check: (v) => typeof v === 'number' && Number.isFinite(v) && v > 0,
-    describe: 'vertical pixels per horizontal pixel; 1 is 45 degrees',
   },
   {
     path: 'menu.backdrop.jelly.pulse',

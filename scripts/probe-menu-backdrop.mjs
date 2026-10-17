@@ -437,8 +437,11 @@ try {
     const bd = build(cast);
     const h = cast[0].h;
     const y0 = h.y;
-    for (let i = 0; i < 120; i++) bd.update(DT);
+    bd.update(DT);
+    check('a jelly leans into its diagonal entry', Math.abs(h.artRotation) > 0.05, true);
+    for (let i = 0; i < 119; i++) bd.update(DT);
     check('a jelly climbs', h.y > y0, true);
+    check('and straightens once the entry is spent', Math.abs(h.artRotation) < 0.01, true);
     check('and stays inside the lane once its entry is spent', h.x > 0 && h.x < W, true);
     check('the entry timer runs out', bd.velocity.get(h.id).vertical.entryLeft <= 1e-9, true);
     const y1 = h.y;

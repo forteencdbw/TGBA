@@ -708,8 +708,10 @@ export class MenuBackdrop {
       if (h.flee) {
         const step = this.height * mech.hazards.fleeScreensPerSecond * dt;
         // A climbing jelly leaves the way it was going; everything else goes to a side.
-        if (h.flee === 'up') h.y += step;
-        else h.x += h.flee === 'right' ? step : -step;
+        if (h.flee === 'up') {
+          h.y += step;
+          if (v.vertical) h.artRotation = 0;
+        } else h.x += h.flee === 'right' ? step : -step;
       } else if (v.vertical) {
         /**
          * A jelly: a decaying horizontal entry, then a climb whose speed is the bell's frame.
@@ -722,12 +724,20 @@ export class MenuBackdrop {
         const animation = mech.animations[h.kind === 'zapper' ? '电击水母-move' : 'jelly-idle'];
         const frame = animation ? animationFrameAt(animation, h.phase) : 0;
         const pulse = cfg.jelly.pulse[frame] ?? 1;
-        if (v.vertical.entryLeft > 0) {
-          const left = v.vertical.entryLeft / Math.max(0.01, cfg.jelly.entrySeconds);
+        const left = v.vertical.entryLeft > 0 ? v.vertical.entryLeft / Math.max(0.01, cfg.jelly.entrySeconds) : 0;
+        if (left > 0) {
           h.x += v.vx * left * dt * this.width;
           v.vertical.entryLeft = Math.max(0, v.vertical.entryLeft - dt);
         }
         h.y += v.vertical.climb * pulse * dt * this.height;
+        /**
+         * THE BELL POINTS ALONG THE PATH.
+         *
+         * A jelly that moved diagonally while standing upright read as sliding sideways rather than swimming. The
+         * entry is the only horizontal component, so this is a 45-degree lean that straightens as `left` falls to 0.
+         * The sign is the vent's: the menu's root is Y-flipped, so a rightward entry is a NEGATIVE local rotation.
+         */
+        h.artRotation = Math.atan2(-v.vx * left * this.width, v.vertical.climb * pulse * this.height);
       } else {
         h.x += v.vx * boost * dt * this.width;
         h.y += v.vy * boost * dt * this.height;
@@ -891,7 +901,6 @@ export class MenuBackdrop {
     const isVertical = climbs(kind);
     const jelly = cfg.jelly;
     const climb = jelly.climbSpeed;
-    const entryVx = (climb * this.height) / Math.max(1, this.width * jelly.diagonalRatio);
     const fromLeft = Math.random() < 0.5;
     const dir = fromLeft ? 1 : -1;
     const speed =
@@ -913,6 +922,19 @@ export class MenuBackdrop {
        * jitter below -- gives the same loose shoal without the whole formation having to exist off screen.
        */
       const x = fromLeft ? -this.width * 0.06 - i * this.width * 0.026 : this.width * 1.06 + i * this.width * 0.026;
+      /**
+       * A vertical swimmer's entry TARGET is inside the lane, not a speed.
+       *
+       * The old climb-derived speed was so slow that the jelly spent a second and a half clipped at the wall before
+       * it was fully visible. Targeting a point fixes the symptom and keeps the diagonal: the horizontal speed is
+       * whatever reaches the target in `entrySeconds`, and the bell tilts to match it.
+       */
+      const targetX = fromLeft
+        ? this.width * jelly.entryTargetRatio + i * this.width * 0.026
+        : this.width * (1 - jelly.entryTargetRatio) - i * this.width * 0.026;
+      const entryVx = isVertical
+        ? (targetX - x) / (0.5 * Math.max(0.01, jelly.entrySeconds) * this.width)
+        : 0;
       /**
        * And the height THIS member arrives at.
        *
@@ -947,7 +969,7 @@ export class MenuBackdrop {
       // decisions; the jelly simply does not use the result.
       const jitter = 0.86 + Math.random() * 0.28;
       this.velocity.set(h.id, {
-        vx: isVertical ? entryVx * dir : speed * jitter * dir,
+        vx: isVertical ? entryVx : speed * jitter * dir,
         /**
          * A crawler keeps the height it arrived at.
          *

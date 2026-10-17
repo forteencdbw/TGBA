@@ -422,6 +422,14 @@ export interface Hazard {
    */
   heading: number;
   /**
+   * The picture's own tilt, in the SPRITE's local space, for a creature whose travel direction is not horizontal.
+   *
+   * The menu's jellyfish set it while they enter diagonally: the bell points along the path and straightens as the
+   * horizontal entry fades. Undefined (or 0) is upright. The painter ADDS it to the generic spin, so every kind that
+   * never sets it -- everything in the water -- is unchanged.
+   */
+  artRotation?: number;
+  /**
    * WHICH OF THE KIND'S LOOKS THIS ONE SHOWS, when `hazardArt.<kind>.variants` lists more than one.
    *
    * Decided when the creature is PLACED, not when it is drawn, because the agreement that matters is the school's:
@@ -5454,9 +5462,10 @@ export function paintHazards(
          * sign in `rotation` -- the same fact the spin comment above records -- so a kind that means its angle
          * literally has to ask the layer which way round it is.
          */
-        sprite.rotation = art.volleyAligned
-          ? (h.volleySpin - (art.volleyBaseRadians ?? 0)) * (isYFlipped(sprite) ? 1 : -1)
-          : spin * (h.phase + (h.seed ?? 0));
+        sprite.rotation =
+          (art.volleyAligned
+            ? (h.volleySpin - (art.volleyBaseRadians ?? 0)) * (isYFlipped(sprite) ? 1 : -1)
+            : spin * (h.phase + (h.seed ?? 0))) + (h.artRotation ?? 0);
         /**
          * The white flash, as a filter ON THE SPRITE.
          *

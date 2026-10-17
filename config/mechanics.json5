@@ -4049,15 +4049,17 @@
       //
       // `zapper` 在关卡里仍是会放电的横向敌人；这里改的是菜单里的装饰游动。
       //
-      // `climbSpeed` 是上升速度（屏高/秒）。`diagonalRatio` 是"垂直像素速度 ÷ 水平像素速度"，
-      // 1 = 45° 斜着进场。进场持续 `entrySeconds` 秒，水平速度线性收到 0，之后只剩上升。
+      // `climbSpeed` 是上升速度（屏高/秒）。
+      // 进场时它从侧面斜着游到离那面墙 `entryTargetRatio` 个泳道宽的位置；水平速度在 `entrySeconds` 内
+      // 线性收到 0，之后只剩上升。进场的目标在泳道内，所以不会贴着边往上走。
+      // 伞盖会按实际速度方向倾斜（`entry` 的水平分量越大越斜），进场结束后自动回正。
       //
       // `pulse` 是每一帧的推进倍率，顺序对应 `jelly-idle` 的 4 帧：第 2 帧伞盖收得最紧 -> 最快，
       // 第 3 帧展开 -> 最慢。改这里不用动动画。
       "jelly": {
-        "climbSpeed": 0.06,
-        "diagonalRatio": 1.0,
-        "entrySeconds": 2.0,
+        "climbSpeed": 0.09,
+        "entrySeconds": 1.0,
+        "entryTargetRatio": 0.22,
         "pulse": [0.7, 1.6, 0.8, 1.3]
       },
 
