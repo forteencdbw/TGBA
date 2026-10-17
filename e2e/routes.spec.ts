@@ -31,7 +31,6 @@ const menuGeometry = (page: Page) =>
           menuRef: {
             geometry: {
               button: Rect;
-              codex: Rect;
               settings: Rect;
             };
           };

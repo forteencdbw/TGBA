@@ -107,9 +107,9 @@ export function animationFrameAt(animation: AssetAnimation, elapsed: number): nu
  * Whether the chain of parents above \`node\` flips the Y axis.
  *
  * The world is drawn with world +y UP and screen +y down, so somewhere above every creature in the water there is a negative
- * Y scale -- but not necessarily on its own parent, and NOT AT ALL in the codex, whose icon layer is a plain container. The
- * product of the chain is the honest answer; checking one level reports "not flipped" for things that plainly are, and
- * assuming the water's answer reports "flipped" for the codex, which is how the previewed anglerfish came out upside down.
+ * Y scale -- but not necessarily on its own parent, and not in an ordinary container. The product of the chain is the honest
+ * answer; checking one level reports "not flipped" for things that plainly are, and assuming the water's answer reports
+ * "flipped" for something drawn into a plain layer.
  */
 export function isYFlipped(node: { parent: unknown }): boolean {
   let scaleY = 1;

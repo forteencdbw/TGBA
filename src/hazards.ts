@@ -937,8 +937,8 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
 /**
  * The table above is the DEFAULT; the config's `hazards.radius` overrides it, kind by kind.
  *
- * Merged here rather than read at every call site because the radius is used in at least four places (collision, the water
- * painter, the codex card and the burst) and four reads of the same number is four chances for three of them to be updated.
+ * Merged here rather than read at every call site because the radius is used in at least three places (collision, the water
+ * painter and the burst) and three reads of the same number is three chances for two of them to be updated.
  * One merge at load, and every reader gets the configured value without knowing there is a config.
  */
 for (const kind of Object.keys(KIND_TUNING) as HazardKind[]) {
@@ -1922,7 +1922,7 @@ export class HazardField {
    * The background schools: the same simulation with no hitbox, held here because their lifetime is this field's.
    *
    * NOT in `hazards`, which is the whole point -- everything that asks what is in the water (contact, rounds, eating, the
-   * outlines, the codex) walks that list, so a fish that is not in it cannot be touched by any of them. See `src/backSchools.ts`.
+   * outlines) walks that list, so a fish that is not in it cannot be touched by any of them. See `src/backSchools.ts`.
    */
   readonly back = new BackSchools();
 
@@ -3436,8 +3436,7 @@ export class HazardField {
  * `which` splits the two populations, and it is what lets a LEAVING creature be drawn dimmer: every alpha below is
  * written per shape, so there is no one number to scale -- the caller draws the in-play ones into one layer and the
  * leaving ones into another whose `alpha` is `hazards.fleeAlpha`. Same shapes, same colours, one pass each, and the
- * dimming cannot drift from the drawing because it is the drawing, faded. The codex passes `in-play` and gets what
- * the water shows.
+ * dimming cannot drift from the drawing because it is the drawing, faded.
  */
 
 /**
@@ -3484,8 +3483,7 @@ function paintLure(
  * Whether the player has asked for less flashing.
  *
  * A module-level switch rather than a field threaded through every call, because it is a global preference about DRAWING and
- * the painter is the only thing that reads it -- and because the alternative is a parameter on `paintHazards`, which the
- * codex also calls. Set from the settings panel (see `setReducedFlash`).
+ * the painter is the only thing that reads it. Set from the settings panel (see `setReducedFlash`).
  */
 let REDUCED_FLASH = false;
 
@@ -3597,11 +3595,10 @@ function whiteOutFilter(sprite: Sprite, strength: number): ColorMatrixFilter {
  * ---------------------------------------------------------------------------------------------
  * WHY THIS POOL IS MODULE-LEVEL WHILE THE HIT QUEUE IS THE FIELD'S
  * ---------------------------------------------------------------------------------------------
- * Because two DIFFERENT fields draw through `paintHazards`: the game's own, and the throwaway one `src/codexUi.ts`
- * builds for a card. A per-field pool would mean a card rebuilt its sprite on every redraw and left the previous one
- * behind, and it is the reason the sweep below is by TIME rather than by "is this hazard still in the field" -- an
- * id-based sweep deletes the card's sprite on the very next frame, which showed up as the anglerfish's glow blinking
- * out in the book. Moving this into `HazardField` looks tidier and breaks the codex.
+ * The pool is shared across every field that draws, and swept by TIME rather than by "is this hazard still in the field",
+ * because a second, throwaway field used to draw through `paintHazards` and an id-based sweep would have deleted its
+ * sprites on the next frame. That second consumer is gone; the shape is kept because changing it would be a painter
+ * refactor rather than a deletion, and it costs nothing.
  */
 const ART_SPRITES = new Map<number, Sprite>();
 /** When each pooled sprite was last asked for, for the time-based sweep. */
@@ -3614,11 +3611,11 @@ let ART_NOW = 0;
  *
  * `HazardField.nextId` used to count from 1 in every field, which is right for everything a field does on its own --
  * eaten hazards are retired by collecting their ids, and ids unique WITHIN a field are enough for that. The art pool
- * above is the one consumer that reaches ACROSS fields, and it is keyed by this id: the game's own field, the
- * throwaway field `src/codexUi.ts` builds per card, and any probe's field all handed out 1, 2, 3, so two unrelated
- * creatures could be given the SAME pooled Sprite -- one whose parent, texture, position and scale belonged to the
- * other field. What that looks like on screen is a creature wearing another creature's picture, at another creature's
- * size, in another creature's place, which is a report this project has had.
+ * above is the one consumer that could reach ACROSS fields, and it is keyed by this id, so ids are unique per FIELD
+ * and not per water: two fields both numbering from 1 could otherwise be handed the SAME pooled Sprite -- one whose
+ * parent, texture, position and scale belonged to the other field. What that looks like on screen is a creature
+ * wearing another creature's picture, at another creature's size, in another creature's place, which is a report this
+ * project has had.
  *
  * The counter is module-level rather than a field's own so that the id stays a plain number: `ART_SPRITES` and
  * `hazardArtSpriteForTest(id)` are keyed by it, and a composite key would change both.
@@ -4025,10 +4022,9 @@ export function hazardArtPose(h: Hazard, art: HazardArtEntry, telegraphSeconds: 
 /**
  * Retire sprites that have not been used for a while, so the pool tracks the water rather than growing for ever.
  *
- * BY TIME, not by "is this hazard still in the field", and the difference matters: the codex draws its cards through this
- * same painter with a one-object field it builds fresh each redraw, so an id-based sweep deleted the card's sprite on the
- * very next frame -- the book would have shown the anglerfish's glow blinking out. A sprite that has not been asked for in a
- * second belongs to nothing.
+ * BY TIME, not by "is this hazard still in the field", and the difference matters: the pool is shared across fields, so
+ * an id-based sweep would delete a sprite that another field had just asked for and is still drawing. A sprite that has
+ * not been asked for in a second belongs to nothing.
  */
 const ART_SPRITE_TTL_SECONDS = 1;
 
@@ -4082,11 +4078,11 @@ export function lureTip(
   const angle = (num(lure.stemAngle, 0) * Math.PI) / 180;
   const dirX = Math.sin(angle);
   /**
-   * "Up" is not the same +y in both places the painter is used.
+   * "Up" is not the same +y in every parent the painter can be handed.
    *
-   * The water draws into a Y-FLIPPED layer (world +y is up), so a positive y in the painter goes up the screen. The codex's
-   * icon layer is NOT flipped, so the same positive y goes DOWN -- which put the anglerfish's lure through its own belly,
-   * where it was invisible. Asking the layer rather than assuming is what the player bubble and the sprite both had to learn.
+   * The water draws into a Y-FLIPPED layer (world +y is up), so a positive y in the painter goes up the screen, while an
+   * ordinary container has the opposite sense and the same positive y goes DOWN. Asking the layer rather than assuming
+   * is what the player bubble and the sprite both had to learn.
    */
   const dirY = Math.cos(angle) * (layerFlipped ? 1 : -1);
   const from = num(lure.stemFrom, 0.3);
@@ -4158,9 +4154,8 @@ export const LURE_PROBE: { x: number; y: number; r: number; tipX: number; tipY: 
  * simulation should not know what a spark is, and the renderer should not have to be told about bullets.
  *
  * It is the FIELD's queue rather than a module-level array, because that is whose ids and whose radius fractions these
- * are: the codex draws creatures through `paintHazards` with a throwaway field, and a shared queue meant the game was
- * draining events that a page turn had nothing to do with. The field hands them over on request, so each frame takes
- * exactly what the field produced.
+ * are. The field hands them over on request, so each frame takes exactly what the field produced, and two fields cannot
+ * drain each other's events.
  *
  * The radius is a LANE FRACTION, not metres: the field does not know the lane's width, and the caller (which does) is the
  * one that draws in world units. At the impact point when there is one, so a spark is where the bullet landed rather than
@@ -4951,8 +4946,7 @@ export function paintHazards(
   /**
    * Where the player is, so a creature can face it.
    *
-   * Trailing and optional because the codex draws the same creatures with no player in the room: a card shows the picture as
-   * the artist drew it, unmirrored, which is what a reference page should do.
+   * Trailing and optional so a caller with nobody in the room can draw the creature as the artist drew it, unmirrored.
    */
   playerX = Number.NaN,
 ): void {
@@ -5111,8 +5105,8 @@ export function paintHazards(
         /**
          * Upright in BOTH places, because the flip is asked of the parent chain rather than assumed.
          *
-         * Negative Y in the water (whose world container is flipped) and positive in the codex (whose is not) -- the same
-         * call, the right answer in each, which is what the preview needs and what a hard-coded sign cannot give.
+         * The sign follows the parent chain rather than a constant, so the same call is right in the water and in an
+         * ordinary container.
          */
         const unit = size / texture.width;
         /**
@@ -5125,7 +5119,7 @@ export function paintHazards(
          * See that function for why those are two different numbers and why the second one is not animated.
          */
         const front = art.front ?? mech.hazardFront;
-        // No player (a codex card) means no turning: the picture is shown as drawn.
+        // No player means no turning: the picture is shown as drawn.
         // A missing player means no turning TOWARDS one -- but a creature leaving left still turns left (see below).
         /**
          * LEAVING beats LOOKING.
@@ -5219,8 +5213,7 @@ export function paintHazards(
          * The point of it is that the picture and the bullets agree, so it would be a poor joke to then get the
          * direction wrong. A sprite drawn in a Y-flipped parent (the water) ends up rotated the OPPOSITE way to the
          * sign in `rotation` -- the same fact the spin comment above records -- so a kind that means its angle
-         * literally has to ask the layer which way round it is. The codex's icon layer is not flipped, and asking
-         * keeps the card's star the same star as the one in the water.
+         * literally has to ask the layer which way round it is.
          */
         sprite.rotation = art.volleyAligned
           ? (h.volleySpin - (art.volleyBaseRadians ?? 0)) * (isYFlipped(sprite) ? 1 : -1)

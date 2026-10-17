@@ -27,31 +27,21 @@ const TITLE_SPOUTS = [
 ] as const;
 
 /**
- * The three stone buttons, in the order they are stacked.
+ * The stone buttons, in the order they are stacked.
  *
  * The ID is what the pointer handlers compare and what `geometry` reports; `picture` is the asset stem, and the three
  * states are that stem with a suffix. So this table is also the list of what has to exist in `src/assets/` -- and the
  * ORDER of it is the order on the screen, which is why it lives here rather than in the config: it is not a number the
  * owner tunes, it is which button is above which.
  *
- * `spout` is where its bubbles come out, as a fraction of its own box -- see `TITLE_SPOUTS`. All three are at roughly
- * the same place, which is what makes the column of bubbles read as one edge of the menu leaking rather than as three
+ * `spout` is where its bubbles come out, as a fraction of its own box -- see `TITLE_SPOUTS`. Both are at roughly the
+ * same place, which is what makes the column of bubbles read as one edge of the menu leaking rather than as two
  * unrelated puffs.
  */
 const BUTTONS = [
   { id: 'start', picture: '按钮-开始游戏', spout: { x: 0.09, y: 0.58 } },
-  { id: 'codex', picture: '按钮-图鉴', spout: { x: 0.15, y: 0.52 } },
   { id: 'settings', picture: '按钮-设置', spout: { x: 0.14, y: 0.55 } },
 ] as const;
-
-/**
- * The stones the menu actually builds: all of `BUTTONS` except the codex's when `menu.codexEnabled` is off. Everything
- * downstream (the layout, the hit rectangles, the bubble spouts) already reads `this.buttons`, so two stones are laid out
- * as two and nothing needs to know one is missing.
- */
-function shippedButtons(): readonly (typeof BUTTONS)[number][] {
-  return BUTTONS.filter((button) => button.id !== 'codex' || mech.menu.codexEnabled);
-}
 
 type ButtonId = (typeof BUTTONS)[number]['id'];
 
@@ -105,7 +95,7 @@ interface MenuButton {
  * The main menu.
  *
  * It exists so "exit to the main menu" has somewhere to go, and so the shape of the flow -- menu, choose a
- * level, play, codex, back to menu -- is real rather than a stub that throws.
+ * level, play, back to menu -- is real rather than a stub that throws.
  *
  * There is no character select any more: every run starts as the same base bubble, and its identity arrives in
  * the water at the first level-up. What the menu still decides is WHICH WATER -- the level row -- and its line
@@ -125,7 +115,7 @@ export class MainMenu {
    */
   private readonly screen = mkGraphics();
   /**
-   * The three stone buttons: 开始游戏 / 图鉴 / 设置.
+   * The two stone buttons: 开始游戏 / 设置.
    *
    * Each is a PICTURE rather than a drawn shape, and all three states of one button are cut from the SAME box in the
    * art. That is not a detail -- the pressed state is drawn a few pixels lower on purpose, and cropping each state to
@@ -134,7 +124,7 @@ export class MainMenu {
    *
    * The sprite is placed by its CENTRE, so a state whose art is a pixel or two shorter does not move the button.
    */
-  private readonly buttons: MenuButton[] = shippedButtons().map((button) => ({
+  private readonly buttons: MenuButton[] = BUTTONS.map((button) => ({
     id: button.id,
     picture: button.picture,
     sprite: new Sprite(),
@@ -173,8 +163,6 @@ export class MainMenu {
    * the point of it: see `beginExit`.
    */
   onStart: () => void = () => {};
-  /** Called when the player asks for the codex. */
-  onCodex: () => void = () => {};
   /**
    * Called when the player asks for the settings panel.
    *
@@ -508,10 +496,9 @@ export class MainMenu {
   /**
    * Advance the water without drawing the menu.
    *
-   * The menu is HIDDEN while a page opened from it is up -- the codex covers the screen -- but its backdrop is not
-   * PAUSED: the fish keep swimming the whole time, so closing the page finds the water where it got to rather than a
-   * fresh shoal arriving. That is what makes a page feel like one you looked at and closed instead of one that
-   * replaced the world, and it is the same reason `refillBackdrop` is not called on the way back.
+   * The menu's own update does the same thing and then draws; this is the half that is only simulation. It used to be
+   * what kept the backdrop alive behind a page opened from the menu, and there is no such page any more -- but the
+   * split still earns its keep: `refillBackdrop` can rebuild the water without touching the menu's own state.
    */
   updateBackdrop(dt: number): void {
     this.backdrop.update(dt);
@@ -565,7 +552,6 @@ export class MainMenu {
     if (button && this.inRect(button.rect, x, y)) {
       this.showPointerState(x, y);
       if (button.id === 'start') this.beginExit();
-      else if (button.id === 'codex') this.onCodex();
       else this.onSettings();
       return true;
     }
@@ -618,18 +604,15 @@ export class MainMenu {
    */
   get geometry(): {
     button: { x: number; y: number; w: number; h: number };
-    codex: { x: number; y: number; w: number; h: number };
     settings: { x: number; y: number; w: number; h: number };
     states: Record<ButtonId, ButtonState>;
   } {
     const byId = (id: ButtonId) => this.buttons.find((button) => button.id === id);
     const startButton = byId('start');
-    const codexButton = byId('codex');
     const settingsButton = byId('settings');
     const rectOf = (button: MenuButton | undefined) => ({ ...(button?.rect ?? { x: 0, y: 0, w: 0, h: 0 }) });
     return {
       button: rectOf(startButton),
-      codex: rectOf(codexButton),
       settings: rectOf(settingsButton),
       states: Object.fromEntries(this.buttons.map((button) => [button.id, button.state])) as Record<ButtonId, ButtonState>,
     };

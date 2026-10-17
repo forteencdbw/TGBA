@@ -2,7 +2,6 @@ import type { Text } from 'pixi.js';
 import type { Camera } from './background';
 import type { BulletField } from './bullets';
 import type { BubbleType, RouteId } from './bubbleTypes';
-import type { CodexDetail, CodexUi } from './codexUi';
 import type { EnemyBulletField } from './enemyBullets';
 import type { EntityField } from './entities';
 import type { HazardField, HazardKind } from './hazards';
@@ -28,8 +27,8 @@ import type { Xp } from './xp';
  * function of the state it reports.
  *
  * It is deliberately the WHOLE game rather than the run: the report exists to answer questions about a frame the player
- * just watched, so frame time, the popup pools, the banner and the codex page are part of the answer. The run's own
- * state is the bulk of it.
+ * just watched, so frame time, the popup pools and the banner are part of the answer. The run's own state is the bulk
+ * of it.
  *
  * Three of these members are DERIVED -- `onSlam`, `suctionUp` and `burstRadiusRatio` are
  * getters on the game. They arrive as VALUES, because a report that had to ask the game to compute things would be a
@@ -129,10 +128,6 @@ export interface GameSnapshot {
   popups: NumberPopups;
   damagePopups: NumberPopups;
   finishBanner: Text;
-  /** Null until the codex has been loaded: it is not even in the page while `menu.codexEnabled` is off. */
-  codex: CodexUi | null;
-  /** The codex's coverage figures, or null while it is not loaded. See `codexDetail`. */
-  codexDetail: (() => CodexDetail) | null;
   splash: number;
   audioMuted: boolean;
   fps: number;
@@ -163,7 +158,6 @@ export type Phase =
   | 'summary'
   | 'loading'
   | 'paused'
-  | 'codex'
   /**
    * The mutation pick: the bar filled, and the whole world is frozen behind three cards.
    *

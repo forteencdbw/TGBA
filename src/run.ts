@@ -62,7 +62,7 @@ export interface WorldView {
  *
  *   - a RUN is the simulation: the player, the water, the ledger, the timers, the level's progress. It can be built and
  *     stepped with no canvas in sight.
- *   - the GAME is the application: the canvas, the camera, the menus, the codex, the touch layer, the input devices, the
+ *   - the GAME is the application: the canvas, the camera, the menus, the touch layer, the input devices, the
  *     frame clock, the labels and the particles. It drives the run and draws it.
  *
  * The state is public because the presentation READS it -- `render`, the HUD and the report are readers of a run --

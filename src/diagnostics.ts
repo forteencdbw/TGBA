@@ -1,4 +1,3 @@
-import type { CodexDetail } from './codexUi';
 import type { GameSnapshot } from './snapshot';
 import { audio } from './audio';
 import { bubbleLook } from './bubbleLook';
@@ -36,19 +35,6 @@ export function diagnosticsOf(g: GameSnapshot): {
      * showed nothing.
      */
     build: { version: string; hash: string; dirty: boolean; label: string };
-    /**
-     * The codex page: whether it is switched on, loaded and open, and -- once loaded -- what it is showing.
-     *
-     * `detail` is null while the module is not loaded, which is every run of the shipped game (`menu.codexEnabled` is off and
-     * the module is never fetched), so this readout does not pull the codex into the page either. Its figures come from
-     * `codexDetail` in `src/codexUi.ts`.
-     */
-    codex: {
-      enabled: boolean;
-      loaded: boolean;
-      open: boolean;
-      detail: CodexDetail | null;
-    };
     frames: number;
     elapsed: number;
     intro: number;
@@ -247,12 +233,6 @@ export function diagnosticsOf(g: GameSnapshot): {
   } {
     return {
       build: { version: APP_VERSION, hash: GIT_HASH, dirty: GIT_DIRTY, label: buildLabel() },
-      codex: {
-        enabled: mech.menu.codexEnabled,
-        loaded: g.codex !== null,
-        open: g.phase === 'codex',
-        detail: g.codexDetail ? g.codexDetail() : null,
-      },
       frames: g.frameCount,
       elapsed: g.elapsed,
       intro: g.phaseTimer,

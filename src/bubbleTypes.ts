@@ -64,7 +64,7 @@ export type ControlId =
    */
   | 'burst';
 
-/** The routes a run may commit to, chosen on the picker before the water. Keyed by their card, the HUD and the codex. */
+/** The routes a run may commit to, chosen on the picker before the water. Keyed by their card and the HUD. */
 export type RouteId = 'devour' | 'boil';
 
 /**
@@ -78,7 +78,7 @@ export type LookSource = 'growthStage' | 'rage';
 export interface BubbleType {
   /** 'base' before a route is picked, the route's id after. */
   id: 'base' | RouteId;
-  /** Shown wherever the form is named: the HUD prefix, the codex. */
+  /** Shown wherever the form is named: the HUD prefix. */
   name: string;
   /** One line, in the player's terms: what this form is FOR. */
   tagline: string;
@@ -165,7 +165,7 @@ export const BASE_FORM_TITLE = '原样开局';
 /** A route: what the run's bubble BECOMES, the moment its card is picked. */
 export interface Route {
   id: RouteId;
-  /** The short name, everywhere: the card, the HUD prefix, the codex. */
+  /** The short name, everywhere: the card and the HUD prefix. */
   name: string;
   /** The card's title: the route's thesis in four words. */
   title: string;

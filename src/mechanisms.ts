@@ -759,7 +759,7 @@ export interface Mechanisms {
     trailAlpha: number;
   };
   hazards: {
-    /** Per-kind radius as a fraction of the lane width: collision, drawing and the codex card all read this. */
+    /** Per-kind radius as a fraction of the lane width: collision and drawing both read this. */
     radius: Record<string, number>;
     /**
      * The boss: the one creature that does not belong to the current.
@@ -1572,59 +1572,6 @@ export interface Mechanisms {
     selectedStrokeColour: number;
     selectedStrokeWidth: number;
   };
-  codex: {
-    /** The full-screen preview's scrim. */
-    previewScrimColour: number;
-    previewScrimAlpha: number;
-    columns: number;
-    rows: number;
-    margin: number;
-    gap: number;
-    headerHeight: number;
-    footerHeight: number;
-    titleSize: number;
-    titleY: number;
-    titleColour: number;
-    tabHeight: number;
-    tabGap: number;
-    tabTextSize: number;
-    tabFill: number;
-    tabStroke: number;
-    tabTextColour: number;
-    activeTabFill: number;
-    activeTabStroke: number;
-    activeTabTextColour: number;
-    pageTextSize: number;
-    pageTextColour: number;
-    cardRadius: number;
-    cardFill: number;
-    cardFillAlpha: number;
-    cardStroke: number;
-    cardStrokeAlpha: number;
-    cardPad: number;
-    iconSize: number;
-    nameSize: number;
-    nameColour: number;
-    taglineSize: number;
-    taglineColour: number;
-    factSize: number;
-    factLeading: number;
-    factLabelWidth: number;
-    factLabelColour: number;
-    factValueColour: number;
-    noteSize: number;
-    noteColour: number;
-    noteLeading: number;
-    noteBulletIndent: number;
-    buttonHeight: number;
-    buttonPad: number;
-    buttonRadius: number;
-    buttonFill: number;
-    buttonStroke: number;
-    buttonTextColour: number;
-    buttonTextSize: number;
-    collectableColour: number;
-  };
   /**
    * The settings panel's player-visible numbers.
    *
@@ -1701,11 +1648,6 @@ export interface Mechanisms {
      */
     buttonHeight: number;
     buttonGap: number;
-    /**
-     * Whether the menu has a codex stone at all. False (the shipped value) builds no such button AND never loads the codex
-     * module: it is switched off, not deleted, and nothing the game does depends on it. See `Game.loadCodex`.
-     */
-    codexEnabled: boolean;
     /** How far down the whole stone moves while pressed, in design pixels. */
     buttonPressDrop: number;
     /**
@@ -2603,35 +2545,6 @@ const GROWTH_COLOURS = [
 ] as const;
 
 /**
- * The codex page's colours, as one list.
- *
- * Twenty-one keys, and every one of them has to be validated AND normalised. Two hand-written lists that have to
- * agree is exactly how `marker.edibleColor` once ended up validated but never converted -- writing `"#rrggbb"`
- * would then have handed Pixi a string, with nothing to see but a wrong-looking page. One list, used for both.
- */
-const CODEX_COLOURS = [
-  'titleColour',
-  'tabFill',
-  'tabStroke',
-  'tabTextColour',
-  'activeTabFill',
-  'activeTabStroke',
-  'activeTabTextColour',
-  'pageTextColour',
-  'cardFill',
-  'cardStroke',
-  'nameColour',
-  'taglineColour',
-  'factLabelColour',
-  'factValueColour',
-  'noteColour',
-  'buttonFill',
-  'buttonStroke',
-  'buttonTextColour',
-  'collectableColour',
-] as const;
-
-/**
  * The obstacle kinds, as the single list both the config's tables and the `ObstacleKind` union derive from.
  *
  * `ObstacleType` in `src/obstacles.ts` is `(typeof OBSTACLE_KINDS)[number]`, so adding a kind here is what makes it
@@ -3414,45 +3327,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'routePick.cardStrokeWidth', check: anyNumber, describe: 'design pixels' },
   { path: 'routePick.selectedStrokeColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'routePick.selectedStrokeWidth', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.previewScrimColour', check: isColour, describe: 'a colour, either 0xrrggbb or a #rrggbb string' },
-  { path: 'codex.previewScrimAlpha', check: anyNumber, describe: 'an opacity' },
-  { path: 'codex.columns', check: wholeNumber, describe: 'a whole number of columns' },
-  { path: 'codex.rows', check: wholeNumber, describe: 'a whole number of rows' },
-  { path: 'codex.margin', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.gap', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.headerHeight', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.footerHeight', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.titleSize', check: anyNumber, describe: 'a font size' },
-  { path: 'codex.titleY', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.tabHeight', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.tabGap', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.tabTextSize', check: anyNumber, describe: 'a font size' },
-  { path: 'codex.pageTextSize', check: anyNumber, describe: 'a font size' },
-  { path: 'codex.cardRadius', check: anyNumber, describe: 'a corner radius' },
-  { path: 'codex.cardFillAlpha', check: anyNumber, describe: 'an opacity' },
-  { path: 'codex.cardStrokeAlpha', check: anyNumber, describe: 'an opacity' },
-  { path: 'codex.cardPad', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.iconSize', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.nameSize', check: anyNumber, describe: 'a font size' },
-  { path: 'codex.taglineSize', check: anyNumber, describe: 'a font size' },
-  { path: 'codex.factSize', check: anyNumber, describe: 'a font size' },
-  { path: 'codex.factLeading', check: anyNumber, describe: 'line spacing' },
-  { path: 'codex.factLabelWidth', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.noteSize', check: anyNumber, describe: 'a font size' },
-  { path: 'codex.noteLeading', check: anyNumber, describe: 'line spacing' },
-  { path: 'codex.noteBulletIndent', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.buttonHeight', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.buttonPad', check: anyNumber, describe: 'design pixels' },
-  { path: 'codex.buttonRadius', check: anyNumber, describe: 'a corner radius' },
-  { path: 'codex.buttonTextSize', check: anyNumber, describe: 'a font size' },
-  ...CODEX_COLOURS.map((key) => ({
-    path: `codex.${key}`,
-    check: isColour,
-    describe: 'a colour, either 0xrrggbb or "#rrggbb"',
-  })),
-  { path: 'menu.buttonHeight', check: anyNumber, describe: 'the shared height of the three stones, in design pixels' },
+  { path: 'menu.buttonHeight', check: anyNumber, describe: 'the shared height of the stones, in design pixels' },
   { path: 'menu.buttonGap', check: anyNumber, describe: 'design pixels' },
-  { path: 'menu.codexEnabled', check: (v) => typeof v === 'boolean', describe: 'true or false: whether the main menu has a codex button (false also keeps the codex module from loading)' },
   { path: 'menu.buttonPressDrop', check: anyNumber, describe: 'design pixels' },
   { path: 'menu.groupCentreRatio', check: anyNumber, describe: 'a fraction of the screen height' },
   { path: 'menu.titleWidthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
@@ -4401,16 +4277,6 @@ for (const [where, get, set] of [
   for (const key of GROWTH_COLOURS) bag[key] = normaliseColour(bag[key]!, `settings.growth.${key}`);
 }
 
-/**
- * The codex page's colours, converted from the same list the validation uses.
- *
- * A loop over the key list rather than twenty-one more tuple entries, so a new colour in that block cannot be
- * validated without also being converted.
- */
-{
-  const bag = mech.codex as unknown as Record<string, string | number>;
-  for (const key of CODEX_COLOURS) bag[key] = normaliseColour(bag[key]!, `codex.${key}`);
-}
 /** True once the config has been parsed and checked. Exposed so a probe can prove it loaded. */
 export const MECHANICS_LOADED = true;
 

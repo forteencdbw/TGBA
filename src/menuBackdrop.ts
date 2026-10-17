@@ -769,7 +769,7 @@ export class MenuBackdrop {
     this.bubbles.draw();
     paintObstacles(this.backGfx, this.backBed, this.width);
     /**
-     * `playerX` is `NaN`, which is what the codex passes and means "nobody is in the room".
+     * `playerX` is `NaN`, which means "nobody is in the room".
      *
      * The painter's facing logic is skipped in that case only for creatures that do not watch a player; the rest would
      * all turn the same way. The mirror is therefore decided once per creature in `faceTravel` and committed, which is

@@ -9,7 +9,7 @@ import type { RouteId } from './bubbleTypes';
  * ---------------------------------------------------------------------------------------------
  * WHY THE POOL IS HERE RATHER THAN IN THE CONFIG
  * ---------------------------------------------------------------------------------------------
- * The same split the codex uses: a card's NAME and BLURB are content, and content
+ * The same split the config uses: a card's NAME and BLURB are content, and content
  * lives in a table next to the verbs that use it. Its NUMBERS are balance, and balance lives in
  * `config/mechanics.json5` (`mutation.pool`) -- so retuning a card is a file edit, while ADDING one is a
  * row here plus the `apply` that lands it.
