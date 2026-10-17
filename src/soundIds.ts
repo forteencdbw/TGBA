@@ -34,7 +34,6 @@ export const SOUND_IDS = [
   'levelup.ramp',
   'levelup.pick',
   'level.start',
-  'level.banner',
   'level.surface',
   'boss.warn',
   'boss.enter',

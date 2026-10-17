@@ -58,43 +58,23 @@ try {
     console.log(`             last content in screen ${lastContent}, then ${emptyBeforeBoss} empty screen(s) before the boss`);
     if (emptyBeforeBoss > 1) console.log(`  !! ${emptyBeforeBoss} screens with nothing before the boss (${(emptyBeforeBoss * L.WORLD_HEIGHT / level.scrollSpeed).toFixed(0)} s)`);
 
-    // A banner is an announcement, so it has to arrive with the thing it announces. `depth` counts DOWN from the
-    // surface and a block's `at` counts UP, so the two agree when `at === scrollLength - depth` -- and they were
-    // written by hand in six different files, which is exactly how they drifted apart before.
-    const burstScreens = new Set();
-    for (const mark of level.landmarks ?? []) {
-      const at = level.scrollLength - mark.depth;
-      let nearest = null;
-      for (const block of level.blocks) {
-        if (block.at > at) break;
-        nearest = block;
-      }
-      const gap = nearest ? at - nearest.at : at;
-      const flag = Math.abs(gap) > L.WORLD_HEIGHT / 2 ? '  !!' : '';
-      const where = nearest ? `${nearest.kind} at ${nearest.at}m (${gap >= 0 ? '+' : ''}${gap.toFixed(0)}m)` : 'the level start';
-      if (nearest) burstScreens.add(Math.floor(nearest.at / L.WORLD_HEIGHT));
-      console.log(`  banner     ${String(mark.depth).padStart(5)}m深 = ${String(at).padStart(5)}m  ${mark.label.padEnd(12)} <- ${where}${flag}`);
-    }
-
     // Where the collectables are, and how long you go with nothing to pick up.
     //
     // The threat series above cannot see this: a collectable's weight is 0, so a level whose food is all in the
     // first screen and the last one reads exactly like a level whose food is spread through it. That was the state
     // of all six until they were redone -- a 45-58 second hole in the middle of every level, which is the part of
-    // the level the food exists for. The burst screens come from the banners, since the two are pinned together.
+    // the level the food exists for.
     const drops = level.entries.filter((e) => e.kind === 'bubble').map((e) => e.at).sort((a, b) => a - b);
     const screenOf = (m) => Math.floor(m / L.WORLD_HEIGHT);
     const dropScreens = new Array(Math.ceil(level.scrollLength / L.WORLD_HEIGHT)).fill(0);
     for (const at of drops) dropScreens[screenOf(at)]++;
-    const inBurst = drops.filter((at) => burstScreens.has(screenOf(at)));
     let worst = { s: 0, from: 0, to: 0 };
     for (let i = 1; i < drops.length; i++) {
       const s = L.timeToScroll(level, drops[i - 1], drops[i]);
       if (s > worst.s) worst = { s, from: drops[i - 1], to: drops[i] };
     }
-    console.log(`  food/scr   ${dropScreens.map((n, i) => (burstScreens.has(i) ? '-' : n)).join(' ')}   (爆发屏画 -)`);
+    console.log(`  food/scr   ${dropScreens.join(' ')}`);
     console.log(`             ${drops.length} 颗 = ${(drops.length / total).toFixed(2)}/秒 · 最长空档 ${worst.s.toFixed(1)}s（${worst.from}m → ${worst.to}m）`);
-    if (inBurst.length) console.log(`  !! ${inBurst.length} collectable(s) inside a burst screen: ${inBurst.join(', ')}m`);
     if (worst.s > 15) console.log(`  !! ${worst.s.toFixed(1)}s with nothing to pick up -- longer than a burst screen should take`);
   }
 

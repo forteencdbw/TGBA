@@ -4,7 +4,7 @@
  * ---------------------------------------------------------------------------------------------
  * WHY A PANEL AND NOT THE RESULTS CARD
  * ---------------------------------------------------------------------------------------------
- * The card (`finishBanner`) is a few lines of text drawn over the water, and it was written when a run WAS one level: it
+ * The old results card was a few lines of text drawn over the water, and it was written when a run WAS one level: it
  * reports absorption, max volume and time, which is the story of a single descent to a surface. A run now spans six
  * levels, each with its own score, its own boss and its own upgrades, so the honest report is a different shape: one
  * number for the whole thing, and the facts that number is made of.

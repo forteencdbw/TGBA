@@ -23,8 +23,7 @@ try {
       `${level.id.padEnd(15)} name=${level.name.padEnd(6)} length=${String(level.scrollLength).padStart(5)}  ` +
         `speed=${String(level.scrollSpeed).padStart(5)}  blocks=${String(level.blocks.length).padStart(3)}  ` +
         `entries=${String(level.entries.length).padStart(4)}  boss=${level.boss.at}/${level.boss.health}  ` +
-        `paths=${level.paths ? Object.keys(level.paths).join('+') : '-'}  backdrops=${level.backdrops?.length ?? 0}  ` +
-        `landmarks=${level.landmarks?.length ?? 0}`,
+        `paths=${level.paths ? Object.keys(level.paths).join('+') : '-'}  backdrops=${level.backdrops?.length ?? 0}`,
     );
   }
   console.log(

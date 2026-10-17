@@ -1,5 +1,5 @@
 import { Application, FillGradient, Graphics } from 'pixi.js';
-import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, rgba, waterColourForTest } from './background';
+import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, rgba, waterColourForTest } from './background';
 import { tuning } from './config';
 import { DEBUG_LEVEL, LEVEL, LEVELS, START_LEVEL_ID, TIMELINE, installSpawnBlocks, isDebugLevel, levelIndex, selectLevel, speedAt, type Level } from './levels';
 import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, isBossKind, paintHazards, setReducedFlash, ventErupting, warmAnimations, type HazardKind } from './hazards';
@@ -19,7 +19,7 @@ import { MainMenu } from './menu';
 import { RoutePickScreen, type RouteOption } from './routePick';
 import { BASE_FORM_TITLE, BASE_TYPE, hasVerb, ROUTES } from './bubbleTypes';
 import { formsUnlocked } from './progress';
-import { sayBanner, sayResults, sayScore, saySound, saySplash } from './runEvents';
+import { sayScore, saySound, saySplash } from './runEvents';
 import { LevelUpUi } from './levelup';
 import { growthView } from './growth';
 import { applyMutationPassives, pickMutationCard, rollMutationChoices, type Mutation } from './mutations';
@@ -91,7 +91,6 @@ class Game {
   private readonly scene = new WorldLayer();
   private readonly hud = new Hud();
   private readonly touch = new TouchControls(this.input);
-  private readonly finishBanner = makeLabel('击败 BOSS  ·  通关', 0xeaf9ff, mech.hud.resultsCard.size);
   /** The gear button and the pause panel it opens. */
   private readonly settings = new SettingsUi();
   /**
@@ -270,8 +269,6 @@ class Game {
    * Lateral control authority, calibrated for this display's play-area width. Rebuilt on resize,
    * because a wider canvas is literally a wider play area.
    */
-  /** Sticky edge detector: the surface banner is transient, so probes cannot catch it by sampling. */
-  private bannerSeen = false;
 
   /**
    * Which bubble the current run is: chosen on the main menu, fixed for the run.
@@ -343,7 +340,6 @@ class Game {
    */
   /** overloads counts overloads that EXPIRED -- the ones the player failed to release. */
   /** How many bubbles were absorbed in the last step, for probes. */
-  private runBanner = makeLabel('', 0xd8fbff, 20);
 
   constructor(readonly app: Application) {
     this.run.nominalSeconds = nominalScrollSeconds(LEVEL);
@@ -365,14 +361,6 @@ class Game {
     // The score popups sit over the water and under the flash and the HUD: they belong to the event they mark, not
     // to the interface, but they are readouts and nothing the player steers by may be drawn over them.
     this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.grazePopups.root, this.callouts.root, this.brokenVignette, this.brokenGlow, this.brokenCrack, this.flash, this.hud.root, this.touch.root);
-
-    this.finishBanner.anchor.set(0.5);
-    this.finishBanner.alpha = 0;
-    this.app.stage.addChild(this.finishBanner);
-
-    this.runBanner.anchor.set(0.5);
-    this.runBanner.alpha = 0;
-    this.app.stage.addChild(this.runBanner);
 
     /**
      * The UI goes on top of everything, and the ORDER of the last three is what makes the menu's own page reachable.
@@ -768,10 +756,7 @@ class Game {
     return this.run.rateTier;
   }
 
-  /** Test hook: the run banner's current text, so a probe can read the feedback the player got. */
-  get bannerTextRef(): string {
-    return this.runBanner.text;
-  }
+  /** How many bubbles were absorbed in the last step, for probes. */
 
   /** Test hook: the art sprite for a creature id, if it has one. */
   hazardArtSpriteRef(id: number): { filters: readonly unknown[] } | null {
@@ -967,7 +952,7 @@ class Game {
    *
    * The transition is a HANDOFF rather than an immediate switch: the boss's death plays out (the same held beat and
    * white-out a finished level always had), and only when that timer expires does the next level start. Doing it
-   * instantly would throw the player into a new level mid-flash with the victory banner still on screen.
+   * instantly would throw the player into a new level mid-flash with the victory flash still on screen.
    */
   /** Metres the bubble has risen since the level was cleared, for the departure sequence. */
   /**
@@ -1472,42 +1457,7 @@ class Game {
     // The loading page is sized in the canvas's own pixels rather than in the play area's: it is a page, not a HUD.
     this.loading.layout(screenW, screenH);
 
-    /**
-     * The results card, scaled by the world zoom -- and WRAPPED to the screen.
-     *
-     * The scale is the water's (it has always been: the card floats in the level, not in a fixed HUD), but a line of
-     * text has nothing to do with how many pixels a metre occupies. With three facts on a line the card ran off both
-     * edges and the player saw the middle of their own result. The wrap width is in the label's own units, so the text
-     * folds instead of being clipped, whatever the line ends up saying; the ratio is the config's.
-     */
-    this.finishBanner.scale.set(viewport.scale);
-    this.finishBanner.x = screenW / 2;
-    this.finishBanner.y = screenH * mech.hud.resultsCard.yRatio;
     this.summary.layout(screenW, screenH);
-    this.finishBanner.style.wordWrap = true;
-    // CJK lines have few spaces to break at, so a break has to be allowed inside a run of characters.
-    this.finishBanner.style.breakWords = true;
-    this.finishBanner.style.wordWrapWidth = (screenW * mech.hud.resultsCard.widthRatio) / viewport.scale;
-
-    /**
-     * The run banner is CENTRED and wrapped.
-     *
-     * It was never positioned at all: an anchor of 0.5 with no x or y puts it at the canvas origin, so half of every
-     * message hung off the left edge of the screen. The owner's screenshot of a clipped line is what that looks like --
-     * the banner has always been drawn there, and it took a run with a lot of banners for it to be obvious.
-     *
-     * Just under the stage line, not floating over the canvas: these are messages ABOUT the run (an event announced,
-     * an upgrade taken), and the state they explain is the HUD block directly above them.
-     */
-    const bannerScale = designScale(screenW, screenH);
-    this.runBanner.scale.set(bannerScale);
-    this.runBanner.x = screenW / 2;
-    // Just under the stage line, inside the HUD block.
-    this.runBanner.y = 56 * bannerScale;
-    this.runBanner.style.align = 'center';
-    this.runBanner.style.wordWrap = true;
-    this.runBanner.style.breakWords = true;
-    this.runBanner.style.wordWrapWidth = (screenW * 0.92) / bannerScale;
 
     // The flash covers the canvas in SCREEN space, so it must be rebuilt whenever the canvas changes.
     this.flash.clear();
@@ -2344,8 +2294,6 @@ class Game {
     // actually at this frame rather than the one it started from.
     this.run.resolveHazards(dt, min, max, world.laneWidth, world, this.input);
 
-    this.run.fireDepthEvents();
-
     this.run.resolveContacts(dt, world);
 
     /**
@@ -2491,7 +2439,6 @@ class Game {
      * the ramp still armed -- and clearing it here would hide a bug where they both were.
      */
     this.levelup.close();
-    sayBanner(this.run.events, `突变  ·  ${choice.name}`);
     if (this.run.xp.pending > 0) {
       this.levelup.openWith(rollMutationChoices(this.run), '突变 · 三选一');
       return;
@@ -2641,9 +2588,6 @@ class Game {
     // The boss bar goes with the run it belonged to. Without this it hangs there through the next birth animation,
     // showing the previous level's boss at whatever health it died at -- a bar for a fight that is not happening.
     this.summary.hide();
-    // A new level starts with no results card: it belongs to the run that ended, not to this one.
-    this.finishBanner.alpha = 0;
-    this.finishBanner.text = '';
     // The bar goes with the run it belonged to. `updateBoss` would clear it on the next step anyway, but a new level
     // must not show the previous boss's bar for even one frame.
     this.bossView = null;
@@ -2761,9 +2705,6 @@ class Game {
       if (this.selectedRoute) this.run.pickRoute(this.selectedRoute);
       this.applyFormToTouch();
     }
-    this.run.eventsFired = new Set();
-    this.run.eventsSeen = 0;
-    this.run.lastEvent = null;
     this.splash = 0;
     this.run.surfaced = false;
     this.run.elapsed = 0;
@@ -2976,9 +2917,6 @@ class Game {
     this.splash = 0;
     this.flash.alpha = 0;
     this.flash.visible = false;
-    this.finishBanner.alpha = 0;
-    this.finishBanner.text = '';
-    this.runBanner.alpha = 0;
     this.explosions = [];
     this.app.stage.position.set(0, 0);
     this.menu.root.visible = true;
@@ -3155,7 +3093,6 @@ private updateBoss(): void {
         this.music.setTrack(null);
         this.recordedMusic.play('boss');
       }
-      this.banner(`${spec.name}  ·  击败它才能离开这一关`);
     }
     const boss = this.run.hazards.hazards.find((h) => isBossKind(h.kind));
     this.bossView = boss && !boss.flee ? { name: spec.name, fraction: boss.health / Math.max(1, boss.maxHealth) } : null;
@@ -3211,26 +3148,12 @@ private updateBoss(): void {
     if (this.recordedMusic.has('summary')) this.recordedMusic.play('summary');
     else this.restoreLevelMusic();
     saySplash(this.run.events);
-    // The results card is not a banner: it stays up until the run moves on, so it is shown here and faded by
-    // `updateTransientOverlays` -- which is also what writes its TEXT, because the layout is its business.
-    sayResults(this.run.events);
     /**
      * Clearing the level, which is what unlocks the next one.
      *
      * Recorded HERE rather than where the results are shown, because this is the moment the player earned it -- and so
-     * that a level reached by any route unlocks the next one the same way. `clear` returns the level it opened, if
-     * any, and the banner NAMES it: an unlock that only shows up as a pill changing colour on a menu the player is not
-     * looking at is an unlock nobody notices.
-     */
-    const clearText = `击败了 ${LEVEL.boss.name}  ·  吸收 ${this.run.stats.absorbed}  ·  最大体积 ${this.run.stats.maxVolume.toFixed(1)}×  ·  ${this.run.elapsed.toFixed(1)}s`;
-    /**
-     * The clear is still RECORDED, and the level it opened is still computed -- but the run no longer ANNOUNCES it.
-     *
-     * `progress.clear` writes the save and returns the id of the level this opened. That return used to name it in the
-     * banner, on the argument that an unlock showing up only as a pill changing colour on a menu the player is not
-     * looking at is an unlock nobody notices. The ladder is a debug affordance now, so there is no pill and nothing to
-     * point at: the message would promise a choice that does not exist. The save is kept whole regardless, so the day
-     * the ladder comes back the data it needs is still being written.
+     * that a level reached by any route unlocks the next one the same way. The save is kept whole regardless, so the
+     * data is there the day the ladder comes back.
      */
     /**
      * THE DEBUG LEVEL IS CLEARED AND SETTLED LIKE ANY OTHER, AND LEAVES THE LADDER ALONE.
@@ -3240,14 +3163,12 @@ private updateBoss(): void {
      * send somebody who was testing a school. Its run ends here, on the summary card.
      */
     if (isDebugLevel(LEVEL)) {
-      this.banner(clearText);
       this.run.levelsClearedInRun = 0;
       this.run.runComplete = true;
       return;
     }
     this.run.progress.clear(LEVEL.id);
     this.refreshLevelMenu();
-    this.banner(clearText);
     /**
      * And then the run WALKS ON.
      *
@@ -3295,7 +3216,7 @@ private updateBoss(): void {
   }
 
 /**
-   * The overlays that are not the level: the screen shake, the surface flash, the two banners, the detonation rings.
+   * The overlays that are not the level: the screen shake, the surface flash, the detonation rings.
    *
    * ---------------------------------------------------------------------------------------------
    * WHY THIS IS ADVANCED FROM `step` AND NOT FROM `render`
@@ -3317,61 +3238,6 @@ private updateBoss(): void {
       boom.age += dt;
       if (boom.age >= mech.explosions.seconds) this.explosions.splice(i, 1);
     }
-
-    /**
-     * The results card fades out, and is DROPPED the moment the run moves on.
-     *
-     * It used to fade only while the phase was `burst`, which meant a card left over from a death stayed on screen for
-     * the whole of the next level if that level began from a phase it did not recognise -- and with the transition flow
-     * there now are such phases. Anything that is not a run-ending burst clears it outright: a stale score floating over
-     * a live level is worse than no card at all.
-     */
-    const cardBelongs = this.run.phase === 'burst' && this.run.runComplete === false && this.run.pendingLevel === null;
-    if (cardBelongs) {
-      this.finishBanner.alpha = Math.min(1, this.finishBanner.alpha);
-      /**
-       * Rewritten every step rather than set once, because the RECORD comparison is against a best that `recordBest`
-       * has already updated -- so the card has to say "new record" from a flag captured at the moment the run ended,
-       * not by re-comparing against a best that now includes this run.
-       *
-       * A cleared level mid-run gets the banner (which names the level it is walking into next) and no card: the card
-       * is a full stop, and the ladder has five more levels to go. `surfaced` alone could not say this -- it is set by
-       * every boss death, including the ones that lead onward.
-       */
-      this.finishBanner.text = this.run.surfaced
-        ? `击败 ${LEVEL.boss.name}  ·  通关\n得分 ${this.run.score.value}  ·  吸收 ${this.run.stats.absorbed}  ·  最大 ${this.run.stats.maxVolume.toFixed(1)}×  ·  ${this.run.elapsed.toFixed(1)}s\n${this.run.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.run.bestClimbed)}m`}  ·  最佳得分 ${this.run.bestScore}`
-        : `破裂  ·  深度 ${Math.round(this.run.player.depth(LEVEL.scrollLength))}m\n得分 ${this.run.score.value}  ·  吸收 ${this.run.stats.absorbed}  ·  爬升 ${Math.round(this.run.player.y)}m\n${this.run.stats.newRecord ? '★ 新纪录' : `最好 ${Math.round(this.run.bestClimbed)}m`}  ·  最佳得分 ${this.run.bestScore}`;
-    } else if (this.finishBanner.alpha > 0) {
-      this.finishBanner.alpha = Math.max(0, this.finishBanner.alpha - dt * 1.8);
-      if (this.finishBanner.alpha <= 0.01) {
-        this.finishBanner.alpha = 0;
-        this.finishBanner.text = '';
-      }
-    }
-
-    this.runBanner.alpha = Math.max(0, this.runBanner.alpha - dt * 0.28);
-  }
-
-/**
-   * Show a transient message across the middle of the screen.
-   *
-   * ---------------------------------------------------------------------------------------------
-   * WHY THIS IS A METHOD AND NOT FIFTEEN COPIES OF TWO STATEMENTS
-   * ---------------------------------------------------------------------------------------------
-   * Every message in the game was written as `runBanner.text = …; runBanner.alpha = 1;`, which is three facts the
-   * caller had to remember: the text, that showing it means resetting the alpha (a banner that was mid-fade would
-   * otherwise appear at half opacity), and that a banner has been shown this run -- which is what `bannerSeen` records,
-   * because a transient message cannot be caught by a probe that samples once a frame.
-   *
-   * Nine of the fifteen sites remembered all three; the rest remembered two. That is the shape of a rule that lives in
-   * its callers.
-   *
-   * It queues an event now rather than writing the label, because a rule that holds a `Text` is a rule that needs a
-   * renderer -- see `RunEvent` for the whole of that argument. The three statements live in `applyRunEvents`, which is
-   * the only code left in this file that touches the banner's text, its alpha or `bannerSeen`.
-   */
-  private banner(text: string): void {
-    sayBanner(this.run.events, text);
   }
 
   /** A cue for the synth. Same signature as `audio.play`, because the drain is a forward to it. */
@@ -3399,17 +3265,11 @@ private updateBoss(): void {
    * ---------------------------------------------------------------------------------------------
    * Called immediately after each `step`, so a hit still sounds on the frame it happened rather than at the end of a
    * frame that ran eight sub-steps. Everything here is a forward to what the rule used to call directly, which is what
-   * makes this a move rather than a rewrite -- and it is why the banner's three statements are here now: text, the alpha
-   * reset, and `bannerSeen`, the flag that says a message has been raised this run.
+   * makes this a move rather than a rewrite.
    */
   private applyRunEvents(): void {
     for (const e of this.run.events) {
       switch (e.kind) {
-        case 'banner':
-          this.runBanner.text = e.text;
-          this.runBanner.alpha = 1;
-          this.bannerSeen = true;
-          break;
         case 'sound':
           // The world's timescale, so a cue fired during a slow motion is slowed with it. The `ui` bus ignores it --
           // see `SfxEngine.play` -- so a panel sound is unaffected however slow the water is.
@@ -3461,9 +3321,6 @@ private updateBoss(): void {
         }
         case 'splash':
           this.splash = 1;
-          break;
-        case 'results':
-          this.finishBanner.alpha = 1;
           break;
       }
     }
@@ -3616,10 +3473,8 @@ private updateBoss(): void {
      */
     this.loading.root.visible = this.run.phase === 'boot' || this.run.phase === 'loading';
     /**
-     * The banners and the results card are NOT touched here.
-     *
-     * Their alpha, their text and the card's record line are all advanced by `updateTransientOverlays`, from `step`:
-     * this pass reads state and draws it. See that method for why.
+     * The overlays above advance here, from `step`: this pass reads state and draws it. See
+     * `updateTransientOverlays` for why.
      */
 
     /**
@@ -4249,7 +4104,7 @@ private updateBoss(): void {
     const art = this.syncBubbleSprite(worldX, worldY, radius, alpha);
     if (art && !mech.playerBubble.keepDetails) return;
     // Graphics retains its path between `clear()` calls, so both must be cleared every frame.
-    // Leaving them dirty is what drew a stray line from the bubble to the finish banner.
+    // Leaving them dirty is what drew a stray line from the bubble to the HUD.
     g.clear();
     p.clear();
 
@@ -4421,12 +4276,8 @@ private updateBoss(): void {
       comedyBeats: this.run.comedyBeats,
       lastComedyBeat: this.run.lastComedyBeat,
       lastEaten: this.run.lastEaten,
-      lastEvent: this.run.lastEvent,
       slams: this.run.slams,
       trashDrain: this.run.trashDrain,
-      eventsSeen: this.run.eventsSeen,
-      eventsFired: this.run.eventsFired,
-      bannerSeen: this.bannerSeen,
       surfaced: this.run.surfaced,
       bestClimbed: this.run.bestClimbed,
       bestScore: this.run.bestScore,
@@ -4438,7 +4289,6 @@ private updateBoss(): void {
       camera: this.camera,
       popups: this.popups,
       damagePopups: this.damagePopups,
-      finishBanner: this.finishBanner,
       splash: this.splash,
       audioMuted: this.audioMuted,
       fps: this.fps,

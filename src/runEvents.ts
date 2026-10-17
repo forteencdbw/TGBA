@@ -12,38 +12,32 @@ import type { SoundEvent } from './audio';
  * out of the class that owns the canvas: a rule holding a reference to a `Text` object is a rule that needs a renderer.
  *
  * So they push one of these instead. `Game.applyRunEvents` is the only code that touches the display, and it runs
- * immediately after the step that produced them -- so a hit still sounds on the frame it happened, and a banner is still
- * on screen for the frame it was raised in.
+ * immediately after the step that produced them -- so a hit still sounds on the frame it happened, and a callout is
+ * still on screen for the frame it was raised in.
  *
  * The type lives here rather than in `main.ts` because the RULES live in modules now (`src/placement.ts`,
  * `src/spit.ts`): a module that cannot import the vocabulary of what it is allowed to say would have to hand its
- * outputs back as ad-hoc tuples, and every one of them would be a second definition of the same five things.
+ * outputs back as ad-hoc tuples, and every one of them would be a second definition of the same handful of things.
  *
  * The same shape the particles have used since they were written (a queue the simulation fills and the presentation
  * drains), applied to everything a run has to say rather than to sparks alone. It is also what makes the run's output
  * inspectable: a probe can read this list instead of asking a label what it currently contains.
  */
 export type RunEvent =
-  | { kind: 'banner'; text: string }
   | { kind: 'sound'; event: SoundEvent; intensity: number; pan: number }
   | { kind: 'scorePopup'; x: number; y: number; points: number }
   | { kind: 'damagePopup'; x: number; y: number; amount: number }
   | { kind: 'graze'; x: number; y: number }
   | { kind: 'callout'; x: number; y: number; text: string }
   | { kind: 'blast'; x: number; y: number; radius: number }
-  | { kind: 'splash' }
-  | { kind: 'results' };
+  | { kind: 'splash' };
 
 /**
- * The five things a rule can say, as constructors.
+ * The things a rule can say, as constructors.
  *
  * The defaults live here with the type rather than at each call site: `audio.play`'s intensity default is 0.5, and a
  * rule module that had to remember that would be a rule module that knows about the synth.
  */
-export function sayBanner(events: RunEvent[], text: string): void {
-  events.push({ kind: 'banner', text });
-}
-
 /** `pan` is -1 (left) .. 1 (right): where in the lane it happened, 0 for a sound that is not somewhere in the water. */
 export function saySound(events: RunEvent[], event: SoundEvent, intensity = 0.5, pan = 0): void {
   events.push({ kind: 'sound', event, intensity, pan });
@@ -93,9 +87,4 @@ export function sayBlast(events: RunEvent[], x: number, y: number, radius: numbe
 /** The bubble broke the surface: the flash of it, and the level's end. */
 export function saySplash(events: RunEvent[]): void {
   events.push({ kind: 'splash' });
-}
-
-/** Show the results card. Its text is composed by the presentation, which is the half that knows the layout. */
-export function sayResults(events: RunEvent[]): void {
-  events.push({ kind: 'results' });
 }

@@ -27,10 +27,10 @@ import { placeEntry } from './placement';
 import { gainRage, hitRage, spendRage, tickRage } from './rage';
 import { OBSTACLE_BLOCK_SOUND, OBSTACLE_BREAK_SOUNDS } from './soundIds';
 import { sayBlast, sayCallout, sayGraze } from './runEvents';
-import { recordAbsorb, stageName, stageRadiusFraction } from './stages';
+import { recordAbsorb, stageRadiusFraction } from './stages';
 import { volumeForHealthRatio } from './volume';
 import type { Phase } from './snapshot';
-import { sayBanner, sayDamage, sayScore, saySound, type RunEvent } from './runEvents';
+import { sayDamage, sayScore, saySound, type RunEvent } from './runEvents';
 import type { SoundEvent } from './audio';
 
 /**
@@ -186,10 +186,6 @@ export class Run {
   phase: Phase = 'boot';
   /** Seconds left in the current phase, when the phase has one. */
   phaseTimer = 0;
-
-  private banner(text: string): void {
-    sayBanner(this.events, text);
-  }
 
   /**
    * Whether the run is protected because a mutation pick is on its way.
@@ -407,9 +403,6 @@ export class Run {
   comedyBeats = 0;
   lastComedyBeat: { what: HazardKind; at: number } | null = null;
   hazards = new HazardField();
-  eventsFired = new Set<number>();
-  eventsSeen = 0;
-  lastEvent: { label: string; at: number } | null = null;
   bestClimbed = 0;
   bestVolume = 0;
   bestScore = 0;
@@ -966,7 +959,6 @@ export class Run {
     // Self-inflicted, so defence does NOT apply (`takeHit`'s second argument): the chain is the player's own
     // doing, and a player who could armour their way out of it would be deleting the cost of the button.
     if (cfg.chainSelfDamage > 0) this.takeHit(cfg.chainSelfDamage, 0);
-    this.banner(`连锁放电  ·  ${reached.size} 只`);
   }
   /**
    * Spawn, move and resolve the hazards, applying whatever they did to the player.
@@ -1409,7 +1401,6 @@ export class Run {
           if (recordAbsorb(this.stage)) {
             this.player.stageSpeedMultiplier = this.stage.speedMultiplier;
             this.invulnerable = Math.max(this.invulnerable, mech.stages.growInvulnerableSeconds);
-            this.banner(`${stageName(this.stage.stage)}  ·  ${this.stage.stage} 阶段  ·  速度 ×${this.stage.speedMultiplier.toFixed(2)}`);
             this.sound('stage.grow');
           }
         } else {
@@ -1449,7 +1440,6 @@ export class Run {
     // And the ending's own music over it: a few bars that say the run is over, rather than a sound that says something
     // just happened. Both play -- the sting is deliberately longer than the pop.
     this.sound('defeat.sting');
-    this.banner(`破裂  ·  深度 ${Math.round(this.player.depth(LEVEL.scrollLength))}m  ·  吸收 ${this.stats.absorbed}  ·  最大体积 ${this.stats.maxVolume.toFixed(1)}×`);
 }
   /**
    * Spend the whole rage gauge on a shockwave.
@@ -1543,49 +1533,11 @@ export class Run {
     // is what it was worth, so a run can beat one and not the other, and the card says both.
     this.bestScore = Math.max(this.bestScore, this.score.value);
   }
-  fireEvent(label: string): void {
-    this.eventsSeen++;
-    this.lastEvent = { label, at: this.elapsed };
-
-    // A banner and a sound for each beat. No hazards: the level's timeline already placed them, and the
-    // job here is to tell the player what they are swimming into.
-    /**
-     * The banner is the level's OWN label and nothing else.
-     *
-     * It used to be `label · <one of three hardcoded strings>`, appended by INDEX: `['鱼群来了', '气泡潮', '爆发']`. Those
-     * three were written when the game had one stretch of water and three beats, and by the time there were six levels with
-     * three landmarks each they were saying the same three things in all of them -- "管虫丛 · 鱼群来了" over a screenful
-     * of tube worms. `label` is written by the level and already says what the beat IS.
-     */
-    this.banner(label);
-    this.sound('level.banner');
-  }
-  /**
-   * The level's scripted events, at the depths its landmarks announce.
-   *
-   * These are the "suddenly everything happens at once" beats the whole game is built around, and they
-   * are now ANNOUNCEMENTS rather than spawners.
-   *
-   * They used to generate their own hazards -- a random swarm of 15-26 fish, a cloud of jellyfish --
-   * which was the procedural model this refactor replaced. A level's timeline states exactly what
-   * happens, so an event that also invented hazards would be content nobody authored, arriving on top of
-   * the content somebody did. What is left is the part a timeline cannot express: telling the player
-   * that the thing they are about to meet is about to happen.
-   */
-  fireDepthEvents(): void {
-    const depth = this.player.depth(LEVEL.scrollLength);
-    for (const [i, mark] of (LEVEL.landmarks ?? []).entries()) {
-      if (this.eventsFired.has(i)) continue;
-      if (depth > mark.depth) continue; // landmarks are measured from the surface, so depth DECREASES
-      this.eventsFired.add(i);
-      this.fireEvent(mark.label);
-    }
-  }
   /**
    * Build a hazard of a given kind at a given place.
    *
-   * The scripted events need this: `HazardField.spawn` picks a random kind and position for ambient
-   * pressure, which is the opposite of what a scripted beat wants.
+   * The boss and the debug spawner need this: `HazardField.spawn` picks a random kind and position for ambient
+   * pressure, which is the opposite of what an authored placement wants.
    */
   makeHazard(
     world: WorldView,

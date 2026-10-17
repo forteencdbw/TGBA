@@ -1,4 +1,3 @@
-import type { Text } from 'pixi.js';
 import type { Camera } from './background';
 import type { BulletField } from './bullets';
 import type { BubbleType, RouteId } from './bubbleTypes';
@@ -27,7 +26,7 @@ import type { Xp } from './xp';
  * function of the state it reports.
  *
  * It is deliberately the WHOLE game rather than the run: the report exists to answer questions about a frame the player
- * just watched, so frame time, the popup pools and the banner are part of the answer. The run's own state is the bulk
+ * just watched, so frame time and the popup pools are part of the answer. The run's own state is the bulk
  * of it.
  *
  * Three of these members are DERIVED -- `onSlam`, `suctionUp` and `burstRadiusRatio` are
@@ -100,12 +99,8 @@ export interface GameSnapshot {
   comedyBeats: number;
   lastComedyBeat: { what: HazardKind; at: number } | null;
   lastEaten: number;
-  lastEvent: { label: string; at: number } | null;
   slams: number;
   trashDrain: number;
-  eventsSeen: number;
-  eventsFired: Set<number>;
-  bannerSeen: boolean;
   surfaced: boolean;
   bestClimbed: number;
   bestScore: number;
@@ -127,7 +122,6 @@ export interface GameSnapshot {
   camera: Camera;
   popups: NumberPopups;
   damagePopups: NumberPopups;
-  finishBanner: Text;
   splash: number;
   audioMuted: boolean;
   fps: number;

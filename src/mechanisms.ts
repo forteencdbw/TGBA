@@ -285,9 +285,9 @@ export interface Mechanisms {
   /**
    * Where the depth gauge sits, and how far in from the edge.
    *
-   * A SIDE rather than two sets of coordinates, because the gauge and its landmark labels are one object: the labels
-   * are anchored to the bar's inner edge, so moving the bar has to move them, and a config that could put the two in
-   * different places would be a config that can put a label off the lane.
+   * A SIDE rather than two sets of coordinates, because the gauge is anchored to its own edge: which side it grows
+   * from is the whole of its position, and a config that could put it anywhere would be a config that can put it off
+   * the lane.
    */
   hud: {
     /** The boss health bar across the top, shown only while a boss is alive. `widthRatio` is a fraction of the LANE. */
@@ -406,21 +406,6 @@ export interface Mechanisms {
         pulseHz: number;
         pulseDepth: number;
       };
-    };
-    /**
-     * The results card: the lines shown when a run ends.
-     *
-     * `widthRatio` is the reason this is in the config at all. The card used to be sized by the WORLD zoom alone,
-     * which says nothing about how wide a line of text may be -- so adding one more fact to a line pushed it off both
-     * edges of the screen. A wrap width expressed in screen terms is the fix, and a wrap width is a number the owner
-     * will want to move.
-     */
-    resultsCard: {
-      size: number;
-      /** The card's centre, as a fraction of the canvas height. */
-      yRatio: number;
-      /** How much of the screen's width one line may use before it wraps. */
-      widthRatio: number;
     };
   };
   /**
@@ -2773,9 +2758,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'mutation.gauge.labelColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
   ...popupRules('score.popups'),
   ...popupRules('damagePopups'),
-  { path: 'hud.resultsCard.size', check: anyNumber, describe: 'a font size' },
-  { path: 'hud.resultsCard.yRatio', check: anyNumber, describe: 'a fraction of the canvas height' },
-  { path: 'hud.resultsCard.widthRatio', check: anyNumber, describe: 'a fraction of the canvas width' },
   { path: 'hud.score.x', check: anyNumber, describe: 'design pixels' },
   { path: 'hud.score.y', check: anyNumber, describe: 'design pixels' },
   { path: 'hud.score.size', check: anyNumber, describe: 'a font size' },

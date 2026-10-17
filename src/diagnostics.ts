@@ -71,8 +71,6 @@ export function diagnosticsOf(g: GameSnapshot): {
     };
     playerVx: number;
     playerVy: number;
-    bannerAlpha: number;
-    bannerSeen: boolean;
     lateral: LateralAuthority;
     laneWidthMeters: number;
     visibleDepthMeters: number;
@@ -142,7 +140,6 @@ export function diagnosticsOf(g: GameSnapshot): {
       fishCount: number;
       perceptionRadiusMeters: number;
     };
-    events: { seen: number; fired: number[]; last: { label: string; at: number } | null };
     audio: { muted: boolean; running: boolean };
     ending: { surfaced: boolean; splash: number; bestClimbed: number; bestVolume: number; bestScore: number };
     /**
@@ -283,8 +280,6 @@ export function diagnosticsOf(g: GameSnapshot): {
       /** The player's own motion. Vertical and horizontal are symmetric now. */
       playerVx: +g.player.vx.toFixed(4),
       playerVy: +g.player.vy.toFixed(2),
-      bannerAlpha: g.finishBanner.alpha,
-      bannerSeen: g.bannerSeen,
       lateral: g.lateral,
       laneWidthMeters: g.camera.viewport.laneWidthMeters,
       visibleDepthMeters: g.camera.viewport.visibleDepthMeters,
@@ -385,8 +380,6 @@ export function diagnosticsOf(g: GameSnapshot): {
         /** The perception radius the swarm is currently using, which grows with the player. */
         perceptionRadiusMeters: +g.hazards.perceptionRadius(g.player.volume).toFixed(1),
       },
-      /** Scripted depth events, and which have fired. */
-      events: { seen: g.eventsSeen, fired: [...g.eventsFired], last: g.lastEvent },
       /**
        * Audio and ending state.
        *

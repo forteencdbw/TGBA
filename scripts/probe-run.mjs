@@ -189,7 +189,7 @@ try {
     r.takeHit();
     const kinds = r.events.map((e) => e.kind);
     check('the output is a queue of values', kinds.length > 0 && kinds.every((k) => typeof k === 'string'), true);
-    check('nothing in it needs a renderer', kinds.includes('banner') || kinds.includes('sound'), true);
+    check('nothing in it needs a renderer', kinds.includes('sound'), true);
   }
 
   // --- the derived answers travel with it rather than being asked of the game

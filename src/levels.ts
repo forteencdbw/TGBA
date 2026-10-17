@@ -431,8 +431,6 @@ export interface Level {
   entries: readonly LevelEntry[];
   /** The blocks the entries were expanded from, kept so a test can prove the file and the timeline agree. */
   blocks: readonly SpawnBlock[];
-  /** Signposts, at depths from the surface, for the HUD. */
-  landmarks?: readonly { depth: number; label: string }[];
   /**
    * How far the player may stray above the camera before the scroll carries them, in metres.
    *
@@ -757,7 +755,6 @@ const LEVEL_KEYS: readonly string[] = [
   'scrollSpeedCurve',
   'driftSpeed',
   'playerLeadLimit',
-  'landmarks',
   'boss',
   'palette',
   'paths',
@@ -1154,9 +1151,6 @@ function readLevel(node: Record<string, unknown>, where: string): Level {
   const entries = blocks
     .flatMap((block, i) => expandBlock(block, varieties.get(block), i).map((entry) => ({ ...entry, group: i })))
     .sort((a, b) => a.at - b.at);
-  const landmarks = Array.isArray(node['landmarks'])
-    ? (node['landmarks'] as { depth: number; label: string }[])
-    : undefined;
 
   const scrollLength = reqNum(node, 'scrollLength', `${where} (level "${id}")`, 1, 1000000);
 /**
@@ -1350,7 +1344,6 @@ const boss: BossSpec = {
     ...(node['playerLeadLimit'] === undefined
       ? {}
       : { playerLeadLimit: optNum(node, 'playerLeadLimit', `${where} (level "${id}")`, 0, 0, 10000) }),
-    ...(landmarks ? { landmarks } : {}),
     boss,
     palette,
     ...(paths ? { paths } : {}),

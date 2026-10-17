@@ -106,7 +106,7 @@ export class LevelUpUi {
     this.choices = [];
   }
 
-  /** The card on offer at an index, for the keyboard path to name in its banner. */
+  /** The card on offer at an index, for the keyboard path to name. */
   choiceAt(index: number): Mutation | null {
     return this.choices[index] ?? null;
   }

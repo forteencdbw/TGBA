@@ -513,8 +513,7 @@ export interface Landmark {
 }
 
 /**
- * Fixed HUD, in screen pixels: the "metres to surface" headline, the depth gauge on the right
- * edge, the prototype landmark markers.
+ * Fixed HUD, in screen pixels: the centred resource/mutation block, the boss bar and the score.
  */
 
 /**
@@ -662,7 +661,7 @@ export class Hud {
     /**
      * The score.
      *
-     * Gold, like the landmarks and the spit button, and the only other gold number on the screen -- the top block is
+     * Gold, like the spit button, and the only other gold number on the screen -- the top block is
      * the cyan family ("where am I"), so the score reads as a different KIND of number at a glance.
      */
     this.scoreLabel = makeLabel('', mech.hud.score.colour, mech.hud.score.size);
@@ -693,10 +692,8 @@ export class Hud {
      * The level's signpost LABELS are gone.
      *
      * They were three small yellow words pinned down the left edge (鱼群 / 气泡潮 / 爆发), naming sections of the level
-     * the player is in the middle of. Two reasons they went: the level already ANNOUNCES each of them with a banner at
-     * the moment it happens, which is where the player is looking; and a permanent list of section names down the edge
-     * reads as a menu, not as a view of the water. `landmarks` itself is still level data -- it is what fires those
-     * announcements.
+     * the player is in the middle of. A permanent list of section names down the edge reads as a menu, not as a view
+     * of the water.
      */
   }
 
@@ -999,7 +996,7 @@ export class Hud {
      * And a brighter, thicker ring while the pick's slow motion is running.
      *
      * `pending` says "you are owed a card"; this says "you are about to choose one", and the difference is the whole reason
-     * the water is slow. It is on the bar rather than in a banner because the bar is what filled -- the cause is already
+     * the water is slow. It is on the bar rather than in a line of text because the bar is what filled -- the cause is already
      * drawn, and a line of text would cover the water at the one moment the player can still act in it.
      */
     if (state.ramp) {

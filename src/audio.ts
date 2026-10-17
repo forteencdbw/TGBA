@@ -387,7 +387,7 @@ musicBus(): { ctx: AudioContext; destination: AudioNode } | null {
    * Play a one-shot.
    *
    * @param intensity 0..1, scales level and brightness. Used for things like how big a bubble was.
-   * @param pan -1..1, where in the lane it happened (0 for something that is not in the water: a button, a banner).
+   * @param pan -1..1, where in the lane it happened (0 for something that is not in the water: a button, a callout).
    * @param scale the world's timescale, so a cue in the water can slow with it. 1 is normal speed. **Ignored by the
    *   `ui` bus**, which is the player's own feedback about a control rather than a thing happening in the water -- see
    *   `SfxEngine.play`.

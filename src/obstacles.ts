@@ -136,8 +136,8 @@ export function ramDamage(playerVolume: number, kind: ObstacleKind): number {
 /**
  * What each obstacle kind is called on screen.
  *
- * Here rather than in a banner string, because a name that appears in two places is a name that will disagree with
- * itself: the release banner and any future prompt all read this.
+ * Here rather than in a callout string, because a name that appears in two places is a name that will disagree with
+ * itself: the release callout and any future prompt all read this.
  */
 export const OBSTACLE_NAMES: Record<ObstacleKind, string> = {
   crate: '木箱',
