@@ -1,5 +1,4 @@
 import { Container, FillGradient, Graphics } from 'pixi.js';
-import { animationFrameAt } from './assets';
 import { rgba } from './background';
 import { mech } from './config';
 import { BubbleField, MoteField } from './menuDrift';
@@ -50,22 +49,21 @@ import { ObstacleField, paintObstacles } from './obstacles';
 /**
  * What may swim in the backdrop: everything that is ALIVE and is an ordinary enemy.
  *
- * Three exclusions, each for its own reason. BOSSES, because a boss arriving is a beat the game spends a whole level
+ * Four exclusions, each for its own reason. BOSSES, because a boss arriving is a beat the game spends a whole level
  * building up to, and a giant crab drifting past the title screen spends it for nothing. The ENVIRONMENT -- vents,
- * grit, foam, rain -- because those are terrain and weather rather than enemies. And `trash`/`rot`/`oil`, which are
- * hazards the player eats or avoids rather than things that swim.
+ * grit, foam, rain -- because those are terrain and weather rather than enemies. `trash`/`rot`/`oil`, which are
+ * hazards the player eats or avoids rather than things that swim. And the two jellyfish (`jelly`, `zapper`): their
+ * bell-led vertical swim reads as a different kind of motion from every horizontal decoration here.
  */
 const SWIMMERS: readonly HazardKind[] = [
   'fish',
   'tuna',
-  'jelly',
   'crab',
   'urchin',
   'bombfish',
   'eel',
   'angler',
   'torpedo',
-  'zapper',
   'shrimp',
   'dolphin',
   'octopus',
@@ -117,20 +115,7 @@ const CRAWLERS: readonly HazardKind[] = ['urchin', 'starfish'];
  * make it untrue.
  */
 const darts = (kind: HazardKind): boolean => kind === 'fish';
-/**
- * The two jellyfish-shaped swimmers: `jelly` and its electric relative `zapper`.
- *
- * Both art pictures are a bell above trailing tentacles. The bell IS their direction: the sprite is rotated to the
- * bell's heading and the body travels along that heading, so the route is as diagonal as the bell is. The menu is
- * decorative, so this is a LOOK rule here; the zapper's gameplay motion (drifting sideways with a discharge) is
- * untouched, because there it is an enemy rather than a jellyfish.
- */
-const bellSwims = (kind: HazardKind): boolean => kind === 'jelly' || kind === 'zapper';
-/**
- * A bell swimmer has no left/right to turn to: a random turn would reverse its heading instead of steering it.
- * Excluded here rather than special-cased in the velocity map so the same predicate governs the decision and motion.
- */
-const turns = (kind: HazardKind): boolean => !CRAWLERS.includes(kind) && !bellSwims(kind);
+const turns = (kind: HazardKind): boolean => !CRAWLERS.includes(kind);
 
 /**
  * A group of creatures that arrived together AND travel as one.
@@ -229,22 +214,7 @@ export class MenuBackdrop {
   private readonly backBed = new ObstacleField();
   private readonly frontBed = new ObstacleField();
   /** Speed and school per swimmer, keyed by hazard id. See the notes at the top of the file. */
-  private readonly velocity = new Map<
-    number,
-    {
-      vx: number;
-      vy: number;
-      school: School;
-      /**
-       * A jellyfish's own motion: the bell's base heading (radians, y up) and the speed along it.
-       *
-       * Absent on every other kind, which is what keeps the horizontal crossing logic untouched. The body follows the
-       * bell, and the bell slowly sways, so the route curves. The sprite's rotation is derived from this same heading:
-       * there is no separate path that the picture is merely tilted to match.
-       */
-      swim?: { baseHeading: number; speed: number };
-    }
-  >();
+  private readonly velocity = new Map<number, { vx: number; vy: number; school: School }>();
 
   private width = 0;
   private height = 0;
@@ -554,8 +524,6 @@ export class MenuBackdrop {
     if (this.exiting) return;
     this.exitLeft = Math.max(0.01, mech.menu.backdrop.exitSeconds);
     for (const h of this.swimmers.hazards) {
-      // A bell swimmer keeps its own heading; the whole layer fades over the exit, so it needs no turn of its own.
-      if (this.velocity.get(h.id)?.swim) continue;
       /**
        * THE SAME DEPARTURE A DEFEATED CREATURE MAKES.
        *
@@ -566,7 +534,6 @@ export class MenuBackdrop {
        * `facingRest` is released here: it was pinned to stop a swimming fish flipping around, and a departing one is
        * supposed to flip.
        */
-      // A climbing jelly leaves upward, the direction it was already going. Everything else turns to the near side.
       h.flee = h.x < this.width / 2 ? 'right' : 'left';
       h.facingRest = 0;
     }
@@ -710,34 +677,7 @@ export class MenuBackdrop {
       const boost = this.burstBoost(v.school.burstLeft);
       if (h.flee) {
         const step = this.height * mech.hazards.fleeScreensPerSecond * dt;
-        // A climbing jelly leaves the way it was going; everything else goes to a side.
-        if (h.flee === 'up') {
-          h.y += step;
-          if (v.swim) h.artRotation = 0;
-        } else h.x += h.flee === 'right' ? step : -step;
-      } else if (v.swim) {
-        /**
-         * A jellyfish: the bell is the heading, and the body goes where the bell points.
-         *
-         * The bell sways around its spawn heading on a slow sine; the path is that same angle integrated, so a belly
-         * that leans left is a body that travels left. The pulse is looked up by the SAME frame the picture is on, so
-         * the surge lands on the contraction; the zapper has its own animation, so it gets its own frame count.
-         * `boost` is 1 here because neither jelly darts.
-         */
-        const animation = mech.animations[h.kind === 'zapper' ? '电击水母-move' : 'jelly-idle'];
-        const frame = animation ? animationFrameAt(animation, h.phase) : 0;
-        const pulse = cfg.jelly.pulse[frame] ?? 1;
-        const sway = (cfg.jelly.wanderDegrees * Math.PI) / 180;
-        const heading = v.swim.baseHeading + sway * Math.sin((h.phase * Math.PI * 2) / Math.max(0.1, cfg.jelly.wanderSeconds));
-        const speed = v.swim.speed * pulse * this.height;
-        h.x += Math.cos(heading) * speed * dt;
-        h.y += Math.sin(heading) * speed * dt;
-        /**
-         * The sprite's local rotation for a bell pointing along `heading`.
-         *
-         * The sign is the vent's: the menu's root is Y-flipped, so a rightward bell is a NEGATIVE local rotation.
-         */
-        h.artRotation = Math.atan2(-Math.cos(heading), Math.sin(heading));
+        h.x += h.flee === 'right' ? step : -step;
       } else {
         h.x += v.vx * boost * dt * this.width;
         h.y += v.vy * boost * dt * this.height;
@@ -857,7 +797,7 @@ export class MenuBackdrop {
     /**
      * WHICH KIND, weighted towards the small fish.
      *
-     * Uniform over nineteen kinds is not what the water looks like: a level is overwhelmingly small fish, and the
+     * Uniform over seventeen kinds is not what the water looks like: a level is overwhelmingly small fish, and the
      * sharks and whales are the exceptions that make the water dangerous. Picking uniformly made the commonest
      * creature in the game the rarest thing in the menu -- and it made the shoal rule above nearly invisible, because
      * a rule about how fish arrive means nothing if fish almost never arrive.
@@ -893,12 +833,6 @@ export class MenuBackdrop {
     const shared = shoal && count > 1 ? newSchool() : null;
     /** Whether this arrival crawls rather than swims -- see `CRAWLERS`. */
     const crawls = CRAWLERS.includes(kind);
-    /**
-     * The two jellyfish-shaped swimmers follow their bell. The spawn heading is an upward-inward angle in the
-     * configured range; the right side gets its mirror, so both enter the lane rather than away from it.
-     */
-    const isBell = bellSwims(kind);
-    const jelly = cfg.jelly;
     const fromLeft = Math.random() < 0.5;
     const dir = fromLeft ? 1 : -1;
     const speed =
@@ -950,15 +884,8 @@ export class MenuBackdrop {
        */
       h.phase = Math.random() * 8;
       // A little speed variation per member, so a school opens up as it crosses rather than travelling as a block.
-      // The roll is taken for every kind, jellies included, so a probe's dice script keeps pointing at the same
-      // decisions; the jelly simply does not use the result.
-      const jitter = 0.86 + Math.random() * 0.28;
-      // The jitter already carries a 0..1 roll; reusing it picks the bell angle without spending another dice value.
-      const angleRoll = Math.max(0, Math.min(1, (jitter - 0.86) / 0.28));
-      const bellAngle = (jelly.minDegrees + angleRoll * (jelly.maxDegrees - jelly.minDegrees)) * (Math.PI / 180);
-      const baseHeading = fromLeft ? bellAngle : Math.PI - bellAngle;
       this.velocity.set(h.id, {
-        vx: isBell ? 0 : speed * jitter * dir,
+        vx: speed * (0.86 + Math.random() * 0.28) * dir,
         /**
          * A crawler keeps the height it arrived at.
          *
@@ -968,7 +895,6 @@ export class MenuBackdrop {
          */
         vy: (Math.random() - 0.5) * (crawls ? 0 : cfg.driftRatio) * speed,
         school: shared ?? newSchool(),
-        ...(isBell ? { swim: { baseHeading, speed: jelly.swimSpeed } } : {}),
       });
       h.heading = dir;
       this.faceTravel(h, dir);

@@ -159,7 +159,7 @@ try {
     bd.sinceSpawn = -1e9;
     for (const c of cast) {
       const h = bd.swimmers.spawnAt(c.kind ?? 'fish', c.x, c.y, { deterministic: true, variety: 0 });
-      bd.velocity.set(h.id, { vx: c.vx, vy: c.vy, school: c.school, ...(c.swim ? { swim: c.swim } : {}) });
+      bd.velocity.set(h.id, { vx: c.vx, vy: c.vy, school: c.school });
       bd.swimmers.hazards.push(h);
       c.h = h;
     }
@@ -418,58 +418,6 @@ try {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // The jellyfish follow their bell
-  // ---------------------------------------------------------------------------------------------
-  console.log('\n--- the jelly follows its bell ---');
-  {
-    const heading = Math.PI / 3; // 60 degrees above horizontal, up-right
-    const cast = [
-      {
-        kind: 'jelly',
-        x: W * 0.5,
-        y: H * 0.3,
-        vx: 0,
-        vy: 0,
-        school: { burstLeft: 0 },
-        swim: { baseHeading: heading, speed: 0.09 },
-      },
-      ...filler(cfg.minAlive - 1),
-    ];
-    const bd = build(cast);
-    const h = cast[0].h;
-    const x0 = h.x;
-    const y0 = h.y;
-    bd.update(DT);
-    check('the bell points up-right (local rotation is negative)', h.artRotation < 0, true);
-    check('and the body moves right and up, not just up', h.x > x0 && h.y > y0, true);
-    for (let i = 0; i < 60; i++) bd.update(DT);
-    check('it keeps moving along the bell', h.x > x0 && h.y > y0, true);
-    check('the sway is carried in the heading', bd.velocity.get(h.id).swim !== undefined, true);
-    bd.beginExit();
-    check('exit leaves it swimming its own way while the layer fades', h.flee, null);
-
-    // The electric jelly is drawn as the same animal, so the menu moves it the same way.
-    const zcast = [
-      {
-        kind: 'zapper',
-        x: W * 0.5,
-        y: H * 0.3,
-        vx: 0,
-        vy: 0,
-        school: { burstLeft: 0 },
-        swim: { baseHeading: heading, speed: 0.09 },
-      },
-      ...filler(cfg.minAlive - 1),
-    ];
-    const zbd = build(zcast);
-    const zh = zcast[0].h;
-    const zx0 = zh.x;
-    const zy0 = zh.y;
-    zbd.update(DT);
-    check('the electric jelly follows its bell too', zh.x > zx0 && zh.y > zy0, true);
-  }
-
-  // ---------------------------------------------------------------------------------------------
   // The backdrop's turn goes through the same door as the painter's
   // ---------------------------------------------------------------------------------------------
   console.log('\n--- a backdrop turn is an animated turn ---');
@@ -704,9 +652,9 @@ try {
   {
     /**
      * THE DICE SAY YES TO EVERYTHING, and that is the point: a loner that got batched would be nearly invisible in a
-     * probe that rolled the way the game does, because most rolls say no. `0.7` picks the shark out of `SWIMMERS` and
-     * `0.08` the tuna -- and the kind that comes OUT is asserted too, or this would be testing the probe's own
-     * arithmetic about where a kind sits in that list.
+     * probe that rolled the way the game does, because most rolls say no. `0.68` picks the shark out of `SWIMMERS`,
+     * `0.62` the octopus, and `0.09` the tuna -- and the kind that comes OUT is asserted too, or this would be
+     * testing the probe's own arithmetic about where a kind sits in that list.
      */
     const waveOf = (kindRoll) => {
       const bd = new MenuBackdrop();
@@ -717,16 +665,16 @@ try {
       return bd.swimmers.hazards.map((h) => h.kind);
     };
 
-    const shark = waveOf(0.7);
-    check('a roll of 0.7 really does pick a shark', shark[0], 'shark');
+    const shark = waveOf(0.68);
+    check('a roll of 0.68 really does pick a shark', shark[0], 'shark');
     check('and a shark arrives alone however the dice fall', shark.length, 1);
 
-    const octopus = waveOf(0.65);
-    check('a roll of 0.65 picks an octopus', octopus[0], 'octopus');
+    const octopus = waveOf(0.62);
+    check('a roll of 0.62 picks an octopus', octopus[0], 'octopus');
     check('and it arrives alone too', octopus.length, 1);
 
-    const tuna = waveOf(0.08);
-    check('a roll of 0.08 picks a tuna', tuna[0], 'tuna');
+    const tuna = waveOf(0.09);
+    check('a roll of 0.09 picks a tuna', tuna[0], 'tuna');
     check('and a tuna still comes in a team', tuna.length, 2);
 
     /**

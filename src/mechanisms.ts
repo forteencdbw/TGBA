@@ -1752,22 +1752,6 @@ export interface Mechanisms {
       fishChance: number;
       crawlerSpeedScale: number;
       crawlerBandTop: number;
-      /**
-       * The two jellyfish-shaped menu swimmers (`jelly` and `zapper`).
-       *
-       * The bell is the direction: the sprite is rotated to it and the body travels along it at `swimSpeed`
-       * screen-heights per second. `minDegrees`/`maxDegrees` set the spawn angle above horizontal (mirrored on the
-       * right); `wanderDegrees`/`wanderSeconds` sway the bell, so the route curves. `pulse` is one multiplier per
-       * animation frame.
-       */
-      jelly: {
-        swimSpeed: number;
-        minDegrees: number;
-        maxDegrees: number;
-        wanderDegrees: number;
-        wanderSeconds: number;
-        pulse: number[];
-      };
       backCoralCount: number;
       backCoralHalfWidth: number;
       backCoralBottom: number;
@@ -3448,11 +3432,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['fishChance', 'a probability'],
     ['crawlerSpeedScale', 'a speed multiple'],
     ['crawlerBandTop', 'a fraction of the screen height'],
-    ['jelly.swimSpeed', 'screen heights per second along the bell'],
-    ['jelly.minDegrees', 'degrees above horizontal'],
-    ['jelly.maxDegrees', 'degrees above horizontal'],
-    ['jelly.wanderDegrees', 'degrees of bell sway'],
-    ['jelly.wanderSeconds', 'seconds per sway'],
     ['backCoralCount', 'a count of corals'],
     ['backCoralHalfWidth', 'a fraction of the screen width'],
     ['backCoralBottom', 'a fraction of the screen height; negative is below the edge'],
@@ -3473,11 +3452,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     path: 'menu.backdrop.loners',
     check: (v) => Array.isArray(v) && v.every((k) => typeof k === 'string'),
     describe: 'a list of hazard kind names that never arrive in a batch',
-  },
-  {
-    path: 'menu.backdrop.jelly.pulse',
-    check: (v) => Array.isArray(v) && v.length === 4 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0),
-    describe: 'one speed multiplier per jelly-idle frame (four frames)',
   },
   /**
    * The deep-sea lighting, the same way -- except for the three COLOURS, which are out of the loop.
