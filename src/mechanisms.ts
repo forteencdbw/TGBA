@@ -645,6 +645,14 @@ export interface Mechanisms {
       widthRatio: number;
       height: number;
       gap: number;
+      /**
+       * Design pixels between the BOSS BAR SLOT's bottom and the mutation block.
+       *
+       * The block never sits at the resource line's own depth: the boss bar is hidden most of the time, and moving
+       * the mutation meter when a boss appears would make the whole HUD jump. It lives below where that bar goes, so
+       * the two can never overlap.
+       */
+      bossGap: number;
       radius: number;
       trackColour: number;
       trackAlpha: number;
@@ -2748,6 +2756,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'mutation.gauge.widthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
   { path: 'mutation.gauge.height', check: anyNumber, describe: 'design pixels' },
   { path: 'mutation.gauge.gap', check: anyNumber, describe: 'design pixels' },
+  { path: 'mutation.gauge.bossGap', check: anyNumber, describe: 'design pixels below the boss bar slot' },
   { path: 'mutation.gauge.radius', check: anyNumber, describe: 'design pixels' },
   { path: 'mutation.gauge.trackColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
   { path: 'mutation.gauge.trackAlpha', check: anyNumber, describe: 'an opacity' },

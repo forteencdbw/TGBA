@@ -733,9 +733,9 @@ export class Hud {
     this.resourceLabel.scale.set(s);
     this.resourceLabel.x = centreX;
     this.resourceLabel.y = 38 * s;
-    // The mutation meter sits below the whole resource block -- the line AND the gauge's slot -- so it is
-    // in the same place for every type and never jumps when the run switches between them. Its own y is
-    // computed at draw time from the label heights, like the rage gauge's is.
+    // The mutation block sits below the BOSS BAR'S SLOT, not below the resource line: the boss bar is hidden
+    // most of the run, and a meter that moved when a boss appeared would make the whole HUD jump. Its y is
+    // computed at draw time, like the rage gauge's, so the two stay in step with the label's own height.
     this.mutationLabel.scale.set(s);
     this.mutationLabel.x = centreX;
 
@@ -970,9 +970,7 @@ export class Hud {
     this.mutationLabel.text = `突变 ${state.level}`;
 
     const y =
-      this.resourceLabel.y +
-      this.resourceLabel.height +
-      (mech.angry.gauge.gap + mech.angry.gauge.height + cfg.gap) * s;
+      (mech.hud.bossBar.y + mech.hud.bossBar.height + cfg.bossGap) * s;
     this.mutationLabel.y = y;
 
     const w = this.laneWidthPx * cfg.widthRatio;
