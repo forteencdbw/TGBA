@@ -598,12 +598,9 @@ export interface Mechanisms {
     /** How much one pick of each numeric card is worth. The cards' text is content, in `src/mutations.ts`. */
     pool: {
       damagePerPick: number;
-      steerPerPick: number;
-      ascentPerPick: number;
       /** Extra DEFENSE per 「护甲」 pick, and per 「厚甲」 pick. See `src/health.ts` for the formula. */
       defensePerPick: number;
       defenseBigPerPick: number;
-      invulnSecondsPerPick: number;
       ragePerPick: number;
       suctionPerPick: number;
       eatInvulnSecondsPerPick: number;
@@ -2243,7 +2240,6 @@ export interface Mechanisms {
    * is a talent whose cost is hidden somewhere else.
    */
   talents: {
-    soda: { ascentMultiplier: number; steerPenalty: number };
     silt: { startVolume: number; defense: number };
     'fish-fart': { radiusMeters: number; cooldownSeconds: number; baitCount: number };
   };
@@ -2745,9 +2741,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'mutation.resumeInvulnerableSeconds', check: anyNumber, describe: 'seconds' },
   ...[
     'damagePerPick',
-    'steerPerPick',
-    'ascentPerPick',
-    'invulnSecondsPerPick',
     'ragePerPick',
     'suctionPerPick',
     'eatInvulnSecondsPerPick',
@@ -3967,8 +3960,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'skills.burst.durationSeconds', check: anyNumber, describe: 'seconds; 0 means the effect is instant' },
   { path: 'skills.burst.burstRadiusMeters', check: anyNumber, describe: 'metres' },
 
-  { path: 'talents.soda.ascentMultiplier', check: anyNumber, describe: 'an ascent multiplier' },
-  { path: 'talents.soda.steerPenalty', check: anyNumber, describe: 'a fraction of the steering authority' },
   { path: 'talents.silt.startVolume', check: anyNumber, describe: 'a starting volume' },
   { path: 'talents.silt.defense', check: anyNumber, describe: 'defence points' },
   { path: 'talents.fish-fart.radiusMeters', check: anyNumber, describe: 'metres' },

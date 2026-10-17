@@ -153,8 +153,6 @@ export function diagnosticsOf(g: GameSnapshot): {
     talent: {
       id: string;
       name: string;
-      ascentMultiplier: number;
-      steerMultiplier: number;
       startVolume: number;
       defense: number;
     };
@@ -414,8 +412,6 @@ export function diagnosticsOf(g: GameSnapshot): {
       talent: {
         id: g.talentEffects.talent.id,
         name: g.talentEffects.talent.name,
-        ascentMultiplier: g.talentEffects.ascentMultiplier,
-        steerMultiplier: g.talentEffects.steerMultiplier,
         startVolume: g.talentEffects.startVolume,
         defense: g.talentEffects.defense,
       },

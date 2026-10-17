@@ -328,8 +328,6 @@ export class Run {
   picks: string[] = [];
   /** Bullet damage multiplier from stacked 突变 · 子弹伤害 picks. Re-derived, never edited directly. */
   bulletDamageMultiplier = 1;
-  /** Extra hit-invulnerability seconds from stacked 突变 · 受击无敌 picks. */
-  invulnBonusSeconds = 0;
   /** Rage gain multiplier from stacked 突变 · 怒气积攒 picks. Angry bubble only offers the card. */
   rageGainMultiplier = 1;
   /** Suction field width multiplier from stacked 突变 · 吸取范围 picks. Devour bubble only offers the card. */
@@ -517,8 +515,7 @@ export class Run {
     if (this.pickProtected) return;
     this.stats.hits++;
     this.sound('player.hurt', 0.5);
-    // The base window is the config's; the mutation ladder's picks widen it in 0.2s steps.
-    this.invulnerable = tuning.invulnerableSeconds + this.invulnBonusSeconds;
+    this.invulnerable = tuning.invulnerableSeconds;
     /**
      * ONE pool now, for all three routes.
      *
@@ -1592,8 +1589,6 @@ export class Run {
    */
   rollTalent(): void {
     this.talentEffects = resolveTalent(pickTalent());
-    this.player.ascentBonus = this.talentEffects.ascentMultiplier;
-    this.player.steerScale = this.talentEffects.steerMultiplier;
     // Volume is set AFTER `player.reset()` above, which zeroes it back to 1.
     this.player.volume = this.talentEffects.startVolume;
     this.stats.maxVolume = this.talentEffects.startVolume;

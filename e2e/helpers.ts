@@ -150,7 +150,6 @@ export interface GameHandle {
     screenY: number;
     volume: number;
     stageSpeedMultiplier: number;
-    steerScale: number;
   };
   camera: { y: number; viewport: { laneWidthPx: number; visibleDepthMeters: number; width: number; height: number } };
   /** Canvas size in CSS pixels. */
@@ -278,7 +277,6 @@ export async function player(page: Page): Promise<GameHandle['player']> {
       screenY: p.screenY,
       volume: p.volume,
       stageSpeedMultiplier: p.stageSpeedMultiplier,
-      steerScale: p.steerScale,
     };
   });
 }

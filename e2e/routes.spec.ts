@@ -461,11 +461,15 @@ test.describe('routes', () => {
       g.game.levelRef.driftSpeed = 0;
       g.game.debugSetSteadyCruise();
       /**
-       * A neutral talent, because the run's own is ROLLED and fish-fart changes what a contact does: it fires on the
+       * A PINNED talent, because the run's own is ROLLED and fish-fart changes what a contact does: it fires on the
        * hit that would have landed and leaves bait behind, which feeds the swarm the escape was meant to get away
        * from. Measured with it in play, this test's "contact must hurt" came out 2 hits in 10 contacts.
+       *
+       * 汽水泡 used to be the neutral pick and the talent was deleted. 淤泥 is safe for the two things read here:
+       * it changes volume and defence, the case below pins `player.volume` itself, and a contact is COUNTED in
+       * `stats.hits` whatever the defence reduces the damage to.
        */
-      g.game.debugSetTalent('soda');
+      g.game.debugSetTalent('silt');
       const lane = g.game.camera.viewport.laneWidthMeters;
       g.player.x = 0.5;
       g.player.screenY = 0.5;

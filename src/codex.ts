@@ -721,7 +721,6 @@ function talentEntry(id: TalentId): CodexEntry {
 
 const TALENT_NOTES: Partial<Record<TalentId, readonly string[]>> = {
   'fish-fart': ['它是反射不是技能：被打到才触发，所以没法主动用。', '冷却就是它和"护盾"的区别——没有冷却的话，走进鱼群里就永远不会死。'],
-  soda: [`上升 ×${num(mech.talents.soda.ascentMultiplier)}，横向操控 ×${num(mech.talents.soda.steerPenalty)}。`, '更快，也更难控——这是同一个设计里的两个方向，不是一笔好交易。'],
   silt: [`出生体积 ×${num(mech.talents.silt.startVolume, 1)}，受击减免 ${mech.talents.silt.defense} 点。`, '一开始就更结实，但块头大也更容易被优先锁定。'],
 };
 

@@ -88,7 +88,9 @@ const tryEat = (page: Page, kind: 'fish' | 'jelly' | 'trash' | 'crab', volume: n
         };
       }).__GB;
       const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
-      g.game.debugSetTalent('soda');
+      // A PINNED talent: the run's own is rolled. 淤泥 changes volume and defence; the volume is re-pinned every
+      // frame just above, and this probe asks only whether a contact REGISTERED, not how hard it landed.
+      g.game.debugSetTalent('silt');
       g.game.hazardsRef.hazards.length = 0;
       let waited = 0;
       while (g.game.diagnostics.invulnerable > 0 && waited < 120) {

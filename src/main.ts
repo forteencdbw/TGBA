@@ -67,8 +67,8 @@ import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius } from
 // The HUD's signposts come from the level, so a new level states its own pacing instead of
 // inheriting another level's depths. See `src/levels.ts`.
 
-/** The three ways a bubble can be born (design round 5). Effects land in D4; here it is flavour. */
-const SEEDS = ['鱼屁泡', '汽水泡', '深海淤泥泡'] as const;
+/** The ways a bubble can be born, one name per talent (design round 5). Effects land in D4; here it is flavour. */
+const SEEDS = ['鱼屁泡', '深海淤泥泡'] as const;
 
 /**
  * The phases that are the main menu, or a page opened from it.
@@ -1563,8 +1563,6 @@ class Game {
     const talent = TALENTS.find((t) => t.id === id);
     if (!talent) throw new Error(`unknown talent: ${id}`);
     this.run.talentEffects = resolveTalent(talent);
-    this.run.player.ascentBonus = this.run.talentEffects.ascentMultiplier;
-    this.run.player.steerScale = this.run.talentEffects.steerMultiplier;
     this.run.player.volume = this.run.talentEffects.startVolume;
     this.talentLabel = talent.name;
     return talent.id;

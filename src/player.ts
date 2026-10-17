@@ -81,8 +81,6 @@ export class Player {
     this.slowFactor = 1;
     this.impulseVy = 0;
     this.impulseVx = 0;
-    this.ascentBonus = 1;
-    this.steerScale = 1;
     this.skillRemaining = 0;
     this.skillId = null;
     this.skillAscentBonus = 1;
@@ -161,10 +159,6 @@ export class Player {
    */
   impulseVy = 0;
   impulseVx = 0;
-
-  /** Talents and skills, as plain multipliers. */
-  ascentBonus = 1;
-  steerScale = 1;
 
   /**
    * Movement multiplier from the current growth stage, 0..1.
@@ -279,8 +273,7 @@ export class Player {
      * scaled without breaking "the bubble moves exactly as far as the finger". `movement.drag.penaltiesApply` puts
      * the same multipliers on it for anyone who would rather have "bigger is slower" than the 1:1 promise.
      */
-    const steer =
-      Math.max(0, this.steerScale) * Math.max(0, this.stageSpeedMultiplier) * Math.max(0, this.suctionMoveFactor);
+    const steer = Math.max(0, this.stageSpeedMultiplier) * Math.max(0, this.suctionMoveFactor);
     this.debugSteerMultiplier = steer;
 
     /**

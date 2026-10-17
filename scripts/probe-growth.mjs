@@ -41,7 +41,7 @@ try {
     const run = new Run();
     const view = growthView(run);
     check('empty · no card groups at all', view.groups, []);
-    check('empty · seven numbers, in order', view.stats.map((s) => s.label), ['血上限', '枪管', '射速', '伤害', '护甲', '转向', '升速']);
+    check('empty · five numbers, in order', view.stats.map((s) => s.label), ['血上限', '枪管', '射速', '伤害', '护甲']);
     check('empty · the gun is one row of the maximum', stat(view, '枪管'), `1 / ${mech.bullets.maxStreams} 排`);
     check('empty · damage is the base multiplier', stat(view, '伤害'), '×1');
     check('empty · health ceiling is the run\'s own', stat(view, '血上限'), String(Math.round(run.healthMax * 100) / 100));

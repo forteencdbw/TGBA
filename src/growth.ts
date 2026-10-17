@@ -13,7 +13,7 @@ import { mutationCard } from './mutations';
  * ---------------------------------------------------------------------------------------------
  * The cards come from `run.picks`, the log `pickMutationCard` writes, and each one's name and blurb from the card itself
  * (`mutationCard`) -- the very text the three-choice panel showed, so the two cannot disagree. The numbers are read from the
- * fields the simulation reads (`healthMax`, `defense`, `bulletDamageMultiplier`, `player.steerScale`, ...) and not
+ * fields the simulation reads (`healthMax`, `defense`, `bulletDamageMultiplier`, ...) and not
  * recomputed here, so they include the talent's share too: this is what the player IS now, not what the cards alone gave.
  */
 export interface GrowthStat {
@@ -56,8 +56,6 @@ export function growthView(run: Run): GrowthView {
     { label: '射速', value: `${plain(tiers[tier - 1] ?? 0)} 发/秒 · ${tier}/${tiers.length} 档` },
     { label: '伤害', value: `×${plain(run.bulletDamageMultiplier)}` },
     { label: '护甲', value: plain(run.defense) },
-    { label: '转向', value: `×${plain(run.player.steerScale)}` },
-    { label: '升速', value: `×${plain(run.player.ascentBonus)}` },
   ];
 
   // Group the log by card, keeping the order each card was FIRST taken: a card taken three times is one line, where it

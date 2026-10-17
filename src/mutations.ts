@@ -86,26 +86,6 @@ const POOL: readonly Mutation[] = [
     },
   },
   {
-    id: 'steer',
-    name: '转向 +10%',
-    blurb: '横向操控更灵敏，可叠加',
-    routes: 'all',
-    available: () => true,
-    apply: (run) => {
-      run.mutations.steer = (run.mutations.steer ?? 0) + 1;
-    },
-  },
-  {
-    id: 'ascent',
-    name: '升速 +10%',
-    blurb: '向上游得更快，可叠加',
-    routes: 'all',
-    available: () => true,
-    apply: (run) => {
-      run.mutations.ascent = (run.mutations.ascent ?? 0) + 1;
-    },
-  },
-  {
     id: 'armor',
     name: `护甲 +${mech.mutation.pool.defensePerPick}`,
     blurb: `每次受击少掉 ${mech.mutation.pool.defensePerPick} 点，可叠加`,
@@ -170,16 +150,6 @@ const POOL: readonly Mutation[] = [
       // Both numbers, so the new ceiling arrives full: see `applyMutationPassives`.
       run.health += mech.health.maxPerPick;
       run.healthMax = healthMaxFor((run.mutations['maxHp'] ?? 0) + 1);
-    },
-  },
-  {
-    id: 'invuln',
-    name: '受击无敌 +0.2 秒',
-    blurb: '挨打后的闪烁更久，可叠加',
-    routes: 'all',
-    available: () => true,
-    apply: (run) => {
-      run.mutations.invuln = (run.mutations.invuln ?? 0) + 1;
     },
   },
   {
@@ -501,11 +471,16 @@ export function rollMutationChoices(run: Run, count = 3): readonly Mutation[] {
  * ---------------------------------------------------------------------------------------------
  * WHY THE PASSIVES ARE RE-DERIVED RATHER THAN ACCUMULATED
  * ---------------------------------------------------------------------------------------------
- * `startRun` re-rolls the TALENT on every level transition, and the talent rewrites the player's base
- * multipliers (`steerScale`, `ascentBonus`, `shrinkResistance`). A mutation that had multiplied those
- * fields in place would be silently wiped by the re-roll -- so the counts are the one source of truth,
- * and this folds them back in on top of whatever base the talent just set. Idempotent by construction,
- * which is what makes calling it after every `rollTalent` safe.
+ * `startRun` re-rolls the TALENT on every level transition, and a talent rewrites the run's base numbers
+ * (`defense` below, and `player.volume` in `rollTalent`). A mutation that had multiplied those fields in
+ * place would be silently wiped by the re-roll -- so the counts are the one source of truth, and this
+ * folds them back in on top of whatever base the talent just set. Idempotent by construction, which is
+ * what makes calling it after every `rollTalent` safe.
+ *
+ * It used to fold two more, from the 转向 and 升速 cards: `player.steerScale` and `player.ascentBonus`.
+ * Both cards, both fields and the `soda` talent that fed them are gone. `steerScale` reached only the
+ * keyboard's speed product -- the drag path is a 1:1 promise with the finger and scales nothing -- and
+ * `ascentBonus` was written by three callers and read by none, its one reader being the pause panel.
  *
  * The run-level fields it writes are nobody else's to reset: a carry keeps them, a death zeroes the
  * counts in `startRun` and this restores the defaults.
@@ -514,7 +489,6 @@ export function applyMutationPassives(run: Run): void {
   const pool = mech.mutation.pool;
   const count = (id: string) => run.mutations[id] ?? 0;
   run.bulletDamageMultiplier = 1 + pool.damagePerPick * count('damage');
-  run.invulnBonusSeconds = pool.invulnSecondsPerPick * count('invuln');
   run.rageGainMultiplier = 1 + pool.ragePerPick * count('rage');
   run.suctionBonus = 1 + pool.suctionPerPick * count('suction');
   run.eatInvulnBonusSeconds = pool.eatInvulnSecondsPerPick * count('eatInvuln');
@@ -570,8 +544,6 @@ export function applyMutationPassives(run: Run): void {
   // the size one is applied to each round's own growth at the moment it lands (see `damageOf`).
   run.bulletSizeDamageRate = pool.sizeDamagePerPick * count('sizeDamage');
   run.bulletSpeedDamageRate = pool.speedDamagePerPick * count('speedDamage');
-  run.player.steerScale = run.talentEffects.steerMultiplier * (1 + pool.steerPerPick) ** count('steer');
-  run.player.ascentBonus = run.talentEffects.ascentMultiplier * (1 + pool.ascentPerPick) ** count('ascent');
   /**
    * Defence: the talent's flat amount plus both cards' worth, with NO ceiling.
    *

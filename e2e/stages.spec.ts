@@ -86,14 +86,13 @@ test.describe('growth stages', () => {
     /**
      * STEADY-STATE VELOCITY is the exact form of the claim, so it is asserted tightly.
      *
-     * `vx` while holding a key is the keyboard speed times the talent's steering scale times this stage's
-     * multiplier, and the first two are readable -- so the expected value is computed from what the player
-     * actually has rather than from a hardcoded constant. An earlier version of this check baked in one run's
-     * talent penalty and failed on the next run, where the talent differed.
+     * `vx` while holding a key is the keyboard speed times this stage's multiplier. A talent used to be a third
+     * factor here (`steerScale`), and reading it rather than baking it in is what kept this check honest; the
+     * factor is gone with the field, which reached the keyboard path and nothing else.
      */
     for (const r of readings) {
-      const expected = 0.5 * (await player(page)).steerScale * config.stages.speedMultiplier[r.stage - 1]!;
-      expect(r.steadyV, `stage ${r.stage} velocity should match keyboardSpeed x steerScale x multiplier`).toBeCloseTo(expected, 2);
+      const expected = 0.5 * config.stages.speedMultiplier[r.stage - 1]!;
+      expect(r.steadyV, `stage ${r.stage} velocity should match keyboardSpeed x multiplier`).toBeCloseTo(expected, 2);
     }
 
     /**

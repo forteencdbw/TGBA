@@ -20,7 +20,7 @@
 import { mech } from './mechanisms';
 import type { HazardKind } from './hazards';
 
-export type TalentId = 'fish-fart' | 'soda' | 'silt';
+export type TalentId = 'fish-fart' | 'silt';
 
 export interface Talent {
   id: TalentId;
@@ -43,13 +43,6 @@ export const TALENTS: readonly Talent[] = [
     downside: '屁本身是气泡，会喂鱼让它们分裂',
   },
   {
-    id: 'soda',
-    name: '汽水泡',
-    blurb: '上升更快、横向更飘——更快，也更难控',
-    upside: '上升速度 +25%',
-    downside: '横向惯性更大，尾迹气泡也在喂鱼',
-  },
-  {
     id: 'silt',
     name: '深海淤泥泡',
     blurb: '出生就更结实，但块头大也更容易被盯上',
@@ -69,10 +62,6 @@ export const TALENTS: readonly Talent[] = [
 /** The talent's effect on the player, resolved once at birth. */
 export interface TalentEffects {
   talent: Talent;
-  /** Multiplies the ascent speed. */
-  ascentMultiplier: number;
-  /** Multiplies the lateral steering authority. */
-  steerMultiplier: number;
   /** Volume the run starts at. */
   startVolume: number;
   /** Fraction of a hit's shrink that is ignored, 0..1. */
@@ -81,19 +70,9 @@ export interface TalentEffects {
 
 export function resolveTalent(talent: Talent): TalentEffects {
   switch (talent.id) {
-    case 'soda':
-      return {
-        talent,
-        ascentMultiplier: mech.talents.soda.ascentMultiplier,
-        steerMultiplier: mech.talents.soda.steerPenalty,
-        startVolume: 1,
-        defense: 0,
-      };
     case 'silt':
       return {
         talent,
-        ascentMultiplier: 1,
-        steerMultiplier: 1,
         startVolume: mech.talents.silt.startVolume,
         defense: mech.talents.silt.defense,
       };
@@ -101,7 +80,7 @@ export function resolveTalent(talent: Talent): TalentEffects {
     default:
       // The fart talent changes nothing about the player's body: its whole effect is the reaction on
       // contact, which the game applies.
-      return { talent, ascentMultiplier: 1, steerMultiplier: 1, startVolume: 1, defense: 0 };
+      return { talent, startVolume: 1, defense: 0 };
   }
 }
 

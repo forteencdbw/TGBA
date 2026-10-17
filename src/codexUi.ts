@@ -866,15 +866,6 @@ export class CodexUi {
         g.circle(cx + r * 0.85, cy + r * 0.6, r * 0.28).fill({ color: colour, alpha: 0.85 });
         g.circle(cx + r * 1.15, cy - r * 0.4, r * 0.2).fill({ color: colour, alpha: 0.85 });
         break;
-      case 'soda':
-        for (let i = 0; i < 3; i++) {
-          g.circle(cx - r * 0.7 + i * r * 0.7, cy + r * (0.4 - i * 0.35), r * (0.32 - i * 0.05)).stroke({
-            color: colour,
-            alpha: 0.9,
-            width: stroke * 0.6,
-          });
-        }
-        break;
       case 'silt':
         g.circle(cx, cy, r).fill({ color: colour, alpha: 0.45 });
         g.circle(cx, cy, r).stroke({ color: colour, alpha: 0.9, width: stroke });
