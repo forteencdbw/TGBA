@@ -118,11 +118,18 @@ const CRAWLERS: readonly HazardKind[] = ['urchin', 'starfish'];
  */
 const darts = (kind: HazardKind): boolean => kind === 'fish';
 /**
- * A jellyfish has no left/right to turn to: it climbs along its own head/foot axis, so a random turn would reverse its
- * climb instead of steering it. Excluded here rather than special-cased in the velocity map so the same predicate
- * governs the decision and the motion.
+ * The two jellyfish-shaped swimmers: `jelly` and its electric relative `zapper`.
+ *
+ * Both art pictures are a bell above trailing tentacles, so both should travel along their head/foot axis. The menu
+ * is decorative, so this is a LOOK rule here; the zapper's gameplay motion (drifting sideways with a discharge) is
+ * untouched, because there it is an enemy rather than a jellyfish.
  */
-const turns = (kind: HazardKind): boolean => !CRAWLERS.includes(kind) && kind !== 'jelly';
+const climbs = (kind: HazardKind): boolean => kind === 'jelly' || kind === 'zapper';
+/**
+ * A climbing jelly has no left/right to turn to: a random turn would reverse its climb instead of steering it.
+ * Excluded here rather than special-cased in the velocity map so the same predicate governs the decision and motion.
+ */
+const turns = (kind: HazardKind): boolean => !CRAWLERS.includes(kind) && !climbs(kind);
 
 /**
  * A group of creatures that arrived together AND travel as one.
@@ -228,13 +235,13 @@ export class MenuBackdrop {
       vy: number;
       school: School;
       /**
-       * A jellyfish's own motion: the climb speed in screen heights/second, and how much of its entry is left.
+       * A climbing jellyfish's own motion: the climb speed in screen heights/second, and how much of its entry is left.
        *
        * Absent on every other kind, which is what keeps the horizontal crossing logic untouched. The entry half is a
        * decaying horizontal component: the jelly arrives diagonally from the side, then stops moving sideways and
        * climbs, so it leaves through the top rather than crossing to the other wall.
        */
-      jelly?: { climb: number; entryLeft: number };
+      vertical?: { climb: number; entryLeft: number };
     }
   >();
 
@@ -557,7 +564,7 @@ export class MenuBackdrop {
        * supposed to flip.
        */
       // A climbing jelly leaves upward, the direction it was already going. Everything else turns to the near side.
-      h.flee = this.velocity.get(h.id)?.jelly ? 'up' : h.x < this.width / 2 ? 'right' : 'left';
+      h.flee = this.velocity.get(h.id)?.vertical ? 'up' : h.x < this.width / 2 ? 'right' : 'left';
       h.facingRest = 0;
     }
   }
@@ -703,23 +710,24 @@ export class MenuBackdrop {
         // A climbing jelly leaves the way it was going; everything else goes to a side.
         if (h.flee === 'up') h.y += step;
         else h.x += h.flee === 'right' ? step : -step;
-      } else if (v.jelly) {
+      } else if (v.vertical) {
         /**
-         * The jelly: a decaying horizontal entry, then a climb whose speed is the bell's frame.
+         * A jelly: a decaying horizontal entry, then a climb whose speed is the bell's frame.
          *
          * The horizontal part fades over `entrySeconds`, so it arrives at an angle and settles into a vertical path
          * instead of crossing the screen. The pulse is looked up by the SAME frame the picture is on, so the surge
-         * lands on the contraction; `boost` is 1 here because jellies never dart.
+         * lands on the contraction; the zapper has its own animation, so it gets its own frame count. `boost` is 1
+         * here because neither jelly darts.
          */
-        const animation = mech.animations['jelly-idle'];
+        const animation = mech.animations[h.kind === 'zapper' ? '电击水母-move' : 'jelly-idle'];
         const frame = animation ? animationFrameAt(animation, h.phase) : 0;
         const pulse = cfg.jelly.pulse[frame] ?? 1;
-        if (v.jelly.entryLeft > 0) {
-          const left = v.jelly.entryLeft / Math.max(0.01, cfg.jelly.entrySeconds);
+        if (v.vertical.entryLeft > 0) {
+          const left = v.vertical.entryLeft / Math.max(0.01, cfg.jelly.entrySeconds);
           h.x += v.vx * left * dt * this.width;
-          v.jelly.entryLeft = Math.max(0, v.jelly.entryLeft - dt);
+          v.vertical.entryLeft = Math.max(0, v.vertical.entryLeft - dt);
         }
-        h.y += v.jelly.climb * pulse * dt * this.height;
+        h.y += v.vertical.climb * pulse * dt * this.height;
       } else {
         h.x += v.vx * boost * dt * this.width;
         h.y += v.vy * boost * dt * this.height;
@@ -876,11 +884,11 @@ export class MenuBackdrop {
     /** Whether this arrival crawls rather than swims -- see `CRAWLERS`. */
     const crawls = CRAWLERS.includes(kind);
     /**
-     * The jelly is the one vertical swimmer: it enters from the side at `diagonalRatio` (vertical pixels per
-     * horizontal pixel), then climbs. `entryVx` is that entry in screen-widths/second, derived from the climb so the
-     * configured angle stays the angle even when the window changes.
+     * The two jellyfish-shaped swimmers are the vertical ones: they enter from the side at `diagonalRatio` (vertical
+     * pixels per horizontal pixel), then climb. `entryVx` is that entry in screen-widths/second, derived from the
+     * climb so the configured angle stays the angle even when the window changes.
      */
-    const isJelly = kind === 'jelly';
+    const isVertical = climbs(kind);
     const jelly = cfg.jelly;
     const climb = jelly.climbSpeed;
     const entryVx = (climb * this.height) / Math.max(1, this.width * jelly.diagonalRatio);
@@ -939,7 +947,7 @@ export class MenuBackdrop {
       // decisions; the jelly simply does not use the result.
       const jitter = 0.86 + Math.random() * 0.28;
       this.velocity.set(h.id, {
-        vx: isJelly ? entryVx * dir : speed * jitter * dir,
+        vx: isVertical ? entryVx * dir : speed * jitter * dir,
         /**
          * A crawler keeps the height it arrived at.
          *
@@ -949,7 +957,7 @@ export class MenuBackdrop {
          */
         vy: (Math.random() - 0.5) * (crawls ? 0 : cfg.driftRatio) * speed,
         school: shared ?? newSchool(),
-        ...(isJelly ? { jelly: { climb, entryLeft: Math.max(0, jelly.entrySeconds) } } : {}),
+        ...(isVertical ? { vertical: { climb, entryLeft: Math.max(0, jelly.entrySeconds) } } : {}),
       });
       h.heading = dir;
       this.faceTravel(h, dir);

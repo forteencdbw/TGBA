@@ -159,7 +159,7 @@ try {
     bd.sinceSpawn = -1e9;
     for (const c of cast) {
       const h = bd.swimmers.spawnAt(c.kind ?? 'fish', c.x, c.y, { deterministic: true, variety: 0 });
-      bd.velocity.set(h.id, { vx: c.vx, vy: c.vy, school: c.school, ...(c.jelly ? { jelly: c.jelly } : {}) });
+      bd.velocity.set(h.id, { vx: c.vx, vy: c.vy, school: c.school, ...(c.vertical ? { vertical: c.vertical } : {}) });
       bd.swimmers.hazards.push(h);
       c.h = h;
     }
@@ -430,7 +430,7 @@ try {
         vx: 0.14,
         vy: 0,
         school: { burstLeft: 0 },
-        jelly: { climb: 0.06, entryLeft: 1 },
+        vertical: { climb: 0.06, entryLeft: 1 },
       },
       ...filler(cfg.minAlive - 1),
     ];
@@ -440,12 +440,33 @@ try {
     for (let i = 0; i < 120; i++) bd.update(DT);
     check('a jelly climbs', h.y > y0, true);
     check('and stays inside the lane once its entry is spent', h.x > 0 && h.x < W, true);
-    check('the entry timer runs out', bd.velocity.get(h.id).jelly.entryLeft <= 1e-9, true);
+    check('the entry timer runs out', bd.velocity.get(h.id).vertical.entryLeft <= 1e-9, true);
     const y1 = h.y;
     bd.update(1);
     check('and it keeps climbing', h.y > y1, true);
     bd.beginExit();
     check('and leaves through the top, not a side', h.flee, 'up');
+
+    // The electric jelly is drawn as the same animal, so the menu moves it the same way.
+    const zcast = [
+      {
+        kind: 'zapper',
+        x: W * 0.5,
+        y: H * 0.3,
+        vx: 0.14,
+        vy: 0,
+        school: { burstLeft: 0 },
+        vertical: { climb: 0.06, entryLeft: 1 },
+      },
+      ...filler(cfg.minAlive - 1),
+    ];
+    const zbd = build(zcast);
+    const zh = zcast[0].h;
+    const zy0 = zh.y;
+    for (let i = 0; i < 60; i++) zbd.update(DT);
+    check('the electric jelly climbs too', zh.y > zy0, true);
+    zbd.beginExit();
+    check('and leaves through the top as well', zh.flee, 'up');
   }
 
   // ---------------------------------------------------------------------------------------------
