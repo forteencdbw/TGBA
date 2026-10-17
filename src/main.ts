@@ -2,7 +2,7 @@ import { Application, FillGradient, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, rgba, waterColourForTest } from './background';
 import { tuning } from './config';
 import { DEBUG_LEVEL, LEVEL, LEVELS, START_LEVEL_ID, TIMELINE, installSpawnBlocks, isDebugLevel, levelIndex, selectLevel, type Level } from './levels';
-import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, isBossKind, paintHazards, setReducedFlash, ventErupting, warmAnimations, type HazardKind } from './hazards';
+import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, isBossKind, paintFallcrateWarning, paintHazards, setReducedFlash, ventErupting, warmAnimations, type HazardKind } from './hazards';
 import { hitSoundOf, leaveSoundOf } from './soundIds';
 import { paintHitboxes, setDebugHitboxes, isDebugHitboxes } from './hitboxes';
 import { paintBullets, radiusOf } from './bullets';
@@ -160,6 +160,14 @@ class Game {
    * a readout the overlay can cover is a readout that stops working exactly when the numbers get busy.
    */
   private readonly hitboxOverlay = new Graphics();
+  /**
+   * The falling crate's warning strips, drawn in SCREEN space ABOVE the HUD.
+   *
+   * The strips sit at the top edge of the play area, which is also where the BOSS health bar sits; in the world layer
+   * that bar covered them during the one fight that summons crates. This layer is added after the HUD so the warning
+   * always wins for its two seconds.
+   */
+  private readonly crateWarnings = new Graphics();
   /**
    * Creatures that are LEAVING, on their own layer so the whole pass can be dimmed at once.
    *
@@ -360,7 +368,7 @@ class Game {
     this.brokenVignette.visible = false;
     // The score popups sit over the water and under the flash and the HUD: they belong to the event they mark, not
     // to the interface, but they are readouts and nothing the player steers by may be drawn over them.
-    this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.grazePopups.root, this.callouts.root, this.brokenVignette, this.brokenGlow, this.brokenCrack, this.flash, this.hud.root, this.touch.root);
+    this.app.stage.addChild(this.scene.root, this.popups.root, this.damagePopups.root, this.grazePopups.root, this.callouts.root, this.brokenVignette, this.brokenGlow, this.brokenCrack, this.flash, this.hud.root, this.crateWarnings, this.touch.root);
 
     /**
      * The UI goes on top of everything, and the ORDER of the last three is what makes the menu's own page reachable.
@@ -3433,6 +3441,7 @@ private updateBoss(): void {
       });
       this.touch.update();
       this.drawPickups();
+      this.drawCrateWarnings();
       this.drawBubble();
     }
 
@@ -3514,6 +3523,34 @@ private updateBoss(): void {
         .map((p) => p.name);
     }
     return this.bubblePictureOrder;
+  }
+
+  /**
+   * The falling crates' warning strips, in screen pixels, above the HUD (see `crateWarnings`).
+   *
+   * The hazard keeps its world position; this is only the projection. The strip's width is the lane's third, its
+   * height and all colours come from `hazards.fallcrate`, and the flash uses the crate's own clock so two crates
+   * spawned together pulse in step.
+   */
+  private drawCrateWarnings(): void {
+    const g = this.crateWarnings;
+    g.clear();
+    const cfg = mech.hazards.fallcrate;
+    const viewport = this.camera.viewport;
+    const laneWidth = viewport.laneWidthMeters;
+    const width = (laneWidth / 3) * viewport.scale;
+    const height = laneWidth * cfg.warnStripHeightRatio * viewport.scale;
+    for (const h of this.run.hazards.hazards) {
+      if (h.kind !== 'fallcrate' || h.phase >= cfg.warnSeconds) continue;
+      paintFallcrateWarning(
+        g,
+        this.camera.toScreenX(h.x),
+        this.camera.toScreenY(h.y),
+        width,
+        height,
+        h.phase,
+      );
+    }
   }
 
   /** Collectables and decoration, drawn in world metres. */

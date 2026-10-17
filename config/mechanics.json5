@@ -3297,7 +3297,8 @@
         "hitFlashColour": 0xffffff,
         "hitFlashStrength": 1,
         "knockbackScale": 0.5,
-        "attackEverySeconds": 4.6,
+        // 技能组（见下面的 `bossSkills`）比挥螯更频繁：2.3 秒间隔 + 约 0.73 秒攻击动画 ≈ 每 3 秒一招。
+        "attackEverySeconds": 2.3,
         "attackSprayFrame": 6
       },
       // 第 3 关 —— 冠冕水母。

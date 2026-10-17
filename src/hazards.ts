@@ -4908,23 +4908,32 @@ function drawInk(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed
  * lanes is about to be dangerous", and a crate-sized mark would answer a narrower question than the one being asked.
  * The exclamation is inside the strip so it survives the strip fading in and out; every colour, the flash rate and
  * the height are config.
+ *
+ * SCREEN-SPACE NUMBERS, not world metres: this is called from `main`'s overlay above the HUD. The crate warnings used
+ * to be drawn in the world layer, where the BOSS's health bar covered them at the top of the screen during the only
+ * fight that uses them.
  */
-function paintFallcrateWarning(g: Graphics, h: Hazard, laneWidth: number): void {
+export function paintFallcrateWarning(
+  g: Graphics,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  phase: number,
+): void {
   const cfg = mech.hazards.fallcrate;
-  const width = laneWidth / 3;
-  const height = laneWidth * cfg.warnStripHeightRatio;
   // 0.5 + 0.5 sin: the full range on both sides, so the strip is visibly pulsing rather than merely present.
-  const wave = 0.5 + 0.5 * Math.sin(h.phase * Math.PI * 2 * cfg.warnFlashHz);
+  const wave = 0.5 + 0.5 * Math.sin(phase * Math.PI * 2 * cfg.warnFlashHz);
   const alpha = cfg.warnAlphaMin + (cfg.warnAlphaMax - cfg.warnAlphaMin) * wave;
-  const left = h.x - width / 2;
+  const left = x - width / 2;
   // The strip hangs DOWN from the top edge at the hazard's y, which is the visible top of the screen.
-  const top = h.y - height;
+  const top = y - height;
   g.rect(left, top, width, height).fill({ color: cfg.warnColour, alpha });
   const barW = height * 0.16;
   const barH = height * 0.46;
   const barTop = top + height * 0.14;
-  g.rect(h.x - barW / 2, barTop, barW, barH).fill({ color: cfg.warnExclamationColour, alpha });
-  g.circle(h.x, barTop + barH + height * 0.14, barW * 0.6).fill({ color: cfg.warnExclamationColour, alpha });
+  g.rect(x - barW / 2, barTop, barW, barH).fill({ color: cfg.warnExclamationColour, alpha });
+  g.circle(x, barTop + barH + height * 0.14, barW * 0.6).fill({ color: cfg.warnExclamationColour, alpha });
   return;
 }
 
@@ -5573,16 +5582,15 @@ export function paintHazards(
     if (h.kind === 'vent' && paintVentArt(g, h, laneWidth)) continue;
 
     /**
-     * THE FALLING CRATE'S WARNING, and no crate yet.
+     * THE FALLING CRATE'S WARNING IS DRAWN IN `main`, ABOVE THE HUD.
      *
-     * Drawn before the art branch because it is not the body: the crate does not exist on the glass until the warning
-     * has run. The strip spans the whole third of the lane the crate will fall through, which is the unit the player
-     * has to read ("which column is dangerous"), while the crate itself keeps its real size.
+     * The crate has no body until the warning ends, so this pass hides any sprite this id holds and skips the body.
+     * The strip itself is a screen-space overlay because the world layer sits under the HUD, and the BOSS's health
+     * bar is exactly at the top edge where these strips appear.
      */
     if (h.kind === 'fallcrate' && h.phase < mech.hazards.fallcrate.warnSeconds) {
       const stale = ART_SPRITES.get(h.id);
       if (stale) stale.visible = false;
-      paintFallcrateWarning(g, h, laneWidth);
       continue;
     }
 
