@@ -1496,10 +1496,16 @@ export interface Mechanisms {
    *
    * Judged by damage rather than by weapon, so a future high-damage weapon crits without any code change, and so the
    * rule reads as "how hard did that land" rather than as a list of kinds. A critical hit rings the body and nudges
-   * the screen, and how far past the threshold it landed sets the strength of both.
+   * the screen.
    */
   hitFeedback: {
-    /** Damage at or above this is a critical: the body is ringed and the screen is nudged, scaled by `damage / this`. */
+    /**
+     * Damage at or above this is a critical.
+     *
+     * This is BOTH the threshold and the denominator of the strength, so `damage / critDamage` is at least 1 for
+     * anything that qualifies, the clamp to 1 absorbs all of it, and every critical is drawn at full strength. A
+     * separate denominator would be needed for a bigger hit to read as a bigger one; see the config note.
+     */
     critDamage: number;
     critOutlineColour: number;
     critOutlineAlpha: number;

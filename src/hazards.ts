@@ -2165,7 +2165,11 @@ export class HazardField {
      *
      * There is no lower tier below this one. There used to be -- a 重击 at half the threshold, drawing the same two
      * marks at a lower strength -- and it was removed because two thresholds drawing the same picture is one mark
-     * with two names, while `strength` was already saying how hard it landed.
+     * with two names.
+     *
+     * `strength` survives the merge but is now pinned at 1: the threshold and the denominator are the same config
+     * value, so anything that qualifies divides to at least 1 and the clamp flattens the rest. It is kept because it
+     * is the hook a separate denominator would plug into, and until then a critical is full strength or silent.
      */
     if (damage >= mech.hitFeedback.critDamage) {
       const strength = Math.min(1, damage / Math.max(0.01, mech.hitFeedback.critDamage));
@@ -4095,47 +4099,6 @@ export function lureTip(
 /** Test hook: the art sprite for a creature, so a probe can check what is on it. */
 export function hazardArtSpriteForTest(id: number): Sprite | null {
   return ART_SPRITES.get(id) ?? null;
-}
-
-/**
- * Test hook: where every creature's hit feedback is right now, as the painter would draw it.
- *
- * The flash is a curve over 60ms inside a filter matrix, so on screen it is a flicker that a screenshot cannot describe and
- * a human cannot time. This reports the numbers the painter computes -- the intensity the filter was built with, and whether
- * a new hit would be allowed to restart it -- so "it rises in 15ms, peaks at a quarter, and cannot restrobe" is a
- * measurement rather than an impression. `reduced` reports the accessibility switch, which is the one thing here that is a
- * setting rather than a state.
- */
-export function hazardHitFeedbackProbe(field: HazardField): {
-  reduced: boolean;
-  peak: number;
-  seconds: number;
-  cooldownSeconds: number;
-  feedback: {
-    id: number;
-    kind: string;
-    flash: number;
-    outline: number;
-    restartable: boolean;
-    onSprite: number;
-  }[];
-} {
-  const flashPeak = mech.hitFlash.peakIntensity;
-  const feedback = field.hazards.map((h) => {
-    const art = mech.hazardArt[h.kind];
-    const peak = flashPeak * (art?.spriteFlashScale ?? 1);
-    const since = h.flashStarted;
-    return {
-      id: h.id,
-      kind: h.kind,
-      // The same two calls the painter makes, so a probe and the screen cannot disagree.
-      flash: since === undefined ? 0 : flashIntensity(h.phase - since, peak),
-      outline: critOutlineIntensity(h, h.phase),
-      restartable: mayFlash(h, h.phase),
-      onSprite: art ? 1 : 0,
-    };
-  });
-  return { reduced: REDUCED_FLASH, peak: flashPeak, seconds: mech.hitFlash.seconds, cooldownSeconds: mech.hitFlash.cooldownSeconds, feedback };
 }
 
 /**

@@ -170,7 +170,7 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
     tagline: '会放尖刺的硬壳：打得跑，但要花弹药',
     notes: [
       '它现在会**朝你发射尖刺**——比其它敌人的子弹都快，所以它的威胁是"远处也得躲"，不是"别碰"。',
-      '血量给到 15：这是全游戏最厚的一只，打跑它的代价是时间，而时间是这局里最贵的东西。',
+      '全游戏最厚的一只，打跑它的代价是时间，而时间是这局里最贵的东西。',
       '吃下去就一直放血直到它离开：它的账单按时间算，所以带着它压缩是最糟的选择（压缩期间受伤翻倍）。',
       '质量给得比水母还重，弹药也硬——否则没有人会有理由碰它。',
     ],
@@ -372,9 +372,17 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
        */
       {
         label: '打跑',
+        /**
+         * DERIVED from `bullets.damage`, which is the whole reason this is a computed string rather than prose.
+         *
+         * The number of rounds is not a property of the creature: it is the creature's hit points divided by whatever
+         * the gun currently does, so the same fish is a different number of rounds to a player with damage cards. What
+         * this card can honestly state is the count at the BASE gun, and dividing is what keeps that true when either
+         * side of the division moves -- which both of them just did, by 5, in opposite directions.
+         */
         value:
           (mech.hazards.health[kind] ?? 0) > 0
-            ? `${mech.hazards.health[kind]} 发小泡泡（打空就跑，不会死）`
+            ? `${Math.ceil((mech.hazards.health[kind] ?? 0) / mech.bullets.damage)} 发小泡泡（按基础伤害算，打空就跑，不会死）`
             : '打不跑：子弹直接穿过去',
       },
       ...(threat.length ? [{ label: '攻击方式', value: threat.join('；') }] : []),

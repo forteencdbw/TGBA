@@ -229,7 +229,7 @@ try {
     check('多存一层 · 一张 +1', derived('plateMax', 1).armourMax, armour.max + 1);
     check('多存一层 · 封顶', derived('plateMax', 40).armourMax, pool.plateMaxCap);
     check('破甲更深 · 加法不是乘法', round(derived('deeperBreak', 2).armourVulnerableMultiplier), round(armour.vulnerableMultiplier + pool.breakPerPick * 2));
-    check('灼烧更烈 · 加法', round(derived('hotBurn', 3).auraDamagePerTick), round(aura.damagePerTick + pool.burnPerPick * 3));
+    check('灼烧更烈 · 乘法', round(derived('hotBurn', 3).auraDamagePerTick), round(aura.damagePerTick * (1 + pool.burnRatePerPick * 3)));
   }
   {
     // The burn card has to reach the FIRE, not just the field: one tick on a boosted run burns for the sum.
@@ -238,7 +238,7 @@ try {
     r.hazards.hazards.push(near);
     const start = near.health;
     r.updateRage(aura.tickSeconds + 0.001, LANE);
-    check('灼烧更烈 · 真的烧得更疼', round(start - near.health), round(aura.damagePerTick + mech.mutation.pool.rage.burnPerPick * 2));
+    check('灼烧更烈 · 真的烧得更疼', round(start - near.health), round(aura.damagePerTick * (1 + mech.mutation.pool.rage.burnRatePerPick * 2)));
   }
   {
     // The plate card has to reach the METRONOME: at a moment the boosted run already has a plate, the base run has
