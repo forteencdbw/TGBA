@@ -11,7 +11,6 @@ import { diagnosticsOf } from './diagnostics';
 import { BURST_SECONDS, Run, type WorldView } from './run';
 import type { Phase } from './snapshot';
 import { ObstacleField, paintObstacles, type ObstacleKind } from './obstacles';
-import { resolveTalent, TALENTS } from './talents';
 import { audio, type SoundEvent } from './audio';
 import { NumberPopups } from './numberPopups';
 import { massFromEating } from './consumption';
@@ -1347,8 +1346,6 @@ class Game {
   /** Count of comedy beats this run, and the most recent one, for the HUD and probes. */
   /** The hazard field: spawning, motion and contact. See src/hazards.ts. */
 
-  /** This run's talent and its resolved multipliers. */
-
   /**
    * The boss fight as the HUD should show it.
    *
@@ -1357,7 +1354,6 @@ class Game {
    * else -- see `HudState`.
    */
   private bossView: { name: string; fraction: number } | null = null;
-  /** When the fish-fart talent can fire again, and how many times it has. */
   /** Which scripted depth events have fired, and the count, so a run does not repeat a beat. */
   /** Mirrors the audio module's mute state, so the HUD can show it. */
   private audioMuted = false;
@@ -1523,27 +1519,6 @@ class Game {
   debugSetSteadyCruise(): void {
     this.touch.releaseAll();
     this.input.clearSteering();
-  }
-
-  /**
-   * Test hook: force a specific talent.
-   *
-   * Talents are rolled, so a probe that needs to assert a particular upside AND its backlash would
-   * otherwise pass or fail on a dice roll.
-   */
-  debugSetTalent(id: string): string {
-    const talent = TALENTS.find((t) => t.id === id);
-    if (!talent) throw new Error(`unknown talent: ${id}`);
-    this.run.talentEffects = resolveTalent(talent);
-    this.run.player.volume = this.run.talentEffects.startVolume;
-    return talent.id;
-  }
-
-  /** Test hook: fire the fish-fart reflex, bypassing the contact that normally triggers it. */
-  debugReleaseFart(): number {
-    this.run.fartReadyAt = 0;
-    this.run.releaseFart(this.worldView());
-    return this.run.farts;
   }
 
   /** Fit the world play area to the real canvas and recompute dependent geometry. */
@@ -2829,8 +2804,6 @@ class Game {
       if (this.selectedRoute) this.run.pickRoute(this.selectedRoute);
       this.applyFormToTouch();
     }
-    this.run.fartReadyAt = 0;
-    this.run.farts = 0;
     this.run.eventsFired = new Set();
     this.run.eventsSeen = 0;
     this.run.lastEvent = null;
@@ -2841,15 +2814,14 @@ class Game {
     this.run.phase = 'intro';
     this.run.phaseTimer = INTRO_SECONDS;
     this.run.invulnerable = 0;
-    this.run.stats = { absorbed: 0, hits: 0, maxVolume: this.run.talentEffects.startVolume, ended: this.run.stats.ended, newRecord: false };
-    this.run.rollTalent();
+    this.run.stats = { absorbed: 0, hits: 0, maxVolume: 1, ended: this.run.stats.ended, newRecord: false };
     /**
-     * Fold the carried mutations back in, on top of the talent this start just rolled.
+     * Fold the carried mutations back in.
      *
-     * `rollTalent` rewrites the player's base multipliers, which is what would silently wipe a carried
-     * 突变 · 转向 -- so the counts are the source of truth and this re-derives them after every roll,
-     * including the "no counts at all" of a fresh run (which restores the defaults). See
-     * `applyMutationPassives`.
+     * A carried run keeps its counts but starts each level with a fresh player body, so the derived
+     * numbers -- defence, the gun's rate and rows -- have to be rebuilt from the counts rather than
+     * inherited from the last level's fields. A fresh run has no counts, so this restores the defaults.
+     * See `applyMutationPassives`.
      */
     applyMutationPassives(this.run);
     /**
@@ -4537,7 +4509,6 @@ private updateBoss(): void {
       gunStreams: this.run.gunStreams,
       lateral: this.run.lateral,
       rage: this.run.rage,
-      talentEffects: this.run.talentEffects,
       phase: this.run.phase,
       phaseTimer: this.run.phaseTimer,
       scrolled: this.run.scrolled,
@@ -4554,7 +4525,6 @@ private updateBoss(): void {
       lastComedyBeat: this.run.lastComedyBeat,
       lastEaten: this.run.lastEaten,
       lastEvent: this.run.lastEvent,
-      farts: this.run.farts,
       slams: this.run.slams,
       trashDrain: this.run.trashDrain,
       eventsSeen: this.run.eventsSeen,

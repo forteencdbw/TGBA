@@ -12,7 +12,6 @@ import { initialStageState, type StageState } from './stages';
 import { defaultBubbleType, findRoute, formForRoute, hasVerb, type BubbleType, type RouteId } from './bubbleTypes';
 import { calibrateLateral, type LateralAuthority } from './lateral';
 import { initialRageState, type RageState } from './rage';
-import { pickTalent, resolveTalent, type TalentEffects } from './talents';
 import type { EntrySide } from './levels';
 import type { Input } from './input';
 import { chainTargets } from './conductive';
@@ -29,8 +28,7 @@ import { gainRage, hitRage, spendRage, tickRage } from './rage';
 import { OBSTACLE_BLOCK_SOUND, OBSTACLE_BREAK_SOUNDS } from './soundIds';
 import { sayBlast, sayCallout, sayGraze } from './runEvents';
 import { recordAbsorb, stageName, stageRadiusFraction } from './stages';
-import { fartBaitCount, fartPushFor } from './talents';
-import { bubbleVolumeFromRadius, volumeForHealthRatio } from './volume';
+import { volumeForHealthRatio } from './volume';
 import type { Phase } from './snapshot';
 import { sayBanner, sayDamage, sayScore, saySound, type RunEvent } from './runEvents';
 import type { SoundEvent } from './audio';
@@ -304,8 +302,8 @@ export class Run {
    * Mutation picks taken this run, by card id.
    *
    * The one source of truth for every mutation-driven number: `applyMutationPassives` re-derives the
-   * multipliers from these counts after every talent re-roll, so a carried mutation can never be wiped by
-   * the level transition's fresh talent. See `src/mutations.ts`.
+   * multipliers from these counts on every level start, so a carried mutation is never lost with the
+   * fields a fresh level rebuilds. See `src/mutations.ts`.
    */
   mutations: Record<string, number> = {};
   /**
@@ -394,9 +392,6 @@ export class Run {
   comedyBeats = 0;
   lastComedyBeat: { what: HazardKind; at: number } | null = null;
   hazards = new HazardField();
-  talentEffects: TalentEffects = resolveTalent(pickTalent());
-  fartReadyAt = 0;
-  farts = 0;
   eventsFired = new Set<number>();
   eventsSeen = 0;
   lastEvent: { label: string; at: number } | null = null;
@@ -417,8 +412,8 @@ export class Run {
   /**
    * What every blow subtracts before it lands.
    *
-   * Re-derived by `applyMutationPassives` from the card counts and the talent, like every other passive, so a
-   * carried card survives the level transition's fresh talent. See `src/health.ts` for the formula this feeds.
+   * Re-derived by `applyMutationPassives` from the card counts, like every other passive, so a carried
+   * card survives the level transition. See `src/health.ts` for the formula this feeds.
    */
   defense = 0;
 
@@ -465,7 +460,7 @@ export class Run {
    * shrank mid-fight would invalidate the "how close can I get" judgement the player made a moment ago, and that
    * judgement is the entire skill of eating something dangerous.
    *
-   * A non-growing route keeps whatever size it has: its volume is set by its talent and never moves.
+   * A non-growing route keeps whatever size it has: its volume is set at the start of the run and never moves.
    */
   applyHealthBand(): void {
     if (!this.bubbleType.growsByAbsorbing) return;
@@ -1169,10 +1164,6 @@ export class Run {
         // once from the real number, which is what makes "defence 8 against a 20-damage fish" arithmetic a player
         // can do. See `src/health.ts`.
         this.takeHit(e.damage);
-        // The fish-fart talent fires on the contact that would have hurt, which is what makes it a
-        // reflex rather than an action. Its BACKLASH is the point: it shoves the fish off and then
-        // leaves bait behind, so the escape is also what feeds the swarm. See src/talents.ts.
-        if (this.talentEffects.talent.id === 'fish-fart') this.releaseFart(world);
       }
       if (e.slowSeconds && e.slowFactor) {
         this.player.applySlow(e.slowSeconds, e.slowFactor);
@@ -1472,64 +1463,11 @@ export class Run {
     this.sound('rage.burst', 0.8);
   }
   /**
-   * The 鱼屁泡 talent's reflex: shove nearby fish off, then leave bait behind.
-   *
-   * The two halves are inseparable -- that is the design principle ("your survival mechanism is the
-   * enemy's breeding mechanism"). The push makes it worth having; the bait is what it costs. A version
-   * that only pushed would be a free escape, and a version that only left bait would be a punishment
-   * with no upside.
-   */
-  releaseFart(world: WorldView): void {
-    if (this.elapsed < this.fartReadyAt) return;
-    this.fartReadyAt = this.elapsed + mech.talents['fish-fart'].cooldownSeconds;
-    this.farts++;
-
-    const laneWidth = world.laneWidth;
-    const playerX = this.player.x * laneWidth;
-    const r = mech.talents['fish-fart'].radiusMeters;
-
-    for (const h of this.hazards.hazards) {
-      if (fartPushFor(h.kind) <= 0) continue;
-      const dx = h.x - playerX;
-      const dy = h.y - this.player.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > r) continue;
-      if (dist < 1e-3) {
-        h.y += r * 0.7;
-        continue;
-      }
-      const push = (r - dist) / r;
-      h.x += (dx / dist) * push * r * 0.8;
-      h.y += (dy / dist) * push * r * 0.8;
-    }
-
-    // THE BACKLASH. Bait bubbles, which the emergence rules turn into fish food.
-    const count = fartBaitCount();
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2 + this.elapsed;
-      const radiusFraction = 0.03;
-      this.field.addTestBubble({
-        x: playerX + Math.cos(angle) * r * 0.3,
-        y: this.player.y + Math.sin(angle) * r * 0.3,
-        vy: 0,
-        radius: radiusFraction,
-        // 饵是固定大小的，所以"它相对玩家多大"要现算——图的粗细读的就是这个（见 collectableArt）。
-        sizeRatio: radiusFraction / Math.max(1e-6, stageRadiusFraction(this.stage.stage, this.player.volume)),
-        volume: bubbleVolumeFromRadius(radiusFraction),
-        phase: angle,
-        wobble: tuning.bubbleWobbleMin,
-      });
-    }
-    this.lastComedyBeat = { what: 'fish', at: this.elapsed };
-    // Deliberately silly, because the talent is a joke and should sound like one.
-    this.sound('talent.fart');
-  }
-  /**
    * Keep the best run, so the results card has something to beat.
    *
    * Best by DEPTH REACHED, not by survival time: the game is about climbing, and a run that got
    * further is strictly better regardless of how long it took. The design's headline score is max
-   * volume, so both are kept and shown -- depth is the one that is comparable across talents.
+   * volume, so both are kept and shown -- depth is the one that is comparable across runs.
    */
   recordBest(): void {
     /**
@@ -1551,18 +1489,6 @@ export class Run {
     // Kept beside the other bests, and NOT the thing `newRecord` is about: depth is the run's progress and the score
     // is what it was worth, so a run can beat one and not the other, and the card says both.
     this.bestScore = Math.max(this.bestScore, this.score.value);
-  }
-  /**
-   * Roll this run's talent and apply it to the player.
-   *
-   * Applied through `resolveTalent` rather than by scattering conditionals: every talent's effect is
-   * a small set of multipliers, so a new one is a row in `talents.ts` rather than a branch here.
-   */
-  rollTalent(): void {
-    this.talentEffects = resolveTalent(pickTalent());
-    // Volume is set AFTER `player.reset()` above, which zeroes it back to 1.
-    this.player.volume = this.talentEffects.startVolume;
-    this.stats.maxVolume = this.talentEffects.startVolume;
   }
   fireEvent(label: string): void {
     this.eventsSeen++;

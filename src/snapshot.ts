@@ -15,7 +15,6 @@ import type { Progression } from './progress';
 import type { RageState } from './rage';
 import type { Score } from './score';
 import type { StageState } from './stages';
-import type { TalentEffects } from './talents';
 import type { Xp } from './xp';
 
 /**
@@ -80,7 +79,6 @@ export interface GameSnapshot {
   /** Seconds toward the next plate, and toward the next burn tick of the aura. */
   armourSeconds: number;
   auraSeconds: number;
-  talentEffects: TalentEffects;
 
   /** Which part of the flow this is: menu, intro, playing, the two halves of clearing a level, or a page. */
   phase: Phase;
@@ -104,7 +102,6 @@ export interface GameSnapshot {
   lastComedyBeat: { what: HazardKind; at: number } | null;
   lastEaten: number;
   lastEvent: { label: string; at: number } | null;
-  farts: number;
   slams: number;
   trashDrain: number;
   eventsSeen: number;

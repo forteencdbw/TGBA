@@ -7,7 +7,7 @@ import { boot, diagnostics, startFromMenu, waitForPhase } from './helpers';
  * ---------------------------------------------------------------------------------------------
  * THE TWO CLAIMS WORTH TESTING
  * ---------------------------------------------------------------------------------------------
- * 1. IT CANNOT GO STALE. Every creature and talent the game has must have a card, and a card's NUMBERS must
+ * 1. IT CANNOT GO STALE. Every creature the game has must have a card, and a card's NUMBERS must
  *    come from the same tables the simulation reads. Those are the two ways an in-game encyclopedia normally rots --
  *    an entry nobody wrote, and an entry describing a creature that has since been retuned -- and both are checked
  *    here against the GAME's own lists rather than against a second copy written into the test.
@@ -43,7 +43,6 @@ const codex = (page: Page) =>
               entries: Record<string, number>;
               entryIds: string[];
               gameHazards: string[];
-              gameTalents: string[];
               gameRoutes: string[];
             };
           };
@@ -88,7 +87,7 @@ const openCodex = (page: Page) =>
 
 /**
  * SKIPPED while the codex is switched off (`menu.codexEnabled` is false): the menu has no button for it, its module is not
- * loaded, and its coverage is no longer a compile-time rule -- a creature or talent with no card text reads "未收录"
+ * loaded, and its coverage is no longer a compile-time rule -- a creature with no card text reads "未收录"
  * rather than failing the build, so the "every one has a card" test below would fail for reasons that are now by design.
  *
  * To bring the page back: set `menu.codexEnabled` to true, write the missing prose rows in `src/codex.ts`, then change
@@ -131,7 +130,7 @@ test.describe.skip('the codex', () => {
     await waitForPhase(page, 'menu');
   });
 
-  test('every creature and talent in the game has a card -- checked against the game, not against itself', async ({ page }) => {
+  test('every creature in the game has a card -- checked against the game, not against itself', async ({ page }) => {
     await boot(page);
     const c = await codex(page);
 
@@ -152,9 +151,6 @@ test.describe.skip('the codex', () => {
     const coveredByTheOneBossCard = (kind: string): boolean => kind.startsWith('boss-');
     for (const kind of c.gameHazards.filter((kind) => !coveredByTheOneBossCard(kind))) {
       expect(c.entryIds, `the ${kind} has no card`).toContain(`enemy:${kind}`);
-    }
-    for (const id of c.gameTalents) {
-      expect(c.entryIds, `the ${id} talent has no card`).toContain(`talent:${id}`);
     }
     /**
      * And every form the bubble tab must cover: the base bubble and every route.
@@ -180,7 +176,7 @@ test.describe.skip('the codex', () => {
       'the page must also document the things that are not creatures -- food, obstacles, the bubble, its verbs',
     ).toBeGreaterThan(c.gameHazards.length);
     expect(new Set(c.entryIds).size, 'no card may be listed twice').toBe(c.entryIds.length);
-    for (const category of ['enemy', 'environment', 'bubble', 'talent']) {
+    for (const category of ['enemy', 'environment', 'bubble']) {
       expect(c.entries[category], `the ${category} tab must not be empty`).toBeGreaterThan(0);
     }
   });
@@ -206,7 +202,7 @@ test.describe.skip('the codex', () => {
      * it describes the game as it currently is.
      */
     const geo = await geometry(page);
-    await press(page, geo.codex.tabs.find((t) => t.id === 'talent')!.rect);
+    await press(page, geo.codex.tabs.find((t) => t.id === 'environment')!.rect);
     await press(page, geo.codex.tabs.find((t) => t.id === 'enemy')!.rect);
 
     const after = await codex(page);
@@ -271,10 +267,10 @@ test.describe.skip('the codex', () => {
      */
     await press(page, button('next'));
     expect((await codex(page)).page).toBe(1);
-    await press(page, tab('talent'));
-    const talents = await codex(page);
-    expect(talents.category).toBe('talent');
-    expect(talents.page, 'a new tab starts at the top').toBe(0);
+    await press(page, tab('environment'));
+    const environments = await codex(page);
+    expect(environments.category).toBe('environment');
+    expect(environments.page, 'a new tab starts at the top').toBe(0);
 
     await press(page, tab('enemy'));
     const backToEnemies = await codex(page);

@@ -9,7 +9,7 @@ import type { RouteId } from './bubbleTypes';
  * ---------------------------------------------------------------------------------------------
  * WHY THE POOL IS HERE RATHER THAN IN THE CONFIG
  * ---------------------------------------------------------------------------------------------
- * The same split the talents use: a card's NAME and BLURB are content, and content
+ * The same split the codex uses: a card's NAME and BLURB are content, and content
  * lives in a table next to the verbs that use it. Its NUMBERS are balance, and balance lives in
  * `config/mechanics.json5` (`mutation.pool`) -- so retuning a card is a file edit, while ADDING one is a
  * row here plus the `apply` that lands it.
@@ -461,16 +461,15 @@ export function rollMutationChoices(run: Run, count = 3): readonly Mutation[] {
  * ---------------------------------------------------------------------------------------------
  * WHY THE PASSIVES ARE RE-DERIVED RATHER THAN ACCUMULATED
  * ---------------------------------------------------------------------------------------------
- * `startRun` re-rolls the TALENT on every level transition, and a talent rewrites the run's base numbers
- * (`defense` below, and `player.volume` in `rollTalent`). A mutation that had multiplied those fields in
- * place would be silently wiped by the re-roll -- so the counts are the one source of truth, and this
- * folds them back in on top of whatever base the talent just set. Idempotent by construction, which is
- * what makes calling it after every `rollTalent` safe.
+ * A carried run keeps its counts but starts each level with a fresh player body, and `startRun` clears the
+ * derived fields before this runs. A mutation that had multiplied them in place would be silently wiped -- so
+ * the counts are the one source of truth, and this folds them back in on top of the defaults. Idempotent by
+ * construction, which is what makes calling it on every level start safe.
  *
  * It used to fold two more, from the 转向 and 升速 cards: `player.steerScale` and `player.ascentBonus`.
- * Both cards, both fields and the `soda` talent that fed them are gone. `steerScale` reached only the
- * keyboard's speed product -- the drag path is a 1:1 promise with the finger and scales nothing -- and
- * `ascentBonus` was written by three callers and read by none, its one reader being the pause panel.
+ * Both cards and both fields are gone: `steerScale` reached only the keyboard's speed product -- the drag
+ * path is a 1:1 promise with the finger and scales nothing -- and `ascentBonus` was written by three callers
+ * and read by none, its one reader being the pause panel.
  *
  * The run-level fields it writes are nobody else's to reset: a carry keeps them, a death zeroes the
  * counts in `startRun` and this restores the defaults.
@@ -535,15 +534,14 @@ export function applyMutationPassives(run: Run): void {
   run.bulletSizeDamageRate = pool.sizeDamagePerPick * count('sizeDamage');
   run.bulletSpeedDamageRate = pool.speedDamagePerPick * count('speedDamage');
   /**
-   * Defence: the talent's flat amount plus both cards' worth, with NO ceiling.
+   * Defence: both cards' worth, with NO ceiling.
    *
    * There is no `min` here on purpose. The card that used to live in this line was a percentage capped at 0.9,
    * because a percentage has to be capped -- at 1.0 it is invulnerability, and the game has no way to say "90% of
    * a fish". A subtraction caps itself: the `minDamageRatio` floor in `src/health.ts` is what keeps a very high
    * defence from being the same thing.
    */
-  run.defense =
-    run.talentEffects.defense + pool.defensePerPick * count('armor') + pool.defenseBigPerPick * count('thickArmor');
+  run.defense = pool.defensePerPick * count('armor') + pool.defenseBigPerPick * count('thickArmor');
   /**
    * The health ceiling, re-derived like every other passive.
    *

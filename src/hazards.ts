@@ -451,8 +451,8 @@ export interface Hazard {
    * Fish: how many collectables it has swallowed.
    *
    * THE emergence counter. A fish that eats enough SPLITS into two, which is the only rule in the
-   * game capable of exponential growth -- and it is what turns a talent's backlash into a real
-   * consequence. See `hazardTuning.fishFeedToSplit` and the spec's emergence section.
+   * game capable of exponential growth -- and it is what makes a burst of food a real consequence. See
+   * `hazardTuning.fishFeedToSplit` and the spec's emergence section.
    */
   fed: number;
   /** Fish: seconds left before it can eat again, so a split is not instantaneous. */
@@ -787,7 +787,7 @@ export const hazardTuning = {
    * Three, not one. At one, any fish that crosses a bubble doubles, and the population explodes from ambient
    * food alone -- the swarm would grow whether or not the player did anything, which removes the causality the
    * whole design rests on ("I got bigger, so the world got worse"). At three, a split is a consequence of a LOT
-   * of food appearing, which in practice means the player's own talent backlash or a bait bubble.
+   * of food appearing, which in practice means a cluster the level placed rather than one stray bubble.
    */
   get fishFeedToSplit() {
     return mech.emergence.fishFeedToSplit;
@@ -2733,9 +2733,9 @@ export class HazardField {
   /**
    * Emergence rule 1: a fish that eats enough collectables SPLITS in two.
    *
-   * The only rule in the game capable of exponential growth, and therefore the only one that can turn
-   * a talent's backlash into an avalanche: the fart that saves you leaves bait, the bait feeds the
-   * fish, the fish multiply, and the swarm you fled is twice the size.
+   * The only rule in the game capable of exponential growth, and therefore the only one that can turn a
+   * cluster of food into an avalanche: the levels place collectables, the fish eat them, the fish
+   * multiply, and the swarm you fled is twice the size.
    *
    * Splitting is capped. Past `fishHardCap` the population stops growing entirely -- the guard has to
    * be here, at the source, because this is the only place entities are created outside the spawn

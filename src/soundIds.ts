@@ -79,7 +79,6 @@ export const SOUND_IDS = [
   'health.low',
   'player.slow',
   'crab.launch',
-  'talent.fart',
   'defeat.sting',
   // --- env: the water itself
   'vent.erupt',

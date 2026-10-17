@@ -86,9 +86,8 @@ test.describe('growth stages', () => {
     /**
      * STEADY-STATE VELOCITY is the exact form of the claim, so it is asserted tightly.
      *
-     * `vx` while holding a key is the keyboard speed times this stage's multiplier. A talent used to be a third
-     * factor here (`steerScale`), and reading it rather than baking it in is what kept this check honest; the
-     * factor is gone with the field, which reached the keyboard path and nothing else.
+     * `vx` while holding a key is the keyboard speed times this stage's multiplier. Nothing else scales it: the
+     * steering field that used to be a third factor reached the keyboard path and nothing else, and is gone.
      */
     for (const r of readings) {
       const expected = 0.5 * config.stages.speedMultiplier[r.stage - 1]!;

@@ -1,7 +1,6 @@
 import { mech } from './mechanisms';
 import { KIND_TUNING, type HazardKind } from './hazards';
 import { OBSTACLE_NAMES } from './obstacles';
-import { TALENTS, type TalentId } from './talents';
 import { BASE_TYPE, formForRoute, ROUTES, type ControlId, type Route, type RouteId } from './bubbleTypes';
 
 /**
@@ -16,7 +15,7 @@ import { BASE_TYPE, formForRoute, ROUTES, type ControlId, type Route, type Route
  * The alternative is the usual fate of an in-game encyclopedia: it is accurate on the day it is written and it is a
  * lie three commits later, because nothing fails when a creature's mass changes and the card does not. Deriving it
  * means the page cannot describe a game that no longer exists -- and `e2e/codex.spec.ts` goes further and asserts
- * that every kind and talent in the game HAS a card, so adding one without documenting it is a failing test
+ * that every kind in the game HAS a card, so adding one without documenting it is a failing test
  * rather than a gap nobody notices.
  *
  * ---------------------------------------------------------------------------------------------
@@ -32,7 +31,7 @@ import { BASE_TYPE, formForRoute, ROUTES, type ControlId, type Route, type Route
  * What a card says for content the game has and this page was never written for.
  *
  * The page is switched off and not being iterated (`menu.codexEnabled`), so its prose tables are no longer `Record`s the
- * compiler checks for completeness: a new creature, talent, route or control simply has no row, and its card reads
+ * compiler checks for completeness: a new creature, route or control simply has no row, and its card reads
  * "未收录" instead of stopping the build. Writing the missing rows is the debt to pay when the page is reopened.
  */
 const UNLISTED = '未收录';
@@ -57,13 +56,12 @@ function buttonFact(controls: readonly ControlId[]): CodexFact {
   };
 }
 
-export type CodexCategory = 'enemy' | 'environment' | 'bubble' | 'talent';
+export type CodexCategory = 'enemy' | 'environment' | 'bubble';
 
 export const CODEX_CATEGORIES: readonly { id: CodexCategory; label: string }[] = [
   { id: 'enemy', label: '敌人' },
   { id: 'environment', label: '环境' },
   { id: 'bubble', label: '气泡与路线' },
-  { id: 'talent', label: '天赋' },
 ];
 
 /**
@@ -87,8 +85,7 @@ export type CodexGlyph =
   | 'rageGauge'
   | 'charge'
   | 'rageBurst'
-  | 'overload'
-  | TalentId;
+  | 'overload';
 
 export interface CodexFact {
   label: string;
@@ -132,7 +129,6 @@ const ENEMY_PROSE: readonly { kind: HazardKind; tagline: string; notes: readonly
     notes: [
       '感知半径随你的体积增长——你越大，越远的鱼会来追你。',
       '这是唯一能让数量指数增长的规则：一条鱼吃够气泡就分裂成两条。',
-      '所以"天赋的反噬"是真的：你的保命手段同时在喂它们。',
     ],
   },
   {
@@ -657,29 +653,6 @@ function bubbleCards(): readonly CodexEntry[] {
   return out;
 }
 
-function talentEntry(id: TalentId): CodexEntry {
-  const talent = TALENTS.find((t) => t.id === id);
-  if (!talent) throw new Error(`codex: unknown talent ${id}`);
-  return {
-    id: `talent:${id}`,
-    category: 'talent',
-    name: talent.name,
-    // Reused from the talent table, so the card and the birth banner cannot say different things.
-    tagline: talent.blurb,
-    facts: [
-      { label: '收益', value: talent.upside },
-      { label: '反噬', value: talent.downside },
-    ],
-    notes: TALENT_NOTES[id] ?? [UNLISTED_NOTE],
-    icon: { kind: 'glyph', glyph: id },
-  };
-}
-
-const TALENT_NOTES: Partial<Record<TalentId, readonly string[]>> = {
-  'fish-fart': ['它是反射不是主动能力：被打到才触发，所以没法主动用。', '冷却就是它和"护盾"的区别——没有冷却的话，走进鱼群里就永远不会死。'],
-  silt: [`出生体积 ×${num(mech.talents.silt.startVolume, 1)}，受击减免 ${mech.talents.silt.defense} 点。`, '一开始就更结实，但块头大也更容易被优先锁定。'],
-};
-
 /**
  * Every card, in tab order, built FRESH on each call.
  *
@@ -694,7 +667,6 @@ export function codexEntries(): readonly CodexEntry[] {
     ...ENEMY_PROSE.map((e) => enemyEntry(e.kind, e.tagline, e.notes)),
     ...ENVIRONMENT,
     ...bubbleCards(),
-    ...TALENTS.map((t) => talentEntry(t.id)),
   ];
 }
 
@@ -719,8 +691,7 @@ export function pageEntries(category: CodexCategory, page: number, perPage: numb
  * The colour an entry's icon is drawn in, where it has one of its own.
  *
  * Colour is the link between the card and the thing in the water, so this reads the same tables the drawing code
- * reads wherever one exists. The two exceptions are things that have no colour of their own yet: a collectable, and
- * anything a talent is illustrated with.
+ * reads wherever one exists. The exception is the collectable, which has no colour of its own.
  */
 export function iconColour(entry: CodexEntry): number {
   switch (entry.icon.kind) {
@@ -732,8 +703,6 @@ export function iconColour(entry: CodexEntry): number {
       break;
   }
   switch (entry.category) {
-    case 'talent':
-      return mech.codex.talentColour;
     case 'environment':
       return mech.codex.collectableColour;
     default: {

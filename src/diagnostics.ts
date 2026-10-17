@@ -150,13 +150,6 @@ export function diagnosticsOf(g: GameSnapshot): {
     misfire: { remaining: number; inverted: boolean };
     trashDrain: number;
     maxGripSeconds: number;
-    talent: {
-      id: string;
-      name: string;
-      startVolume: number;
-      defense: number;
-    };
-    farts: number;
     emergence: {
       fishSplits: number;
       bubblesEatenByFish: number;
@@ -399,20 +392,6 @@ export function diagnosticsOf(g: GameSnapshot): {
       maxGripSeconds: +g.hazards.hazards.reduce((m, h) => Math.max(m, h.gripSeconds), 0).toFixed(2),
       /** The player's movement penalty, so a slow can be observed rather than inferred. */
       slow: { remaining: +g.player.slowRemaining.toFixed(3), factor: g.player.slowFactor, impulseVy: +g.player.impulseVy.toFixed(2) },
-      /**
-       * This run's talent.
-       *
-       * Part of the run's identity, so a probe needs to see it to check that a talent's upside AND its
-       * backlash are actually applied.
-       */
-      talent: {
-        id: g.talentEffects.talent.id,
-        name: g.talentEffects.talent.name,
-        startVolume: g.talentEffects.startVolume,
-        defense: g.talentEffects.defense,
-      },
-      /** Fish-fart reflex count, so the talent's backlash can be observed rather than assumed. */
-      farts: g.farts,
       /**
        * Emergence readout.
        *

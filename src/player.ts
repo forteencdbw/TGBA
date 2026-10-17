@@ -136,7 +136,7 @@ export class Player {
   }
 
   /**
-   * Hazard and talent state.
+   * Hazard state.
    *
    * `slowFactor` multiplies BOTH axes now. A slow that only affected the ascent would be meaningless
    * with the player in control of the vertical.

@@ -569,8 +569,8 @@ export interface HudState {
    * The readouts that belong to the form rather than to the run: the second meter and the mutation gauge.
    *
    * The growth-stage line used to live here too -- the tier, the count to the next one, and the route's name
-   * prefixed to it. It is gone, with the seed and talent names that shared that line: on two of the three forms it
-   * read "不成长", and the seed and the talent draw from the same two names, so it usually said one word twice.
+   * prefixed to it. It is gone: it explained a growth stage that two of the three forms never had, and the two names
+   * it carried came from the same pair of words, so it usually said one word twice.
    */
   stage: {
     /**

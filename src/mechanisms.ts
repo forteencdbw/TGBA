@@ -1624,7 +1624,6 @@ export interface Mechanisms {
     buttonTextColour: number;
     buttonTextSize: number;
     collectableColour: number;
-    talentColour: number;
   };
   /**
    * The settings panel's player-visible numbers.
@@ -2212,20 +2211,6 @@ export interface Mechanisms {
     entryDepth: number;
   };
   /**
-   * The talents, one block each.
-   *
-   * The keys are spelled out rather than typed as a `Record` so that a talent without numbers is a COMPILE error
-   * rather than a block of `undefined` at runtime -- the same guarantee `KIND_TUNING` gets from its
-   * `Record<HazardKind, ...>` type.
-   *
-   * Half of each block is what the talent GIVES and half is what it COSTS; a talent whose cost is not in its block
-   * is a talent whose cost is hidden somewhere else.
-   */
-  talents: {
-    silt: { startVolume: number; defense: number };
-    'fish-fart': { radiusMeters: number; cooldownSeconds: number; baitCount: number };
-  };
-  /**
    * The debug hitbox overlay: its line style and its colours, and nothing else.
    *
    * Visual numbers rather than mechanics, and they live here for the reason every other visual number does -- see
@@ -2644,7 +2629,6 @@ const CODEX_COLOURS = [
   'buttonStroke',
   'buttonTextColour',
   'collectableColour',
-  'talentColour',
 ] as const;
 
 /**
@@ -3910,19 +3894,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.look.innerRingWidthRatio', check: anyNumber, describe: 'a stroke width ratio' },
   { path: 'angry.look.sheenAlpha', check: anyNumber, describe: 'an opacity' },
   { path: 'angry.look.specularAlpha', check: anyNumber, describe: 'an opacity' },
-
-  /**
-   * --- the talents ---
-   *
-   * One row per NUMBER rather than one per block, for the reason the appearance arrays have one row per key: the
-   * failure this table exists for is a hand-edit that is out of range, and "talents.silt is invalid" would leave the
-   * owner hunting.
-   */
-  { path: 'talents.silt.startVolume', check: anyNumber, describe: 'a starting volume' },
-  { path: 'talents.silt.defense', check: anyNumber, describe: 'defence points' },
-  { path: 'talents.fish-fart.radiusMeters', check: anyNumber, describe: 'metres' },
-  { path: 'talents.fish-fart.cooldownSeconds', check: anyNumber, describe: 'seconds' },
-  { path: 'talents.fish-fart.baitCount', check: wholeNumber, describe: 'a whole number of bait bubbles' },
 
   /**
    * The debug overlay. Every key is either a length or a colour, so the table is two loops rather than eleven rows --

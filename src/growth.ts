@@ -14,7 +14,7 @@ import { mutationCard } from './mutations';
  * The cards come from `run.picks`, the log `pickMutationCard` writes, and each one's name and blurb from the card itself
  * (`mutationCard`) -- the very text the three-choice panel showed, so the two cannot disagree. The numbers are read from the
  * fields the simulation reads (`healthMax`, `defense`, `bulletDamageMultiplier`, ...) and not
- * recomputed here, so they include the talent's share too: this is what the player IS now, not what the cards alone gave.
+ * recomputed here, so this is what the player IS now, not what the cards alone gave.
  */
 export interface GrowthStat {
   label: string;

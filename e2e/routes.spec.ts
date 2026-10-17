@@ -433,8 +433,6 @@ test.describe('routes', () => {
           game: {
             debugSpawnHazardOnPlayer: (kind: string) => void;
             debugSetSteadyCruise: () => void;
-            /** Pinned below: the run's talent is rolled, and fish-fart changes what a fish contact does. */
-            debugSetTalent: (id: string) => string;
             diagnostics: {
               phase: string;
               stats: { hits: number; ended: number };
@@ -458,16 +456,6 @@ test.describe('routes', () => {
       // The creatures' drift is the level's own number now, not the camera's: freezing the water means freezing both.
       g.game.levelRef.driftSpeed = 0;
       g.game.debugSetSteadyCruise();
-      /**
-       * A PINNED talent, because the run's own is ROLLED and fish-fart changes what a contact does: it fires on the
-       * hit that would have landed and leaves bait behind, which feeds the swarm the escape was meant to get away
-       * from. Measured with it in play, this test's "contact must hurt" came out 2 hits in 10 contacts.
-       *
-       * 汽水泡 used to be the neutral pick and the talent was deleted. 淤泥 is safe for the two things read here:
-       * it changes volume and defence, the case below pins `player.volume` itself, and a contact is COUNTED in
-       * `stats.hits` whatever the defence reduces the damage to.
-       */
-      g.game.debugSetTalent('silt');
       const lane = g.game.camera.viewport.laneWidthMeters;
       g.player.x = 0.5;
       g.player.screenY = 0.5;
