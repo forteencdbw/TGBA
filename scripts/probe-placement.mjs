@@ -163,6 +163,10 @@ try {
     for (const aim of ['up', 'flat', 'down']) {
       check(`第一关 · 三种朝向都出现过：${aim}`, aims.includes(aim), true);
     }
+    const downVent = vents.find((e) => e.aim === 'down');
+    const downPlaced = place(downVent, 700);
+    check('第一关 · 朝下的喷口先让火焰进场（本体在屏幕外）', [downVent.aboveMeters, downPlaced.record.worldY], [250, 950]);
+    check('第一关 · 朝下的喷口把上移量带给了水里的那一只', downPlaced.w.hazards.hazards[0].spawnAbove, 250);
     const base = mech.hazards.vent.baseRadiusRatio * LANE;
     const placed = vents.map((e) => place(e, 700).w.hazards.hazards[0]);
     check('第一关 · 每一个都落在墙上（没有落在泳道中间的）', placed.every((h) => Math.abs(h.x - base) < 1e-6 || Math.abs(h.x - (LANE - base)) < 1e-6), true);
