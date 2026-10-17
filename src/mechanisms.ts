@@ -827,6 +827,13 @@ export interface Mechanisms {
       warnAlphaMin: number;
       warnAlphaMax: number;
     };
+    /**
+     * The jelly's upward swim.
+     *
+     * `climbRatio` is relative to the current's fall (`driftSpeed`); `pulse` is one speed multiplier per
+     * `jelly-idle` frame, so the surge follows the bell's contraction without a second clock.
+     */
+    jelly: { climbRatio: number; pulse: number[] };
     /** Mineral grit on the heat flow: slow, fragile, and mostly in the way. */
     mineral: {
       riseSpeedFactor: number;
@@ -1745,6 +1752,19 @@ export interface Mechanisms {
       fishChance: number;
       crawlerSpeedScale: number;
       crawlerBandTop: number;
+      /**
+       * The jelly: the one menu creature that does not cross the screen.
+       *
+       * It enters diagonally (`diagonalRatio` is vertical pixels per horizontal pixel; 1 is 45 degrees), then climbs
+       * at `climbSpeed` screen-heights per second and leaves through the top. `pulse` is one multiplier per
+       * `jelly-idle` frame.
+       */
+      jelly: {
+        climbSpeed: number;
+        diagonalRatio: number;
+        entrySeconds: number;
+        pulse: number[];
+      };
       backCoralCount: number;
       backCoralHalfWidth: number;
       backCoralBottom: number;
@@ -2980,6 +3000,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.mineral.wobbleAmplitude', check: anyNumber, describe: 'a fraction of the lane width' },
   { path: 'hazards.mineral.wobblePeriodSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'hazards.mineral.lifeMeters', check: anyNumber, describe: 'metres' },
+  { path: 'hazards.jelly.climbRatio', check: anyNumber, describe: 'a fraction of the current fall speed' },
+  {
+    path: 'hazards.jelly.pulse',
+    check: (v) => Array.isArray(v) && v.length === 4 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0),
+    describe: 'one speed multiplier per jelly-idle frame (four frames)',
+  },
   { path: 'hazards.shrimp.driftSpeedFactor', check: anyNumber, describe: 'lane widths per second' },
   { path: 'hazards.angler.driftFactor', check: anyNumber, describe: 'a fraction of the current' },
   { path: 'hazards.angler.lureMeters', check: anyNumber, describe: 'metres' },
@@ -3419,6 +3445,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['fishChance', 'a probability'],
     ['crawlerSpeedScale', 'a speed multiple'],
     ['crawlerBandTop', 'a fraction of the screen height'],
+    ['jelly.climbSpeed', 'screen heights per second'],
+    ['jelly.entrySeconds', 'seconds'],
     ['backCoralCount', 'a count of corals'],
     ['backCoralHalfWidth', 'a fraction of the screen width'],
     ['backCoralBottom', 'a fraction of the screen height; negative is below the edge'],
@@ -3439,6 +3467,16 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     path: 'menu.backdrop.loners',
     check: (v) => Array.isArray(v) && v.every((k) => typeof k === 'string'),
     describe: 'a list of hazard kind names that never arrive in a batch',
+  },
+  {
+    path: 'menu.backdrop.jelly.diagonalRatio',
+    check: (v) => typeof v === 'number' && Number.isFinite(v) && v > 0,
+    describe: 'vertical pixels per horizontal pixel; 1 is 45 degrees',
+  },
+  {
+    path: 'menu.backdrop.jelly.pulse',
+    check: (v) => Array.isArray(v) && v.length === 4 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0),
+    describe: 'one speed multiplier per jelly-idle frame (four frames)',
   },
   /**
    * The deep-sea lighting, the same way -- except for the three COLOURS, which are out of the loop.

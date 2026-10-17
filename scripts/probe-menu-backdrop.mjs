@@ -159,7 +159,7 @@ try {
     bd.sinceSpawn = -1e9;
     for (const c of cast) {
       const h = bd.swimmers.spawnAt(c.kind ?? 'fish', c.x, c.y, { deterministic: true, variety: 0 });
-      bd.velocity.set(h.id, { vx: c.vx, vy: c.vy, school: c.school });
+      bd.velocity.set(h.id, { vx: c.vx, vy: c.vy, school: c.school, ...(c.jelly ? { jelly: c.jelly } : {}) });
       bd.swimmers.hazards.push(h);
       c.h = h;
     }
@@ -415,6 +415,37 @@ try {
     // The same sixty frames and the same dice, and the fish beside it did all three.
     check('while the fish beside it darted', fishSchool.burstLeft > 0, true);
     check('and turned', Math.sign(bd.velocity.get(cast[1].h.id).vx), -1);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The jelly is the one vertical swimmer
+  // ---------------------------------------------------------------------------------------------
+  console.log('\n--- the jelly climbs ---');
+  {
+    const cast = [
+      {
+        kind: 'jelly',
+        x: W * 0.5,
+        y: H * 0.3,
+        vx: 0.14,
+        vy: 0,
+        school: { burstLeft: 0 },
+        jelly: { climb: 0.06, entryLeft: 1 },
+      },
+      ...filler(cfg.minAlive - 1),
+    ];
+    const bd = build(cast);
+    const h = cast[0].h;
+    const y0 = h.y;
+    for (let i = 0; i < 120; i++) bd.update(DT);
+    check('a jelly climbs', h.y > y0, true);
+    check('and stays inside the lane once its entry is spent', h.x > 0 && h.x < W, true);
+    check('the entry timer runs out', bd.velocity.get(h.id).jelly.entryLeft <= 1e-9, true);
+    const y1 = h.y;
+    bd.update(1);
+    check('and it keeps climbing', h.y > y1, true);
+    bd.beginExit();
+    check('and leaves through the top, not a side', h.flee, 'up');
   }
 
   // ---------------------------------------------------------------------------------------------

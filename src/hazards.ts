@@ -414,7 +414,7 @@ export interface Hazard {
    * creature cannot strobe as the player drifts across its centre line. (What the picture is actually drawn with is
    * neither of these: it is `hazardMirror`, which is `facing` plus the part of a turn in flight.) This one is a fact
    * about the creature -- written by the movement that knows, at the moment it moves -- and not every kind has an
-   * opinion about it: a jellyfish drifts and a vent does not move at all, and both leave it at 0.
+   * opinion about it: a climbing jellyfish has no left/right heading, and a vent does not move at all; both leave it at 0.
    *
    * It exists because looking at the player is a choice rather than a rule. A fish that is hunting should face
    * where it is going; a creature that is merely drifting past should not spin round to stare at a bubble it has
@@ -605,8 +605,8 @@ export interface Hazard {
    *
    * It ends the moment the creature is inside the play area, and then `advance` hands it to the switch below and it
    * behaves like everything else. What that means in practice, and it is worth knowing when authoring: only the kinds
-   * that hunt will press an attack from behind. A bottom-entered fish chases; a bottom-entered jellyfish drifts back
-   * down out of the level, because drifting away is what jellyfish do.
+   * that hunt will press an attack from behind. A bottom-entered fish chases; a bottom-entered jellyfish climbs once
+   * it is inside, because climbing is what this game's jellyfish do.
    */
   entry: { from: 'left' | 'right' | 'bottom'; speed: number } | null;
   /**
@@ -730,8 +730,6 @@ export const hazardTuning = {
     return mech.spawning.insideMarginRatio;
   },
 
-  /** Jellyfish drift and bob; they barely move horizontally. */
-  jellyBobAmplitude: 0.012,
   /** Trash falls slower than the water and grabs on contact. */
   trashSpeedFactor: 0.12,
   /**
@@ -1185,10 +1183,24 @@ function stepFish(field: HazardField, h: Hazard, dt: number, ctx: HazardContext)
   return;
 }
 function stepJelly(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
-  // Drifts down slowly and bobs. It is an obstacle, not a pursuer.
-  const bob = Math.sin(h.phase * 1.4 + h.seed) * hazardTuning.jellyBobAmplitude * ctx.laneWidth;
-  h.x += (Math.cos(h.phase * 0.7) * 0.4 + bob * 0.02) * 6 * dt;
-  h.y -= ctx.driftSpeed * 0.3 * dt;
+  /**
+   * UP, along the head/foot axis, with the bell's own pulse as the engine.
+   *
+   * The `1 +` is not a fudge: `advanceKind` has already moved every creature by `rise - driftSpeed * dt`, which leaves
+   * the current's fall in its screen motion. A step of `drift * climb` on its own would therefore still sink; the
+   * jelly's climb is RELATIVE TO THE WATER, so it must cancel that one drift first and then add its own.
+   * Screen velocity comes out as `-drift * climbRatio * pulse` -- up.
+   *
+   * The pulse is looked up by the animation's own frame, so the surge lands on the bell's contraction without a second
+   * clock that could drift away from the picture.
+   */
+  const cfg = mech.hazards.jelly;
+  const animation = mech.animations['jelly-idle'];
+  const frame = animation ? animationFrameAt(animation, h.phase) : 0;
+  const pulse = cfg.pulse[frame] ?? 1;
+  // No horizontal motion at all: the head/foot axis is the whole path. Seeking and the charge still move it, but
+  // they are the jelly's decisions rather than its drift.
+  h.y += ctx.driftSpeed * (1 + Math.max(0, cfg.climbRatio) * pulse) * dt;
   h.squashed = Math.max(0, h.squashed - dt * 2.2);
   return;
 }
@@ -1472,13 +1484,13 @@ function stepTorpedo(_field: HazardField, h: Hazard, dt: number, ctx: HazardCont
 }
 function stepZapper(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
   /**
-   * A zapper drifts like a jellyfish and keeps its own discharge clock.
+   * A zapper drifts the way jellyfish USED to and keeps its own discharge clock.
    *
    * The ring is attack AND warning at once: it is drawn for `ringSeconds` and only hurts while it is up, so a
    * player who watches can always be somewhere else. `dischargeRest` is per INSTANCE, so a row of them does not
    * pulse in lockstep -- that would be a wall rather than a pattern.
    */
-  // The drift below is deliberately the jellyfish drift, so a shoal of them reads as jellyfish.
+  // The drift below is the old jellyfish drift: the real jelly climbs now, but the zapper is a drifting relative.
   if (h.dischargeRest > 0) h.dischargeRest -= dt;
   if (h.discharge > 0) h.discharge -= dt;
   h.y -= ctx.driftSpeed * 0.28 * dt;

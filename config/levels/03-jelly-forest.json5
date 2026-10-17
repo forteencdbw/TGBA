@@ -85,7 +85,7 @@
     { at: 190, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S2  **爆发一 · 水母树冠**：一列四只 + 减速水母 + 一串鱼。这一屏开始要求你**边躲边挑目标**。
     { at: 420, kind: 'zapper', count: 4, arrange: 'column', x: 0.5 },
-    { at: 480, kind: 'jelly', count: 4, arrange: 'line' },
+    { at: 480, kind: 'jelly', count: 4, arrange: 'line', from: 'random' },
     { at: 520, kind: 'fish', count: 4, arrange: 'spread', from: 'random' },
 
     // --- S3  回落：虾 + 海胆 + 两只电水母。刚被电过，这一屏把位置找回来——而且它比上一次回落**多了一屏**，
@@ -105,7 +105,7 @@
     { at: 760, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S5  **爆发二 · 触须森林**：五只一排 + 减速 + 两只海胆。横排的电水母是"整片不能碰"。
     { at: 1000, kind: 'zapper', count: 5, arrange: 'line' },
-    { at: 1060, kind: 'jelly', count: 4, arrange: 'spread' },
+    { at: 1060, kind: 'jelly', count: 4, arrange: 'spread', from: 'random' },
     { at: 1110, kind: 'urchin', count: 2, arrange: 'spread' },
 
     // --- S6  回落：热流矿物 + 虾 + 两只电水母。间隔已经从 3 屏缩到 2 屏，矿物颗粒是这一屏的"呼吸"。

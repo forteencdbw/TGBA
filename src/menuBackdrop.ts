@@ -1,4 +1,5 @@
 import { Container, FillGradient, Graphics } from 'pixi.js';
+import { animationFrameAt } from './assets';
 import { rgba } from './background';
 import { mech } from './config';
 import { BubbleField, MoteField } from './menuDrift';
@@ -116,7 +117,12 @@ const CRAWLERS: readonly HazardKind[] = ['urchin', 'starfish'];
  * make it untrue.
  */
 const darts = (kind: HazardKind): boolean => kind === 'fish';
-const turns = (kind: HazardKind): boolean => !CRAWLERS.includes(kind);
+/**
+ * A jellyfish has no left/right to turn to: it climbs along its own head/foot axis, so a random turn would reverse its
+ * climb instead of steering it. Excluded here rather than special-cased in the velocity map so the same predicate
+ * governs the decision and the motion.
+ */
+const turns = (kind: HazardKind): boolean => !CRAWLERS.includes(kind) && kind !== 'jelly';
 
 /**
  * A group of creatures that arrived together AND travel as one.
@@ -215,7 +221,22 @@ export class MenuBackdrop {
   private readonly backBed = new ObstacleField();
   private readonly frontBed = new ObstacleField();
   /** Speed and school per swimmer, keyed by hazard id. See the notes at the top of the file. */
-  private readonly velocity = new Map<number, { vx: number; vy: number; school: School }>();
+  private readonly velocity = new Map<
+    number,
+    {
+      vx: number;
+      vy: number;
+      school: School;
+      /**
+       * A jellyfish's own motion: the climb speed in screen heights/second, and how much of its entry is left.
+       *
+       * Absent on every other kind, which is what keeps the horizontal crossing logic untouched. The entry half is a
+       * decaying horizontal component: the jelly arrives diagonally from the side, then stops moving sideways and
+       * climbs, so it leaves through the top rather than crossing to the other wall.
+       */
+      jelly?: { climb: number; entryLeft: number };
+    }
+  >();
 
   private width = 0;
   private height = 0;
@@ -535,7 +556,8 @@ export class MenuBackdrop {
        * `facingRest` is released here: it was pinned to stop a swimming fish flipping around, and a departing one is
        * supposed to flip.
        */
-      h.flee = h.x < this.width / 2 ? 'right' : 'left';
+      // A climbing jelly leaves upward, the direction it was already going. Everything else turns to the near side.
+      h.flee = this.velocity.get(h.id)?.jelly ? 'up' : h.x < this.width / 2 ? 'right' : 'left';
       h.facingRest = 0;
     }
   }
@@ -678,7 +700,26 @@ export class MenuBackdrop {
       const boost = this.burstBoost(v.school.burstLeft);
       if (h.flee) {
         const step = this.height * mech.hazards.fleeScreensPerSecond * dt;
-        h.x += h.flee === 'right' ? step : -step;
+        // A climbing jelly leaves the way it was going; everything else goes to a side.
+        if (h.flee === 'up') h.y += step;
+        else h.x += h.flee === 'right' ? step : -step;
+      } else if (v.jelly) {
+        /**
+         * The jelly: a decaying horizontal entry, then a climb whose speed is the bell's frame.
+         *
+         * The horizontal part fades over `entrySeconds`, so it arrives at an angle and settles into a vertical path
+         * instead of crossing the screen. The pulse is looked up by the SAME frame the picture is on, so the surge
+         * lands on the contraction; `boost` is 1 here because jellies never dart.
+         */
+        const animation = mech.animations['jelly-idle'];
+        const frame = animation ? animationFrameAt(animation, h.phase) : 0;
+        const pulse = cfg.jelly.pulse[frame] ?? 1;
+        if (v.jelly.entryLeft > 0) {
+          const left = v.jelly.entryLeft / Math.max(0.01, cfg.jelly.entrySeconds);
+          h.x += v.vx * left * dt * this.width;
+          v.jelly.entryLeft = Math.max(0, v.jelly.entryLeft - dt);
+        }
+        h.y += v.jelly.climb * pulse * dt * this.height;
       } else {
         h.x += v.vx * boost * dt * this.width;
         h.y += v.vy * boost * dt * this.height;
@@ -834,6 +875,15 @@ export class MenuBackdrop {
     const shared = shoal && count > 1 ? newSchool() : null;
     /** Whether this arrival crawls rather than swims -- see `CRAWLERS`. */
     const crawls = CRAWLERS.includes(kind);
+    /**
+     * The jelly is the one vertical swimmer: it enters from the side at `diagonalRatio` (vertical pixels per
+     * horizontal pixel), then climbs. `entryVx` is that entry in screen-widths/second, derived from the climb so the
+     * configured angle stays the angle even when the window changes.
+     */
+    const isJelly = kind === 'jelly';
+    const jelly = cfg.jelly;
+    const climb = jelly.climbSpeed;
+    const entryVx = (climb * this.height) / Math.max(1, this.width * jelly.diagonalRatio);
     const fromLeft = Math.random() < 0.5;
     const dir = fromLeft ? 1 : -1;
     const speed =
@@ -885,8 +935,11 @@ export class MenuBackdrop {
        */
       h.phase = Math.random() * 8;
       // A little speed variation per member, so a school opens up as it crosses rather than travelling as a block.
+      // The roll is taken for every kind, jellies included, so a probe's dice script keeps pointing at the same
+      // decisions; the jelly simply does not use the result.
+      const jitter = 0.86 + Math.random() * 0.28;
       this.velocity.set(h.id, {
-        vx: speed * (0.86 + Math.random() * 0.28) * dir,
+        vx: isJelly ? entryVx * dir : speed * jitter * dir,
         /**
          * A crawler keeps the height it arrived at.
          *
@@ -896,6 +949,7 @@ export class MenuBackdrop {
          */
         vy: (Math.random() - 0.5) * (crawls ? 0 : cfg.driftRatio) * speed,
         school: shared ?? newSchool(),
+        ...(isJelly ? { jelly: { climb, entryLeft: Math.max(0, jelly.entrySeconds) } } : {}),
       });
       h.heading = dir;
       this.faceTravel(h, dir);

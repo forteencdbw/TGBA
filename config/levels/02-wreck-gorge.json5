@@ -95,7 +95,7 @@
 
     // --- S3  回落：水母（减速）和一张网，再补两只螃蟹。减速之后撞上网是这一关最有教育意义的一次挫折——
     // 而这次挫折现在**多了一屏**来读：被打完之后有三屏才到下一次爆发。
-    { at: 600, kind: 'jelly', count: 3, arrange: 'line' },
+    { at: 600, kind: 'jelly', count: 3, arrange: 'line', from: 'random' },
     { at: 640, kind: 'net', count: 3, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.2 },
     { at: 700, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
 
@@ -116,7 +116,7 @@
     { at: 1080, kind: 'wall', count: 3, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
 
     // --- S6  回落：水母 + 网 + 一排木箱。间隔已经从 3 屏缩到 2 屏，所以这一屏比上一次回落更短也更急。
-    { at: 1160, kind: 'jelly', count: 3, arrange: 'line' },
+    { at: 1160, kind: 'jelly', count: 3, arrange: 'line', from: 'random' },
     { at: 1200, kind: 'net', count: 3, arrange: 'line' },
     { at: 1250, kind: 'crate', count: 3, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.2 },
 
