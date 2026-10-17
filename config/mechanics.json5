@@ -1480,7 +1480,7 @@
     "barHeight": 10,
     "maxWidth": 420,
     // 标题（页面顶部那行字）的内容、字号、颜色。
-    "label": "正在下潜…",
+    "label": "正在下载游戏资源",
     "titleSize": 26,
     "titleColour": 0xeaf9ff,
     // 百分比和下面两行数字的字号、颜色、行高（设计像素）。
