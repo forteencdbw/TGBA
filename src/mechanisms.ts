@@ -1753,16 +1753,19 @@ export interface Mechanisms {
       crawlerSpeedScale: number;
       crawlerBandTop: number;
       /**
-       * The jelly: the one menu creature that does not cross the screen.
+       * The two jellyfish-shaped menu swimmers (`jelly` and `zapper`).
        *
-       * It enters diagonally (`diagonalRatio` is vertical pixels per horizontal pixel; 1 is 45 degrees), then climbs
-       * at `climbSpeed` screen-heights per second and leaves through the top. `pulse` is one multiplier per
-       * `jelly-idle` frame.
+       * The bell is the direction: the sprite is rotated to it and the body travels along it at `swimSpeed`
+       * screen-heights per second. `minDegrees`/`maxDegrees` set the spawn angle above horizontal (mirrored on the
+       * right); `wanderDegrees`/`wanderSeconds` sway the bell, so the route curves. `pulse` is one multiplier per
+       * animation frame.
        */
       jelly: {
-        climbSpeed: number;
-        entrySeconds: number;
-        entryTargetRatio: number;
+        swimSpeed: number;
+        minDegrees: number;
+        maxDegrees: number;
+        wanderDegrees: number;
+        wanderSeconds: number;
         pulse: number[];
       };
       backCoralCount: number;
@@ -3445,9 +3448,11 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     ['fishChance', 'a probability'],
     ['crawlerSpeedScale', 'a speed multiple'],
     ['crawlerBandTop', 'a fraction of the screen height'],
-    ['jelly.climbSpeed', 'screen heights per second'],
-    ['jelly.entrySeconds', 'seconds'],
-    ['jelly.entryTargetRatio', 'a fraction of the lane width'],
+    ['jelly.swimSpeed', 'screen heights per second along the bell'],
+    ['jelly.minDegrees', 'degrees above horizontal'],
+    ['jelly.maxDegrees', 'degrees above horizontal'],
+    ['jelly.wanderDegrees', 'degrees of bell sway'],
+    ['jelly.wanderSeconds', 'seconds per sway'],
     ['backCoralCount', 'a count of corals'],
     ['backCoralHalfWidth', 'a fraction of the screen width'],
     ['backCoralBottom', 'a fraction of the screen height; negative is below the edge'],

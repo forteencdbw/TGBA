@@ -120,16 +120,17 @@ const darts = (kind: HazardKind): boolean => kind === 'fish';
 /**
  * The two jellyfish-shaped swimmers: `jelly` and its electric relative `zapper`.
  *
- * Both art pictures are a bell above trailing tentacles, so both should travel along their head/foot axis. The menu
- * is decorative, so this is a LOOK rule here; the zapper's gameplay motion (drifting sideways with a discharge) is
+ * Both art pictures are a bell above trailing tentacles. The bell IS their direction: the sprite is rotated to the
+ * bell's heading and the body travels along that heading, so the route is as diagonal as the bell is. The menu is
+ * decorative, so this is a LOOK rule here; the zapper's gameplay motion (drifting sideways with a discharge) is
  * untouched, because there it is an enemy rather than a jellyfish.
  */
-const climbs = (kind: HazardKind): boolean => kind === 'jelly' || kind === 'zapper';
+const bellSwims = (kind: HazardKind): boolean => kind === 'jelly' || kind === 'zapper';
 /**
- * A climbing jelly has no left/right to turn to: a random turn would reverse its climb instead of steering it.
+ * A bell swimmer has no left/right to turn to: a random turn would reverse its heading instead of steering it.
  * Excluded here rather than special-cased in the velocity map so the same predicate governs the decision and motion.
  */
-const turns = (kind: HazardKind): boolean => !CRAWLERS.includes(kind) && !climbs(kind);
+const turns = (kind: HazardKind): boolean => !CRAWLERS.includes(kind) && !bellSwims(kind);
 
 /**
  * A group of creatures that arrived together AND travel as one.
@@ -235,13 +236,13 @@ export class MenuBackdrop {
       vy: number;
       school: School;
       /**
-       * A climbing jellyfish's own motion: the climb speed in screen heights/second, and how much of its entry is left.
+       * A jellyfish's own motion: the bell's base heading (radians, y up) and the speed along it.
        *
-       * Absent on every other kind, which is what keeps the horizontal crossing logic untouched. The entry half is a
-       * decaying horizontal component: the jelly arrives diagonally from the side, then stops moving sideways and
-       * climbs, so it leaves through the top rather than crossing to the other wall.
+       * Absent on every other kind, which is what keeps the horizontal crossing logic untouched. The body follows the
+       * bell, and the bell slowly sways, so the route curves. The sprite's rotation is derived from this same heading:
+       * there is no separate path that the picture is merely tilted to match.
        */
-      vertical?: { climb: number; entryLeft: number };
+      swim?: { baseHeading: number; speed: number };
     }
   >();
 
@@ -553,6 +554,8 @@ export class MenuBackdrop {
     if (this.exiting) return;
     this.exitLeft = Math.max(0.01, mech.menu.backdrop.exitSeconds);
     for (const h of this.swimmers.hazards) {
+      // A bell swimmer keeps its own heading; the whole layer fades over the exit, so it needs no turn of its own.
+      if (this.velocity.get(h.id)?.swim) continue;
       /**
        * THE SAME DEPARTURE A DEFEATED CREATURE MAKES.
        *
@@ -564,7 +567,7 @@ export class MenuBackdrop {
        * supposed to flip.
        */
       // A climbing jelly leaves upward, the direction it was already going. Everything else turns to the near side.
-      h.flee = this.velocity.get(h.id)?.vertical ? 'up' : h.x < this.width / 2 ? 'right' : 'left';
+      h.flee = h.x < this.width / 2 ? 'right' : 'left';
       h.facingRest = 0;
     }
   }
@@ -710,34 +713,31 @@ export class MenuBackdrop {
         // A climbing jelly leaves the way it was going; everything else goes to a side.
         if (h.flee === 'up') {
           h.y += step;
-          if (v.vertical) h.artRotation = 0;
+          if (v.swim) h.artRotation = 0;
         } else h.x += h.flee === 'right' ? step : -step;
-      } else if (v.vertical) {
+      } else if (v.swim) {
         /**
-         * A jelly: a decaying horizontal entry, then a climb whose speed is the bell's frame.
+         * A jellyfish: the bell is the heading, and the body goes where the bell points.
          *
-         * The horizontal part fades over `entrySeconds`, so it arrives at an angle and settles into a vertical path
-         * instead of crossing the screen. The pulse is looked up by the SAME frame the picture is on, so the surge
-         * lands on the contraction; the zapper has its own animation, so it gets its own frame count. `boost` is 1
-         * here because neither jelly darts.
+         * The bell sways around its spawn heading on a slow sine; the path is that same angle integrated, so a belly
+         * that leans left is a body that travels left. The pulse is looked up by the SAME frame the picture is on, so
+         * the surge lands on the contraction; the zapper has its own animation, so it gets its own frame count.
+         * `boost` is 1 here because neither jelly darts.
          */
         const animation = mech.animations[h.kind === 'zapper' ? '电击水母-move' : 'jelly-idle'];
         const frame = animation ? animationFrameAt(animation, h.phase) : 0;
         const pulse = cfg.jelly.pulse[frame] ?? 1;
-        const left = v.vertical.entryLeft > 0 ? v.vertical.entryLeft / Math.max(0.01, cfg.jelly.entrySeconds) : 0;
-        if (left > 0) {
-          h.x += v.vx * left * dt * this.width;
-          v.vertical.entryLeft = Math.max(0, v.vertical.entryLeft - dt);
-        }
-        h.y += v.vertical.climb * pulse * dt * this.height;
+        const sway = (cfg.jelly.wanderDegrees * Math.PI) / 180;
+        const heading = v.swim.baseHeading + sway * Math.sin((h.phase * Math.PI * 2) / Math.max(0.1, cfg.jelly.wanderSeconds));
+        const speed = v.swim.speed * pulse * this.height;
+        h.x += Math.cos(heading) * speed * dt;
+        h.y += Math.sin(heading) * speed * dt;
         /**
-         * THE BELL POINTS ALONG THE PATH.
+         * The sprite's local rotation for a bell pointing along `heading`.
          *
-         * A jelly that moved diagonally while standing upright read as sliding sideways rather than swimming. The
-         * entry is the only horizontal component, so this is a 45-degree lean that straightens as `left` falls to 0.
-         * The sign is the vent's: the menu's root is Y-flipped, so a rightward entry is a NEGATIVE local rotation.
+         * The sign is the vent's: the menu's root is Y-flipped, so a rightward bell is a NEGATIVE local rotation.
          */
-        h.artRotation = Math.atan2(-v.vx * left * this.width, v.vertical.climb * pulse * this.height);
+        h.artRotation = Math.atan2(-Math.cos(heading), Math.sin(heading));
       } else {
         h.x += v.vx * boost * dt * this.width;
         h.y += v.vy * boost * dt * this.height;
@@ -894,13 +894,11 @@ export class MenuBackdrop {
     /** Whether this arrival crawls rather than swims -- see `CRAWLERS`. */
     const crawls = CRAWLERS.includes(kind);
     /**
-     * The two jellyfish-shaped swimmers are the vertical ones: they enter from the side at `diagonalRatio` (vertical
-     * pixels per horizontal pixel), then climb. `entryVx` is that entry in screen-widths/second, derived from the
-     * climb so the configured angle stays the angle even when the window changes.
+     * The two jellyfish-shaped swimmers follow their bell. The spawn heading is an upward-inward angle in the
+     * configured range; the right side gets its mirror, so both enter the lane rather than away from it.
      */
-    const isVertical = climbs(kind);
+    const isBell = bellSwims(kind);
     const jelly = cfg.jelly;
-    const climb = jelly.climbSpeed;
     const fromLeft = Math.random() < 0.5;
     const dir = fromLeft ? 1 : -1;
     const speed =
@@ -922,19 +920,6 @@ export class MenuBackdrop {
        * jitter below -- gives the same loose shoal without the whole formation having to exist off screen.
        */
       const x = fromLeft ? -this.width * 0.06 - i * this.width * 0.026 : this.width * 1.06 + i * this.width * 0.026;
-      /**
-       * A vertical swimmer's entry TARGET is inside the lane, not a speed.
-       *
-       * The old climb-derived speed was so slow that the jelly spent a second and a half clipped at the wall before
-       * it was fully visible. Targeting a point fixes the symptom and keeps the diagonal: the horizontal speed is
-       * whatever reaches the target in `entrySeconds`, and the bell tilts to match it.
-       */
-      const targetX = fromLeft
-        ? this.width * jelly.entryTargetRatio + i * this.width * 0.026
-        : this.width * (1 - jelly.entryTargetRatio) - i * this.width * 0.026;
-      const entryVx = isVertical
-        ? (targetX - x) / (0.5 * Math.max(0.01, jelly.entrySeconds) * this.width)
-        : 0;
       /**
        * And the height THIS member arrives at.
        *
@@ -968,8 +953,12 @@ export class MenuBackdrop {
       // The roll is taken for every kind, jellies included, so a probe's dice script keeps pointing at the same
       // decisions; the jelly simply does not use the result.
       const jitter = 0.86 + Math.random() * 0.28;
+      // The jitter already carries a 0..1 roll; reusing it picks the bell angle without spending another dice value.
+      const angleRoll = Math.max(0, Math.min(1, (jitter - 0.86) / 0.28));
+      const bellAngle = (jelly.minDegrees + angleRoll * (jelly.maxDegrees - jelly.minDegrees)) * (Math.PI / 180);
+      const baseHeading = fromLeft ? bellAngle : Math.PI - bellAngle;
       this.velocity.set(h.id, {
-        vx: isVertical ? entryVx : speed * jitter * dir,
+        vx: isBell ? 0 : speed * jitter * dir,
         /**
          * A crawler keeps the height it arrived at.
          *
@@ -979,7 +968,7 @@ export class MenuBackdrop {
          */
         vy: (Math.random() - 0.5) * (crawls ? 0 : cfg.driftRatio) * speed,
         school: shared ?? newSchool(),
-        ...(isVertical ? { vertical: { climb, entryLeft: Math.max(0, jelly.entrySeconds) } } : {}),
+        ...(isBell ? { swim: { baseHeading, speed: jelly.swimSpeed } } : {}),
       });
       h.heading = dir;
       this.faceTravel(h, dir);

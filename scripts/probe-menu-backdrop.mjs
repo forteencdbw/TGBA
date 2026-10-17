@@ -159,7 +159,7 @@ try {
     bd.sinceSpawn = -1e9;
     for (const c of cast) {
       const h = bd.swimmers.spawnAt(c.kind ?? 'fish', c.x, c.y, { deterministic: true, variety: 0 });
-      bd.velocity.set(h.id, { vx: c.vx, vy: c.vy, school: c.school, ...(c.vertical ? { vertical: c.vertical } : {}) });
+      bd.velocity.set(h.id, { vx: c.vx, vy: c.vy, school: c.school, ...(c.swim ? { swim: c.swim } : {}) });
       bd.swimmers.hazards.push(h);
       c.h = h;
     }
@@ -418,37 +418,35 @@ try {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // The jelly is the one vertical swimmer
+  // The jellyfish follow their bell
   // ---------------------------------------------------------------------------------------------
-  console.log('\n--- the jelly climbs ---');
+  console.log('\n--- the jelly follows its bell ---');
   {
+    const heading = Math.PI / 3; // 60 degrees above horizontal, up-right
     const cast = [
       {
         kind: 'jelly',
         x: W * 0.5,
         y: H * 0.3,
-        vx: 0.14,
+        vx: 0,
         vy: 0,
         school: { burstLeft: 0 },
-        vertical: { climb: 0.06, entryLeft: 1 },
+        swim: { baseHeading: heading, speed: 0.09 },
       },
       ...filler(cfg.minAlive - 1),
     ];
     const bd = build(cast);
     const h = cast[0].h;
+    const x0 = h.x;
     const y0 = h.y;
     bd.update(DT);
-    check('a jelly leans into its diagonal entry', Math.abs(h.artRotation) > 0.05, true);
-    for (let i = 0; i < 119; i++) bd.update(DT);
-    check('a jelly climbs', h.y > y0, true);
-    check('and straightens once the entry is spent', Math.abs(h.artRotation) < 0.01, true);
-    check('and stays inside the lane once its entry is spent', h.x > 0 && h.x < W, true);
-    check('the entry timer runs out', bd.velocity.get(h.id).vertical.entryLeft <= 1e-9, true);
-    const y1 = h.y;
-    bd.update(1);
-    check('and it keeps climbing', h.y > y1, true);
+    check('the bell points up-right (local rotation is negative)', h.artRotation < 0, true);
+    check('and the body moves right and up, not just up', h.x > x0 && h.y > y0, true);
+    for (let i = 0; i < 60; i++) bd.update(DT);
+    check('it keeps moving along the bell', h.x > x0 && h.y > y0, true);
+    check('the sway is carried in the heading', bd.velocity.get(h.id).swim !== undefined, true);
     bd.beginExit();
-    check('and leaves through the top, not a side', h.flee, 'up');
+    check('exit leaves it swimming its own way while the layer fades', h.flee, null);
 
     // The electric jelly is drawn as the same animal, so the menu moves it the same way.
     const zcast = [
@@ -456,20 +454,19 @@ try {
         kind: 'zapper',
         x: W * 0.5,
         y: H * 0.3,
-        vx: 0.14,
+        vx: 0,
         vy: 0,
         school: { burstLeft: 0 },
-        vertical: { climb: 0.06, entryLeft: 1 },
+        swim: { baseHeading: heading, speed: 0.09 },
       },
       ...filler(cfg.minAlive - 1),
     ];
     const zbd = build(zcast);
     const zh = zcast[0].h;
+    const zx0 = zh.x;
     const zy0 = zh.y;
-    for (let i = 0; i < 60; i++) zbd.update(DT);
-    check('the electric jelly climbs too', zh.y > zy0, true);
-    zbd.beginExit();
-    check('and leaves through the top as well', zh.flee, 'up');
+    zbd.update(DT);
+    check('the electric jelly follows its bell too', zh.x > zx0 && zh.y > zy0, true);
   }
 
   // ---------------------------------------------------------------------------------------------

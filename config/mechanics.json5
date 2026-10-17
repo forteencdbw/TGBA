@@ -4044,22 +4044,23 @@
       "crawlerSpeedScale": 0.4,
       "crawlerBandTop": 0.33,
 
-      // **两种水母形（`jelly` 和 `zapper`）是唯一垂直运动的。** 它们从侧面斜着进来，然后沿自己的头/脚轴向上游，
-      // 从屏幕顶部离开；其他鱼仍然横穿。下面这几项只作用于这两种。
+      // **两种水母形（`jelly` 和 `zapper`）沿自己的伞盖方向游。** 进场时伞盖朝泳道内上方，之后缓慢摆动；
+      // 水母始终沿伞盖当前朝向移动，所以路线是斜的、会弯，而不是一条垂直向上的线。其他鱼仍然横穿。
       //
       // `zapper` 在关卡里仍是会放电的横向敌人；这里改的是菜单里的装饰游动。
       //
-      // `climbSpeed` 是上升速度（屏高/秒）。
-      // 进场时它从侧面斜着游到离那面墙 `entryTargetRatio` 个泳道宽的位置；水平速度在 `entrySeconds` 内
-      // 线性收到 0，之后只剩上升。进场的目标在泳道内，所以不会贴着边往上走。
-      // 伞盖会按实际速度方向倾斜（`entry` 的水平分量越大越斜），进场结束后自动回正。
+      // `swimSpeed` 是沿伞盖方向的速度（屏高/秒）。`minDegrees`/`maxDegrees` 是进场伞盖与水平面的夹角范围
+      // （左右自动镜像；0 = 水平，90 = 正上）。`wanderDegrees`/`wanderSeconds` 是游动时伞盖左右摆动的
+      // 幅度和周期——伞盖摆到哪里，路线就跟到哪里。
       //
       // `pulse` 是每一帧的推进倍率，顺序对应 `jelly-idle` 的 4 帧：第 2 帧伞盖收得最紧 -> 最快，
       // 第 3 帧展开 -> 最慢。改这里不用动动画。
       "jelly": {
-        "climbSpeed": 0.09,
-        "entrySeconds": 1.0,
-        "entryTargetRatio": 0.22,
+        "swimSpeed": 0.12,
+        "minDegrees": 40,
+        "maxDegrees": 60,
+        "wanderDegrees": 12,
+        "wanderSeconds": 4,
         "pulse": [0.7, 1.6, 0.8, 1.3]
       },
 
