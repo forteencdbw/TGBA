@@ -1461,6 +1461,11 @@ export interface Mechanisms {
     gapStats: number;
     /** How many seconds of the download the reported rate is measured over. */
     speedWindowSeconds: number;
+    /** The label shown once the pictures are in and the music is what the page is waiting for. */
+    musicLabel: string;
+    /** The shortest time the boot page stays up, and the longest it waits for the music before letting the menu in. */
+    minSeconds: number;
+    bootTimeoutSeconds: number;
   };
   /**
    * The full-body white flash every hit gives: its shape, its strength, and how often it may restart.
@@ -1668,6 +1673,16 @@ export interface Mechanisms {
     titleAspect: number;
     /** The gap between the title's bottom edge and the top of the first stone. */
     titleButtonGap: number;
+    /**
+     * The fade-in every time the menu becomes the screen: the title first, then the stones one after another.
+     *
+     * `buttonSeconds` is each stone's own fade, and `buttonStaggerSeconds` is how far apart their starts are.
+     */
+    intro: {
+      titleSeconds: number;
+      buttonSeconds: number;
+      buttonStaggerSeconds: number;
+    };
     /**
      * The animated menu backdrop: decorative creatures swimming, and a coral bed in two layers.
      *
@@ -3271,6 +3286,9 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'loading.gapBar', check: anyNumber, describe: 'design pixels' },
   { path: 'loading.gapStats', check: anyNumber, describe: 'design pixels' },
   { path: 'loading.speedWindowSeconds', check: anyNumber, describe: 'seconds that the reported rate is averaged over' },
+  { path: 'loading.musicLabel', check: (v) => typeof v === 'string', describe: 'a string' },
+  { path: 'loading.minSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'loading.bootTimeoutSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'hitFlash.seconds', check: anyNumber, describe: 'seconds' },
   { path: 'hitFlash.peakIntensity', check: anyNumber, describe: 'an intensity; 0 disables the full-body flash' },
   { path: 'hitFlash.riseFraction', check: anyNumber, describe: 'a fraction of the flash spent rising to its peak' },
@@ -3334,6 +3352,9 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'menu.titleWidthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
   { path: 'menu.titleAspect', check: anyNumber, describe: 'width divided by height of the title picture' },
   { path: 'menu.titleButtonGap', check: anyNumber, describe: 'design pixels' },
+  { path: 'menu.intro.titleSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'menu.intro.buttonSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'menu.intro.buttonStaggerSeconds', check: anyNumber, describe: 'seconds' },
   /**
    * The menu backdrop's numbers, in one block.
    *

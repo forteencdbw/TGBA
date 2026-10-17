@@ -56,6 +56,13 @@ export class LoadingScreen {
   private canvasHeight = 0;
   private scale = 1;
   private progress = 0;
+  /**
+   * Whether the load has moved to its second stage: the pictures are in, and the music is what is left.
+   *
+   * The two stages are told apart rather than blended, because "downloading at 1.2 MB/s" and "buffering the music"
+   * are different kinds of wait and the numbers behind them are not comparable. See `waitForMusic`.
+   */
+  private musicWait = false;
   private lines: string[] = [];
   /** The rate, over a window of the samples below. See `update`. */
   private speed = 0;
@@ -88,8 +95,23 @@ export class LoadingScreen {
     this.progress = 0;
     this.speed = 0;
     this.samples.length = 0;
+    this.musicWait = false;
     this.lines = [];
     this.title.text = mech.loading.label;
+    this.redraw();
+  }
+
+  /**
+   * Second stage: the pictures have landed, and the page is waiting for the music behind the menu to be playable.
+   *
+   * The bar is held at full rather than emptied for a second phase -- the pictures ARE done, and a bar that starts
+   * over would say the download had. The rate and the byte counts are replaced by the one label, because there is no
+   * download left to report and a frozen "0.00 MB/s" beside a full bar reads as a stall.
+   */
+  waitForMusic(): void {
+    this.musicWait = true;
+    this.progress = 1;
+    this.lines = [mech.loading.musicLabel];
     this.redraw();
   }
 
@@ -107,6 +129,9 @@ export class LoadingScreen {
 
   /** One report from the preload: the bar, the counts, and the rate. */
   update(progress: PreloadProgress): void {
+    // The byte-size HEADs report in the background and may land after the files do; once the page is on its second
+    // stage, a late download report must not overwrite the label that says what is actually being waited for now.
+    if (this.musicWait) return;
     const cfg = mech.loading;
     /**
      * The rate, measured over the last `speedWindowSeconds` of reports.

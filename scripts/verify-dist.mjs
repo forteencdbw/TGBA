@@ -144,6 +144,25 @@ try {
   if (!booted) throw new Error('the built game never exposed __GB -- check the console errors above');
 
   /**
+   * The game BOOTS INTO THE LOADING PAGE, which becomes the menu when the atlas and the music are in. The start
+   * button has no geometry worth aiming at until then, so wait for the phase before pressing it.
+   */
+  let menuPhase = null;
+  for (let i = 0; i < 80; i++) {
+    const r = await send('Runtime.evaluate', {
+      expression: `(() => {
+        const g = window.__GB.game;
+        return { phase: g.diagnostics.phase, introFinished: g.menuRef.introFinished };
+      })()`,
+      returnByValue: true,
+    });
+    menuPhase = r.result.value?.phase ?? null;
+    if (menuPhase === 'menu' && r.result.value?.introFinished === true) break;
+    await sleep(250);
+  }
+  if (menuPhase !== 'menu') throw new Error(`the boot load never reached the menu (phase: ${menuPhase})`);
+
+  /**
    * The game BOOTS INTO THE MENU, so reaching gameplay means pressing start.
    *
    * This used to wait for `playing` on its own, which was right until the menu was added -- and then the wait

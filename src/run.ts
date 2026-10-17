@@ -177,8 +177,13 @@ export class Run {
    */
   readonly events: RunEvent[] = [];
 
-  /** Which part of the flow this is. The run SETS it too: a fatal hit starts the burst. */
-  phase: Phase = 'menu';
+  /**
+   * Which part of the flow this is. The run SETS it too: a fatal hit starts the burst.
+   *
+   * A bare run starts on `boot`, not `menu`: the game's first screen is the loading page, and `menu` is what the boot
+   * load promotes it to. Probes that drive a `Run` directly therefore start in `boot` too -- see `scripts/probe-run.mjs`.
+   */
+  phase: Phase = 'boot';
   /** Seconds left in the current phase, when the phase has one. */
   phaseTimer = 0;
 

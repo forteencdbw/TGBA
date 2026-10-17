@@ -31,7 +31,7 @@ import { SettingsUi } from './settings';
 import { Music, type MusicTrack } from './music';
 import { RecordedMusic } from './recordedMusic';
 import { Sprite } from 'pixi.js';
-import { allAssetNames, assetSizeNow, assetTextureNow, loadAssetTexture, preloadAssets } from './assets';
+import { allAssetNames, assetSizeNow, assetTextureNow, atlasAssetNames, loadAssetTexture, preloadAssets } from './assets';
 import { ParticleField } from './particles';
 import { ChargeTrail } from './chargeTrail';
 import { LoadingScreen } from './loading';
@@ -536,6 +536,14 @@ class Game {
      */
     audio.silenceAmbience();
     this.layout();
+    /**
+     * The first screen is the loading page, and it becomes the menu on its own.
+     *
+     * Started from the constructor rather than from the first frame so the download begins while the renderer is still
+     * settling. The phase it leaves behind is `menu`; until then `step` advances nothing and the pointer stream is
+     * refused, exactly as it is for the level loader.
+     */
+    void this.bootMenu();
 
     // Expose the tuning object so feel can be dialled in live from the browser console.
     (window as unknown as { __GB: unknown }).__GB = {
@@ -604,6 +612,9 @@ class Game {
   private readonly pointerPositions = new Map<number, { x: number; y: number }>();
 
   handlePointerDown(pointerId: number, x: number, y: number): void {
+    // The boot page has no controls. Its own start is a promise, not a button, and a press that unlocked audio through
+    // it would also be the second thing racing the phase change.
+    if (this.run.phase === 'boot') return;
     // The first real gesture is the only moment a browser lets audio start. Doing it here rather than
     // at boot is why the game is not silently muted on a phone.
     audio.unlock();
@@ -659,6 +670,7 @@ class Game {
   }
 
   handlePointerMove(pointerId: number, x: number, y: number): void {
+    if (this.run.phase === 'boot') return;
     this.logPointer('move', pointerId, x, y);
     this.pointerPositions.set(pointerId, { x, y });
     if (this.run.phase === 'menu') {
@@ -684,6 +696,7 @@ class Game {
   }
 
   handlePointerUp(pointerId: number): void {
+    if (this.run.phase === 'boot') return;
     this.logPointer('up', pointerId, -1, -1);
     const at = this.pointerPositions.get(pointerId) ?? { x: -1, y: -1 };
     this.pointerPositions.delete(pointerId);
@@ -1965,7 +1978,7 @@ class Game {
      * pick joins them too, with its own case above rather than in this list -- the pick must not fall through
      * to the phase restore a pause uses, because picking returns to PLAYING and nothing else.
      */
-    if (this.run.phase === 'paused' || this.run.phase === 'menu') return;
+    if (this.run.phase === 'paused' || this.run.phase === 'menu' || this.run.phase === 'boot') return;
 
     if (this.run.invulnerable > 0) this.run.invulnerable = Math.max(0, this.run.invulnerable - dt);
     /**
@@ -2534,6 +2547,35 @@ class Game {
     ];
   }
 
+  /**
+   * The session's first page: fetch what the menu draws, wait for the music behind it, then show the menu.
+   *
+   * Only the ATLAS is fetched here (`atlasAssetNames`). The menu is title, stones and backdrop creatures, and every one
+   * of those is packed into the one page -- so naming their frames downloads exactly the file the menu needs, not the
+   * two level backdrops it does not. The level loader later asks for `allAssetNames`, and the page is a cache hit by
+   * then.
+   *
+   * The music wait is capped (`loading.bootTimeoutSeconds`): a track that will not buffer must not hold the game on a
+   * loading page forever. Through it all the page stays up for at least `loading.minSeconds`, so a fast connection still
+   * shows a screen rather than a flicker -- and so the menu's own fade-in starts from a frame the player is watching.
+   */
+  private async bootMenu(): Promise<void> {
+    const cfg = mech.loading;
+    const started = performance.now();
+    this.loading.begin();
+    const music = this.recordedMusic.whenPlayable('menu');
+    await preloadAssets(atlasAssetNames(), (progress) => this.loading.update(progress));
+    this.loading.waitForMusic();
+    const timeout = new Promise<void>((resolve) => window.setTimeout(resolve, cfg.bootTimeoutSeconds * 1000));
+    await Promise.race([music, timeout]);
+    const remainingMs = cfg.minSeconds * 1000 - (performance.now() - started);
+    if (remainingMs > 0) await new Promise<void>((resolve) => window.setTimeout(resolve, remainingMs));
+    // A phase change while the page was up would mean something else already owns the screen; do not talk over it.
+    if (this.run.phase !== 'boot') return;
+    this.run.phase = 'menu';
+    this.menu.beginIntro();
+  }
+
   private async beginWithLoading(): Promise<void> {
     this.sound('menu.start', 0.7);
     this.pendingStart = true;
@@ -2902,6 +2944,8 @@ class Game {
      * `refillBackdrop`; a page opened from the menu needs nothing put back, because it never emptied anything.
      */
     this.menu.refillBackdrop();
+    // The menu arrives rather than being already there, the same way it does after the boot load.
+    this.menu.beginIntro();
     this.touch.releaseAll();
     /**
      * Stop the ambience explicitly.
@@ -3444,6 +3488,7 @@ private updateBoss(): void {
      * the bug this list is here to prevent.
      */
     const fullScreenPage =
+      this.run.phase === 'boot' ||
       this.run.phase === 'menu' ||
       this.run.phase === 'formPick' ||
       this.run.phase === 'loading';
@@ -3570,7 +3615,7 @@ private updateBoss(): void {
      * the frame the run's first phase begins. Its DRAWING is still the loader's business: this only says when it may
      * be seen.
      */
-    this.loading.root.visible = this.run.phase === 'loading';
+    this.loading.root.visible = this.run.phase === 'boot' || this.run.phase === 'loading';
     /**
      * The banners and the results card are NOT touched here.
      *

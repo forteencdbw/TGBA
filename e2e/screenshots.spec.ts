@@ -26,7 +26,8 @@ import { boot, settingsGeometry, startFromMenu, waitForPhase } from './helpers';
 test.describe('screen captures @screenshots', () => {
   test('the main menu @screenshots', async ({ page }, testInfo) => {
     await boot(page);
-    await page.waitForTimeout(300);
+    // The menu fades in once the phase says `menu`; give the last stone its full entrance before taking the picture.
+    await page.waitForTimeout(1400);
     await page.screenshot({ path: testInfo.outputPath('menu.png') });
   });
 

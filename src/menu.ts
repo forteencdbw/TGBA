@@ -221,6 +221,13 @@ export class MainMenu {
   private readonly caustics = new Caustics();
   /** Whether `onBackdropExit` has already been fired for the exit now running. */
   private exitReported = false;
+  /**
+   * Seconds since the title-and-buttons fade-in began.
+   *
+   * Starts at infinity so a menu nobody has asked to fade in -- a probe that constructs one directly, a frame before
+   * any phase exists -- is simply visible. `beginIntro` is what puts it at zero.
+   */
+  private introElapsed = Number.POSITIVE_INFINITY;
 
   constructor() {
     this.root.eventMode = 'none';
@@ -494,6 +501,56 @@ export class MainMenu {
   }
 
   /**
+   * Start the fade-in from nothing: the title first, then the buttons one after another.
+   *
+   * Called every time the menu becomes the SCREEN -- after the boot load, and on the way back from a run -- rather than
+   * once, so the menu arrives rather than being already there. See `applyIntro`.
+   */
+  beginIntro(): void {
+    this.introElapsed = 0;
+    this.applyIntro();
+  }
+
+  /**
+   * How far the fade-in runs in total, in seconds.
+   *
+   * The last button starts at `titleSeconds + (n-1) * stagger`, so this is when its own fade ends. Used both to stop
+   * advancing the clock and to answer `introFinished`.
+   */
+  private get introEnd(): number {
+    const cfg = mech.menu.intro;
+    return (
+      cfg.titleSeconds +
+      Math.max(0, this.buttons.length - 1) * cfg.buttonStaggerSeconds +
+      cfg.buttonSeconds
+    );
+  }
+
+  /** Whether the fade-in has finished, which is also whether the stones are visible enough to press. */
+  get introFinished(): boolean {
+    return this.introElapsed >= this.introEnd;
+  }
+
+  /**
+   * Put the current fade-in progress on the title and the buttons.
+   *
+   * Every alpha is derived from ONE clock rather than counted down per sprite, so a resize, a slow frame or a second
+   * `beginIntro` cannot leave them disagreeing. The curve is smoothstep: linear alpha reads as a switch being dimmed,
+   * while easing out of zero and into full makes it read as emerging from the water.
+   */
+  private applyIntro(): void {
+    const cfg = mech.menu.intro;
+    const fade = (start: number, seconds: number): number => {
+      const t = Math.max(0, Math.min(1, (this.introElapsed - start) / Math.max(0.01, seconds)));
+      return t * t * (3 - 2 * t);
+    };
+    this.title.alpha = fade(0, cfg.titleSeconds);
+    for (const [index, button] of this.buttons.entries()) {
+      button.sprite.alpha = fade(cfg.titleSeconds + index * cfg.buttonStaggerSeconds, cfg.buttonSeconds);
+    }
+  }
+
+  /**
    * Advance the water without drawing the menu.
    *
    * The menu's own update does the same thing and then draws; this is the half that is only simulation. It used to be
@@ -519,6 +576,10 @@ export class MainMenu {
 
   update(dt: number): void {
     this.updateBackdrop(dt);
+    if (this.introElapsed < this.introEnd) {
+      this.introElapsed = Math.min(this.introEnd, this.introElapsed + dt);
+      this.applyIntro();
+    }
     this.caustics.update(dt);
     this.uiBubbles.update(dt);
     this.uiBubbles.draw();
@@ -559,8 +620,14 @@ export class MainMenu {
     return true;
   }
 
-  /** Which button contains the point, if any. */
+  /**
+   * Which button contains the point, if any.
+   *
+   * Nothing is a button until the fade-in has finished: the stones are still at alpha 0, and a press that landed on an
+   * invisible one would start a run the player could not see they had asked for.
+   */
   private buttonAt(x: number, y: number): MenuButton | undefined {
+    if (!this.introFinished) return undefined;
     return this.buttons.find((button) => this.inRect(button.rect, x, y));
   }
 

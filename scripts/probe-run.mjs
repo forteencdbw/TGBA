@@ -51,7 +51,8 @@ try {
 
   // --- it exists at all without a canvas
   const run = new Run();
-  check('a run exists · no game, no canvas, no camera', [typeof run.player.x, run.phase], ['number', 'menu']);
+  // A bare run starts on the BOOT page: the game's first screen is the loader, and `menu` is what it promotes it to.
+  check('a run exists · no game, no canvas, no camera', [typeof run.player.x, run.phase], ['number', 'boot']);
 
   // --- the contact rule, driven directly: a bubble the player is big enough to eat goes in, and the ledger moves
   {

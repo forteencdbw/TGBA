@@ -58,6 +58,16 @@ export class RecordedMusic {
     return this.tracks[slot].stateRef.url !== null;
   }
 
+  /**
+   * Resolve when a slot's file can start, or at once when it has no file.
+   *
+   * The boot loader asks this about the menu's track before showing the menu. Playback still waits for the first
+   * gesture; this only warms the download -- see `StreamedTrack.whenPlayable`.
+   */
+  whenPlayable(slot: MusicSlot): Promise<void> {
+    return this.tracks[slot].whenPlayable();
+  }
+
   /** Make a slot the one playing, or none of them. */
   play(slot: MusicSlot | null): void {
     this.slot = slot;

@@ -307,6 +307,17 @@ export function allAssetNames(): string[] {
 }
 
 /**
+ * The pictures the MENU needs, which today is the atlas page and nothing else.
+ *
+ * The menu draws a title, two button pictures, and the backdrop's creatures -- every one of them packed into the same
+ * page, so naming the page's frames fetches exactly one file. The two loose JPEGs are level backdrops and deliberately
+ * stay out of it: the boot load should not wait on scenery the player will not see for another minute.
+ */
+export function atlasAssetNames(): string[] {
+  return [...FRAMES.values()].map((frame) => frame.key);
+}
+
+/**
  * Load one picture and return its texture.
  *
  * ---------------------------------------------------------------------------------------------

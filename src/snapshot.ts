@@ -142,6 +142,12 @@ export interface GameSnapshot {
  * snapshot's report of it.
  */
 export type Phase =
+  /**
+   * The first screen of the session: fetching what the menu draws and waiting for its music, before there is a menu
+   * to show. The app starts here rather than on `menu`, because a menu shown while its title is still arriving is a
+   * menu with a hole in it -- and the loading page is the honest thing to show while it is filled.
+   */
+  | 'boot'
   | 'menu'
   /**
    * The form picker: the screen between 开始游戏 and the load.

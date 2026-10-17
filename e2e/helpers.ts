@@ -33,7 +33,7 @@ export interface Diagnostics {
   build: { version: string; hash: string; dirty: boolean; label: string };
   frames: number;
   elapsed: number;
-  phase: 'menu' | 'intro' | 'playing' | 'burst' | 'paused';
+  phase: 'boot' | 'menu' | 'intro' | 'playing' | 'burst' | 'paused';
   volume: number;
   bubbles: number;
   gameSeconds: number;
@@ -218,11 +218,14 @@ export interface GameHandle {
 /**
  * Wait until the game module has booted and exposed itself.
  *
- * `window.__GB` is assigned during `Game`'s constructor, so this is satisfied before the first frame.
+ * `window.__GB` is assigned during `Game`'s constructor, so this is satisfied before the first frame -- but the game
+ * now starts on the boot loading page, and the menu's geometry is not a target until the phase says `menu`. Waiting for
+ * the phase here means every spec that presses start is pressing a button that is actually on the screen.
  */
 export async function boot(page: Page): Promise<void> {
   await page.goto('/');
   await page.waitForFunction(() => Boolean((window as unknown as { __GB?: unknown }).__GB), null, { timeout: 30_000 });
+  await waitForPhase(page, 'menu');
 }
 
 /**
@@ -233,6 +236,13 @@ export async function boot(page: Page): Promise<void> {
  * is the closest thing to a finger that exists here -- and it fails if the button is not where it claims.
  */
 export async function startFromMenu(page: Page): Promise<void> {
+  // The stones ignore presses until the fade-in has finished (see `MainMenu.buttonAt`), so a click at the right
+  // coordinates a moment too early would be swallowed and the spec would wait for a phase that never comes.
+  await page.waitForFunction(
+    () => (window as unknown as { __GB: { game: { menuRef: { introFinished: boolean } } } }).__GB.game.menuRef.introFinished,
+    null,
+    { timeout: 10_000 },
+  );
   const box = await page.evaluate(() => {
     const b = (window as unknown as { __GB: { game: { menuRef: { geometry: { button: { x: number; y: number; w: number; h: number } } } } } }).__GB.game.menuRef.geometry.button;
     return { x: b.x + b.w / 2, y: b.y + b.h / 2 };

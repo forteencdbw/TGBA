@@ -9,8 +9,10 @@
  * the file's own couple of megabytes. Routing it through `createMediaElementSource` into the game's bus is what makes the
  * settings sliders and the mute key apply to it with no second volume control.
  *
- * Nothing is fetched until the browser has allowed sound (`musicBus()` is null before the first gesture), so the download
- * does not start for a player who has not touched the screen.
+ * The MENU track is the exception: its element is created and fetched at boot (`whenPlayable`), because the loading page
+ * waits for the music behind the menu before it lets the menu be seen. PLAYBACK is still refused until the first gesture
+ * -- only the download starts early. Every other slot is still created on its first play, so an unplayed level's file is
+ * never fetched.
  *
  * ---------------------------------------------------------------------------------------------
  * ONE ENVELOPE FOR EVERYTHING
@@ -94,11 +96,15 @@ export class StreamedTrack {
     const held = opts.held ?? false;
     if (!this.el) {
       if (!active || !this.url) return;
-      this.create(bus);
+      this.ensureElement();
     }
     const el = this.el;
+    if (!el) return;
+    // The element may predate the bus (the menu's is fetched at boot), so the graph is built on the first frame that
+    // has one, rather than in the same breath as the element.
+    if (!this.gain) this.connect(bus);
     const gain = this.gain;
-    if (!el || !gain || el.error) return;
+    if (!gain || el.error) return;
 
     // Near the end of the file the target drops to zero so the track fades out before it runs out. `duration` is NaN until
     // the metadata has arrived, which compares false, so the first seconds never loop early.
@@ -149,21 +155,72 @@ export class StreamedTrack {
     });
   }
 
-  private create(bus: { ctx: AudioContext; destination: AudioNode }): void {
-    const el = new Audio(this.url ?? undefined);
+  /**
+   * Resolve once the file can start playing, or at once when this slot has no file.
+   *
+   * Called by the boot loader for the menu's track: the first screen is not shown until the music behind it can start,
+   * so pressing 开始 does not begin with a silent second while a download catches up. `canplay` means "enough has
+   * arrived to start", not "all of it has", which is the right bar -- the rest keeps streaming.
+   *
+   * An error resolves rather than rejects, for the same reason every other asset failure here is survivable: music is
+   * an upgrade to the screen, never a precondition, and a missing file must not leave the player on the loading page.
+   */
+  whenPlayable(): Promise<void> {
+    if (!this.url) return Promise.resolve();
+    const el = this.ensureElement();
+    if (!el || el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        el.removeEventListener('canplay', finish);
+        el.removeEventListener('loadeddata', finish);
+        el.removeEventListener('error', finish);
+        resolve();
+      };
+      el.addEventListener('canplay', finish);
+      el.addEventListener('loadeddata', finish);
+      el.addEventListener('error', finish);
+      // It may have become playable between the check above and the listeners going on.
+      if (el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) finish();
+    });
+  }
+
+  /**
+   * The element, created but NOT yet wired into the audio graph.
+   *
+   * The split exists so `whenPlayable` can fetch before a gesture has produced an AudioContext. `preload = 'auto'` is
+   * what starts the download; `loop` is left off because the loop is the envelope's job (see the header).
+   */
+  private ensureElement(): HTMLAudioElement | null {
+    if (this.el) return this.el;
+    if (!this.url) return null;
+    const el = new Audio(this.url);
     el.preload = 'auto';
-    // `loop` is left off: the loop is the envelope's job (see the header).
-    const gain = bus.ctx.createGain();
-    gain.gain.value = 0;
-    bus.ctx.createMediaElementSource(el).connect(gain);
-    gain.connect(bus.destination);
     this.el = el;
-    this.gain = gain;
     // A hidden tab should be quiet, the way the level music is (its step clock stops with the frame loop). `update` starts
     // it again, from where it was, when the tab is back and this track is still the one up.
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && !el.paused) el.pause();
     });
+    return el;
+  }
+
+  /**
+   * Build the graph: element -> gain -> the game's music bus.
+   *
+   * A `MediaElementAudioSourceNode` can be created for an element only ONCE, which is why this is guarded by `gain`
+   * rather than called wherever an element exists. A bus that changes (it does not today) would need a new element.
+   */
+  private connect(bus: { ctx: AudioContext; destination: AudioNode }): void {
+    const el = this.el;
+    if (!el || this.gain) return;
+    const gain = bus.ctx.createGain();
+    gain.gain.value = 0;
+    bus.ctx.createMediaElementSource(el).connect(gain);
+    gain.connect(bus.destination);
+    this.gain = gain;
   }
 
   /** Test hook: what the element and the fade are doing, so a probe can read it without hearing it. */
