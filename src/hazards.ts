@@ -5640,6 +5640,20 @@ export function paintHazards(
     }
 
     /**
+     * THE INK'S THROW IS DRAWN, NOT SPRITED.
+     *
+     * The picture is the LANDED cloud. Drawing it at the hazard's x/y during the throw would show the cloud at the
+     * target before the blob arrived, so the first `throwSeconds` use the procedural projectile and hide any sprite
+     * this id may already hold. After that the art branch takes over, and `drawInk` remains the no-art fallback.
+     */
+    if (h.kind === 'ink' && h.phase < mech.hazards.ink.throwSeconds) {
+      const stale = ART_SPRITES.get(h.id);
+      if (stale) stale.visible = false;
+      drawInk(g, h, r, laneWidth, elapsed);
+      continue;
+    }
+
+    /**
      * A creature with a picture is drawn from it, and its kind's branch is skipped.
      *
      * The fallback matters as much as the picture: while a texture is still loading (or if the file is missing) the drawn
@@ -5713,7 +5727,17 @@ export function paintHazards(
         sprite.visible = true;
         sprite.x = x;
         sprite.y = y;
-        sprite.alpha = art.alpha * (h.flee && !dying ? mech.hazards.fleeAlpha : 1);
+        /**
+         * The ink cloud's picture fades with its remaining life, and again over its short fade-out. Without this the
+         * sprite would pop out at full opacity on the frame the hazard was culled.
+         */
+        const inkFade =
+          h.kind === 'ink'
+            ? h.deadSince !== undefined
+              ? Math.max(0, 1 - h.deadSince / Math.max(0.001, mech.hazards.ink.fadeSeconds))
+              : Math.min(1, (h.foamLife / Math.max(0.001, mech.hazards.ink.lifeSeconds)) * 3)
+            : 1;
+        sprite.alpha = art.alpha * inkFade * (h.flee && !dying ? mech.hazards.fleeAlpha : 1);
         // A school's far fish are dimmed toward a cold grey-blue, by how far they are. Everything else is drawn as it is
         // -- and the tint is written for EVERY creature, because a pooled sprite keeps whatever tint it last had.
         sprite.tint = h.boid ? depthTint(h.boid.d) : 0xffffff;

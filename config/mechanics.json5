@@ -2323,7 +2323,10 @@
     "zapper": { "move": "电击水母-move", "scale": 1.5, "alpha": 1 },
     // fallcrate：下落木箱。复用场景木箱的同一张图与同一档大小；`fixedFacing` 因为箱子没有朝向，
     // 不该朝玩家转或随漂移方向镜像。
-    "fallcrate": { "move": "木箱", "scale": 1.4, "alpha": 1, "fixedFacing": true }
+    "fallcrate": { "move": "木箱", "scale": 1.4, "alpha": 1, "fixedFacing": true },
+    // ink：第二关 BOSS 的墨雾。图片是**落地后的云**；墨团飞行阶段仍用程序画的小团（见 hazards.ts）。
+    // `fixedFacing` 因为墨云没有朝向，不该朝玩家转或随漂移方向镜像。
+    "ink": { "move": "墨汁", "scale": 1, "alpha": 1, "fixedFacing": true }
   },
 
   "hazards": {
