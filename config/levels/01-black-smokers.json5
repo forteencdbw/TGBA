@@ -302,7 +302,7 @@
 
     // --- S7  回落：矿物 + 一条电鳗 + 两只虾。电鳗是这一关唯一的枪手类（第一次出现），单独给它一屏。
     { at: 1350, span: 70, count: 5, kind: 'mineral', arrange: 'spread', x: 0.5 },
-    { at: 1400, kind: 'eel', x: 0.5 },
+    { at: 1400, kind: 'eel', x: 0.9 },
     { at: 1450, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'random', depth: 0.55 },
 
     { at: 1340, span: 160, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },

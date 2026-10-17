@@ -842,6 +842,14 @@ export interface Mechanisms {
        */
       flameWidthScale: number;
       /**
+       * How much longer the flame PICTURE is drawn than the collision capsule.
+       *
+       * The tip fade hides the last `tipFadeFraction` of the picture, so drawing it at exactly the capsule's length
+       * leaves a lethal stretch with no fire on it. This stretches the picture along its axis only -- the capsule is
+       * untouched -- so the visible flame reaches the end of what can hurt you.
+       */
+      flameLengthScale: number;
+      /**
        * How much of the flame's TOP fades to nothing, as a fraction of its height.
        *
        * The source render reaches the edge of its frame, so the imported texture ends in a flat cut; a smoothstep
@@ -3014,6 +3022,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.vent.art.flame', check: (v) => typeof v === 'string', describe: 'an animation name' },
   { path: 'hazards.vent.flameAlpha', check: anyNumber, describe: 'an opacity' },
   { path: 'hazards.vent.flameWidthScale', check: anyNumber, describe: 'a multiplier on the collision width' },
+  { path: 'hazards.vent.flameLengthScale', check: anyNumber, describe: 'a multiplier on the collision length' },
   { path: 'hazards.vent.tipFadeFraction', check: anyNumber, describe: 'a fraction of the flame height' },
   { path: 'hazards.vent.artFadeSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'hazards.vent.warnLengthFraction', check: anyNumber, describe: 'a fraction of the erupting length' },

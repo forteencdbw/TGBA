@@ -5174,7 +5174,7 @@ function paintVentArt(g: Graphics, h: Hazard, laneWidth: number): boolean {
    * like empty water. `flameWidthScale` closes that gap without touching the collision test.
    */
   const flameWidth = 2 * laneWidth * cfg.jetHalfWidthRatio * Math.max(0, cfg.flameWidthScale);
-  const flameHeight = laneWidth * h.vent.lengthRatio * lengthFactor;
+  const flameHeight = laneWidth * h.vent.lengthRatio * lengthFactor * Math.max(0, cfg.flameLengthScale);
   let alpha = cfg.flameAlpha;
   if (erupting) {
     // Fade in and out at the ends of the active window, so the flame arrives rather than switching on.
