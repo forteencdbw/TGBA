@@ -619,7 +619,7 @@ export interface Mechanisms {
       sizeDamagePerPick: number;
       speedDamagePerPick: number;
       /**
-       * The shotgun branch of the barrage route: one transform, four cards that deepen it.
+       * The shotgun branch of the gun: one transform, four cards that deepen it.
        *
        * The four are only ever OFFERED once the transform has been taken -- see the cards' `available` -- because
        * each of them is meaningless alone: "+1 pellet" without a spread is free damage, and narrowing an angle that
@@ -1155,7 +1155,7 @@ export interface Mechanisms {
      * corridor the player is forced into -- the lane is also where the enemies are.
      */
     upgradeSpreadRatio: number;
-    /** Rows the gun can reach. 2 is what one upgrade promises; higher makes the pickup stack. */
+    /** Rows the gun can reach. 3 is two steps of the 枪管 card -- no form is handed a row for free any more. */
     maxStreams: number;
     colour: number;
     alpha: number;

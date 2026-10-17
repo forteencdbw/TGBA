@@ -17,10 +17,13 @@
  * BASE, THEN A ROUTE -- THE SECOND CUT
  * ---------------------------------------------------------------------------------------------
  * There is no character select any more. Every run starts as the SAME base bubble -- gun, movement, growth,
- * volume-as-health -- and its identity arrives in the water: the FIRST level-up offers three route cards, one
- * mandatory pick, and the run's bubble becomes `base + route` on the spot. The route's verbs appear (the touch
- * layer re-lays out mid-run), its palette may change, and its cards join the mutation pool while the other two
- * routes' cards never appear again this run.
+ * volume-as-health -- and its identity is settled BEFORE the water: the picker between the menu and the load offers
+ * the base bubble as "nothing added", plus the two evolved forms, which clearing the campaign once unlocks. A run
+ * that takes the base bubble simply keeps it.
+ *
+ * A run that takes an evolved form becomes `base + route` on the spot: the route's verbs appear (the touch layer
+ * re-lays out), its palette may change, and its cards join the mutation pool while the other route's cards never
+ * appear again this run.
  *
  * So this module is a DESCRIPTOR and nothing more: which controls exist, which palette paints the bubble, which
  * resource the HUD reports. Behaviour lives in the modules that already own it -- eating is `src/consumption.ts`,
@@ -61,8 +64,8 @@ export type ControlId =
    */
   | 'burst';
 
-/** The routes a run may commit to, at its first level-up. Keyed by their card, the HUD and the codex. */
-export type RouteId = 'devour' | 'boil' | 'barrage';
+/** The routes a run may commit to, chosen on the picker before the water. Keyed by their card, the HUD and the codex. */
+export type RouteId = 'devour' | 'boil';
 
 /**
  * Which palette paints the bubble. See `bubbleLook`.
@@ -119,7 +122,7 @@ export interface BubbleType {
    * its food does NOT touch, or the same hit would cost more to undo the longer the run went -- see
    * `src/health.ts`. A form that grew while keeping a separate bar would be paid for its food twice.
    *
-   * TRUE ONLY FOR THE DEVOUR ROUTE. The base bubble and the other two routes hold one size for the whole run,
+   * TRUE ONLY FOR THE DEVOUR ROUTE. The base bubble and the other route hold one size for the whole run,
    * which is also what makes their collision radius a thing a player can learn by looking.
    */
   growsByAbsorbing: boolean;
@@ -132,20 +135,21 @@ export interface BubbleType {
 }
 
 /**
- * The one form a run starts as, and the one it keeps if nothing is ever added to it.
+ * The one form a run starts as, and the one the picker offers as "nothing added".
  *
  * The gun, a FIXED size with fuel-free hit points, and the growth palette. No buttons, no field, no swallow, no
- * rage -- everything beyond this is a ROUTE, and the route is chosen in the water rather than on the menu.
+ * rage -- everything beyond this is a ROUTE, and the picker between the menu and the load is where a run adopts
+ * one. A run that takes the base bubble keeps it, at the size it starts at, for the whole run.
  *
- * It does not grow, and that is the shape the whole route system is built on: the first level-up offers three
- * cards, and only one of them (devour) turns the bubble into something that eats its way up the food chain. A
- * player who picks either of the other two keeps the bubble they have been steering, at the size they have
- * learned, for the rest of the run.
+ * The two evolved forms are EARNED rather than offered: `formsUnlocked` in `src/progress.ts` opens them once the
+ * campaign has been cleared. Devour is the one that turns the bubble into something that eats its way up the food
+ * chain; boil answers with rage instead. A player who takes either keeps the bubble they have been steering, at
+ * the size they have learned.
  */
 export const BASE_TYPE: BubbleType = {
   id: 'base',
   name: '小气泡',
-  tagline: '枪、成长、还有你的操作 —— 身份等到水里再定',
+  tagline: '什么都不加 —— 枪、成长、操作，全靠这一局自己挣',
   controls: [],
   look: 'growthStage',
   swallowsHazards: false,
@@ -154,6 +158,9 @@ export const BASE_TYPE: BubbleType = {
   hitsToPop: null,
   growsByAbsorbing: false,
 };
+
+/** The base form's line in the picker. A route carries its own title; the base bubble has none of its own. */
+export const BASE_FORM_TITLE = '原样开局';
 
 /** A route: what the run's bubble BECOMES, the moment its card is picked. */
 export interface Route {
@@ -173,8 +180,8 @@ export interface Route {
   /**
    * Whether the form still GROWS by absorbing, and so whether `volume` is its health.
    *
-   * The one field a route sets that the other two do not: devour keeps the base rule (food is volume is health),
-   * and the other two replace it with the fixed hit points in `src/health.ts`. See `BubbleType.growsByAbsorbing`
+   * The one field a route sets that the other does not: devour keeps the base rule (food is volume is health),
+   * and boil replaces it with the fixed hit points in `src/health.ts`. See `BubbleType.growsByAbsorbing`
    * for why those are one question.
    */
   growsByAbsorbing: boolean;
@@ -225,22 +232,6 @@ export const ROUTES: readonly Route[] = [
     /** Fixed size. Rage is this route's answer to growth, and a bubble that also grew would be two answers. */
     growsByAbsorbing: false,
     resource: { label: '怒气' },
-  },
-  {
-    id: 'barrage',
-    name: '弹幕',
-    title: '火力压制',
-    blurb: '小泡泡又快又密，答案全在水里 —— 枪管立刻 +1',
-    /**
-     * No new buttons: this route's verb is the gun the base already had, deepened. Its cards widen what the gun
-     * IS -- faster, fatter, farther -- rather than what else the bubble can do.
-     */
-    controls: [],
-    look: 'growthStage',
-    swallowsHazards: false,
-    /** Fixed size: this route deepens the gun rather than the body, so the body stays the one you learned. */
-    growsByAbsorbing: false,
-    resource: null,
   },
 ];
 

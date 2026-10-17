@@ -93,7 +93,7 @@ owner 看过这一点之后的决定是：按钮照删，吸取以后单独设�
 | `talents` | 删整个 `soda` 块 |
 | 技能 | 删 `skills` 配置块、`mech.skills` 类型与校验规则、五个 `skill.*` 音效 ID 与配方、`SKILL_SOUNDS`、`codex.skillColour` |
 | `ControlId` | 删 `'skill'`、`'charge'`；`spit`/`compress`/`burst` 保留（见 3、6） |
-| `controls` | base / boil / barrage → `[]`；devour → `['suction']` |
+| `controls` | base / boil → `[]`；devour → `['suction']` |
 | `touch.ts` | 删按钮与其按下分支、槽位预留；`layout()` 现在只排 spit/burst 与 compress 两档 |
 | e2e | 删 `suction.spec.ts` 整个文件、`drag.spec.ts` 两个测试、吸取截图、codex 技能页；其余随符号改名 |
 

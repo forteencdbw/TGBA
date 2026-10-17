@@ -246,8 +246,8 @@ export interface BulletContext {
   sizeDamageRate: number;
   speedDamageRate: number;
   /**
-   * The barrage route's three dials, handed in for the same reason `damage` is: they are the RUN's picks, not
-   * properties of a round. Each defaults to 1 and only 弹幕路线 cards move it -- speed and radius and range are
+   * The gun's three dials, handed in for the same reason `damage` is: they are the RUN's picks, not properties of
+   * a round. Each defaults to 1 and only the 弹速 / 大弹丸 / 射程 cards move it -- speed and radius and range are
    * one number each for the hitbox and the drawing, so the round a player sees is the round that collides.
    */
   speedMultiplier: number;

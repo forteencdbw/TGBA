@@ -18,7 +18,7 @@ import { massFromEating } from './consumption';
 import { MainMenu } from './menu';
 import { RoutePickScreen, type RouteOption } from './routePick';
 import type { CodexDetail, CodexUi } from './codexUi';
-import { hasVerb, ROUTES } from './bubbleTypes';
+import { BASE_FORM_TITLE, BASE_TYPE, hasVerb, ROUTES } from './bubbleTypes';
 import { formsUnlocked } from './progress';
 import { sayBanner, sayResults, sayScore, saySound, saySplash } from './runEvents';
 import { LevelUpUi } from './levelup';
@@ -154,12 +154,13 @@ class Game {
    */
   private readonly routePick = new RoutePickScreen();
   /**
-   * Which form the next fresh run starts in.
+   * Which form the next fresh run starts in, or null for "原样开局" -- the base bubble, with nothing added.
    *
    * The picker's answer, remembered so a death does not have to ask again: the form is the run's, and a player who has
-   * just been killed should be back in the water rather than back in a menu.
+   * just been killed should be back in the water rather than back in a menu. Null is not a missing answer here: the
+   * base form is the ABSENCE of a route, so there is nothing to remember beyond "no route".
    */
-  private selectedRoute: string = 'barrage';
+  private selectedRoute: string | null = null;
   /**
    * The save: which levels are cleared, and which one is selected.
    *
@@ -471,7 +472,8 @@ class Game {
      * art starts arriving, which is why nothing about `beginWithLoading` had to change.
      */
     this.routePick.onPick = (id) => {
-      this.selectedRoute = id;
+      // 原样开局 is the base bubble with nothing added, so the base card clears the choice rather than naming a route.
+      this.selectedRoute = id === BASE_TYPE.id ? null : id;
       void this.beginWithLoading();
     };
     this.menu.onCodex = () => {
@@ -1141,29 +1143,31 @@ class Game {
    *
    * Goes through `enterFromMenu` and then the run's OWN `pickRoute`, so it exercises both real paths -- the menu's
    * start and the route pick -- and a probe that used it would notice a control list that never reached the touch
-   * layer, which is the one way this feature can half-work.
+   * layer, which is the one way this feature can half-work. Pass null (or the base form's id) for 原样开局.
    */
-  debugStartRunWithRoute(routeId: string): string | null {
+  debugStartRunWithRoute(routeId: string | null): string | null {
     /**
      * The choice is set and then the run STARTS, rather than the run starting and being patched afterwards.
      *
      * The patch version stopped working the moment a fresh run adopted its form at the start of `startRun`: by the
      * time `pickRoute` was called here the run already had one, and `pickRoute` is idempotent, so a spec asking for
-     * the volatile bubble got the barrage one and the difference only showed up three assertions later.
+     * the volatile bubble got the one it had already adopted and the difference only showed up three assertions
+     * later.
      */
-    this.selectedRoute = routeId;
+    this.selectedRoute = routeId === BASE_TYPE.id ? null : routeId;
     this.enterFromMenu();
     return this.run.route;
   }
 
   /**
-   * Test hook: every route the game offers, in card order.
+   * Test hook: every form the game offers, in card order -- the base bubble first, then the routes.
    *
-   * Exposed so a probe can assert the branch node offers exactly these -- the alternative is a list written into
-   * the test, which would agree with a route panel that had stopped agreeing with the game.
+   * Exposed so a probe can assert the picker offers exactly these -- the alternative is a list written into the
+   * test, which would agree with a picker that had stopped agreeing with the game. The base form is included: it is
+   * the always-available first card, and a probe can ask for it by its own id.
    */
   debugRouteIds(): string[] {
-    return ROUTES.map((route) => route.id);
+    return [BASE_TYPE.id, ...ROUTES.map((route) => route.id)];
   }
 
   /**
@@ -2647,21 +2651,19 @@ class Game {
   }
 
   /**
-   * The three forms, with the save's answer about which are earned.
+   * The three cards, with the save's answer about which are earned.
    *
-   * The two evolved forms are locked until the campaign has been cleared once, and they are LISTED while locked: a
-   * player who cannot see what they are working towards is not working towards anything.
+   * The base form leads and is always available -- it is "nothing added", so there is nothing to earn. The two
+   * evolved forms are locked until the campaign has been cleared once, and they are LISTED while locked: a player
+   * who cannot see what they are working towards is not working towards anything.
    */
   private formOptions(): RouteOption[] {
     const last = LEVELS[LEVELS.length - 1]?.id ?? '';
     const unlocked = formsUnlocked(this.run.progress.cleared, last);
-    return ROUTES.map((route) => ({
-      id: route.id,
-      name: route.name,
-      title: route.title,
-      blurb: route.blurb,
-      locked: route.id !== 'barrage' && !unlocked,
-    }));
+    return [
+      { id: BASE_TYPE.id, name: BASE_TYPE.name, title: BASE_FORM_TITLE, blurb: BASE_TYPE.tagline, locked: false },
+      ...ROUTES.map((route) => ({ id: route.id, name: route.name, title: route.title, blurb: route.blurb, locked: !unlocked })),
+    ];
   }
 
   private async beginWithLoading(): Promise<void> {
@@ -2820,12 +2822,13 @@ class Game {
        */
       this.run.bulletHomingChance = 0;
       /**
-       * A fresh run ADOPTS THE FORM THE PICKER RETURNED.
+       * A fresh run ADOPTS THE FORM THE PICKER RETURNED -- or the base bubble, when it returned none.
        *
        * It used to hand the run the base bubble and leave the identity to the first level-up; the picker is the first
        * decision of a run now, so the form is settled before the water exists. `pickRoute` is the same call the card's
-       * `apply` made -- the form swap, the palette, the mouth, and the barrage route's extra gun row -- so a run that
-       * starts in a form is exactly the run that used to pick it, minus the minute of being somebody else.
+       * `apply` made -- the form swap, the palette, the mouth -- so a run that starts in a form is exactly the run
+       * that used to pick it, minus the minute of being somebody else. A null choice is 原样开局: `forgetForm` has
+       * already left the base bubble, so there is no route to pick and nothing more to do.
        *
        * A CARRIED run (the walk into the next level) never reaches this branch: the identity is the run's, not the
        * level's, and `pickRoute` is idempotent anyway.
@@ -2834,7 +2837,7 @@ class Game {
        * without it this run would keep the LAST run's form whatever the picker said. See `Run.forgetForm`.
        */
       this.run.forgetForm();
-      this.run.pickRoute(this.selectedRoute);
+      if (this.selectedRoute) this.run.pickRoute(this.selectedRoute);
       this.applyFormToTouch();
     }
     this.run.fartReadyAt = 0;

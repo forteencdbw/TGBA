@@ -561,7 +561,7 @@ const ROUTE_PROSE: Partial<Record<RouteId, { glyph: CodexGlyph; notes: readonly 
     notes: [
       '选它的那一刻：吸附场出现，贴脸碰到吞得动的危险物直接吃下——体积、分数、突变经验立即到账，外加短暂无敌。',
       '吸附只负责拉近，不负责吃：把吃不了的螃蟹吸过来，等于加速把危险物拉到脸上。两重代价合起来，"什么时候用"才是决定。',
-      '专属卡：吸取范围、吞噬无敌、大胃口（比体积说的话多吃一档）。本局另外两条路线的卡永不再出。',
+      '专属卡：吸取范围、吞噬无敌、大胃口（比体积说的话多吃一档）。本局另外一条路线的卡永不再出。',
     ],
   },
   boil: {
@@ -569,15 +569,7 @@ const ROUTE_PROSE: Partial<Record<RouteId, { glyph: CodexGlyph; notes: readonly 
     notes: [
       '选它的那一刻：怒气槽出现（空槽起步），配色换成怒气阶段——气泡的颜色从此在说"我有多烫"。',
       '怒气只从"挨打但没破"来；冲撞的破坏力只看怒气不看体积，所以残血反打是可行的。满怒不是终点，是一段倒计时（失控）。',
-      '专属卡：怒气积攒、爆破半径、余温（怒气衰减更慢）。本局另外两条路线的卡永不再出。',
-    ],
-  },
-  barrage: {
-    glyph: 'stages',
-    notes: [
-      '选它的那一刻：枪管 +1 立刻到账。没有新按钮——这条路线的动词就是基础气泡已有的那把枪，只是更深。',
-      '专属卡：大弹丸（判定和画面同一个数）、射程。它们只在这条路线的池里出现。',
-      '通用枪卡（枪管/射速/伤害/弹速/越大伤害越高/越快伤害越高）人人可抽：枪是每个形态的基础武器，这条路线赢在把它堆得更狠。弹速原本是这条路线的专属卡，为了让「越快伤害越高」在每条路上都有意义而放开了。',
+      '专属卡：怒气积攒、爆破半径、余温（怒气衰减更慢）。本局另外一条路线的卡永不再出。',
     ],
   },
 };
@@ -599,19 +591,13 @@ function routeFacts(route: Route): readonly CodexFact[] {
       { label: '吃下到账', value: `质量 ×${num(mech.consumption.massEfficiency)} · 无敌 ${num(mech.consumption.eatInvulnerableSeconds, 2)}s` },
       { label: '专属卡', value: `吸取范围 +${Math.round(pool.suctionPerPick * 100)}% · 吞噬无敌 +${num(pool.eatInvulnSecondsPerPick, 1)}s · 大胃口 +${pool.appetiteTiersPerPick} 档` },
     );
-  } else if (route.id === 'boil') {
+  } else {
     facts.push(
       { label: '怒气', value: `受伤 +${mech.angry.rage.perHit} · 安全 ${num(mech.angry.rage.decayDelaySeconds, 1)}s 后每秒 -${mech.angry.rage.decayPerSecond}` },
       { label: '怒甲', value: `每 ${num(mech.angry.armour.secondsPerPlate, 1)}s 攒 1 个（最多 ${mech.angry.armour.max} 个）。撞上敌人消耗 1 个：**你不挨打**、它吃 ${mech.angry.armour.damage} 点，并且中**破甲**（收到的所有伤害 ×${mech.angry.armour.vulnerableMultiplier}，持续 ${num(mech.angry.armour.vulnerableSeconds, 1)}s）` },
       { label: '贴身灼烧', value: `半径 ${num(mech.angry.aura.playerRadiusRadii, 1)}× 你自己的半径，每 ${num(mech.angry.aura.tickSeconds, 2)}s 一跳、每跳 ${num(mech.angry.aura.damagePerTick, 2)} 点。破甲的敌人烧得更疼` },
       { label: '爆破', value: '怒气**满**就自动放，一次花光——怒气槽的顶端就是这一发，没有按钮' },
       { label: '专属卡', value: `怒气积攒 +${Math.round(pool.ragePerPick * 100)}% · 爆破半径 +${Math.round(pool.burstRadiusPerPick * 100)}% · 余温 -${Math.round(pool.rageDecayReductionPerPick * 100)}% 衰减` },
-    );
-  } else {
-    facts.push(
-      { label: '立刻到账', value: `枪管 +1（上限 ${mech.bullets.maxStreams} 排）` },
-      { label: '专属卡', value: `大弹丸 +${Math.round(pool.bulletRadiusPerPick * 100)}% · 射程 +${Math.round(pool.bulletRangePerPick * 100)}%` },
-      { label: '通用枪卡', value: `枪管 / 射速 / 伤害 / 弹速 +${Math.round(pool.bulletSpeedPerPick * 100)}% / 越大伤害越高 / 越快伤害越高：所有形态都能抽到` },
     );
   }
   return facts;

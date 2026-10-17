@@ -69,9 +69,9 @@ export interface GameSnapshot {
   healthView: { current: number; max: number };
   /** What the player's defence subtracts from every blow, before the `minDamageRatio` floor. */
   defense: number;
-  /** The route this run committed to at its first level-up, or null while it is still the base bubble. */
+  /** The route this run committed to, or null for the base bubble (原样开局). */
   route: RouteId | null;
-  /** The gun's row count: what the 枪管 cards and the barrage route's own grant move. */
+  /** The gun's row count: what the 枪管 cards move, one row at a time. */
   gunStreams: number;
   lateral: LateralAuthority;
   rage: RageState;

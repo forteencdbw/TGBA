@@ -268,10 +268,9 @@ const POOL: readonly Mutation[] = [
     id: 'bulletSpeed',
     name: '弹速 +25%',
     blurb: '小泡泡飞得更快，可叠加',
-    // ALL ROUTES, and it used to be barrage-only. 「越快伤害越高」 prices a round off the SPEED BONUS, so a card
-    // that only the barrage route could stack would make that one card worthless to the other two -- a slot in the
-    // three-choice panel that reads "+0%" whatever you do. The barrage route still owns the gun; this is the one of
-    // its three that another route has a reason to want.
+    // ALL FORMS, and it was the first gun card to be opened up. 「越快伤害越高」 prices a round off the SPEED BONUS,
+    // so a card only one form could stack would make that one card worthless everywhere else -- a slot in the
+    // three-choice panel that reads "+0%" whatever you do.
     routes: 'all',
     available: () => true,
     apply: (run) => {
@@ -282,7 +281,7 @@ const POOL: readonly Mutation[] = [
     id: 'bulletRadius',
     name: '大弹丸 +30%',
     blurb: '小泡泡变大，判定跟着变大，可叠加',
-    routes: 'barrage',
+    routes: 'all',
     available: () => true,
     apply: (run) => {
       run.mutations.bulletRadius = (run.mutations.bulletRadius ?? 0) + 1;
@@ -292,7 +291,7 @@ const POOL: readonly Mutation[] = [
     id: 'bulletRange',
     name: '射程 +40%',
     blurb: '小泡泡飞得更远，可叠加——寿命就是射程',
-    routes: 'barrage',
+    routes: 'all',
     available: () => true,
     apply: (run) => {
       run.mutations.bulletRange = (run.mutations.bulletRange ?? 0) + 1;
@@ -303,12 +302,11 @@ const POOL: readonly Mutation[] = [
     name: `追踪弹 ${Math.round(mech.bullets.homing.chance * 100)}%`,
     blurb: '三成的子弹自己找泡泡上方的敌人；找不到就划一道弧飞出屏幕',
     /**
-     * THE BARRAGE ROUTE'S, because it is a gun card and that route's whole statement is the gun: its `controls` list
-     * adds no button, and its cards widen what the weapon IS rather than what else the bubble can do. A tracking
-     * round is that sentence exactly. The cost of the lock is real and deliberate -- a run that took one of the
-     * other two routes at the first level-up never sees this card at all.
+     * ALL FORMS: a tracking round is a gun card, and the gun is every form's weapon -- the same sentence the shotgun
+     * branch below spells out at length. The gate that follows is the part that still matters, and it is about the
+     * card rather than the form.
      */
-    routes: 'barrage',
+    routes: 'all',
     /**
      * ONCE, and the gate is the run's own log rather than a new flag.
      *
@@ -343,8 +341,11 @@ const POOL: readonly Mutation[] = [
     },
   },
   // ---------------------------------------------------------------------------------------------
-  // 霰弹：弹幕路线的一条支线（一次打出一把，间隔拉长）
+  // 霰弹：枪的一条支线（一次打出一把，间隔拉长）
   // ---------------------------------------------------------------------------------------------
+  //
+  // 枪是每个形态的基础武器，所以枪卡就是每个人的卡：这一整段（连同上面的追踪弹、大弹丸、射程）对所有形态开放，
+  // 形态之间分的只是身体，不是武器。专属卡现在只剩吞噬和沸腾各自的那几组。
   //
   // 转型卡改的是"一枪是什么"，不是数值，所以它**只拿一次**——用 `picks` 而不是计数，和「追踪弹」同一条路
   // （见那张卡上的说明：能叠加的东西才会有一个计数）。
@@ -356,7 +357,7 @@ const POOL: readonly Mutation[] = [
     id: 'shotgun',
     name: '霰弹枪',
     blurb: `射速减半，但每排一次打出 ${1 + mech.mutation.pool.shotgun.pellets} 颗：贴脸才全中`,
-    routes: 'barrage',
+    routes: 'all',
     available: (run) => !run.picks.includes('shotgun'),
     // 空实现：这一张的"记下来"就是 `picks` 里那一笔，四个数值在 `applyMutationPassives` 里派生。
     apply: () => {},
@@ -365,7 +366,7 @@ const POOL: readonly Mutation[] = [
     id: 'pellets',
     name: '多一发',
     blurb: '每一枪多一颗弹丸，可叠加',
-    routes: 'barrage',
+    routes: 'all',
     available: (run) => run.picks.includes('shotgun'),
     apply: (run) => {
       run.mutations.pellets = (run.mutations.pellets ?? 0) + 1;
@@ -375,7 +376,7 @@ const POOL: readonly Mutation[] = [
     id: 'closeDamage',
     name: '抵近射击',
     blurb: `目标在 ${Math.round(mech.mutation.pool.shotgun.closeRangeMeters)} 米内时弹丸更疼，可叠加`,
-    routes: 'barrage',
+    routes: 'all',
     available: (run) => run.picks.includes('shotgun'),
     apply: (run) => {
       run.mutations.closeDamage = (run.mutations.closeDamage ?? 0) + 1;
@@ -385,7 +386,7 @@ const POOL: readonly Mutation[] = [
     id: 'narrow',
     name: '收束',
     blurb: `张角收窄 ${Math.round(mech.mutation.pool.shotgun.narrowPerPick * 100)}%：打得更远，可叠加`,
-    routes: 'barrage',
+    routes: 'all',
     available: (run) => run.picks.includes('shotgun'),
     apply: (run) => {
       run.mutations.narrow = (run.mutations.narrow ?? 0) + 1;
@@ -395,7 +396,7 @@ const POOL: readonly Mutation[] = [
     id: 'knock',
     name: '顶开',
     blurb: '命中把敌人推开，可叠加',
-    routes: 'barrage',
+    routes: 'all',
     available: (run) => run.picks.includes('shotgun'),
     apply: (run) => {
       run.mutations.knock = (run.mutations.knock ?? 0) + 1;

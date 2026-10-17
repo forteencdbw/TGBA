@@ -210,15 +210,15 @@ try {
     check('卡组 · 沸腾的池子真的会抽到它们', ids.filter((id) => boilOffered.has(id)).length, 4);
   }
   {
-    // Only this form's own pool sees them: a barrage run must never be offered a card about plates.
+    // Only this form's own pool sees them: a base run -- 原样开局, the always-available form -- must never be offered
+    // a card about plates.
     const r = new R.Run();
     r.phase = 'playing';
-    r.pickRoute('barrage');
     M.applyMutationPassives(r);
     const offered = new Set();
     for (let i = 0; i < 400; i++) for (const c of M.rollMutationChoices(r, 3)) offered.add(c.id);
     const leaks = ['plateRate', 'plateMax', 'deeperBreak', 'hotBurn'].filter((id) => offered.has(id));
-    check('卡组 · 弹幕局一张都抽不到', leaks, []);
+    check('卡组 · 基础局一张都抽不到', leaks, []);
   }
   {
     const pool = mech.mutation.pool.rage;
@@ -264,10 +264,10 @@ try {
     r.pickRoute('boil');
     check('重开 · 第一局是沸腾', r.route, 'boil');
     r.forgetForm();
-    r.pickRoute('barrage');
-    check('重开 · 第二局换成弹幕', r.route, 'barrage');
-    check('重开 · 形态也跟着换', r.bubbleType.id, 'barrage');
-    check('重开 · 弹幕那一排枪又发了一次', r.gunStreams, 2);
+    check('重开 · 清回基础形态', r.bubbleType.id, 'base');
+    r.pickRoute('devour');
+    check('重开 · 第二局换成吞噬', r.route, 'devour');
+    check('重开 · 形态也跟着换', r.bubbleType.id, 'devour');
   }
 
   // --- the curve arrives earlier than the old one ------------------------------------

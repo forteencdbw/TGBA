@@ -214,10 +214,10 @@ export function diagnosticsOf(g: GameSnapshot): {
       hitsToPop: number | null;
     };
     /**
-     * The route this run has committed to, or null while it is still the base bubble.
+     * The route this run has committed to, or null for the base bubble (原样开局).
      *
      * Reported beside `bubbleType` because the two answer different questions: the form is what the buttons and
-     * palette are right now, the route is the choice that made them -- and "null" is the branch node still to come.
+     * palette are right now, the route is the choice that made them -- and "null" is a run that took nothing.
      */
     route: string | null;
     /** The volatile bubble's resource. Always present; always zero for the devour bubble. */
@@ -378,7 +378,7 @@ export function diagnosticsOf(g: GameSnapshot): {
         hits: g.bullets.hits,
         /** Whether this run's bubble has the gun at all, so a probe can tell "off" from "not firing yet". */
         armed: g.bubbleType.firesBullets,
-        /** How many rows the gun fires: what the 枪管 cards and the barrage route's own grant move. */
+        /** How many rows the gun fires: what the 枪管 cards move, one row at a time. */
         gunStreams: g.gunStreams,
       },
       misfire: { remaining: +g.player.misfireSeconds.toFixed(3), inverted: g.player.misfiring },

@@ -124,10 +124,10 @@ export class Run {
    * ---------------------------------------------------------------------------------------------
    * WHY THIS HAS TO EXIST
    * ---------------------------------------------------------------------------------------------
-   * `pickRoute` is idempotent -- a carried run calls it again with the same id, and it must not re-grant the barrage
-   * route's extra gun row -- so it returns early whenever `route` is already set. That guard is right, and on its own it
-   * makes the picker's answer stick to the FIRST run of the session: run two would be boiled or devoured exactly as run
-   * one was, and the screen would look like it worked while doing nothing. A page reload would hide it.
+   * `pickRoute` is idempotent -- a carried run calls it again with the same id -- so it returns early whenever `route`
+   * is already set. That guard is right, and on its own it makes the picker's answer stick to the FIRST run of the
+   * session: run two would be boiled or devoured exactly as run one was, and the screen would look like it worked
+   * while doing nothing. A page reload would hide it.
    *
    * So the form is the run's, and a new run starts with none.
    */
@@ -140,9 +140,9 @@ export class Run {
    * Adopt a form. Called with what the picker returned, at the start of a fresh run.
    *
    * It used to be the FIRST LEVEL-UP's whole question; the identity moved to a screen between 开始游戏 and the load,
-   * because it is the first decision of a run rather than a reward inside one. What the call does is unchanged: the
-   * form swap is the grant, and the instant extras beyond it live below, because they are the route's business (the
-   * barrage route's promise is a gun that is bigger RIGHT NOW).
+   * because it is the first decision of a run rather than a reward inside one. What the call does now is adopt the
+   * form and apply the health band -- nothing else numeric, because a route is an identity rather than an instant
+   * grant of stats.
    *
    * Idempotent, and that is load-bearing: a carried run keeps its form, so the walk into the next level calls this
    * again with the same id and gets the same answer.
@@ -152,10 +152,6 @@ export class Run {
     if (!route || this.route !== null) return this.route;
     this.route = route.id;
     this.bubbleType = formForRoute(route);
-    if (route.id === 'barrage') {
-      // The route's promise, on the spot: a wider gun before the panel has even closed.
-      this.gunStreams = Math.min(mech.bullets.maxStreams, this.gunStreams + 1);
-    }
     /**
      * A route that grows takes its size from its health NOW, not at the next level boundary.
      *
@@ -332,11 +328,11 @@ export class Run {
   eatInvulnBonusSeconds = 0;
   /** Extra eating tiers from stacked 突变 · 大胃口 picks: each one lets the form eat one tier above its volume. */
   eatTierBonus = 0;
-  /** Bullet speed multiplier from stacked 弹幕路线 · 弹速 picks. */
+  /** Bullet speed multiplier from stacked 弹速 picks. */
   bulletSpeedMultiplier = 1;
-  /** Bullet radius multiplier from stacked 弹幕路线 · 大弹丸 picks: hitbox AND drawing, one number. */
+  /** Bullet radius multiplier from stacked 大弹丸 picks: hitbox AND drawing, one number. */
   bulletRadiusMultiplier = 1;
-  /** Bullet life multiplier from stacked 弹幕路线 · 射程 picks, which is the gun's range. */
+  /** Bullet life multiplier from stacked 射程 picks, which is the gun's range. */
   bulletLifeMultiplier = 1;
   /**
    * The shotgun branch's four run-level numbers, all derived in `applyMutationPassives`.
@@ -366,7 +362,7 @@ export class Run {
   bulletSizeDamageRate = 0;
   bulletSpeedDamageRate = 0;
   /**
-   * The chance a round leaves the muzzle TRACKING, from the 弹幕路线 · 追踪弹 card. 0 is an ordinary gun.
+   * The chance a round leaves the muzzle TRACKING, from the 追踪弹 card. 0 is an ordinary gun.
    *
    * A number rather than a flag because the card is a probability, and the run is what owns it -- the bullet module
    * rolls it, but "how often do my rounds track" is a fact about the run's picks, like the rate tier above it.
@@ -596,7 +592,7 @@ export class Run {
        * module is the behaviour of a round, not the player's upgrades.
        */
       damage: mech.bullets.damage * this.bulletDamageMultiplier,
-      /** The barrage route's dials, handed in like damage: the run's picks, not the weapon's nature. */
+      /** The gun's dials, handed in like damage: the run's picks, not the weapon's nature. */
       speedMultiplier: this.bulletSpeedMultiplier,
       radiusMultiplier: this.bulletRadiusMultiplier,
       lifeMultiplier: this.bulletLifeMultiplier,
