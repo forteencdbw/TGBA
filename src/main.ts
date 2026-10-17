@@ -12,7 +12,6 @@ import { BURST_SECONDS, Run, type WorldView } from './run';
 import type { Phase } from './snapshot';
 import { ObstacleField, paintObstacles, type ObstacleKind } from './obstacles';
 import { resolveTalent, TALENTS } from './talents';
-import { SKILLS, useSkill } from './skills';
 import { audio, type SoundEvent } from './audio';
 import { NumberPopups } from './numberPopups';
 import { massFromEating } from './consumption';
@@ -21,7 +20,7 @@ import { RoutePickScreen, type RouteOption } from './routePick';
 import type { CodexDetail, CodexUi } from './codexUi';
 import { hasVerb, ROUTES } from './bubbleTypes';
 import { formsUnlocked } from './progress';
-import { sayBanner, sayResults, sayScore, saySkillSlot, saySound, saySplash } from './runEvents';
+import { sayBanner, sayResults, sayScore, saySound, saySplash } from './runEvents';
 import { LevelUpUi } from './levelup';
 import { growthView } from './growth';
 import { applyMutationPassives, pickMutationCard, rollMutationChoices, type Mutation } from './mutations';
@@ -768,11 +767,6 @@ class Game {
     return this.pointerLog;
   }
 
-  /** Skill button geometry in canvas coordinates, so tests touch the real control. */
-  get touchGeometry() {
-    return this.touch.skillGeometry;
-  }
-
   /** Canvas size in CSS pixels, so a probe can aim a drag at a real screen position. */
   get canvasSize(): { width: number; height: number } {
     return { width: this.app.renderer.screen.width, height: this.app.renderer.screen.height };
@@ -1355,18 +1349,6 @@ class Game {
   /** The hazard field: spawning, motion and contact. See src/hazards.ts. */
 
   /** This run's talent and its resolved multipliers. */
-  /**
-   * The single skill slot. `uses` reaching zero empties it.
-   *
-   * One slot on purpose: it forces a decision at the pickup instead of accumulating a toolkit, and it
-   * keeps the HUD to one button.
-   */
-  /**
-   * The skill in the slot, with its name for the HUD's line.
-   *
-   * The name is stored rather than looked up per frame: `findSkill` is a search, and the HUD is rebuilt sixty times a
-   * second for a value that changes once a pickup.
-   */
 
   /**
    * The run's talent, for the HUD's line, and the boss fight as the HUD should show it.
@@ -1377,7 +1359,6 @@ class Game {
    */
   private talentLabel = '';
   private bossView: { name: string; fraction: number } | null = null;
-  /** How many skills have been used this run, for the results card. */
   /** When the fish-fart talent can fire again, and how many times it has. */
   /** Which scripted depth events have fired, and the count, so a run does not repeat a beat. */
   /** Mirrors the audio module's mute state, so the HUD can show it. */
@@ -1415,7 +1396,7 @@ class Game {
    */
   private readonly grazePopups = new NumberPopups(mech.grazePopups);
   /**
-   * The small skill callouts: 「擦」「贴脸」「拆弹」where the trick happened.
+   * The small callouts: 「擦」「贴脸」「拆弹」where the trick happened.
    *
    * One instance and one style for all three, because they are one CLASS of feedback -- the graze's
    * small change, a word without the ceremony -- and three separate styles would be three volumes
@@ -1532,13 +1513,6 @@ class Game {
     this.run.comedyBeats = 0;
     this.run.lastComedyBeat = null;
     this.run.hazards.reset();
-    // Skill state too, or a probe that ran a skill leaks its effect into the next one -- which showed
-    // up as a CONTROL run reporting the dash's ascent bonus, making two assertions fail for a reason
-    // that had nothing to do with the skills.
-    this.run.player.skillRemaining = 0;
-    this.run.player.skillId = null;
-    this.run.player.skillAscentBonus = 1;
-    this.run.skillActivations = 0;
   }
 
   /**
@@ -1554,7 +1528,7 @@ class Game {
   }
 
   /**
-   * Test hook: force a specific talent and skill.
+   * Test hook: force a specific talent.
    *
    * Talents are rolled, so a probe that needs to assert a particular upside AND its backlash would
    * otherwise pass or fail on a dice roll.
@@ -1566,14 +1540,6 @@ class Game {
     this.run.player.volume = this.run.talentEffects.startVolume;
     this.talentLabel = talent.name;
     return talent.id;
-  }
-
-  /** Test hook: put a skill in the slot without waiting for a pickup to drift past. */
-  debugGrantSkill(id: string): boolean {
-    const skill = SKILLS.find((s) => s.id === id);
-    if (!skill) throw new Error(`unknown skill: ${id}`);
-    this.run.grantSkill(skill.id);
-    return true;
   }
 
   /** Test hook: fire the fish-fart reflex, bypassing the contact that normally triggers it. */
@@ -2488,14 +2454,10 @@ class Game {
 
     this.run.resolveContacts(dt, world);
 
-    // Skills are edge-triggered and consumed, so a single press costs exactly one use however many
-    // frames it spans.
-    if (this.input.consumeSkill()) this.useSkill();
-
     /**
      * The level ends when the SCROLL is done. That is the whole condition.
      *
-     * It used to also require every hazard, collectable and skill pickup to be gone, and that was a
+     * It used to also require every hazard and collectable to be gone, and that was a
      * mistake on two counts. It was slow -- measured, a run reached the end of its scroll at 61.6s and then
      * sat for another 3.8 seconds waiting for the last stragglers to drain out of the water, which reads as
      * the game having frozen at 0. And it was fragile: any entity that could not leave the water would hold
@@ -2544,34 +2506,6 @@ class Game {
       phase: this.run.phase,
     });
     if (this.endTrace.length > 8) this.endTrace.shift();
-  }
-
-/**
-   * Use the carried skill, if there is one with uses left.
-   *
-   * The effects are applied HERE rather than inside the skill definition, for the same reason hazard
-   * effects are applied by the game: the skill module stays a description of what a skill IS, and the
-   * game owns how that lands on the world.
-   */
-  private useSkill(): boolean {
-    const used = useSkill({
-      player: this.run.player,
-      hazards: this.run.hazards,
-      bubbles: this.run.field.bubbles,
-      carried: this.run.skill,
-      laneWidth: this.camera.viewport.laneWidthMeters,
-      events: this.run.events,
-    });
-    if (!used) return false;
-    // The invulnerability window comes back as a value rather than being written through, because it is the run's:
-    // it takes the MAX of this and whatever is already left.
-    this.run.invulnerable = Math.max(this.run.invulnerable, used.invulnerableSeconds);
-    if (used.usesLeft <= 0) {
-      this.run.skill = null;
-      this.skillSlot(false);
-    }
-    this.run.skillActivations++;
-    return true;
   }
 
   /**
@@ -2633,8 +2567,8 @@ class Game {
    *
    * The mutation is applied FIRST and the ledger told after, so `xp.pending` still counts the level
    * being spent while the apply runs and a card cannot draw against a level that is no longer there.
-   * A second banked level reopens with FRESH cards: the apply may have capped the gun or filled the
-   * skill slot, so the pool is asked again rather than reoffered.
+   * A second banked level reopens with FRESH cards: the apply may have capped the gun or taken a
+   * card, so the pool is asked again rather than reoffered.
    */
   private pickMutation(index: number): void {
     if (this.run.phase !== 'levelup' || !this.levelup.open) return;
@@ -2863,14 +2797,9 @@ class Game {
     this.run.trashDrain = 0;
     this.run.comedyBeats = 0;
     this.run.lastComedyBeat = null;
-    // The carried skill, the mutation ladder and its picks are RUN state, like the score and the gun
+    // The mutation ladder and its picks are RUN state, like the score and the gun
     // above them: a walk into the next level keeps them, and only a death starts the whole ladder over.
-    // (The skill used to reset here unconditionally, when it arrived as a pickup; it is a mutation's
-    // prize now, and losing it at a level transition would make its card strictly worse than the
-    // permanent ones beside it.)
     if (!carryScore) {
-      this.run.skill = null;
-      this.run.skillActivations = 0;
       this.run.xp.reset();
     /**
      * The ramp goes with the run.
@@ -2915,7 +2844,6 @@ class Game {
     this.run.lastEvent = null;
     this.splash = 0;
     this.run.surfaced = false;
-    this.skillSlot(this.run.skill !== null);
     this.run.elapsed = 0;
     this.sound('level.start', 0.6);
     this.run.phase = 'intro';
@@ -3617,11 +3545,6 @@ private updateBoss(): void {
     sayScore(this.run.events, x, y, points);
   }
 
-/** Whether the carried skill's button exists. Input surface, so it is an OUTPUT of the run rather than a rule. */
-  private skillSlot(carried: boolean): void {
-    saySkillSlot(this.run.events, carried);
-  }
-
   /**
    * Give the run's output to the display, in the order it was produced.
    *
@@ -3669,9 +3592,6 @@ private updateBoss(): void {
         case 'callout':
           // The graze's small change: a word where the trick happened, and nothing else.
           this.callouts.say(e.x, e.y, e.text, this.camera);
-          break;
-        case 'skillSlot':
-          this.touch.setHasSkill(e.carried);
           break;
         case 'blast': {
           this.explosions.push({ x: e.x, y: e.y, radius: e.radius, age: 0 });
@@ -3741,8 +3661,7 @@ private updateBoss(): void {
     const menuPage = MENU_PAGES.includes(this.run.phase);
     this.hud.root.visible = !fullScreenPage;
     this.scene.root.visible = !fullScreenPage;
-    // The water controls hide on those pages and behind the settings panel and the mutation pick. The touch layer
-    // decides for itself whether the skill button is drawn; this only decides whether the layer exists at all.
+    // The water controls hide on those pages and behind the settings panel and the mutation pick.
     this.touch.root.visible = !fullScreenPage && !this.settings.isOpen && this.run.phase !== 'levelup';
     this.flash.visible = this.flash.visible && !fullScreenPage;
     /**
@@ -3764,7 +3683,6 @@ private updateBoss(): void {
         health: this.run.healthView,
         seed: this.seedLabel,
         talent: this.talentLabel,
-        skill: this.run.skill ? { name: this.run.skill.name, uses: this.run.skill.uses } : null,
         player: this.run.player,
         fps: this.fps,
         nominalSeconds: this.run.nominalSeconds,
@@ -4125,8 +4043,6 @@ private updateBoss(): void {
       });
     }
 
-    // A skill lying in the water: a diamond, distinct from every collectable, with a halo so it
-    // reads as "pick me up" rather than as another bubble.
     /**
      * Detonations, drawn as an expanding ring that fades.
      *
@@ -4652,8 +4568,6 @@ private updateBoss(): void {
       elapsed: this.run.elapsed,
       timelineEmitted: this.run.timelineEmitted,
       spawnedBySide: this.run.spawnedBySide,
-      skill: this.run.skill,
-      skillActivations: this.run.skillActivations,
       invulnerable: this.run.invulnerable,
       burst: this.run.burst,
       bursts: this.run.bursts,

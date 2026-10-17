@@ -69,43 +69,6 @@ try {
     check('numbers · and it really is two rows', run.gunStreams, 2);
   }
 
-  // ---- route first, then skills, with the carried one marked; stacking cards after
-  {
-    const run = new Run();
-    const route = ROUTES[0];
-    take(run, 'armor');
-    take(run, 'skill:dash');
-    take(run, `route:${route.id}`);
-    take(run, 'skill:vortex');
-    take(run, 'armor');
-    const view = growthView(run);
-    check('identity · the route and the skills are one group, before the mutations', view.groups.map((g) => g.title), ['路线与技能', '突变']);
-    const identity = view.groups[0].lines;
-    check('identity · route first, then skills in the order taken', identity.map((l) => l.name), [
-      mutationCard(`route:${route.id}`).name,
-      mutationCard('skill:dash').name,
-      mutationCard('skill:vortex').name,
-    ]);
-    check('identity · none of them has a count', identity.map((l) => l.count), [null, null, null]);
-    check('identity · the skill carried now is marked, the one it replaced says so', identity.map((l) => l.note), [null, '已被替换', '持有中']);
-    check('identity · the route is the run\'s route', run.route, route.id);
-    check('mutations · armor taken twice', view.groups[1].lines.map((l) => [l.name, l.count]), [[mutationCard('armor').name, 2]]);
-    check('numbers · armor reads the run\'s own defence', stat(view, '护甲'), String(Math.round(run.defense * 100) / 100));
-  }
-
-  // ---- a skill picked, replaced, then picked again is one line and is the carried one
-  {
-    const run = new Run();
-    take(run, 'skill:dash');
-    take(run, 'skill:vortex');
-    take(run, 'skill:dash');
-    const identity = growthView(run).groups[0].lines;
-    check('skill · taken again after being replaced: one line each, dash is carried', identity.map((l) => [l.name, l.note]), [
-      [mutationCard('skill:dash').name, '持有中'],
-      [mutationCard('skill:vortex').name, '已被替换'],
-    ]);
-  }
-
   // ---- the rate tier, and a card the game no longer has
   {
     const run = new Run();

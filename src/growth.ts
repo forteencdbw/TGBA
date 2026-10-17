@@ -24,11 +24,11 @@ export interface GrowthStat {
 export interface GrowthLine {
   /** The card's name, as the three-choice panel printed it. */
   name: string;
-  /** How many times it was taken, or null for a card that is taken once and has no count (a route, a skill). */
+  /** How many times it was taken, or null for a card that is taken once and has no count (a route). */
   count: number | null;
   /** The card's one-line description, verbatim. */
   blurb: string;
-  /** A skill's standing: it is the one carried now, or it has been replaced by a later pick. Null for every other card. */
+  /** A card's standing line, drawn in brackets beside it; null for a card with nothing to say. */
   note: string | null;
 }
 
@@ -68,7 +68,6 @@ export function growthView(run: Run): GrowthView {
   }
 
   const routes: GrowthLine[] = [];
-  const skills: GrowthLine[] = [];
   const stacking: GrowthLine[] = [];
   for (const id of order) {
     const card = mutationCard(id);
@@ -78,17 +77,13 @@ export function growthView(run: Run): GrowthView {
     const blurb = card?.blurb ?? '（这张卡已经不在游戏里了）';
     if (id.startsWith('route:')) {
       routes.push({ name, count: null, blurb, note: null });
-    } else if (id.startsWith('skill:')) {
-      skills.push({ name, count: null, blurb, note: id === `skill:${run.skill?.id}` ? '持有中' : '已被替换' });
     } else {
       stacking.push({ name, count: counts.get(id) ?? 1, blurb, note: null });
     }
   }
 
-  // The route comes before the skills: it is the choice the rest of the run is built on.
-  const identity = [...routes, ...skills];
   const groups: GrowthGroup[] = [];
-  if (identity.length > 0) groups.push({ title: '路线与技能', lines: identity });
+  if (routes.length > 0) groups.push({ title: '路线', lines: routes });
   if (stacking.length > 0) groups.push({ title: '突变', lines: stacking });
   return { stats, groups };
 }

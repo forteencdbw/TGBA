@@ -13,7 +13,6 @@ import { defaultBubbleType, findRoute, formForRoute, hasVerb, type BubbleType, t
 import { calibrateLateral, type LateralAuthority } from './lateral';
 import { initialRageState, type RageState } from './rage';
 import { pickTalent, resolveTalent, type TalentEffects } from './talents';
-import type { Skill, SkillId } from './skills';
 import type { EntrySide } from './levels';
 import type { Input } from './input';
 import { chainTargets } from './conductive';
@@ -29,12 +28,11 @@ import { placeEntry } from './placement';
 import { gainRage, hitRage, spendRage, tickRage } from './rage';
 import { OBSTACLE_BLOCK_SOUND, OBSTACLE_BREAK_SOUNDS } from './soundIds';
 import { sayBlast, sayCallout, sayGraze } from './runEvents';
-import { findSkill } from './skills';
 import { recordAbsorb, stageName, stageRadiusFraction } from './stages';
 import { fartBaitCount, fartPushFor } from './talents';
 import { bubbleVolumeFromRadius, volumeForHealthRatio } from './volume';
 import type { Phase } from './snapshot';
-import { sayBanner, sayDamage, sayScore, saySkillSlot, saySound, type RunEvent } from './runEvents';
+import { sayBanner, sayDamage, sayScore, saySound, type RunEvent } from './runEvents';
 import type { SoundEvent } from './audio';
 
 /**
@@ -229,9 +227,7 @@ export class Run {
     sayDamage(this.events, x, y, amount);
   }
 
-  private skillSlot(carried: boolean): void {
-    saySkillSlot(this.events, carried);
-  }  player = new Player();
+  player = new Player();
   elapsedTotal = 0;
   progress = new Progression();
   field = new EntityField();
@@ -320,7 +316,7 @@ export class Run {
    * Every card the run has taken, by card id, in the order they were taken -- the history `mutations` cannot give.
    *
    * `mutations` is the counts the passives are derived from, and it only holds the stacking cards: the gun row, the rate
-   * tier, a skill, a route and a heal each change some other field and are not in it. This is the one list that has every
+   * tier, a route and a heal each change some other field and are not in it. This is the one list that has every
    * pick, so the pause panel's growth section can say what the run has become. It has the SAME lifecycle as `mutations`
    * (a walk into the next level keeps it, only a death clears it), and it is written in one place only:
    * `pickMutationCard` in `src/mutations.ts`.
@@ -403,8 +399,6 @@ export class Run {
   lastComedyBeat: { what: HazardKind; at: number } | null = null;
   hazards = new HazardField();
   talentEffects: TalentEffects = resolveTalent(pickTalent());
-  skill: { id: SkillId; name: string; uses: number } | null = null;
-  skillActivations = 0;
   fartReadyAt = 0;
   farts = 0;
   eventsFired = new Set<number>();
@@ -1563,25 +1557,6 @@ export class Run {
     this.bestScore = Math.max(this.bestScore, this.score.value);
   }
   /**
-   * Grant a skill. Single slot, so this replaces whatever is carried.
-   *
-   * Returns the skill that was displaced, which the caller may want for a "swapped" hint later.
-   */
-  /**
-   * Grant a skill. Single slot, so this replaces whatever is carried.
-   *
-   * Returns the skill that was displaced, which the caller may want for a "swapped" hint later.
-   */
-  grantSkill(id: SkillId): Skill | null {
-    const displaced = this.skill ? findSkill(this.skill.id) : null;
-    const skill = findSkill(id);
-    this.skill = { id, name: skill.name, uses: skill.uses };
-    // The on-screen button appears only while a skill is carried, so the empty state is genuinely
-    // empty rather than a greyed-out control competing for attention.
-    this.skillSlot(true);
-    return displaced;
-  }
-  /**
    * Roll this run's talent and apply it to the player.
    *
    * Applied through `resolveTalent` rather than by scattering conditionals: every talent's effect is
@@ -1675,7 +1650,7 @@ export class Run {
    * the TOP of the visible range and travel down with the scroll, rather than materialising at the
    * player's distance.
    *
-   * Collectables go into the shared field; hazards and skills are owned by the game, so the field hands
+   * Collectables go into the shared field; hazards are owned by the game, so the field hands
    * them over rather than building them.
    */
   /**

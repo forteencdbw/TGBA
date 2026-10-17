@@ -528,8 +528,8 @@ import { buildLabel } from './version';
  * WHY THIS IS ONE OBJECT RATHER THAN EIGHT SETTERS
  * ---------------------------------------------------------------------------------------------
  * The HUD used to be filled in from seven places at seven different MOMENTS: the score from the draw pass, the boss
- * from the boss fight, the progress chart from the step, the talent from the birth roll, the skill from the pickup and
- * again from the use, the seed from the run's start, and the lane metrics from a resize. Nothing said what a complete
+ * from the boss fight, the progress chart from the step, the talent from the birth roll, the seed from the run's
+ * start, and the lane metrics from a resize. Nothing said what a complete
  * HUD state was, and "which of these has been set by now" was a question about the ORDER of a frame.
  *
  * It is now a value: the caller assembles one and hands it over, and the HUD is a function of it. A field that is
@@ -558,13 +558,6 @@ export interface HudState {
   seed: string;
   /** This run's talent, for the line under the seed. Null or empty shows nothing. */
   talent: string | null;
-  /**
-   * The carried skill and its remaining uses, or null for an empty slot.
-   *
-   * Empty is shown as nothing at all rather than as an empty box: an empty slot is the normal state for most of a run,
-   * and a permanent empty frame would just be clutter on a screen that is already busy.
-   */
-  skill: { name: string; uses: number } | null;
   /** The frame's own numbers, for the debug readout. */
   player: Player;
   fps: number;
@@ -689,9 +682,8 @@ export class Hud {
   private levelDepthMeters = 0;
   /** Which of the three birth types this run rolled. Set by the game after construction. */
   private seedLabel = '';
-  /** This run's talent, and the carried skill with its uses. Empty strings mean "show nothing". */
+  /** This run's talent. An empty string means "show nothing". */
   private talentLabel = '';
-  private skillLabel = '';
 
   constructor() {
 
@@ -931,7 +923,6 @@ export class Hud {
 
     this.seedLabel = state.seed;
     this.talentLabel = state.talent ?? '';
-    this.skillLabel = state.skill ? `${state.skill.name} ×${state.skill.uses}` : '';
   }
 
   /**
@@ -1139,9 +1130,9 @@ export class Hud {
      * the player to ignore the HUD. What replaced it is the boss bar below, which is the one progress that means
      * something.
      */
-    // The talent and the skill share the subline: they are both "what am I this run", and the screen
-    // has no room for a third line. The skill comes first because it is the one that changes.
-    const tags = [this.skillLabel, this.talentLabel].filter(Boolean).join('   ·   ');
+    // The talent is the run's identity line, sharing the subline with the stage and the seed. An empty one shows
+    // nothing at all rather than leaving a dangling separator.
+    const tags = this.talentLabel;
     /**
      * The stage readout: which tier, and how many more collectables to the next one.
      *

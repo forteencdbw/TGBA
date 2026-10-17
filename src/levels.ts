@@ -172,7 +172,7 @@ export interface LevelEntry {
    * Which kind of thing to place.
    *
    * Collectables are `bubble`, hazards name their kind, and `crate` / `coral` / `wall` / `net` are the
-   * obstacles. (The pickups are gone: the skill, the gun's rows and the rate tiers are all paid in
+   * obstacles. (The pickups are gone: the gun's rows and the rate tiers are all paid in
    * mutations now, so a level no longer places any of them.)
    *
    * `urchin`, `bombfish`, `eel`, `rot` and `oil` are the negative food: ordinary hazards from the outside, and

@@ -3,7 +3,6 @@ import { makeLabel } from './background';
 import { mech } from './mechanisms';
 import { BASE_TYPE, ROUTES } from './bubbleTypes';
 import { HazardField, KIND_TUNING, paintHazards, type HazardKind } from './hazards';
-import { SKILLS } from './skills';
 import { TALENTS } from './talents';
 import { ObstacleField, paintObstacles } from './obstacles';
 import { designScale } from './viewport';
@@ -47,10 +46,10 @@ import {
  * synthetic field holding one object. So the picture on a card is the picture in the water and cannot drift from it:
  * retune a creature's radius or colour and its card follows.
  *
- * The other icons (the bubble, its verbs, the skills, the talents) have no runtime object to hand to a painter -- a
- * skill does not exist on screen outside the moment it is used -- so they are small procedural glyphs drawn here.
- * That duplicates a few SHAPES, not any rule: their colours still come from the config, and nothing about how a skill
- * behaves is restated.
+ * The other icons (the bubble, its verbs, the talents) have no runtime object to hand to a painter -- a stage, or a
+ * gauge, is not a thing that exists in the water on its own -- so they are small procedural glyphs drawn here.
+ * That duplicates a few SHAPES, not any rule: their colours still come from the config, and nothing about how a
+ * glyph's subject behaves is restated.
  */
 
 /** A rectangle in canvas pixels, the only hit-testing primitive this page needs. */
@@ -756,7 +755,7 @@ export class CodexUi {
         break;
       }
       case 'rageBurst': {
-        // Three rings going out and a bright core: a wave, not a star (the 爆散 skill already owns the star).
+        // Three rings going out and a bright core: a wave, not a star.
         for (let i = 0; i < 3; i++) {
           g.circle(cx, cy, r * (0.45 + i * 0.42)).stroke({
             color: colour,
@@ -815,51 +814,6 @@ export class CodexUi {
         g.circle(cx, cy, r).fill({ color: colour, alpha: 0.3 });
         g.circle(cx, cy, r).stroke({ color: colour, alpha: 0.85, width: stroke * 0.7 });
         g.circle(cx - r * 0.3, cy + r * 0.3, r * 0.62).fill({ color: 0xeafcff, alpha: 0.18 });
-        break;
-      case 'dash':
-        for (let i = 0; i < 2; i++) {
-          const y = cy + r * (0.45 - i * 0.7);
-          g.moveTo(cx - r * 0.9, y).lineTo(cx, y - r * 0.5).lineTo(cx + r * 0.9, y);
-        }
-        g.stroke({ color: colour, alpha: 0.95, width: stroke });
-        break;
-      case 'vortex':
-        // Concentric broken rings rather than arcs: this project has been bitten twice by `Graphics.arc` leaving a
-        // stray line back to where the path started, so nothing here draws an arc. A ring plus a gap reads the same.
-        for (let i = 0; i < 2; i++) {
-          g.circle(cx, cy, r * (1.1 - i * 0.42)).stroke({
-            color: colour,
-            alpha: 0.35 + i * 0.45,
-            width: stroke * 0.8,
-          });
-        }
-        // Two inward spokes, so the rings read as a swirl rather than as a target.
-        for (let i = 0; i < 2; i++) {
-          const a = i * Math.PI + 0.5;
-          g.moveTo(cx + Math.cos(a) * r * 1.1, cy + Math.sin(a) * r * 1.1)
-            .lineTo(cx + Math.cos(a + 0.7) * r * 0.28, cy + Math.sin(a + 0.7) * r * 0.28);
-        }
-        g.stroke({ color: colour, alpha: 0.9, width: stroke * 0.7 });
-        break;
-      case 'stink':        for (const [dx, dy, rr] of [
-          [-0.6, 0.1, 0.55],
-          [0.5, 0.25, 0.45],
-          [0, -0.5, 0.5],
-        ] as const) {
-          g.circle(cx + r * dx, cy + r * dy, r * rr).fill({ color: colour, alpha: 0.42 });
-        }
-        break;
-      case 'shell':
-        g.circle(cx, cy, r).stroke({ color: colour, alpha: 0.95, width: stroke * 1.6 });
-        g.circle(cx, cy, r * 0.55).fill({ color: colour, alpha: 0.3 });
-        break;
-      case 'burst':
-        for (let i = 0; i < 6; i++) {
-          const a = (i / 6) * Math.PI * 2;
-          g.moveTo(cx + Math.cos(a) * r * 0.4, cy + Math.sin(a) * r * 0.4)
-            .lineTo(cx + Math.cos(a) * r * 1.3, cy + Math.sin(a) * r * 1.3);
-        }
-        g.stroke({ color: colour, alpha: 0.95, width: stroke });
         break;
       case 'fish-fart':
         g.circle(cx - r * 0.2, cy, r * 0.8).fill({ color: colour, alpha: 0.4 });
@@ -958,7 +912,7 @@ function inside(rect: Rect, x: number, y: number): boolean {
  * `menu.codexEnabled` is on, and a static import from the diagnostics would put it, and every card's prose, back into the
  * first screen's bundle. `Game.codexDetail` hands the readout this function once the module has loaded.
  *
- * The `game*` lists are read from the modules that DEFINE the content rather than from the codex, so a creature, skill,
+ * The `game*` lists are read from the modules that DEFINE the content rather than from the codex, so a creature,
  * talent or route the game has and the book does not shows up as a difference against `entryIds`.
  */
 export interface CodexDetail {
@@ -970,7 +924,6 @@ export interface CodexDetail {
   entries: Record<string, number>;
   entryIds: readonly string[];
   gameHazards: readonly string[];
-  gameSkills: readonly string[];
   gameTalents: readonly string[];
   gameRoutes: readonly string[];
 }
@@ -986,7 +939,6 @@ export function codexDetail(ui: CodexUi): CodexDetail {
     entries: Object.fromEntries(CODEX_CATEGORIES.map((c) => [c.id, entriesFor(c.id).length])),
     entryIds: codexEntries().map((e) => e.id),
     gameHazards: Object.keys(KIND_TUNING),
-    gameSkills: SKILLS.map((s) => s.id),
     gameTalents: TALENTS.map((t) => t.id),
     gameRoutes: [BASE_TYPE.id, ...ROUTES.map((r) => r.id)],
   };

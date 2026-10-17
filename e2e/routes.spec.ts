@@ -72,7 +72,6 @@ const state = (page: Page) =>
         name: string;
         controls: string[];
         hasSuction: boolean;
-        hasCharge: boolean;
         hasBurst: boolean;
         swallowsHazards: boolean;
       },
@@ -114,7 +113,7 @@ test.describe('routes', () => {
     const run = await state(page);
     expect(run.bubbleType.id, 'the run must start as the base bubble').toBe('base');
     expect(run.route, 'with no route picked yet').toBeNull();
-    expect(run.bubbleType.controls, 'and only the button every form has').toEqual(['skill']);
+    expect(run.bubbleType.controls, 'and no buttons at all').toEqual([]);
   });
   test('the base bubble earns no rage from damage, and the devour route does not add one', async ({ page }) => {
     await boot(page);
@@ -123,9 +122,8 @@ test.describe('routes', () => {
 
     const run = await state(page);
     expect(run.bubbleType.id, 'the run starts as the base bubble').toBe('base');
-    expect(run.bubbleType.controls, 'with exactly the one button every form has').toEqual(['skill']);
+    expect(run.bubbleType.controls, 'with no buttons at all').toEqual([]);
     expect(run.bubbleType.hasSuction, 'no field before the route is picked').toBe(false);
-    expect(run.bubbleType.hasCharge, 'and no charge verb').toBe(false);
 
     /**
      * And being hit earns nothing, because the base has no resource to earn.

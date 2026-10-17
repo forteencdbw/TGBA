@@ -111,7 +111,7 @@ test.describe('level spawning', () => {
     expect(refusals.typo, 'and the message must say which block it was').toContain('spawns[0]');
     expect(refusals.sceneryUp, 'scenery cannot swim up').toContain('scenery cannot swim up');
     expect(refusals.fishBarrier, 'only obstacles can be arranged as a barrier').toContain('only obstacles');
-    expect(refusals.bubbleSide, 'collectables come down with the current').toContain('collectables and skills');
+    expect(refusals.bubbleSide, 'collectables come down with the current').toContain('collectables come down with the current');
     expect(refusals.noAt, '"at" is required').toContain('required');
     expect(refusals.badKind, 'an unknown kind is listed against the known ones').toContain('should be one of');
   });

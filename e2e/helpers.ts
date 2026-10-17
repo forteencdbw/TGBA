@@ -130,10 +130,6 @@ export interface Diagnostics {
   };
   /** Lost control, from an electric eel: a property of the PLAYER, whatever caused it. */
   misfire: { remaining: number; inverted: boolean };
-  /** Which skill is in the slot and how many uses are left, or null. */
-  skill: { id: string; uses: number } | null;
-  /** How many skills have been used this run. */
-  skillActivations: number;
   stats: { absorbed: number; hits: number; maxVolume: number; ended: number; newRecord: boolean };
   laneWidthMeters: number;
   lateral: { keyboardSpeed: number; laneWidth: number; crossingSeconds: number };
@@ -171,7 +167,6 @@ export interface GameHandle {
   restart: () => void;
   spawnBubbleOnPlayer: (sizeRatio: number) => void;
   spawnHazardOnPlayer: (kind: 'fish' | 'jelly' | 'trash' | 'crab') => void;
-  grantSkill: (id: string) => void;
   skipToLevelEnd: () => void;
   demoteStage: () => number;
   steadyCruise: () => void;

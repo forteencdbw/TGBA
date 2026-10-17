@@ -64,7 +64,7 @@ export class Player {
   /**
    * How far up and down the bubble may be positioned, as fractions of the visible window.
    *
-   * The bottom band stays clear for the skill button and the top for the depth readout, and neither
+   * The bottom band stays clear for the touch controls and the top for the depth readout, and neither
    * extreme lets the bubble sit against a letterboxed edge where it would look clipped.
    */
   static readonly SCREEN_Y_MIN = 0.12;
@@ -81,9 +81,6 @@ export class Player {
     this.slowFactor = 1;
     this.impulseVy = 0;
     this.impulseVx = 0;
-    this.skillRemaining = 0;
-    this.skillId = null;
-    this.skillAscentBonus = 1;
     this.misfireSeconds = 0;
   }
 
@@ -180,12 +177,6 @@ export class Player {
    */
   suctionMoveFactor = 1;
 
-  /** Seconds left of an active skill effect, and which one. */
-  skillRemaining = 0;
-  skillId: string | null = null;
-  /** Speed multiplier granted by the active skill. */
-  skillAscentBonus = 1;
-
   /**
    * Seconds of LOST CONTROL remaining, from an electric eel inside the stomach.
    *
@@ -253,13 +244,6 @@ export class Player {
       this.impulseVx *= decay;
       if (Math.abs(this.impulseVy) < 1e-4) this.impulseVy = 0;
       if (Math.abs(this.impulseVx) < 0.005) this.impulseVx = 0;
-    }
-    if (this.skillRemaining > 0) {
-      this.skillRemaining = Math.max(0, this.skillRemaining - dt);
-      if (this.skillRemaining === 0) {
-        this.skillId = null;
-        this.skillAscentBonus = 1;
-      }
     }
     if (this.misfireSeconds > 0) this.misfireSeconds = Math.max(0, this.misfireSeconds - dt);
 

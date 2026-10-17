@@ -173,7 +173,7 @@ try {
   {
     const boil = B.findRoute('boil');
     const form = B.formForRoute(boil);
-    check('形态 · 只剩技能钮（那三个动词各有别的去处）', [...form.controls], ['skill']);
+    check('形态 · 不再有任何按钮（那三个动词各有别的去处）', [...form.controls], []);
   }
 
   // --- the deck: four cards, and what each one moves ---------------------------------

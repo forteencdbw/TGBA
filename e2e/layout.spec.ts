@@ -7,7 +7,7 @@ import { boot, startFromMenu, waitForPhase } from './helpers';
  * `page.setViewportSize` is a sentence; the old browser suites hardcoded a window size into the Chrome
  * command line and re-spawned the browser to try another. That meant the layout was only ever checked at the
  * size it was developed at -- and the desktop case, where the play area was stretched across a 2560px window
- * and pushed the skill button off the right edge, was missed for exactly that reason.
+ * and pushed the button column off the right edge, was missed for exactly that reason.
  *
  * The `desktop` project covers a wide window; these tests check the invariants that must hold at ANY size, by
  * resizing within one page.
@@ -53,14 +53,14 @@ test.describe('layout holds at any canvas size', () => {
     expect(cases.laptop.laneWidthPx, 'a 1440px window must cap the lane too').toBeLessThan(1200);
   });
 
-  test('the settings panel and the skill button stay on screen after a resize', async ({ page }) => {
+  test('the settings panel and the touch controls stay on screen after a resize', async ({ page }) => {
     await boot(page);
 
     /**
      * Resize to a wide desktop window, mid-session, and check the controls are still reachable.
      *
-     * This is the shape of the real bug: the skill button was placed at `canvasWidth - 76 * scale`, which on a
-     * 2560px window is 2485px -- past the right edge, so the player simply did not have a skill button.
+     * This is the shape of the real bug: the button column was placed at `canvasWidth - 76 * scale`, which on a
+     * 2560px window is 2485px -- past the right edge, so the player simply did not have the controls.
      *
      * The SHORT window is here for the other half of the same mistake, found later: the button sizes were derived
      * from `viewport.scale`, and a 915x412 landscape phone resolves that to 2.49 px per metre, which made the
@@ -85,7 +85,6 @@ test.describe('layout holds at any canvas size', () => {
               canvasSize: { width: number; height: number };
               settingsRef: { geometry: { gear: { x: number; y: number; radius: number } } };
               touchRef: {
-                skillGeometry: { x: number; y: number; radius: number };
                 spitGeometry: { x: number; y: number; radius: number };
                 compressGeometry: { x: number; y: number; radius: number };
               };
@@ -96,7 +95,6 @@ test.describe('layout holds at any canvas size', () => {
           canvas: g.canvasSize,
           gear: g.settingsRef.geometry.gear,
           controls: {
-            skill: g.touchRef.skillGeometry,
             spit: g.touchRef.spitGeometry,
             compress: g.touchRef.compressGeometry,
           },
@@ -114,7 +112,7 @@ test.describe('layout holds at any canvas size', () => {
        * It only ever checked the gear, and the gap is exactly the kind of thing that goes unnoticed: the compress
        * button is stacked ABOVE the spit button, which is the first control whose position depends on another
        * control's size -- so on a narrow lane a fixed pixel gap could have pushed it off the top of the reachable
-       * area, or dropped it on top of the skill button on the other side.
+       * area.
        *
        * The spit and compress rectangles are the DORMANT path's positions: `layout()` still computes a rectangle for
        * every button whether or not any type declares the verb, and no type declares these two today. Asserting

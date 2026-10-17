@@ -30,7 +30,6 @@ export type RunEvent =
   | { kind: 'damagePopup'; x: number; y: number; amount: number }
   | { kind: 'graze'; x: number; y: number }
   | { kind: 'callout'; x: number; y: number; text: string }
-  | { kind: 'skillSlot'; carried: boolean }
   | { kind: 'blast'; x: number; y: number; radius: number }
   | { kind: 'splash' }
   | { kind: 'results' };
@@ -70,7 +69,7 @@ export function sayGraze(events: RunEvent[], x: number, y: number): void {
 }
 
 /**
- * A small skill callout: 「擦」「贴脸」「拆弹」-- a word where the trick happened.
+ * A small callout: 「擦」「贴脸」「拆弹」-- a word where the trick happened.
  *
  * The graze's word is its own event because it carries a slow-motion beat; these three are the
  * graze's small change -- the same idea without the ceremony -- and they share one event, one style
@@ -78,11 +77,6 @@ export function sayGraze(events: RunEvent[], x: number, y: number): void {
  */
 export function sayCallout(events: RunEvent[], x: number, y: number, text: string): void {
   events.push({ kind: 'callout', x, y, text });
-}
-
-/** Whether the carried skill's button exists. Input surface, so it is an OUTPUT of the run rather than a rule. */
-export function saySkillSlot(events: RunEvent[], carried: boolean): void {
-  events.push({ kind: 'skillSlot', carried });
 }
 
 /**

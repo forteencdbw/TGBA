@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { boot, diagnostics, expectNoErrors, player, startFromMenu, waitForPhase, watchForErrors } from './helpers';
+import { boot, expectNoErrors, player, startFromMenu, waitForPhase, watchForErrors } from './helpers';
 
 /**
  * The touch drag: the phone's only way to move.
@@ -170,82 +170,5 @@ test.describe('the touch drag', () => {
     expect(later.x, 'no drift on the lateral axis after the release').toBeCloseTo(settled.x, 4);
     expect(later.screenY, 'and none on the vertical').toBeCloseTo(settled.screenY, 4);
     await expectNoErrors(errors);
-  });
-
-  test('a touch that lands on a button belongs to that button', async ({ page }) => {
-    const errors = watchForErrors(page);
-    await boot(page);
-    await startFromMenu(page);
-    await waitForPhase(page, 'playing');
-
-    /**
-     * The press must go to the button and NOT also start a drag.
-     *
-     * It is the order of the branches in `onPointerDown` that decides this, and getting it wrong would mean every
-     * press of a button also shoved the bubble sideways -- the exact failure the drag's "anywhere" rule invites.
-     * The skill/suction button, because it is a button the default bubble actually has.
-     */
-    await page.evaluate(() => {
-      const g = (window as unknown as {
-        __GB: {
-          game: {
-            handlePointerDown: (id: number, x: number, y: number) => void;
-            touchRef: { skillGeometry: { x: number; y: number } };
-          };
-        };
-      }).__GB.game;
-      const b = g.touchRef.skillGeometry;
-      g.handlePointerDown(71, b.x, b.y);
-    });
-
-    const state = await drag(page);
-    expect(state.steering, 'a button press must not also start a drag').toBe(false);
-    expect(state.dragPointers, 'and no pointer is steering').toBe(0);
-
-    await up(page, 71);
-    await expectNoErrors(errors);
-  });
-
-  test('one finger steers while the other fires a skill', async ({ page }) => {
-    await boot(page);
-    await startFromMenu(page);
-    await waitForPhase(page, 'playing');
-    await page.evaluate(() => (window as unknown as { __GB: { game: { debugSetSteadyCruise: () => void } } }).__GB.game.debugSetSteadyCruise());
-
-    const activationsBefore = (await diagnostics(page)).skillActivations;
-    const { canvas } = await geometry(page);
-
-    /**
-     * The multi-touch case the old drag model got wrong once ("dragging to steer blocks the skill button").
-     *
-     * Both fingers are routed independently, so this has to keep working rather than be assumed: the second
-     * pointer must not steal the first one's drag, and the drag must keep delivering displacement while the skill
-     * is being spent.
-     */
-    await page.evaluate(
-      (p) => {
-        const g = (window as unknown as {
-          __GB: {
-            game: {
-              debugGrantSkill: (id: string) => void;
-              handlePointerDown: (id: number, x: number, y: number) => void;
-              touchRef: { skillGeometry: { x: number; y: number } };
-            };
-          };
-        }).__GB.game;
-        g.debugGrantSkill('dash');
-        const s = g.touchRef.skillGeometry;
-        g.handlePointerDown(71, p.x, p.y);
-        g.handlePointerDown(82, s.x, s.y);
-      },
-      { x: canvas.width * 0.5, y: canvas.height * 0.3 },
-    );
-
-    const state = await drag(page);
-    expect(state.steering, 'the steering finger keeps the drag').toBe(true);
-
-    await expect
-      .poll(async () => (await diagnostics(page)).skillActivations, { message: 'the skill must fire', timeout: 5000 })
-      .toBeGreaterThan(activationsBefore);
   });
 });

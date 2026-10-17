@@ -565,7 +565,7 @@ export interface Mechanisms {
    * Mutations: the in-run growth ladder.
    *
    * The XP economy (what pays, how fast the ladder climbs), the resume grace after a pick, and the HUD
-   * gauge's looks. The pool itself is content and lives in `src/mutations.ts` beside the skills.
+   * gauge's looks. The pool itself is content and lives in `src/mutations.ts`.
    */
   mutation: {
     /** Mutation points per second of simply being alive. The slowest source, by design. */
@@ -593,7 +593,7 @@ export interface Mechanisms {
      * somewhere, and the ring between the two is where the creature can still reach you.
      */
     pointBlankRadius: number;
-    /** The three small skill callouts (擦 / 贴脸 / 拆弹) share one style, smaller than the graze's word. */
+    /** The three small callouts (擦 / 贴脸 / 拆弹) share one style, smaller than the graze's word. */
     callouts: PopupStyle;
     /** How much one pick of each numeric card is worth. The cards' text is content, in `src/mutations.ts`. */
     pool: {
@@ -1624,7 +1624,6 @@ export interface Mechanisms {
     buttonTextColour: number;
     buttonTextSize: number;
     collectableColour: number;
-    skillColour: number;
     talentColour: number;
   };
   /**
@@ -2213,28 +2212,11 @@ export interface Mechanisms {
     entryDepth: number;
   };
   /**
-   * The six skills, one block each, holding every number that decides how one feels.
+   * The talents, one block each.
    *
-   * ---------------------------------------------------------------------------------------------
-   * WHY THE KEYS ARE LISTED HERE RATHER THAN TYPED AS A Record
-   * ---------------------------------------------------------------------------------------------
-   * `SkillId` in `src/skills.ts` is the union of exactly these six names, and `src/skills.ts` reads
-   * `mech.skills[id]` with an `id: SkillId`. Spelling the keys out means that adding a skill without giving it
-   * numbers is a COMPILE error rather than a block of `undefined` at runtime -- the same guarantee
-   * `KIND_TUNING` gets from its `Record<HazardKind, ...>` type, and the reason a missing row in a per-something
-   * table is not a class of bug this project has to remember to guard.
-   *
-   * The names and the one-line blurbs are content and stay in `skills.ts`; this block is the balance.
-   */
-  skills: {
-    dash: { uses: number; durationSeconds: number; ascentMultiplier: number };
-    vortex: { uses: number; durationSeconds: number; vortexRadiusMeters: number; vortexPullPerSecond: number };
-    stink: { uses: number; durationSeconds: number; stinkRadiusMeters: number };
-    shell: { uses: number; durationSeconds: number; invulnerableSeconds: number; shellRadiusMeters: number };
-    burst: { uses: number; durationSeconds: number; burstRadiusMeters: number };
-  };
-  /**
-   * The three talents, one block each. Same reason for the spelled-out keys as `skills` above.
+   * The keys are spelled out rather than typed as a `Record` so that a talent without numbers is a COMPILE error
+   * rather than a block of `undefined` at runtime -- the same guarantee `KIND_TUNING` gets from its
+   * `Record<HazardKind, ...>` type.
    *
    * Half of each block is what the talent GIVES and half is what it COSTS; a talent whose cost is not in its block
    * is a talent whose cost is hidden somewhere else.
@@ -2507,7 +2489,7 @@ function anyNumber(v: unknown): boolean {
 /**
  * True if `v` is a whole number, for the knobs that COUNT something rather than measure it.
  *
- * A count of spikes, gun rows, mesh lines or skill uses is not a magnitude, so this is not the range check that came
+ * A count of spikes, gun rows or mesh lines is not a magnitude, so this is not the range check that came
  * out of the rest of the file -- it is a statement about what the value IS. 6.5 spikes is not a bold piece of tuning,
  * it is a typo that reaches a `for` loop and rounds in a way nobody chose; the same reasoning keeps
  * `Number.isInteger` on an animation's frame count in `isAnimationTable`.
@@ -2662,7 +2644,6 @@ const CODEX_COLOURS = [
   'buttonStroke',
   'buttonTextColour',
   'collectableColour',
-  'skillColour',
   'talentColour',
 ] as const;
 
@@ -3931,35 +3912,12 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.look.specularAlpha', check: anyNumber, describe: 'an opacity' },
 
   /**
-   * --- the skills and the talents ---
+   * --- the talents ---
    *
    * One row per NUMBER rather than one per block, for the reason the appearance arrays have one row per key: the
-   * failure this table exists for is a hand-edit that is out of range, and "skills.dash is invalid" would leave the
-   * owner hunting. Disjoint ranges on purpose -- `uses` is a whole number of presses and `ascentMultiplier` is a
-   * speed, and a row that accepted both would be a row that catches neither.
+   * failure this table exists for is a hand-edit that is out of range, and "talents.silt is invalid" would leave the
+   * owner hunting.
    */
-  { path: 'skills.dash.uses', check: wholeNumber, describe: 'a whole number of uses' },
-  { path: 'skills.dash.durationSeconds', check: anyNumber, describe: 'seconds; 0 means the effect is instant' },
-  { path: 'skills.dash.ascentMultiplier', check: anyNumber, describe: 'an ascent multiplier' },
-
-  { path: 'skills.vortex.uses', check: wholeNumber, describe: 'a whole number of uses' },
-  { path: 'skills.vortex.durationSeconds', check: anyNumber, describe: 'seconds; 0 means the effect is instant' },
-  { path: 'skills.vortex.vortexRadiusMeters', check: anyNumber, describe: 'metres' },
-  { path: 'skills.vortex.vortexPullPerSecond', check: anyNumber, describe: 'a pull of 0.1 to 20 times the distance per second' },
-
-  { path: 'skills.stink.uses', check: wholeNumber, describe: 'a whole number of uses' },
-  { path: 'skills.stink.durationSeconds', check: anyNumber, describe: 'seconds; 0 means the effect is instant' },
-  { path: 'skills.stink.stinkRadiusMeters', check: anyNumber, describe: 'metres' },
-
-  { path: 'skills.shell.uses', check: wholeNumber, describe: 'a whole number of uses' },
-  { path: 'skills.shell.durationSeconds', check: anyNumber, describe: 'seconds; 0 means the effect is instant' },
-  { path: 'skills.shell.invulnerableSeconds', check: anyNumber, describe: 'seconds' },
-  { path: 'skills.shell.shellRadiusMeters', check: anyNumber, describe: 'metres' },
-
-  { path: 'skills.burst.uses', check: wholeNumber, describe: 'a whole number of uses' },
-  { path: 'skills.burst.durationSeconds', check: anyNumber, describe: 'seconds; 0 means the effect is instant' },
-  { path: 'skills.burst.burstRadiusMeters', check: anyNumber, describe: 'metres' },
-
   { path: 'talents.silt.startVolume', check: anyNumber, describe: 'a starting volume' },
   { path: 'talents.silt.defense', check: anyNumber, describe: 'defence points' },
   { path: 'talents.fish-fart.radiusMeters', check: anyNumber, describe: 'metres' },

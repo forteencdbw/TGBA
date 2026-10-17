@@ -70,7 +70,7 @@ export class LevelUpUi {
    *
    * Re-opening rather than reopening: a banked second level shows NEW cards, because the picks are
    * drawn when the level is spent and the pool may have changed shape since (the gun may now be capped,
-   * the carried skill gone).
+   * a card may already have been taken).
    *
    * `title` names the panel, and there are exactly two panels: the ordinary pick and the branch node --
    * the run's FIRST level-up, whose three cards are the routes rather than a draw. A different title is

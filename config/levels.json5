@@ -31,7 +31,6 @@
 //                          vent / mineral / shrimp / angler / torpedo / zapper / foam / rain
 //                          **加一种新生物**：在 mechanics.json5 里给它补齐那几张"每种都要有一行"的表，
 //                          这里就自动能刷了——加载器照那张表认，不是照着这里的手写清单认。
-//                 技能泡   skill
 //                 能力升级 upgrade（火力 +1 排）
 //                 射速升级 rate（射速 +1 档，最高三档）
 //               掉落物可以**同时存在多个**，各自漂移、各自拾取：放在一起不会互相覆盖。

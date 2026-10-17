@@ -671,15 +671,6 @@
   // ---------------------------------------------------------------------------------------------
   //
   // 参考物是**关卡的卷轴速度**，不是玩家速度：世界自己在动，所以"这个东西看起来多快"是关卡的属性。
-  // ---------------------------------------------------------------------------------------------
-  // 掉落物（拾取物）的外观
-  // ---------------------------------------------------------------------------------------------
-  //
-  // 每种一行（`skill` = 技能掉落物，`upgrade` = 能力升级）。颜色以外都是相对泳道宽度的比例，
-  // 所以手机和桌面窗口上看起来的相对大小一致。
-  //
-  // `upgrade` 画成**两个叠起来的箭头**而不是技能那个菱形：形状是玩家在余光里分辨"这是什么"的第一线索，
-  // 而这两个掉落物的效果完全不同（一个换掉技能槽，一个永久加强火力）。
   "collectables": {
     // 泡泡自己上浮的速度，相对卷轴速度的倍率区间。
     //
@@ -3848,10 +3839,9 @@
     "buttonTextColour": 0xd8fbff,
     "buttonTextSize": 12,
 
-    // 没有自己配色可用时，图标用的颜色：收集物（泡泡）、技能掉落物、天赋。
+    // 没有自己配色可用时，图标用的颜色：收集物（泡泡）、天赋。
     // 有配色的实体一律用它们自己的（危险物用 hazards、障碍用 obstacles、吸附用 suction）。
     "collectableColour": 0xaef2ff,
-    "skillColour": 0xe8d6ff,
     "talentColour": 0xffcf6b
   },
 
@@ -5148,7 +5138,6 @@
           { "type": "tone", "wave": "triangle", "hz": 260, "endRatio": 0.5, "seconds": 0.1, "gain": 0.22 },
           { "type": "noise", "filter": "bandpass", "hz": 2000, "seconds": 0.05, "gain": 0.15 }
         ] },
-        // graze：原来借用 skill
         "graze": { "label": "擦边", "bus": "combat", "gap": 0.12, "layers": [
           { "type": "tone", "wave": "sine", "hz": 1400, "endRatio": 1.3, "seconds": 0.08, "gain": 0.1 },
           { "type": "noise", "filter": "highpass", "hz": 5000, "seconds": 0.05, "gain": 0.08 }
@@ -5174,7 +5163,6 @@
         "player.absorb": { "label": "吸收小泡泡", "bus": "player", "gap": 0.045, "pitchPerIntensity": 1.24, "gainPerIntensity": 0.625, "layers": [
           { "type": "tone", "wave": "sine", "hz": 420, "endRatio": 1.9, "seconds": 0.09, "gain": 0.16 }
         ] },
-        // stage.grow：原来借用 skill
         "stage.grow": { "label": "成长阶段提升", "bus": "player", "gap": 0.3, "layers": [
           { "type": "tone", "wave": "sine", "hz": 400, "seconds": 0.2, "gain": 0.2 },
           { "type": "tone", "wave": "sine", "hz": 500, "seconds": 0.2, "gain": 0.2, "delay": 0.09 },
@@ -5184,27 +5172,6 @@
           { "type": "tone", "wave": "sine", "hz": 880, "endRatio": 1.5, "seconds": 0.2, "gain": 0.14 },
           { "type": "tone", "wave": "sine", "hz": 1320, "endRatio": 1.2, "seconds": 0.25, "gain": 0.12, "delay": 0.08 },
           { "type": "noise", "filter": "highpass", "hz": 6000, "seconds": 0.3, "gain": 0.08 }
-        ] },
-        "skill.dash": { "label": "技能：冲刺", "bus": "player", "gap": 0.2, "layers": [
-          { "type": "noise", "filter": "bandpass", "hz": 500, "endRatio": 7, "seconds": 0.25, "gain": 0.25 },
-          { "type": "tone", "wave": "sawtooth", "hz": 200, "endRatio": 3, "seconds": 0.2, "gain": 0.12 }
-        ] },
-        "skill.vortex": { "label": "技能：漩涡", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 300, "endRatio": 2.2, "seconds": 0.7, "gain": 0.2, "vibratoHz": 5, "vibratoDepth": 0.25 },
-          { "type": "noise", "filter": "bandpass", "hz": 600, "endRatio": 2.5, "seconds": 0.7, "gain": 0.15 }
-        ] },
-        "skill.stink": { "label": "技能：臭云", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sawtooth", "hz": 100, "endRatio": 0.7, "seconds": 0.5, "gain": 0.2, "vibratoHz": 8, "vibratoDepth": 0.1 },
-          { "type": "noise", "filter": "lowpass", "hz": 500, "seconds": 0.5, "gain": 0.15 }
-        ] },
-        "skill.shell": { "label": "技能：硬壳", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "square", "hz": 800, "endRatio": 0.5, "seconds": 0.12, "gain": 0.16 },
-          { "type": "tone", "wave": "sine", "hz": 400, "endRatio": 0.8, "seconds": 0.2, "gain": 0.2 },
-          { "type": "noise", "filter": "bandpass", "hz": 3000, "seconds": 0.06, "gain": 0.15 }
-        ] },
-        "skill.burst": { "label": "技能：爆散", "bus": "player", "gap": 0.3, "layers": [
-          { "type": "tone", "wave": "sine", "hz": 200, "endRatio": 3, "seconds": 0.35, "gain": 0.28 },
-          { "type": "noise", "filter": "bandpass", "hz": 1200, "endRatio": 2.5, "seconds": 0.35, "gain": 0.25 }
         ] },
         "suction.on": { "label": "开始吸附", "bus": "player", "gap": 0.3, "layers": [
           { "type": "tone", "wave": "sine", "hz": 250, "endRatio": 0.5, "seconds": 0.3, "gain": 0.14 },
@@ -5503,61 +5470,6 @@
     // 从左右进场时，默认在屏幕的哪个高度切入。0 = 下边缘，1 = 上边缘。
     // 偏上一点是有意的：从上面进来是预警，从眼睛高度进来是惊喜。
     "entryDepth": 0.72
-  },
-
-  // =====================================================================================================
-  // 技能（skills）：关卡里捡到的道具。**每个道具的全部数值都在它自己那一块里**——
-  // 想知道"冲刺有多快"只需要看 dash，不用在几张按数字类型分的表之间数下标。
-  //
-  // 为什么它们在配置文件里而不是在 src/skills.ts 里：它们全是**平衡数值**，而平衡是这个文件存在的理由。
-  // 代码那边只留"这个道具叫什么、说什么"（名字和一句话说明是内容，不是旋钮）。
-  //
-  // 名字（name）和说明（blurb）在 src/skills.ts 的 SKILLS 表里；这一块只管数字。
-  // 缺一项会在启动时报错并点名——所以加一个技能时，这里少写一行不是"用默认值"，是打不开。
-  // =====================================================================================================
-  "skills": {
-    "dash": {
-      // 拿到手能用几次。次数是这个游戏的稀缺资源，所以"清场"类的技能最少（见 burst）。
-      "uses": 3,
-      // 效果持续秒数。0 = 瞬间生效、没有持续时间（不占玩家身上的技能槽）。
-      "durationSeconds": 1.5,
-      // 持续期间的上升倍率。2.6 = 这段时间里爬升速度是平时的 2.6 倍。
-      "ascentMultiplier": 2.6
-    },
-
-    "vortex": {
-      "uses": 1,
-      "durationSeconds": 1.2,
-      // 收集物被吸过来的半径（米）。
-      "vortexRadiusMeters": 220,
-      // 每秒把收集物拉近多少（距离的比例）。**故意不是瞬间**：一下全吸到手上，屏幕上就没有气泡自己的
-      // 移动了，而这个游戏的手感全在那个移动上。
-      "vortexPullPerSecond": 2.2
-    },
-
-    "stink": {
-      "uses": 2,
-      "durationSeconds": 1.0,
-      // 把垃圾袋和水母推开的半径（米）。"推开"和"清掉"是两件事——臭云只推，不删。
-      "stinkRadiusMeters": 170
-    },
-
-    "shell": {
-      "uses": 2,
-      "durationSeconds": 3,
-      // 无敌秒数。和 durationSeconds 分开写是刻意的：壳的效果（无敌 + 推开）可以比玩家身上的计时更长，
-      // 改一个不该顺手改另一个。
-      "invulnerableSeconds": 3,
-      // 期间把危险物推开的半径（米）。
-      "shellRadiusMeters": 320
-    },
-
-    "burst": {
-      "uses": 1,
-      "durationSeconds": 0,
-      // 把周围一切推开的半径（米）。**它只推不删**：直接删掉实体，尾盘的密度就没有意义了。
-      "burstRadiusMeters": 320
-    }
   },
 
   // =====================================================================================================

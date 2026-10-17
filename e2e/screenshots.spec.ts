@@ -49,7 +49,6 @@ test.describe('screen captures @screenshots', () => {
             game: {
               debugStartRunWithRoute: (id: string) => string | null;
               debugGrantRageForTest: (amount: number) => number;
-              debugSetSkillForTest?: () => void;
               obstaclesRef: { obstacles: unknown[] };
               hazardsRef: { hazards: unknown[] };
             };
@@ -181,60 +180,6 @@ test.describe('screen captures @screenshots', () => {
       for (let i = 0; i < 20; i++) await raf();
     });
     await page.screenshot({ path: testInfo.outputPath('drag-mid-gesture.png') });
-  });
-
-  /**
-   * The suction field, held open with a few things inside it.
-   *
-   * The field's whole job is to make "I am gathering right now" unmistakable in peripheral vision while the player
-   * watches a fish, and that is a judgement about a picture rather than about a value in a config.
-   */
-  test('the suction field, held open @screenshots', async ({ page }, testInfo) => {
-    await boot(page);
-    await startFromMenu(page);
-    await waitForPhase(page, 'playing');
-    await page.evaluate(async () => {
-      const g = (window as unknown as {
-        __GB: {
-          game: {
-            debugSetSteadyCruise: () => void;
-            spawnBubbleOnPlayer: (r: number) => void;
-            handlePointerDown: (id: number, x: number, y: number) => void;
-            touchRef: { skillGeometry: { x: number; y: number } };
-            camera: { viewport: { laneWidthMeters: number } };
-            diagnostics: { suction: { radiusFraction: number } };
-            fieldRef: { bubbles: { x: number; y: number }[] };
-          };
-          player: { x: number; y: number; volume: number; screenY: number };
-        };
-      }).__GB;
-      const raf = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
-
-      // A grown bubble, so the field is wide enough to see, and a few collectables inside it.
-      g.player.volume = 3;
-      g.game.debugSetSteadyCruise();
-      g.player.x = 0.5;
-      g.player.screenY = 0.5;
-      const lane = g.game.camera.viewport.laneWidthMeters;
-      const reach = g.game.diagnostics.suction.radiusFraction;
-      for (const [dx, dy] of [
-        [-0.7, 0.5],
-        [0.75, -0.35],
-        [0.2, 0.8],
-      ] as const) {
-        g.game.spawnBubbleOnPlayer(0.7);
-        const list = g.game.fieldRef.bubbles;
-        const b = list[list.length - 1]!;
-        b.x = g.player.x * lane + lane * reach * dx;
-        b.y = g.player.y + lane * reach * dy;
-      }
-
-      const button = g.game.touchRef.skillGeometry;
-      g.game.handlePointerDown(91, button.x, button.y);
-      // Long enough for the inward rings to animate out and for the button to show its held state.
-      for (let i = 0; i < 25; i++) await raf();
-    });
-    await page.screenshot({ path: testInfo.outputPath('suction.png') });
   });
 
   /**
@@ -396,12 +341,11 @@ test.describe('screen captures @screenshots', () => {
    * The codex, on two tabs.
    *
    * Two rather than one because the tabs differ in shape: the enemy tab is the only one that pages, so it is the one
-   * where a card grid can run out of room, and the skill tab is the one with the widest mix of fact lines. Between
+   * where a card grid can run out of room, and the bubble tab is the one with the widest mix of fact lines. Between
    * them they cover the layouts a card has to survive.
    */
   for (const [tab, name] of [
     ['enemy', 'codex-enemies'],
-    ['skill', 'codex-skills'],
     // The bubble tab now PAGES, because it documents two types: page one is the devour bubble, page two the
     // volatile one. Both pages are captured, since "the second type is in the codex" is only true if a reader can
     // turn to it.

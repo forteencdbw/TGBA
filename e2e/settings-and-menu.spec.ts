@@ -167,13 +167,12 @@ test.describe('settings, pause and the menu', () => {
   });
 
   /**
-   * Two-finger steering-plus-skill coverage lives in `drag.spec.ts`.
+   * Two-finger steering-plus-button coverage is GONE, with the buttons.
    *
-   * It has moved twice, and both times for the same reason: the movement control changed and the assertion was
-   * about the control. It started here as "dragging and the skill button", moved to the wheel when the wheel
-   * replaced the drag, and is now back with the drag -- which is a relative one again, so the case is once more
-   * "steer with one finger while the other fires". Keeping it beside the control it drives is what stops it from
-   * being an assertion about a scheme the game no longer has.
+   * It lived in `drag.spec.ts` and drove the skill/suction control, which no longer exists -- and every action
+   * button went with it. It has moved twice before, each time with the control it drove: it started here, moved
+   * to the wheel when the wheel replaced the drag, and moved back to the drag. A future control that needs a
+   * second finger will want the case back, beside whatever drives it.
    */
 });
 

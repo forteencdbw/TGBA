@@ -4,9 +4,9 @@
  * ---------------------------------------------------------------------------------------------
  * WHY THIS EXISTS
  * ---------------------------------------------------------------------------------------------
- * **The button layout belongs to the FORM, not to the game.** The devour route wants a suction field that
- * doubles as the skill button; the boil route wants a charge button and has no use for suction at all.
- * (Movement is not on this list: the phone steers by dragging anywhere on the screen, which needs no button.)
+ * **The button layout belongs to the FORM, not to the game.** A form names the controls it wants, and the drawing
+ * and the hit testing both read that list, so a verb one route owns cannot leak into another. (Movement is not on
+ * this list: the phone steers by dragging anywhere on the screen, which needs no button.)
  *
  * The alternative -- one global set of buttons that each form reinterprets -- fails in a way that is easy to
  * predict and expensive to unpick. A form that must not fire a control the other one owns cannot say so through
@@ -30,23 +30,19 @@
 /**
  * The controls a form can ask for.
  *
- * Named as VERBS rather than as positions, because a position is the form's decision: `charge` is "the big
- * hold-and-release button on the right", and which corner that ends up in is the layout's business.
+ * Named as VERBS rather than as positions, because a position is the form's decision: the suction field is "the
+ * gather control", and which corner that ends up in is the layout's business.
+ *
+ * There is no id for MOVEMENT. It is not a control a form can ask for or leave out: the phone steers by
+ * dragging anywhere on the screen, which needs no button, no pad and therefore no entry here. See `src/touch.ts`.
  */
 export type ControlId =
   /**
-   * The right-hand button: tap to spend a skill. Every form has one, because every form can carry a skill.
+   * Hold to gather: the devour route's field.
    *
-   * There is no id for MOVEMENT. It is not a control a form can ask for or leave out: the phone steers by
-   * dragging anywhere on the screen, which needs no button, no pad and therefore no entry here. See `src/touch.ts`.
-   *
-   * Separate from `suction` even though the two share a slot, and the separation is load-bearing rather than tidy:
-   * both forms have the BUTTON, and only one has the FIELD. Folded into one id, the boil route's list would have
-   * to include `suction` to get its skill button -- and then the button's press handler, which checks the field
-   * first, would quietly claim the charge instead. That is exactly the bug this split fixes.
+   * The route still declares it, but nothing holds it today -- the on-screen button that used to, sharing its
+   * corner with the skill, went with the skill system. See `Input.suctionHeld`.
    */
-  | 'skill'
-  /** Hold to gather: the devour route's field, which is what the button's hold does for that form. */
   | 'suction'
   /**
    * Dormant, both of them: the stomach's verbs are gone with the inventory, no route asks for them, and the touch
@@ -56,14 +52,13 @@ export type ControlId =
   | 'spit'
   | 'compress'
   /**
-   * Dormant: the volatile bubble's two verbs were deleted, because both took the steering away from a route whose
-   * whole pitch is getting close on purpose -- so no form asks for these, and what is left is the touch layer's
-   * knowledge of how to lay the buttons out.
+   * Dormant: the volatile bubble's spend-the-whole-gauge move was deleted, because it took the steering away from a
+   * route whose whole pitch is getting close on purpose -- so no form asks for it, and what is left is the touch
+   * layer's knowledge of how to lay the button out.
    *
-   * Kept as ids for the same reason `spit` and `compress` above are: a future route that wants a wind-up-and-release
-   * move and a spend-the-whole-gauge move will want exactly these two slots back, and the layout is the expensive half.
+   * Kept as an id for the same reason `spit` and `compress` above are: a future route that wants this move will
+   * want the slot back, and the layout is the expensive half.
    */
-  | 'charge'
   | 'burst';
 
 /** The routes a run may commit to, at its first level-up. Keyed by their card, the HUD and the codex. */
@@ -139,9 +134,8 @@ export interface BubbleType {
 /**
  * The one form a run starts as, and the one it keeps if nothing is ever added to it.
  *
- * Skill button (a carried skill is an item, not an ability), the gun, a FIXED size with fuel-free hit points, and
- * the growth palette. No field, no swallow, no rage -- everything beyond this is a ROUTE, and the route is chosen
- * in the water rather than on the menu.
+ * The gun, a FIXED size with fuel-free hit points, and the growth palette. No buttons, no field, no swallow, no
+ * rage -- everything beyond this is a ROUTE, and the route is chosen in the water rather than on the menu.
  *
  * It does not grow, and that is the shape the whole route system is built on: the first level-up offers three
  * cards, and only one of them (devour) turns the bubble into something that eats its way up the food chain. A
@@ -152,7 +146,7 @@ export const BASE_TYPE: BubbleType = {
   id: 'base',
   name: '小气泡',
   tagline: '枪、成长、还有你的操作 —— 身份等到水里再定',
-  controls: ['skill'],
+  controls: [],
   look: 'growthStage',
   swallowsHazards: false,
   firesBullets: true,
@@ -202,10 +196,9 @@ export const ROUTES: readonly Route[] = [
     title: '食物链反转',
     blurb: '吃掉一切，越大越强 —— 代价是越来越难躲',
     /**
-     * The suction field joins the skill button (one button, two halves: tap is the skill, hold is the field), and
-     * touching a creature you can eat is a meal settled on the spot.
+     * The suction field, and nothing else: touching a creature you can eat is a meal settled on the spot.
      */
-    controls: ['skill', 'suction'],
+    controls: ['suction'],
     look: 'growthStage',
     swallowsHazards: true,
     /** The only route that grows: eating is the whole point, and the price is a bigger hitbox. */
@@ -218,7 +211,7 @@ export const ROUTES: readonly Route[] = [
     title: '以怒为刃',
     blurb: '越挨打越烫 —— 满怒自动炸开，靠近你的人自己烧起来',
     /**
-     * NO BUTTONS beyond the skill, and that is the redesign rather than an omission.
+     * NO BUTTONS, and that is the redesign rather than an omission.
      *
      * This form used to have a charge (wind up, release, slam) and a burst (spend the whole gauge). Both went
      * passive: the burst fires by itself when the gauge fills, and the melee became the ARMOUR -- a plate you spend
@@ -226,7 +219,7 @@ export const ROUTES: readonly Route[] = [
      * reason the charge went is the one that killed the overload before it: a verb that moves the bubble takes the
      * steering away, and this is the form whose whole pitch is getting close on purpose.
      */
-    controls: ['skill'],
+    controls: [],
     look: 'rage',
     swallowsHazards: false,
     /** Fixed size. Rage is this route's answer to growth, and a bubble that also grew would be two answers. */
@@ -242,7 +235,7 @@ export const ROUTES: readonly Route[] = [
      * No new buttons: this route's verb is the gun the base already had, deepened. Its cards widen what the gun
      * IS -- faster, fatter, farther -- rather than what else the bubble can do.
      */
-    controls: ['skill'],
+    controls: [],
     look: 'growthStage',
     swallowsHazards: false,
     /** Fixed size: this route deepens the gun rather than the body, so the body stays the one you learned. */
@@ -287,6 +280,6 @@ export function hasControl(type: BubbleType, control: ControlId): boolean {
  * for the burst from firing it on a form that has no rage to spend. The button list alone would leave that hole
  * open, because the keyboard does not go through the buttons.
  */
-export function hasVerb(type: BubbleType, verb: 'suction' | 'spit' | 'compress' | 'charge' | 'burst'): boolean {
+export function hasVerb(type: BubbleType, verb: 'suction' | 'spit' | 'compress' | 'burst'): boolean {
   return type.controls.includes(verb);
 }

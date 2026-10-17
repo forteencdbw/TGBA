@@ -81,7 +81,7 @@ test.describe('the score', () => {
     expect(afterFlee.hud, 'and the screen shows it').toBe(`分数 ${price.drivenOff}`);
 
     // 2. Swallow a creature: the reversal.
-    // (The pickup event went with the pickups themselves -- the skill and the gun's rows are mutation
+    // (The pickup event went with the pickups themselves -- the gun's rows are mutation
     // picks now, so this run earns drivenOff, eaten and boss and nothing else.)
     await page.evaluate(() => {
       (window as unknown as { __GB: { game: { debugSwallowForTest: (k: string) => number } } }).__GB.game.debugSwallowForTest('fish');

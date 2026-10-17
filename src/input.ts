@@ -17,14 +17,6 @@ const KEYS = {
   up: ['KeyW', 'ArrowUp'],
   down: ['KeyS', 'ArrowDown'],
   /**
-   * The active skill.
-   *
-   * `KeyJ` sits under the right hand, next to the arrow keys, so a reflex press does not require the
-   * left hand to leave WASD. Enter is also accepted because it is what a player tries first when a
-   * game has one obvious button.
-   */
-  skill: ['KeyJ', 'Enter'],
-  /**
    * Spit: TAP to fire the oldest thing in the stomach. One press, one projectile.
    *
    * `KeyK` continues the J/K/L cluster under the right hand, so the three verbs sit together and none of them
@@ -36,20 +28,10 @@ const KEYS = {
    *
    * The two verbs are a CHOICE -- spit for ammunition, digest for rank -- and a control where spitting happens on
    * the way in to digesting is not a choice, it is a tax on one of the options. It would also make a lone item
-   * impossible to digest at all, since the press would have fired it before the hold began. Two verbs that are
-   * never wanted at once can share a control (which is why suction and the skill do); two verbs the player picks
-   * BETWEEN cannot.
+   * impossible to digest at all, since the press would have fired it before the hold began. Two verbs the player
+   * picks BETWEEN cannot share a control.
    */
   compress: ['KeyL'],
-  /**
-   * Charge: HOLD to wind up, RELEASE to slam. The volatile bubble's verb.
-   *
-   * Space is the one key a player tries without being told, and it sits under the thumb on the left hand -- so a
-   * player steering with WASD can wind up and let go without moving either hand. The release matters as much as the
-   * press here: this is the only verb in the game whose ACTION happens on the way up, which is why the input has to
-   * carry a release edge rather than only a held flag.
-   */
-  charge: ['Space'],
   /**
    * Burst: TAP to spend the whole rage gauge as a shockwave. The volatile bubble's other verb.
    *
@@ -101,8 +83,8 @@ export class Input {
    * Where the drag is pointing, -1..1 on each axis, +Y up.
    *
    * From the finger's offset from the point it first landed on, so it is a direction the player chose rather than
-   * a leftover of the last few pixels of movement. Read by the two aiming verbs (spit and the charge slam), and
-   * zero while the finger sits on its own anchor -- which is what makes "not aiming" expressible.
+   * a leftover of the last few pixels of movement. Exposed for probes, and for an aiming verb if one returns; zero
+   * while the finger sits on its own anchor -- which is what makes "not aiming" expressible.
    */
   dragAimX = 0;
   dragAimY = 0;
@@ -155,17 +137,20 @@ export class Input {
   /**
    * True while the suction button is held.
    *
-   * HELD rather than edge-triggered, unlike the skill. A skill is a discrete action, so one press is one use; the
-   * suction field is a STATE that exists while the thumb is down, and `moveSpeedFactor` is the price of it. An
-   * edge trigger would make it a toggle, which is a different mechanic: it would remove the commitment, and the
-   * commitment is what makes choosing when to gather interesting.
+   * HELD rather than edge-triggered, unlike the spit. The suction field is a STATE that exists while the thumb is
+   * down, and `moveSpeedFactor` is the price of it. An edge trigger would make it a toggle, which is a different
+   * mechanic: it would remove the commitment, and the commitment is what makes choosing when to gather interesting.
+   *
+   * NOTHING WRITES THIS any more. The on-screen button that used to hold it was deleted, by decision, so the devour
+   * route's verb currently has NO input at all; the mechanism in `src/suction.ts` is kept deliberately, and this
+   * field is where its replacement input will land once that verb is redesigned.
    */
   suctionHeld = false;
 
   /**
    * The spit button was pressed this frame.
    *
-   * Edge-triggered and CONSUMED, like the skill: one press is one projectile, and a plain flag read every frame
+   * Edge-triggered and CONSUMED: one press is one projectile, and a plain flag read every frame
    * would empty the whole stomach in three frames.
    */
   private spitPressed = false;
@@ -190,59 +175,18 @@ export class Input {
     return this.compressKeyHeld || this.compressTouchHeld;
   }
 
-  /**
-   * Wind-up: true while the charge control is held, from either device.
-   *
-   * A HELD state, like suction and compression, because the wind-up is a commitment -- the bubble is slower and its
-   * aim is being fixed while it lasts. The LAUNCH is a separate edge (see `consumeChargeRelease`), so this verb has
-   * one of each within a single control, which is what makes it feel like winding a spring rather than pressing a
-   * button.
-   */
-  private chargeKeyHeld = false;
-  private chargeTouchHeld = false;
-  /** The release edge, consumed by the game exactly like a spit or a skill press. */
-  private chargeReleased = false;
-
-  get charging(): boolean {
-    return this.chargeKeyHeld || this.chargeTouchHeld;
-  }
-
   /** Signal a burst press from a touch control. */
   pressBurst(): void {
     this.burstPressed = true;
   }
 
-  /** The burst press, consumed once like the skill and the spit. */
+  /** The burst press, consumed once like the spit. */
   private burstPressed = false;
 
   consumeBurst(): boolean {
     if (!this.burstPressed) return false;
     this.burstPressed = false;
     return true;
-  }
-
-  /** Signal a charge release from a touch control. */
-  pressChargeRelease(): void {
-    this.chargeReleased = true;
-  }
-
-  /**
-   * Take the pending charge release, if any.
-   *
-   * Consuming rather than reading, for the same reason as the skill and the spit: the launch must happen exactly
-   * once. A plain flag would fire the slam on every frame the release was pending, which at 60fps would be a
-   * continuous barrage out of a single let-go.
-   */
-  consumeChargeRelease(): boolean {
-    if (!this.chargeReleased) return false;
-    this.chargeReleased = false;
-    return true;
-  }
-
-  /** Signal the charge hold from a touch control. See `setCompressHeld` for why this is a setter. */
-  setChargeHeld(held: boolean): void {
-    if (this.chargeTouchHeld && !held) this.chargeReleased = true;
-    this.chargeTouchHeld = held;
   }
 
   /**
@@ -270,14 +214,6 @@ export class Input {
   get sucking(): boolean {
     return this.suctionHeld;
   }
-  /**
-   * Touch: the on-screen skill button was pressed this frame.
-   *
-   * Edge-triggered rather than held, because a skill is a discrete action. `consumeSkill()` clears it
-   * so one tap cannot fire the skill on several consecutive frames -- which with a 3-use skill would
-   * drain the whole slot from a single press.
-   */
-  private skillPressed = false;
 
   attach(target: HTMLElement | Window): void {
     const onKeyDown = (event: Event) => {
@@ -321,12 +257,6 @@ export class Input {
     this.axisX = keyX;
     this.axisY = keyY;
 
-    // Keyboard is edge-detected here rather than in the event handler, so the key repeat rate and a
-    // held key cannot fire the skill more than once.
-    const skillDown = held(KEYS.skill);
-    if (skillDown && !this.skillKeyWasDown) this.skillPressed = true;
-    this.skillKeyWasDown = skillDown;
-
     const muteDown = held(KEYS.mute);
     if (muteDown && !this.muteKeyWasDown) this.mutePressed = true;
     this.muteKeyWasDown = muteDown;
@@ -335,25 +265,15 @@ export class Input {
      * Spit and compress: one is edge-triggered, the other is a state, and they are separate keys because they are
      * separate CHOICES. See `KEYS.compress`.
      *
-     * Edge-detected here rather than in the event handler, for the same reason as the skill: the key repeat rate
-     * must not turn a held key into a stream of shots. The hold is written unconditionally, so releasing the key
-     * stops the compression on the very next frame.
+     * Edge-detected here rather than in the event handler, so the key repeat rate does not turn a held key into a
+     * stream of shots. The hold is written unconditionally, so releasing the key stops the compression on the very
+     * next frame.
      */
     const spitDown = held(KEYS.spit);
     if (spitDown && !this.spitKeyWasDown) this.spitPressed = true;
     this.spitKeyWasDown = spitDown;
 
     this.compressKeyHeld = held(KEYS.compress);
-
-    /**
-     * The charge: the hold is written unconditionally, and the RELEASE raises an edge.
-     *
-     * The edge is what the launch reads, and it is raised here rather than in the keyup handler so that keyboard and
-     * touch produce the same single event -- the game consumes one release, not one per device.
-     */
-    const chargeDown = held(KEYS.charge);
-    if (this.chargeKeyHeld && !chargeDown) this.chargeReleased = true;
-    this.chargeKeyHeld = chargeDown;
 
     /**
      * The burst is edge-triggered like the spit, and for the same reason: one press is one shockwave, and a held key
@@ -377,7 +297,6 @@ export class Input {
     this.levelupKeyWasDown = LEVELUP_KEYS.map((code) => this.down.has(code));
   }
 
-  private skillKeyWasDown = false;
   private muteKeyWasDown = false;
   private spitKeyWasDown = false;
   private burstKeyWasDown = false;
@@ -386,8 +305,8 @@ export class Input {
   /**
    * A mutation card picked by number key since the last consume: 0, 1 or 2, or null for none.
    *
-   * Edge-detected in `update` and consumed once, like the skill -- the pick must cost exactly one press
-   * however many frames the modal spans.
+   * Edge-detected in `update` and consumed once, so the pick costs exactly one press however many frames the modal
+   * spans.
    */
   private levelupChoice: number | null = null;
   /** Mute toggle pressed since the last consume. */
@@ -400,16 +319,11 @@ export class Input {
     return choice;
   }
 
-  /** Take the pending mute toggle, if any. Edge-triggered like the skill. */
+  /** Take the pending mute toggle, if any. Edge-triggered like the spit. */
   consumeMute(): boolean {
     if (!this.mutePressed) return false;
     this.mutePressed = false;
     return true;
-  }
-
-  /** Signal a skill press from a touch control. */
-  pressSkill(): void {
-    this.skillPressed = true;
   }
 
   /** Signal a spit press from a touch control. */
@@ -457,22 +371,6 @@ export class Input {
     // bubble in a state it did not ask for.
     this.compressTouchHeld = false;
     this.compressKeyHeld = false;
-    // The charge goes with them, and notably WITHOUT raising a release edge: dropping every input is how the game
-    // says "forget what the player was doing", and launching a slam out of that would be the opposite.
-    this.chargeTouchHeld = false;
-    this.chargeKeyHeld = false;
-  }
-
-  /**
-   * Take the pending skill press, if any.
-   *
-   * Consuming rather than reading is what makes a single press cost exactly one use. A plain flag
-   * checked every frame would spend the entire slot in three frames.
-   */
-  consumeSkill(): boolean {
-    if (!this.skillPressed) return false;
-    this.skillPressed = false;
-    return true;
   }
 
   detach(): void {

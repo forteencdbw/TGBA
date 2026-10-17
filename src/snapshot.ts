@@ -14,7 +14,6 @@ import type { Player } from './player';
 import type { Progression } from './progress';
 import type { RageState } from './rage';
 import type { Score } from './score';
-import type { SkillId } from './skills';
 import type { StageState } from './stages';
 import type { TalentEffects } from './talents';
 import type { Xp } from './xp';
@@ -96,9 +95,6 @@ export interface GameSnapshot {
   /** How many entries have arrived from each edge. */
   spawnedBySide: Record<EntrySide, number>;
 
-  /** The carried skill, or null. */
-  skill: { id: SkillId; name: string; uses: number } | null;
-  skillActivations: number;
   /** Seconds of invulnerability left. */
   invulnerable: number;
   /** The rage burst in progress, if one is. */

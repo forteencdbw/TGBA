@@ -7,7 +7,7 @@
  * what keeps "a sound nobody wrote" from being a silent bug.
  *
  * Names are `thing.event`, and one name is ONE thing that happens -- two different events never share a sound, even where
- * the old synth reused one for convenience (a graze used to be the skill chime and an overload used to be the slow slur).
+ * the old synth reused one for convenience (an overload used to be the slow slur).
  * To swap a placeholder for a recording, drop `src/assets/audio/sfx/<name>.wav` (or `.mp3`) and it replaces the recipe.
  */
 
@@ -71,11 +71,6 @@ export const SOUND_IDS = [
   'player.absorb',
   'stage.grow',
   'mutation.gain',
-  'skill.dash',
-  'skill.vortex',
-  'skill.stink',
-  'skill.shell',
-  'skill.burst',
   'suction.on',
   'rage.slam',
   'rage.burst',
@@ -170,15 +165,6 @@ export const OBSTACLE_BREAK_SOUNDS: Record<string, SoundId> = {
  * slam opens it (`angry.charge.slamBreaksUnrammable`), which is why it has a row in the table above.
  */
 export const OBSTACLE_BLOCK_SOUND: SoundId = 'obstacle.hit.wall';
-
-/** Each carried skill's own cue, keyed by `Skill.id` (see `src/skills.ts`). */
-export const SKILL_SOUNDS: Record<string, SoundId> = {
-  dash: 'skill.dash',
-  vortex: 'skill.vortex',
-  stink: 'skill.stink',
-  shell: 'skill.shell',
-  burst: 'skill.burst',
-};
 
 export function hitSoundOf(kind: string): SoundId {
   return `enemy.hit.${enemyClassOf(kind)}`;

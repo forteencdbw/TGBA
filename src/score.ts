@@ -25,7 +25,7 @@
  *   boss       defeating the level's boss: the run's biggest single payment, and the only "win" event there
  *              is. Everything else is a trickle next to finishing a level.
  *
- * (The pickup event went with the pickups themselves: the skill, the gun's rows and the rate tiers are all
+ * (The pickup event went with the pickups themselves: the gun's rows and the rate tiers are all
  * paid in MUTATIONS now -- see `src/xp.ts` and `src/mutations.ts`.)
  *
  * The ledger is kept as COUNTS per event, not as points per event, so the total can never disagree with the config:

@@ -1,7 +1,6 @@
 import { mech } from './mechanisms';
 import type { Run } from './run';
 import { healthAfterHeal, healthMaxFor } from './health';
-import { SKILLS } from './skills';
 import type { RouteId } from './bubbleTypes';
 
 /**
@@ -10,13 +9,13 @@ import type { RouteId } from './bubbleTypes';
  * ---------------------------------------------------------------------------------------------
  * WHY THE POOL IS HERE RATHER THAN IN THE CONFIG
  * ---------------------------------------------------------------------------------------------
- * The same split the skills use (`src/skills.ts`): a card's NAME and BLURB are content, and content
+ * The same split the talents use: a card's NAME and BLURB are content, and content
  * lives in a table next to the verbs that use it. Its NUMBERS are balance, and balance lives in
  * `config/mechanics.json5` (`mutation.pool`) -- so retuning a card is a file edit, while ADDING one is a
  * row here plus the `apply` that lands it.
  *
  * The pool owns the whole in-run economy of picks now that the pickups are gone: the gun's rows and rate
- * tiers, the body's multipliers, and the skills themselves all arrive through the same three-button
+ * tiers, and the body's multipliers, all arrive through the same three-button
  * freeze. The rules the design fixed, and why:
  *
  *   - 必选 (a pick is mandatory): a skip button is a second decision to design and tune, and the modal
@@ -44,7 +43,7 @@ export interface Mutation {
    * another form is never legal for it.
    */
   routes: 'all' | RouteId;
-  /** Whether this card is a legal offer for THIS run right now -- a ceiling reached, a skill already carried. */
+  /** Whether this card is a legal offer for THIS run right now -- a ceiling reached, one already carried. */
   available: (run: Run) => boolean;
   /** Land one pick. Instant cards do their thing; stacking cards bump their count and let the passives re-derive. */
   apply: (run: Run) => void;
@@ -53,7 +52,7 @@ export interface Mutation {
 /** How many times each stacking card has been taken this run. Non-stacking cards never appear in it. */
 export type MutationCounts = Record<string, number>;
 
-/** The pool. Order is display order for nothing -- the draw is uniform -- but keeps the file readable: gun, body, type-specific, skills. */
+/** The pool. Order is display order for nothing -- the draw is uniform -- but keeps the file readable: gun, body, type-specific. */
 const POOL: readonly Mutation[] = [
   {
     id: 'gun',
@@ -402,21 +401,11 @@ const POOL: readonly Mutation[] = [
       run.mutations.knock = (run.mutations.knock ?? 0) + 1;
     },
   },
-  ...SKILLS.map((skill) => ({
-    id: `skill:${skill.id}`,
-    name: `技能 · ${skill.name}`,
-    blurb: skill.blurb,
-    routes: 'all' as const,
-    available: (run: Run) => run.skill?.id !== skill.id,
-    apply: (run: Run) => {
-      run.grantSkill(skill.id);
-    },
-  })),
 ];
 
 
 /**
- * A card by its id -- pool, skill and route cards alike -- or undefined for an id no card has.
+ * A card by its id -- a pool card or a route card -- or undefined for an id no card has.
  *
  * For the growth readout, which has the log's ids and needs each card's name and blurb. The cards are the single source of
  * both, so the readout cannot describe a card differently from the panel that offered it.

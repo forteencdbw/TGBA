@@ -1,7 +1,6 @@
 import { mech } from './mechanisms';
 import { KIND_TUNING, type HazardKind } from './hazards';
 import { OBSTACLE_NAMES } from './obstacles';
-import { SKILLS, activationFor, type SkillId } from './skills';
 import { TALENTS, type TalentId } from './talents';
 import { BASE_TYPE, formForRoute, ROUTES, type ControlId, type Route, type RouteId } from './bubbleTypes';
 
@@ -17,7 +16,7 @@ import { BASE_TYPE, formForRoute, ROUTES, type ControlId, type Route, type Route
  * The alternative is the usual fate of an in-game encyclopedia: it is accurate on the day it is written and it is a
  * lie three commits later, because nothing fails when a creature's mass changes and the card does not. Deriving it
  * means the page cannot describe a game that no longer exists -- and `e2e/codex.spec.ts` goes further and asserts
- * that every kind, skill and talent in the game HAS a card, so adding one without documenting it is a failing test
+ * that every kind and talent in the game HAS a card, so adding one without documenting it is a failing test
  * rather than a gap nobody notices.
  *
  * ---------------------------------------------------------------------------------------------
@@ -33,7 +32,7 @@ import { BASE_TYPE, formForRoute, ROUTES, type ControlId, type Route, type Route
  * What a card says for content the game has and this page was never written for.
  *
  * The page is switched off and not being iterated (`menu.codexEnabled`), so its prose tables are no longer `Record`s the
- * compiler checks for completeness: a new creature, skill, talent, route or control simply has no row, and its card reads
+ * compiler checks for completeness: a new creature, talent, route or control simply has no row, and its card reads
  * "未收录" instead of stopping the build. Writing the missing rows is the debt to pay when the page is reopened.
  */
 const UNLISTED = '未收录';
@@ -44,13 +43,26 @@ function controlLabel(id: ControlId): string {
   return CONTROL_LABELS[id] ?? id;
 }
 
-export type CodexCategory = 'enemy' | 'environment' | 'bubble' | 'skill' | 'talent';
+/**
+ * A form's button row, which is a statement about what it ADDS beyond the drag rather than a list.
+ *
+ * Every form's list is empty now except the devour bubble's, and an empty list rendered as an empty string read as a
+ * missing value rather than as the fact it is -- the touch control is the drag, and the routes stopped adding buttons
+ * to it.
+ */
+function buttonFact(controls: readonly ControlId[]): CodexFact {
+  return {
+    label: '按钮',
+    value: controls.length ? controls.map(controlLabel).join(' · ') : '没有新按钮：操作就是拖动',
+  };
+}
+
+export type CodexCategory = 'enemy' | 'environment' | 'bubble' | 'talent';
 
 export const CODEX_CATEGORIES: readonly { id: CodexCategory; label: string }[] = [
   { id: 'enemy', label: '敌人' },
   { id: 'environment', label: '环境' },
   { id: 'bubble', label: '气泡与路线' },
-  { id: 'skill', label: '技能' },
   { id: 'talent', label: '天赋' },
 ];
 
@@ -59,7 +71,7 @@ export const CODEX_CATEGORIES: readonly { id: CodexCategory; label: string }[] =
  *
  * `hazard` and `obstacle` go through the REAL painters, so the picture on the card is the picture in the water and
  * cannot drift from it. The rest are simple procedural glyphs drawn by the page, because there is no runtime object
- * to hand to a painter -- a skill is not something that exists on screen outside the moment it is used.
+ * to hand to a painter -- a stage, or the rage gauge, is not a thing that exists in the water on its own.
  */
 export type CodexIcon =
   | { kind: 'hazard'; hazard: HazardKind }
@@ -76,7 +88,6 @@ export type CodexGlyph =
   | 'charge'
   | 'rageBurst'
   | 'overload'
-  | SkillId
   | TalentId;
 
 export interface CodexFact {
@@ -396,8 +407,8 @@ function enemyEntry(kind: HazardKind, tagline: string, notes: readonly string[])
  * Display names for the creatures.
  *
  * Here rather than in `KIND_TUNING` because nothing in the simulation needs a creature's name -- the game never
- * prints one. The HUD names STAGES and SKILLS; a fish is only ever a shape. So these exist for this page alone, and
- * that is why they live beside the prose instead of in the table the drawing code reads.
+ * prints one. The HUD names the stages and the route; a fish is only ever a shape. So these exist for this page
+ * alone, and that is why they live beside the prose instead of in the table the drawing code reads.
  */
 const HAZARD_NAMES: Partial<Record<HazardKind, string>> = {
   fish: '小鱼',
@@ -505,7 +516,7 @@ const ENVIRONMENT: readonly CodexEntry[] = [
       '擦边的瞬间整个世界慢放半秒——后怕节拍：怪已经过去了，世界慢下来让你看清刚才发生了什么。',
       '三条小技巧同构：子弹擦边（电鳗的闪电擦身、小字「擦」）、贴脸（接触圈内枪毙、小字「贴脸」）、拆弹（爆炸半径外打死炸弹鱼、小字「拆弹」）——都不慢动作。',
       '三种来源刻意拉开速率：挂机最慢、战斗居中、玩命最快——想快，就把脸凑过去。',
-      '枪管、射速和技能都在这里出：地图上不再有任何可拾取的道具，一切成长都走突变。',
+      '枪管、射速等成长都在这里出：地图上不再有任何可拾取的道具，一切成长都走突变。',
     ],
     icon: { kind: 'glyph', glyph: 'stages' },
   },
@@ -518,11 +529,9 @@ const ENVIRONMENT: readonly CodexEntry[] = [
  * place that has to turn an id into a word for a reader is this page.
  */
 const CONTROL_LABELS: Partial<Record<ControlId, string>> = {
-  skill: '技能',
   suction: '吸附',
   spit: '喷吐',
   compress: '消化',
-  charge: '蓄力冲撞',
   burst: '怒气爆破',
 };
 
@@ -536,7 +545,7 @@ const BASE_PROSE: { tagline: string; glyph: CodexGlyph; notes: readonly string[]
   tagline: '每局的开局形态：枪、成长、你的操作',
   glyph: 'player',
   notes: [
-    '它有技能钮（技能是突变给的道具，不是气泡的能力）、有枪、会因吸收而成长，体积就是血量——这是所有形态共享的地基。',
+    '它有枪、会因吸收而成长，体积就是血量——这是所有形态共享的地基。',
     '它没有吸附、不能吞危险物、没有怒气：这些是形态的事，而形态在「开始游戏」之后那一屏就定了。',
     '血量按体积算：一次受击固定扣一点，吃得越多越能挨，也越难躲——"要不要继续吃"从第一颗泡泡起就是真取舍。',
   ],
@@ -550,15 +559,15 @@ const ROUTE_PROSE: Partial<Record<RouteId, { glyph: CodexGlyph; notes: readonly 
   devour: {
     glyph: 'suction',
     notes: [
-      '选它的那一刻：吸附按钮出现（技能钮的按住形态），贴脸碰到吞得动的危险物直接吃下——体积、分数、突变经验立即到账，外加短暂无敌。',
-      '吸附只负责拉近，不负责吃：把吃不了的螃蟹吸过来，等于加速把危险物拉到脸上。两重代价合起来，"什么时候按住"才是决定。',
+      '选它的那一刻：吸附场出现，贴脸碰到吞得动的危险物直接吃下——体积、分数、突变经验立即到账，外加短暂无敌。',
+      '吸附只负责拉近，不负责吃：把吃不了的螃蟹吸过来，等于加速把危险物拉到脸上。两重代价合起来，"什么时候用"才是决定。',
       '专属卡：吸取范围、吞噬无敌、大胃口（比体积说的话多吃一档）。本局另外两条路线的卡永不再出。',
     ],
   },
   boil: {
     glyph: 'boil',
     notes: [
-      '选它的那一刻：怒气槽出现（空槽起步），蓄力冲撞与爆破按钮到位，配色换成怒气阶段——气泡的颜色从此在说"我有多烫"。',
+      '选它的那一刻：怒气槽出现（空槽起步），配色换成怒气阶段——气泡的颜色从此在说"我有多烫"。',
       '怒气只从"挨打但没破"来；冲撞的破坏力只看怒气不看体积，所以残血反打是可行的。满怒不是终点，是一段倒计时（失控）。',
       '专属卡：怒气积攒、爆破半径、余温（怒气衰减更慢）。本局另外两条路线的卡永不再出。',
     ],
@@ -582,7 +591,7 @@ const ROUTE_PROSE: Partial<Record<RouteId, { glyph: CodexGlyph; notes: readonly 
  */
 function routeFacts(route: Route): readonly CodexFact[] {
   const form = formForRoute(route);
-  const facts: CodexFact[] = [{ label: '按钮', value: form.controls.map(controlLabel).join(' · ') }];
+  const facts: CodexFact[] = [buttonFact(form.controls)];
   const pool = mech.mutation.pool;
   if (route.id === 'devour') {
     facts.push(
@@ -616,7 +625,7 @@ function routeFacts(route: Route): readonly CodexFact[] {
  */
 function baseFacts(): readonly CodexFact[] {
   return [
-    { label: '按钮', value: BASE_TYPE.controls.map(controlLabel).join(' · ') },
+    buttonFact(BASE_TYPE.controls),
     { label: '吞噬', value: '没有：碰到敌人不会被吞掉，而是挨打——吃是路线的事' },
     { label: '颜色', value: `随成长阶段：${mech.stages.appearance.map((a) => a.name).join(' → ')}` },
     { label: '成长', value: `吸收 ${mech.stages.absorbToStage2} / ${mech.stages.absorbToStage3} 颗晋升 · 速度 ${mech.stages.speedMultiplier.map((m) => `×${num(m)}`).join(' → ')}` },
@@ -662,45 +671,6 @@ function bubbleCards(): readonly CodexEntry[] {
   return out;
 }
 
-function skillEntry(id: SkillId): CodexEntry {
-  const skill = SKILLS.find((s) => s.id === id);
-  if (!skill) throw new Error(`codex: unknown skill ${id}`);
-  const act = activationFor(id);
-  const facts: CodexFact[] = [
-    { label: '次数', value: `${skill.uses} 次` },
-    { label: '持续', value: skill.durationSeconds > 0 ? `${num(skill.durationSeconds, 1)}s` : '瞬间' },
-  ];
-  if (act.ascentMultiplier) facts.push({ label: '上升', value: `×${num(act.ascentMultiplier)}` });
-  if (act.vortexRadius) facts.push({ label: '半径', value: `${act.vortexRadius} m` });
-  if (act.pushRadius) facts.push({ label: '推开半径', value: `${act.pushRadius} m` });
-  if (act.invulnerableSeconds) facts.push({ label: '无敌', value: `${num(act.invulnerableSeconds, 1)}s` });
-  if (act.clearsSlow) facts.push({ label: '附带', value: '解除减速与抓取' });
-
-  return {
-    id: `skill:${id}`,
-    category: 'skill',
-    name: skill.name,
-    tagline: skill.blurb,
-    /**
-     * `SKILLS` already carries the one-line blurb the HUD shows, and this reuses it verbatim rather than writing a
-     * second description. Two descriptions of one skill is two chances to disagree, and the HUD's is the one the
-     * player has already read.
-     */
-    facts,
-    notes: SKILL_NOTES[id] ?? [UNLISTED_NOTE],
-    icon: { kind: 'glyph', glyph: id },
-  };
-}
-
-/** What each skill is FOR -- the thing its numbers cannot say. */
-const SKILL_NOTES: Partial<Record<SkillId, readonly string[]>> = {
-  dash: ['最通用的一条：逃出包围、抢进度、或者单纯从一条追上来的鱼手里跑掉。'],
-  vortex: ['快速变大的捷径。注意变大本身就招灾：鱼从更远处就会来追你。'],
-  stink: ['专治"被拖拽"和"被减速"这两个拿走你控制权的麻烦。', '它只推垃圾与水母。'],
-  shell: ['危机保命键：无敌并撞开一切，但不删除任何东西。', '一个会删除危险的壳会是严格更好的爆散，而爆散才是该稀缺的那个。'],
-  burst: ['终局爆发的答案：以你为中心向外推开一切。', '同样是推开而不是清掉——直接删除实体，会让终局的密度变得没有意义。'],
-};
-
 function talentEntry(id: TalentId): CodexEntry {
   const talent = TALENTS.find((t) => t.id === id);
   if (!talent) throw new Error(`codex: unknown talent ${id}`);
@@ -720,7 +690,7 @@ function talentEntry(id: TalentId): CodexEntry {
 }
 
 const TALENT_NOTES: Partial<Record<TalentId, readonly string[]>> = {
-  'fish-fart': ['它是反射不是技能：被打到才触发，所以没法主动用。', '冷却就是它和"护盾"的区别——没有冷却的话，走进鱼群里就永远不会死。'],
+  'fish-fart': ['它是反射不是主动能力：被打到才触发，所以没法主动用。', '冷却就是它和"护盾"的区别——没有冷却的话，走进鱼群里就永远不会死。'],
   silt: [`出生体积 ×${num(mech.talents.silt.startVolume, 1)}，受击减免 ${mech.talents.silt.defense} 点。`, '一开始就更结实，但块头大也更容易被优先锁定。'],
 };
 
@@ -738,7 +708,6 @@ export function codexEntries(): readonly CodexEntry[] {
     ...ENEMY_PROSE.map((e) => enemyEntry(e.kind, e.tagline, e.notes)),
     ...ENVIRONMENT,
     ...bubbleCards(),
-    ...SKILLS.map((s) => skillEntry(s.id)),
     ...TALENTS.map((t) => talentEntry(t.id)),
   ];
 }
@@ -764,8 +733,8 @@ export function pageEntries(category: CodexCategory, page: number, perPage: numb
  * The colour an entry's icon is drawn in, where it has one of its own.
  *
  * Colour is the link between the card and the thing in the water, so this reads the same tables the drawing code
- * reads wherever one exists. The three exceptions are things that have no colour of their own yet: a collectable,
- * a skill pickup, and anything a skill or talent is illustrated with.
+ * reads wherever one exists. The two exceptions are things that have no colour of their own yet: a collectable, and
+ * anything a talent is illustrated with.
  */
 export function iconColour(entry: CodexEntry): number {
   switch (entry.icon.kind) {
@@ -777,8 +746,6 @@ export function iconColour(entry: CodexEntry): number {
       break;
   }
   switch (entry.category) {
-    case 'skill':
-      return mech.codex.skillColour;
     case 'talent':
       return mech.codex.talentColour;
     case 'environment':

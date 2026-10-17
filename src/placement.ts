@@ -56,7 +56,7 @@ export interface PlacedWorld {
  * placed below the view (and moves up -- see `advance` in `src/hazards.ts`). The visible range is passed IN rather than
  * computed here, because the caller is the only thing that knows the entry moment.
  *
- * Collectables go into the shared field; hazards and skills are owned by the game, so the field hands them over rather
+ * Collectables go into the shared field; hazards are owned by the game, so the field hands them over rather
  * than building them.
  */
 export function placeEntry(

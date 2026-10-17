@@ -156,8 +156,6 @@ export function diagnosticsOf(g: GameSnapshot): {
       startVolume: number;
       defense: number;
     };
-    skill: { id: string; uses: number } | null;
-    skillActivations: number;
     farts: number;
     emergence: {
       fishSplits: number;
@@ -192,7 +190,6 @@ export function diagnosticsOf(g: GameSnapshot): {
     };
     /** Damage numbers in flight. Separate from `score.popups` because the two styles share one field. */
     damagePopups: number;
-    activeSkill: { id: string; remaining: number } | null;
     stage: {
       stage: number;
       name: string;
@@ -210,7 +207,6 @@ export function diagnosticsOf(g: GameSnapshot): {
       name: string;
       controls: string[];
       hasSuction: boolean;
-      hasCharge: boolean;
       hasBurst: boolean;
       /** Whether it can swallow a creature at all. False means contact is damage, never a meal. */
       swallowsHazards: boolean;
@@ -404,10 +400,10 @@ export function diagnosticsOf(g: GameSnapshot): {
       /** The player's movement penalty, so a slow can be observed rather than inferred. */
       slow: { remaining: +g.player.slowRemaining.toFixed(3), factor: g.player.slowFactor, impulseVy: +g.player.impulseVy.toFixed(2) },
       /**
-       * This run's talent and the carried skill.
+       * This run's talent.
        *
-       * Both are part of the run's identity, so a probe needs to see them to check that a talent's
-       * upside AND its backlash are actually applied.
+       * Part of the run's identity, so a probe needs to see it to check that a talent's upside AND its
+       * backlash are actually applied.
        */
       talent: {
         id: g.talentEffects.talent.id,
@@ -415,8 +411,6 @@ export function diagnosticsOf(g: GameSnapshot): {
         startVolume: g.talentEffects.startVolume,
         defense: g.talentEffects.defense,
       },
-      skill: g.skill ? { id: g.skill.id, uses: g.skill.uses } : null,
-      skillActivations: g.skillActivations,
       /** Fish-fart reflex count, so the talent's backlash can be observed rather than assumed. */
       farts: g.farts,
       /**
@@ -458,8 +452,6 @@ export function diagnosticsOf(g: GameSnapshot): {
       },
       damagePopups: g.damagePopups.count,
       enemyBullets: { inFlight: g.enemyBullets.count, fired: g.enemyBullets.fired, hits: g.enemyBullets.hits },
-      /** Active effect timers, so a skill that lasts can be observed while it runs. */
-      activeSkill: g.player.skillId ? { id: g.player.skillId, remaining: +g.player.skillRemaining.toFixed(2) } : null,
       /** The bubble's growth stage: its speed tier, and how far into the next one it is. */
       stage: {
         stage: g.stage.stage,
@@ -497,7 +489,6 @@ export function diagnosticsOf(g: GameSnapshot): {
         name: g.bubbleType.name,
         controls: [...g.bubbleType.controls],
         hasSuction: hasControl(g.bubbleType, 'suction'),
-        hasCharge: hasControl(g.bubbleType, 'charge'),
         hasBurst: hasControl(g.bubbleType, 'burst'),
         /** Whether it can swallow a creature at all. False means contact is damage, never a meal. */
         swallowsHazards: g.bubbleType.swallowsHazards,

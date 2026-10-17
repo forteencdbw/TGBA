@@ -35,7 +35,7 @@ export interface Viewport {
  * Scaling by width so the lane fills the canvas is what this used to do, and it breaks on anything wider
  * than a phone. On a 2560x1440 desktop window it computed 7.09 px per metre, which put the bubble at a
  * 109px radius, made the HUD (which scales with the viewport) render its headline at 283px until the
- * readouts collided, and pushed the skill button to x=2485 -- past the right edge of the screen.
+ * readouts collided, and pushed the button column to x=2485 -- past the right edge of the screen.
  *
  * So the lane is capped at a portrait-shaped width and centred, and the water either side is drawn by the
  * background layer, filling the canvas. A wide window gets empty ocean at the sides rather than a
