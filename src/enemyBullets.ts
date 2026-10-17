@@ -63,6 +63,15 @@ export interface EnemyBullet {
   coreColour?: number;
   rimColour?: number;
   /**
+   * A picture for this round, copied from its shooter's row when the row names one.
+   *
+   * The picture replaces the procedural pellet; the pellet remains the fallback while the texture loads or when the
+   * row names no art. `imageScale` is how wide the picture is drawn relative to the round's hitbox diameter.
+   */
+  image?: string;
+  imageScale?: number;
+  imageAlpha?: number;
+  /**
    * This round's radius, as a fraction of the lane width, copied from its shooter's row at spawn.
    *
    * Per ROUND rather than per field, because one shooter's round can be bigger than another's: the pistol
@@ -175,6 +184,9 @@ export class EnemyBulletField {
         radiusRatio: row.radiusRatio ?? mech.enemyBullets.radiusRatio,
         ...(row.coreColour !== undefined ? { coreColour: row.coreColour } : {}),
         ...(row.rimColour !== undefined ? { rimColour: row.rimColour } : {}),
+        ...(row.image !== undefined ? { image: row.image } : {}),
+        ...(row.imageScale !== undefined ? { imageScale: row.imageScale } : {}),
+        ...(row.imageAlpha !== undefined ? { imageAlpha: row.imageAlpha } : {}),
         grazed: false,
       });
       this.fired++;
@@ -266,9 +278,21 @@ export class EnemyBulletField {
  * over a dark blue screen the two read as different KINDS of thing in peripheral vision, which is the only vision a
  * player has when a wall of them is arriving.
  */
-export function paintEnemyBullets(g: Graphics, field: EnemyBulletField, laneWidth: number): void {
+export function paintEnemyBullets(
+  g: Graphics,
+  field: EnemyBulletField,
+  laneWidth: number,
+  /**
+   * Rounds whose picture the caller has already drawn.
+   *
+   * The sprite pool lives on the game (it owns the scene graph); this painter keeps the drawn-pellet path, and the
+   * two must not both draw the same round -- a fallback dot under a sprite is a bullet twice as bright as the rest.
+   */
+  skip?: (bullet: EnemyBullet) => boolean,
+): void {
   const cfg = mech.enemyBullets;
   for (const b of field.bullets) {
+    if (skip?.(b)) continue;
     /**
      * The global palette, unless the round brought its own.
      *

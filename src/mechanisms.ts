@@ -726,6 +726,16 @@ export interface Mechanisms {
          */
         coreColour?: number;
         rimColour?: number;
+        /**
+         * A picture for this kind's round, and how it is drawn.
+         *
+         * The procedural pellet is the fallback: while the texture loads, and for every row that names no picture.
+         * `imageScale` is the picture's width relative to the round's hitbox diameter (1 = exactly the hitbox), and
+         * `imageAlpha` is a multiplier on the file's own alpha.
+         */
+        image?: string;
+        imageScale?: number;
+        imageAlpha?: number;
       }
     >;
     /** A creature only opens fire from inside this distance, so nothing arrives from off screen. */
@@ -2448,6 +2458,11 @@ function isShooterTable(v: unknown): boolean {
     for (const key of ['coreColour', 'rimColour'] as const) {
       const value = r[key];
       if (value !== undefined && !isColour(value)) return false;
+    }
+    if (r.image !== undefined && (typeof r.image !== 'string' || r.image.trim() === '')) return false;
+    for (const key of ['imageScale', 'imageAlpha'] as const) {
+      const value = r[key];
+      if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) return false;
     }
     return fields.every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number));
   });

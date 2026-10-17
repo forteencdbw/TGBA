@@ -1322,7 +1322,9 @@
       // 电鳗：**唯一的不可伤害炮台**（0 血，见 hazards.health.eel），主题是电。
       // 蓝色弹是给它的：其它枪手的暖色弹在余光里都是"敌方火力"，而电鳗的弹要读作"电"。
       // 0.6 发/秒（约 1.7 秒一发）——比它以前的 1.1 稀疏，但仍快过手枪虾的 0.35。
-      "eel": { "perSecond": 0.6, "speedPerSecond": 0.3, "spread": 1, "spreadRadians": 0, "damage": 20, "shape": "bolt", "coreColour": 0xbfe8ff, "rimColour": 0x3f8cff },
+      // `image` 是「电鳗闪电」：一小簇分叉的蓝色电弧。贴图缺失时退回蓝色的程序化弹丸。
+      // `imageScale` 是画面宽度相对判定直径的倍数（2.5 = 判定圈的 2.5 倍，让细支叉伸出去）。
+      "eel": { "perSecond": 0.6, "speedPerSecond": 0.3, "spread": 1, "spreadRadians": 0, "damage": 20, "shape": "bolt", "coreColour": 0xbfe8ff, "rimColour": 0x3f8cff, "image": "电鳗闪电", "imageScale": 2.5, "imageAlpha": 1 },
 
       // 海胆：**尖刺**，比你见过的其它子弹都快。它本来只会"躺在那儿扎你"，现在既会扎人也会放刺。
       "urchin": { "perSecond": 0.8, "speedPerSecond": 0.5, "spread": 1, "spreadRadians": 0, "damage": 20, "shape": "spike" },
@@ -1374,6 +1376,8 @@
     //   radiusRatio      可选：这一种子弹的半径（相对泳道宽）。不写就用上面那个全局值。手枪虾的大弹用。
     //   coreColour / rimColour  可选：这一种子弹自己的亮芯与外圈颜色。不写就用上面的全局暖色。
     //                    电鳗写蓝色——它是唯一需要和其它枪手分开的弹。
+    //   image / imageScale / imageAlpha  可选：这一种子弹的贴图、画面宽度（相对判定直径）和不透明度。
+    //                    只给电鳗用；贴图未加载或缺失时仍然画程序化弹丸。
   },
 
   // ---------------------------------------------------------------------------------------------

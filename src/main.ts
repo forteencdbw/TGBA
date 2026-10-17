@@ -6,7 +6,7 @@ import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest
 import { hitSoundOf, leaveSoundOf } from './soundIds';
 import { paintHitboxes, setDebugHitboxes, isDebugHitboxes } from './hitboxes';
 import { paintBullets, radiusOf } from './bullets';
-import { EnemyBulletField, paintEnemyBullets } from './enemyBullets';
+import { EnemyBulletField, paintEnemyBullets, type EnemyBullet } from './enemyBullets';
 import { diagnosticsOf } from './diagnostics';
 import { BURST_SECONDS, Run, type WorldView } from './run';
 import type { Phase } from './snapshot';
@@ -3825,7 +3825,8 @@ private updateBoss(): void {
      * from the far side of a crate invisible until it did -- and this whole feature's contract is that everything
      * lethal is visible before it lands.
      */
-    paintEnemyBullets(g, this.run.enemyBullets, laneWidth);
+    const enemyBulletArt = this.syncEnemyBulletSprites(g, laneWidth);
+    paintEnemyBullets(g, this.run.enemyBullets, laneWidth, enemyBulletArt ? (b) => enemyBulletArt.has(b) : undefined);
 
     /**
      * The debug hitbox overlay, last of everything in the water.
@@ -4043,6 +4044,14 @@ private updateBoss(): void {
    */
   private readonly bulletSprites: Sprite[] = [];
   /**
+   * The enemies' rounds' sprites, keyed by the round itself.
+   *
+   * A MAP rather than the index pool the player's rounds use: the enemy list is spliced as rounds land, so an index
+   * would pair one frame's sprite with the next frame's round. Keying on the object means a sprite stays with its
+   * round for the round's whole life, and the sweep below drops it when the round does.
+   */
+  private readonly enemyBulletSprites = new Map<EnemyBullet, Sprite>();
+  /**
    * The collectables' sprites, and the picture names they are handed out by.
    *
    * A pool slotted by index, like the bullets', rather than the hazard pool's keyed-and-swept one: a collectable has
@@ -4110,6 +4119,54 @@ private updateBoss(): void {
     }
     for (let i = list.length; i < this.bulletSprites.length; i++) this.bulletSprites[i]!.visible = false;
     return true;
+  }
+
+  /**
+   * The enemies' rounds that carry a picture, placed for this frame.
+   *
+   * Returns the rounds it drew, so `paintEnemyBullets` can skip exactly those: the pellet path remains the fallback
+   * while a texture loads, and drawing both would put a bright dot under every cluster.
+   *
+   * Keyed by the round, unlike the player's index pool, because the enemy list is spliced as rounds land -- an index
+   * would hand one frame's sprite to a different round the next frame.
+   */
+  private syncEnemyBulletSprites(g: Graphics, laneWidth: number): Set<EnemyBullet> | null {
+    let handled: Set<EnemyBullet> | null = null;
+    const seen = new Set<EnemyBullet>();
+    for (const bullet of this.run.enemyBullets.bullets) {
+      if (!bullet.image) continue;
+      const texture = assetTextureNow(bullet.image);
+      // Still loading (or missing): the procedural round is the fallback, exactly as it is for the player's gun.
+      if (!texture) continue;
+      let sprite = this.enemyBulletSprites.get(bullet);
+      if (!sprite) {
+        sprite = new Sprite(texture);
+        sprite.anchor.set(0.5);
+        sprite.eventMode = 'none';
+        // The same container the drawn round goes into, so it inherits the world layer's transform.
+        g.parent?.addChildAt(sprite, g.parent.getChildIndex(g));
+        this.enemyBulletSprites.set(bullet, sprite);
+      }
+      sprite.texture = texture;
+      sprite.visible = true;
+      sprite.x = bullet.x;
+      sprite.y = bullet.y;
+      sprite.alpha = Math.max(0, Math.min(1, bullet.imageAlpha ?? 1));
+      // The picture's width in world metres, over the texture's pixel width. The hitbox is a circle; the cluster's
+      // thin forks are allowed to reach past it, which is what `imageScale` is for.
+      const drawn = 2 * laneWidth * bullet.radiusRatio * Math.max(0, bullet.imageScale ?? 1);
+      const scale = drawn / Math.max(1, texture.width);
+      // The world is Y-flipped, so the sprite's own Y is negative to keep the picture upright; see the bubble.
+      sprite.scale.set(scale, -Math.abs(scale));
+      seen.add(bullet);
+      (handled ??= new Set<EnemyBullet>()).add(bullet);
+    }
+    for (const [bullet, sprite] of this.enemyBulletSprites) {
+      if (seen.has(bullet)) continue;
+      sprite.visible = false;
+      this.enemyBulletSprites.delete(bullet);
+    }
+    return handled;
   }
 
   /**
