@@ -1,12 +1,12 @@
-// Prints the two curves that pacing is a shape OF, for every level.
+// Prints the pacing readouts for every level.
 //
 //   node scripts/probe-pacing.mjs [tree]              # defaults to this checkout
 //
 // The project's own doctrine (`.scratch/bubble-ascent/spec.md`) is that pacing is measured in SECONDS PER SCREEN and that
-// "节奏是一条形状，不是一个均值" -- a shape, never a mean. Both halves of that are series here, side by side:
+// "节奏是一条形状，不是一个均值" -- a shape, never a mean. Levels scroll at a fixed speed now, so the seconds-per-screen
+// readout is flat by construction; the threat/screen series is the one that still has a shape.
 //
-//   seconds/screen   how fast the level goes past. Flat on a constant-pace level, and the level's authored shape once it
-//                    has a `scrollSpeedCurve`.
+//   seconds/screen   how fast the level goes past: WORLD_HEIGHT / scrollSpeed, the same for every screen.
 //   threat/screen    how much room that screenful's content takes away, from `pacing.threat`. This is the one that says
 //                    "nothing happens for five screens" or "this stretch is a wall".
 //
@@ -37,10 +37,15 @@ try {
   for (const level of L.LEVELS) {
     const total = L.nominalScrollSeconds(level);
     const screens = total > 0 ? level.scrollLength / L.WORLD_HEIGHT : 0;
-    const perScreen = L.secondsPerScreenSeries(level, 40);
+    const screenCount = Math.min(40, Math.max(1, Math.round(level.scrollLength / L.WORLD_HEIGHT)));
+    // The last screen is usually partial; measure each as distance / speed rather than assuming a full one.
+    const perScreen = Array.from(
+      { length: screenCount },
+      (_, i) => (Math.min(level.scrollLength, (i + 1) * L.WORLD_HEIGHT) - i * L.WORLD_HEIGHT) / level.scrollSpeed,
+    );
     const threat = L.threatPerScreenSeries(level, 40);
 
-    const bossSeconds = L.timeToScroll(level, 0, level.boss.at);
+    const bossSeconds = level.boss.at / level.scrollSpeed;
     // The last screen that has anything in it, and the run of empty ones before the boss: the level-1 symptom.
     let lastContent = -1;
     threat.forEach((v, i) => {
@@ -49,7 +54,7 @@ try {
     const emptyBeforeBoss = Math.max(0, Math.floor(level.boss.at / L.WORLD_HEIGHT) - lastContent - 1);
 
     console.log(`\n===== ${level.id}  ${level.name}`);
-    console.log(`  pace       ${level.scrollSpeed} m/s${level.scrollSpeedCurve ? `  curve: ${level.scrollSpeedCurve.map(([a, v]) => `${a}m→${v}`).join('  ')}` : ' (constant)'}`);
+    console.log(`  pace       ${level.scrollSpeed} m/s (constant)`);
     console.log(`  length     ${level.scrollLength} m = ${screens.toFixed(1)} screens of ${L.WORLD_HEIGHT} m`);
     console.log(`  duration   ${total.toFixed(1)} s   boss at ${level.boss.at} m = ${bossSeconds.toFixed(1)} s   (hp ${level.boss.health})`);
     console.log(`  s/screen   ${perScreen.map((v) => v.toFixed(1)).join(' ')}`);
@@ -70,7 +75,7 @@ try {
     for (const at of drops) dropScreens[screenOf(at)]++;
     let worst = { s: 0, from: 0, to: 0 };
     for (let i = 1; i < drops.length; i++) {
-      const s = L.timeToScroll(level, drops[i - 1], drops[i]);
+      const s = (drops[i] - drops[i - 1]) / level.scrollSpeed;
       if (s > worst.s) worst = { s, from: drops[i - 1], to: drops[i] };
     }
     console.log(`  food/scr   ${dropScreens.join(' ')}`);

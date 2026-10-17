@@ -1,7 +1,7 @@
 import { Application, FillGradient, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, rgba, waterColourForTest } from './background';
 import { tuning } from './config';
-import { DEBUG_LEVEL, LEVEL, LEVELS, START_LEVEL_ID, TIMELINE, installSpawnBlocks, isDebugLevel, levelIndex, selectLevel, speedAt, type Level } from './levels';
+import { DEBUG_LEVEL, LEVEL, LEVELS, START_LEVEL_ID, TIMELINE, installSpawnBlocks, isDebugLevel, levelIndex, selectLevel, type Level } from './levels';
 import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, isBossKind, paintHazards, setReducedFlash, ventErupting, warmAnimations, type HazardKind } from './hazards';
 import { hitSoundOf, leaveSoundOf } from './soundIds';
 import { paintHitboxes, setDebugHitboxes, isDebugHitboxes } from './hitboxes';
@@ -1971,9 +1971,9 @@ class Game {
     this.run.cameraRise = 0;
     if (this.run.phase === 'playing' || this.run.phase === 'burst') {
       const before = this.run.scrolled;
-      // The pace AT THIS DEPTH, so a level's speed curve is integrated by simply walking it a frame at a time. Computed
-      // before the step so the same number reaches the collectable field below -- see `Run.paceMps`.
-      this.run.paceMps = speedAt(LEVEL, this.run.scrolled);
+      // The level's one pace, written to the run before the step so the same number reaches the collectable field
+      // below -- see `Run.paceMps`.
+      this.run.paceMps = LEVEL.scrollSpeed;
       this.run.scrolled = Math.min(LEVEL.scrollLength, this.run.scrolled + this.run.paceMps * dt);
       // The distance actually travelled: the clamp at the level's end means the last frame may be short, or nothing at all.
       this.run.cameraRise = this.run.scrolled - before;
@@ -3059,7 +3059,7 @@ private updateBoss(): void {
      * `scrolled` is metres and the level's own `scrollSpeed` turns that into seconds, so the lead is a TIME in the
      * config rather than a distance that would mean different things at different speeds.
      */
-    if (!this.run.bossSpawned && !this.bossWarned && this.run.scrolled >= spec.at - mech.audio.bossWarnSeconds * speedAt(LEVEL, spec.at)) {
+    if (!this.run.bossSpawned && !this.bossWarned && this.run.scrolled >= spec.at - mech.audio.bossWarnSeconds * LEVEL.scrollSpeed) {
       this.bossWarned = true;
       this.sound('boss.warn', 0.8);
     }
@@ -4490,8 +4490,6 @@ private updateBoss(): void {
     trackedBubbleRelativeFallMps: number | null;
     trackedBubbleScreenSpeedPxPerS: number | null;
     scrollSpeedMps: number;
-    /** The level's constant pace, which `scrollSpeedMps` equals on a level with no curve. */
-    scrollSpeedBaseMps: number;
     fieldScrollSpeedMps: number;
     collectables: {
       sizeRatio: number;
@@ -4557,9 +4555,7 @@ private updateBoss(): void {
        * scrolling at a fixed rate and the player moving freely, there is only one number, and the check
        * that matters is that both agree.
        */
-      scrollSpeedMps: +speedAt(LEVEL, this.run.scrolled).toFixed(3),
-      /** The level's constant, which is what `scrollSpeedMps` equals on a level with no pace curve. */
-      scrollSpeedBaseMps: LEVEL.scrollSpeed,
+      scrollSpeedMps: +LEVEL.scrollSpeed.toFixed(3),
       /** What the live field is actually solving collectables against. Must match scrollSpeedMps. */
       fieldScrollSpeedMps: +this.run.field.cruiseAscentSpeed.toFixed(3),
       /**

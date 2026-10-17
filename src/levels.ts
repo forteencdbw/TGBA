@@ -415,18 +415,6 @@ export interface Level {
    * was introduced.
    */
   driftSpeed: number;
-  /**
-   * The pace as a CURVE over the level's length, or absent for a constant `scrollSpeed`.
-   *
-   * Keyframed in METRES and not in seconds, and that choice is the whole reason this is cheap: the timeline's `at` values
-   * are metres too, so re-pacing a level does not move a single thing in it -- what changes is WHEN each piece arrives.
-   * Doing it in seconds would have invalidated every hand-placed block, the splines, and the obstacle gaps.
-   *
-   * Linear between keyframes, and the ends CLAMP: a keyframe at 300m says nothing about 100m, so the first speed simply
-   * holds backwards. **One keyframe is a legal curve and means "constant"**, which is why a level that has not been
-   * re-paced needs no entry at all -- and why this can be introduced one level at a time.
-   */
-  scrollSpeedCurve?: readonly (readonly [number, number])[];
   /** The scripted content, in any order: it is sorted by `at` when the level loads. */
   entries: readonly LevelEntry[];
   /** The blocks the entries were expanded from, kept so a test can prove the file and the timeline agree. */
@@ -752,7 +740,6 @@ const LEVEL_KEYS: readonly string[] = [
   'music',
   'scrollLength',
   'scrollSpeed',
-  'scrollSpeedCurve',
   'driftSpeed',
   'playerLeadLimit',
   'boss',
@@ -1307,29 +1294,6 @@ const boss: BossSpec = {
 };
 
   const scrollSpeed = reqNum(node, 'scrollSpeed', `${where} (level "${id}")`, 0.001, 10000);
-  /**
-   * The pace curve, if the level has one.
-   *
-   * Checked in metres against the level's own length and required to be SORTED, because both mistakes are silent: a
-   * keyframe past the end never applies, and an out-of-order pair makes the interpolation walk backwards, which looks like
-   * the curve was ignored rather than like a typo.
-   */
-  const curveNode = node['scrollSpeedCurve'];
-  let scrollSpeedCurve: [number, number][] | undefined;
-  if (curveNode !== undefined) {
-    if (!Array.isArray(curveNode) || curveNode.length === 0) fail(where, `level "${id}": scrollSpeedCurve must be a non-empty list of [metres, speed] pairs`);
-    scrollSpeedCurve = curveNode.map((pair, i) => {
-      if (!Array.isArray(pair) || pair.length !== 2) fail(where, `level "${id}": scrollSpeedCurve[${i}] must be [metres, speed]`);
-      const at = reqNum({ at: pair[0] }, 'at', `${where} (level "${id}") scrollSpeedCurve[${i}]`, 0, scrollLength);
-      const speed = reqNum({ speed: pair[1] }, 'speed', `${where} (level "${id}") scrollSpeedCurve[${i}]`, 0.001, 10000);
-      return [at, speed] as [number, number];
-    });
-    for (let i = 1; i < scrollSpeedCurve.length; i++) {
-      if (scrollSpeedCurve[i]![0] <= scrollSpeedCurve[i - 1]![0]) {
-        fail(where, `level "${id}": scrollSpeedCurve must be sorted by metres (${scrollSpeedCurve[i - 1]![0]} then ${scrollSpeedCurve[i]![0]})`);
-      }
-    }
-  }
 
   return {
     id,
@@ -1337,7 +1301,6 @@ const boss: BossSpec = {
     ...(music ? { music } : {}),
     scrollLength,
     scrollSpeed,
-    ...(scrollSpeedCurve ? { scrollSpeedCurve } : {}),
     // 0 is allowed -- creatures that hold still on the screen are a legitimate thing to ask for (a probe does) -- but it must
     // be written: see the field's note on why there is no default.
     driftSpeed: reqNum(node, 'driftSpeed', `${where} (level "${id}")`, 0, 10000),
@@ -1593,75 +1556,13 @@ export const WORLD_WIDTH = WORLD_HEIGHT * PLAY_AREA_ASPECT;
  */
 
 /**
- * The pace in force at a place in the level, in metres per second.
- *
- * Interpolated linearly between keyframes and CLAMPED at both ends, so a level with no curve (or one keyframe) answers with
- * its constant, and a level whose curve starts at 300m is not undefined before it.
- */
-export function speedAt(level: Level, metres: number): number {
-  const curve = level.scrollSpeedCurve;
-  if (!curve || curve.length === 0) return level.scrollSpeed;
-  const first = curve[0]!;
-  if (curve.length === 1 || metres <= first[0]) return first[1];
-  for (let i = 1; i < curve.length; i++) {
-    const [at, speed] = curve[i]!;
-    if (metres <= at) {
-      const [prevAt, prevSpeed] = curve[i - 1]!;
-      const span = Math.max(1e-6, at - prevAt);
-      return prevSpeed + (speed - prevSpeed) * ((metres - prevAt) / span);
-    }
-  }
-  return curve[curve.length - 1]![1];
-}
-
-/**
- * Seconds to travel between two places in a level.
- *
- * NUMERIC, because the integral of `1/speed` over a piecewise-linear speed has no elementary antiderivative -- the same
- * reason the old single-ascent solver had to be a script rather than a formula. Simpson over the interval, which is exact
- * enough that the error is not worth naming for a curve drawn by hand between a handful of points.
- *
- * A level with no curve short-circuits to the division, so nothing about a constant-pace level is approximated.
- */
-export function timeToScroll(level: Level, fromMetres: number, toMetres: number): number {
-  if (!level.scrollSpeedCurve) return Math.max(0, toMetres - fromMetres) / level.scrollSpeed;
-  const from = Math.max(0, Math.min(level.scrollLength, fromMetres));
-  const to = Math.max(from, Math.min(level.scrollLength, toMetres));
-  const span = to - from;
-  if (span <= 0) return 0;
-  // A half-step every couple of metres: the curve's own kinks are the only thing to resolve, and they are authored by hand.
-  const steps = Math.max(8, Math.ceil(span / 4) * 2);
-  const h = span / steps;
-  let sum = 0;
-  for (let i = 0; i < steps; i++) {
-    const a = from + i * h;
-    const mid = a + h / 2;
-    const b = a + h;
-    sum += (h / 6) * (1 / speedAt(level, a) + 4 / speedAt(level, mid) + 1 / speedAt(level, b));
-  }
-  return sum;
-}
-
-/**
  * How long a full scroll of a level takes, in seconds.
  *
  * An OUTPUT of the level's length and pace, never an input. Nothing back-solves a duration: an earlier version of this
- * project made that mistake once, with a run length as the target, and the ascent curve had to be distorted to hit it.
+ * project made that mistake once, with a run length as the target, and the ascent had to be distorted to hit it.
  */
 export function nominalScrollSeconds(level: Level): number {
-  return level.scrollSpeedCurve ? timeToScroll(level, 0, level.scrollLength) : level.scrollLength / level.scrollSpeed;
-}
-
-/**
- * Seconds to traverse each screenful, in order from the start of the level.
- *
- * Reported as a series rather than an average, because a mean of a curve describes no part of it. A level with a constant
- * pace makes this flat -- correctly, and that is what the first five levels still are -- and a level with a pace curve
- * makes it the shape that level was authored with.
- */
-export function secondsPerScreenSeries(level: Level, maxScreens = 12): number[] {
-  const count = Math.min(maxScreens, Math.max(1, Math.round(level.scrollLength / WORLD_HEIGHT)));
-  return Array.from({ length: count }, (_, i) => timeToScroll(level, i * WORLD_HEIGHT, (i + 1) * WORLD_HEIGHT));
+  return level.scrollLength / level.scrollSpeed;
 }
 
 /**
@@ -1698,8 +1599,7 @@ export function assertLevelSane(level: Level): void {
   const problems: string[] = [];
   if (!(level.scrollLength > 0)) problems.push('scrollLength must be positive');
   if (!(level.scrollSpeed > 0)) problems.push('scrollSpeed must be positive');
-  // The INTEGRAL, not `length / speed`: a level with a pace curve is as long as its curve says, and checking it against
-  // its base constant would reject a level that is perfectly playable at either end of its own ramp.
+  // `scrollLength / scrollSpeed`: a level's duration is an output of its length and its one pace.
   const seconds = nominalScrollSeconds(level);
   if (seconds < 10) problems.push(`only ${seconds.toFixed(1)}s of scroll; too short to be a level`);
   if (seconds > 400) problems.push(`${seconds.toFixed(0)}s of scroll; too long for one level`);

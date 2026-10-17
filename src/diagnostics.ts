@@ -4,7 +4,7 @@ import { bubbleLook } from './bubbleLook';
 import { hasControl } from './bubbleTypes';
 import type { HazardKind } from './hazards';
 import type { LateralAuthority } from './lateral';
-import { LEVEL, TIMELINE, currentSpawnBlocks, secondsPerScreenSeries, threatPerScreenSeries } from './levels';
+import { LEVEL, TIMELINE, currentSpawnBlocks, threatPerScreenSeries } from './levels';
 import { mech } from './mechanisms';
 import { rageFraction, rageStageName } from './rage';
 import { stageName, stageRadiusFraction, type StageAppearance } from './stages';
@@ -59,13 +59,10 @@ export function diagnosticsOf(g: GameSnapshot): {
       ladder: { id: string; name: string; locked: boolean; selected: boolean }[];
       /** The save: which levels are cleared. There is no stored selection -- see `src/progress.ts`. */
       cleared: string[];
-      secondsPerScreen: number[];
       /**
        * How much room each screenful's content takes away, from `pacing.threat`.
        *
-       * The vertical axis to `secondsPerScreen`'s horizontal one: that says how fast the level goes past, this says how
-       * much is happening while it does. Both are series, because pacing is a shape and a mean of a shape describes none
-       * of it.
+       * A series, because pacing is a shape: a mean would describe none of it.
        */
       threatPerScreen: number[];
     };
@@ -266,15 +263,6 @@ export function diagnosticsOf(g: GameSnapshot): {
         ladder: g.progress.entries(),
         /** The save itself, so a test can assert what was written rather than only what is drawn. */
         cleared: [...g.progress.cleared],
-        /**
-         * Seconds per screenful, in order from the seabed up.
-         *
-         * Reported as a SERIES, not an average. A mean of a curve describes no part of the actual
-         * experience and was actively misleading when it was used as the readout for "how fast does this
-         * look". With a constant scroll speed the series is flat, and it will stop being flat the moment
-         * a level varies its pace.
-         */
-        secondsPerScreen: secondsPerScreenSeries(LEVEL).map((v) => +v.toFixed(1)),
         threatPerScreen: threatPerScreenSeries(LEVEL),
       },
       /** The player's own motion. Vertical and horizontal are symmetric now. */

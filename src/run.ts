@@ -239,11 +239,9 @@ export class Run {
   /**
    * The pace the level is running at RIGHT NOW, in metres per second.
    *
-   * A field rather than a call to `speedAt` at each reader, because one frame must hand the SAME number to the scroll and
-   * to the collectable field: the diagnostics carry a contract that those two agree (see `scrollSpeedMps` /
-   * `fieldScrollSpeedMps`), and with a pace CURVE there is no single constant left to compare them against. Read from here
-   * by anything that needs "how fast is the water going", so a level with no curve answers with its constant and a level
-   * with one answers with the speed at the depth it has reached.
+   * A field rather than reading `LEVEL.scrollSpeed` at each site, because one frame must hand the SAME number to the
+   * scroll and to the collectable field: the diagnostics carry a contract that those two agree (see `scrollSpeedMps` /
+   * `fieldScrollSpeedMps`). It is 0 until the level starts scrolling, so the phase holds keep the field's answer honest.
    */
   paceMps = 0;
   timelineEmitted = 0;
