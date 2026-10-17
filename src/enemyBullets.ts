@@ -292,6 +292,35 @@ export function paintEnemyBullets(
 ): void {
   const cfg = mech.enemyBullets;
   for (const b of field.bullets) {
+    /**
+     * The eel's rounds WEAR THE PARALYSIS: a jagged ring in the same near-white as the one that appears on the bubble
+     * when the effect lands.
+     *
+     * Drawn before the skip, so the cue survives the picture failing to load -- a round that looks like the old pellet
+     * still says what it does. The ring sits around the PICTURE rather than the hitbox: the cluster's forks already
+     * reach past the circle, and a ring inside them would be unreadable at this size.
+     */
+    if (b.kind === 'eel') {
+      const eel = mech.hazards.eel;
+      const radius = laneWidth * b.radiusRatio;
+      const strobe = 0.45 + 0.55 * Math.abs(Math.sin(b.age * 34));
+      const points: number[] = [];
+      const steps = 12;
+      for (let i = 0; i < steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        // Alternating in and out, so the ring is a sawtooth rather than a circle with a wobble.
+        const jag = i % 2 === 0 ? 1.3 : 1.12;
+        const reach = radius * eel.bulletRingRadiusRatio * jag;
+        points.push(b.x + Math.cos(a) * reach, b.y + Math.sin(a) * reach);
+      }
+      points.push(points[0]!, points[1]!);
+      g.poly(points);
+      g.stroke({
+        color: eel.paralysisColour,
+        alpha: strobe,
+        width: Math.max(1, radius * eel.bulletRingWidthRatio),
+      });
+    }
     if (skip?.(b)) continue;
     /**
      * The global palette, unless the round brought its own.

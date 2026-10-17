@@ -1104,6 +1104,14 @@ export interface Mechanisms {
       paralysisSeconds: number;
       paralysisColour: number;
       paralysisWidthRatio: number;
+      /**
+       * The jagged ring around an eel's ROUND, as multiples of the round's collision radius.
+       *
+       * The ring is the same visual language as the player's own paralysis ring, so the round advertises what it
+       * does. It sits outside the lightning cluster's picture rather than on the hitbox.
+       */
+      bulletRingRadiusRatio: number;
+      bulletRingWidthRatio: number;
     };
     /** The rot: what it multiplies the digestion rate by while it is inside. 1 means no effect. */
     /** The oil: the chance a spit attempt gets it out. 0 is a permanent clog, 1 is an ordinary item. */
@@ -3197,6 +3205,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.starfish.volleySpinRadians', check: anyNumber, describe: 'radians; 0 means the rosette never turns' },
   { path: 'hazards.eel.paralysisColour', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.eel.paralysisWidthRatio', check: anyNumber, describe: 'a stroke width ratio' },
+  { path: 'hazards.eel.bulletRingRadiusRatio', check: anyNumber, describe: 'a multiple of the round radius' },
+  { path: 'hazards.eel.bulletRingWidthRatio', check: anyNumber, describe: 'a stroke width, as a multiple of the round radius' },
   { path: 'hazards.invulnerableSeconds', check: anyNumber, describe: 'a number of 0 or more' },
   /**
    * Consumption. The two per-kind tables are checked for PRESENCE of every hazard kind rather than for any
