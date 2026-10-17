@@ -2607,6 +2607,8 @@ class Game {
      */
     if (!carryScore) this.run.levelsClearedInRun = Math.max(0, levelIndex(LEVEL.id));
     this.run.bossSpawned = false;
+    // A new boss must not inherit the previous fight's 贴脸 cooldown.
+    this.run.bossPointBlankRest = 0;
     /**
      * A fresh run has no level queued to walk into.
      *

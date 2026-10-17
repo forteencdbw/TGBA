@@ -763,10 +763,10 @@ playing → cleared → ascend → intro（下一关）
 | 写在哪 | 内容 |
 |---|---|
 | 每关文件里的 `boss` | `at`（走到多少米它出现，**必须 < scrollLength**，否则加载就报错）、`health`、`name`、`colour`。这是**关卡强度**：两只 BOSS 可以不一样厚、不一样颜色。 |
-| `mechanics.json5` 的 `hazards.boss` | 它怎么动（`holdMeters` 悬停高度、`patrolAmplitude` / `patrolPeriodSeconds` 横向游弋、`seekSpeedFactor` 追你的速度）、`contactDamage`、`radiusRatio`（体型）、颜色与受击闪白 |
+| `mechanics.json5` 的 `hazards.boss` | 它怎么动（纵向巡逻 `patrolCenterRatio` / `patrolVerticalAmplitudeRatio` / `verticalPatrolPeriodSeconds`、横向游弋 `patrolAmplitude` / `patrolPeriodSeconds`、`seekSpeedFactor` 追你的速度）、`contactDamage`、`radiusRatio`（体型）、颜色与受击闪白 |
 | `enemyBullets.shooters.boss` | 它的枪：一次一波扇形（默认 5 发、±0.62 弧度） |
 
-**它不随水流走**——它咬住画面，一直悬在你上方 `holdMeters` 处横向游弋并缓慢逼近。所以它跑不掉，只能打（或者死）。它是一条 hazard，所以玩家的子弹打它、无敌帧保护你、伤害与飘字全都不用新代码；只有三件事是它自己的：**不下沉**、**血量归零是"死"而不是"逃跑"**（那也正是通关信号）、**不能被吃**（`edibleAtTier` 锁在最高档）。
+**它不随水流走**——它咬住画面，横向追着你游弋，纵向在可见带的上半部分按自己的节奏巡逻，所以它跑不掉，只能打（或者死）。它是一条 hazard，所以玩家的子弹打它、无敌帧保护你、伤害与飘字全都不用新代码；只有三件事是它自己的：**不下沉**、**血量归零是"死"而不是"逃跑"**（那也正是通关信号）、**不能被吃**（`edibleAtTier` 锁在最高档）。
 
 **屏幕顶部那条紫色的条就是这一关的进度**（`hud.bossBar`：位置、宽度、颜色、字号）。它只在 BOSS 战期间出现——**它的"不出现"本身也是信息**：BOSS 来之前和死之后，屏幕顶上不该有一条显示 0 的条。
 

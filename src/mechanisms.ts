@@ -193,15 +193,18 @@ export interface PopupStyle {
  */
 export interface BossDossier {
   /**
-   * Where it holds station above the player: a CEILING in metres, a fraction of the visible band, and a floor.
+   * The vertical patrol: where the boss hovers, how far it moves, and on what clock.
    *
-   * All three are needed. The ceiling stops a huge window putting the fight absurdly far away, the ratio is
-   * what keeps the boss ON SCREEN (the visible band shrinks as the window gets wider and shorter), and the floor
-   * stops a short window putting it in the player's lap.
+   * All three are fractions of the VISIBLE BAND rather than metres, because the band shrinks as the window gets wider
+   * and shorter -- a fixed height would put the boss off the top of a 1280x720 window. `patrolCenterRatio` places the
+   * centre in the upper half, `patrolVerticalAmplitudeRatio` is the rise and fall around it, and the period is its own
+   * so the vertical motion does not lockstep with the lateral sweep. `verticalSeekPerSecond` is how quickly it eases
+   * toward that target, so the bob is a motion rather than a snap.
    */
-  holdMeters: number;
-  holdBandRatio: number;
-  holdMinMeters: number;
+  patrolCenterRatio: number;
+  patrolVerticalAmplitudeRatio: number;
+  verticalPatrolPeriodSeconds: number;
+  verticalSeekPerSecond: number;
   /** Lateral patrol: amplitude as a fraction of the lane width, and the period in seconds. */
   patrolAmplitude: number;
   patrolPeriodSeconds: number;
@@ -584,6 +587,13 @@ export interface Mechanisms {
      * somewhere, and the ring between the two is where the creature can still reach you.
      */
     pointBlankRadius: number;
+    /**
+     * Seconds between 贴脸 callouts on a BOSS.
+     *
+     * Every round paid the event on a boss would turn a high rate of fire into a stream of callouts and mutation
+     * points, so one boss fight pays at most once per this window. 0 pays every hit.
+     */
+    bossPointBlankCooldownSeconds: number;
     /** The three small callouts (擦 / 贴脸 / 拆弹) share one style, smaller than the graze's word. */
     callouts: PopupStyle;
     /** How much one pick of each numeric card is worth. The cards' text is content, in `src/mutations.ts`. */
@@ -2380,9 +2390,10 @@ function isNumberTable(v: unknown): v is Record<string, number> {
  */
 function bossRules(prefix: string): { path: string; check: (v: unknown) => boolean; describe: string }[] {
   return [
-    { path: `${prefix}.holdMeters`, check: anyNumber, describe: 'metres' },
-    { path: `${prefix}.holdBandRatio`, check: anyNumber, describe: 'a fraction of the visible depth' },
-    { path: `${prefix}.holdMinMeters`, check: anyNumber, describe: 'metres' },
+    { path: `${prefix}.patrolCenterRatio`, check: anyNumber, describe: 'a fraction of the visible band; where the vertical patrol is centred' },
+    { path: `${prefix}.patrolVerticalAmplitudeRatio`, check: anyNumber, describe: 'a fraction of the visible band; how far the vertical patrol rises and falls' },
+    { path: `${prefix}.verticalPatrolPeriodSeconds`, check: anyNumber, describe: 'seconds for one vertical patrol cycle' },
+    { path: `${prefix}.verticalSeekPerSecond`, check: anyNumber, describe: 'how quickly the boss eases toward its vertical target, per second' },
     { path: `${prefix}.patrolAmplitude`, check: anyNumber, describe: 'a lane fraction' },
     { path: `${prefix}.patrolPeriodSeconds`, check: anyNumber, describe: 'seconds' },
     { path: `${prefix}.seekSpeedFactor`, check: anyNumber, describe: 'lane widths per second' },
@@ -2694,6 +2705,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
     describe: 'mutation points for this event; 0 takes the event out of the economy',
   })),
   { path: 'mutation.pointBlankRadius', check: anyNumber, describe: 'a multiple of the contact radius' },
+  { path: 'mutation.bossPointBlankCooldownSeconds', check: anyNumber, describe: 'seconds between 贴脸 payouts on a boss; 0 pays every hit' },
   { path: 'mutation.pool.shotgun.rateScale', check: anyNumber, describe: 'a multiplier on the firing rate' },
   { path: 'mutation.pool.shotgun.pellets', check: anyNumber, describe: 'rounds per stream, on top of one' },
   { path: 'mutation.pool.shotgun.totalSpreadDegrees', check: anyNumber, describe: 'degrees' },

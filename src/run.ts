@@ -1,7 +1,7 @@
 import { Player } from './player';
 import { Progression } from './progress';
 import { EntityField } from './entities';
-import { HazardField, type HazardKind } from './hazards';
+import { HazardField, isBossKind, type HazardKind } from './hazards';
 import { ObstacleField } from './obstacles';
 import { BulletField } from './bullets';
 import { EnemyBulletField } from './enemyBullets';
@@ -17,7 +17,7 @@ import type { Input } from './input';
 import { chainTargets } from './conductive';
 import { tuning } from './config';
 import { massFromEating } from './consumption';
-import { hazardSizeFraction, hazardTuning, markVulnerable, shoveCreature, vulnerableDamage, type Hazard, type SpawnOptions } from './hazards';
+import { boxDistance, hazardSizeFraction, hazardTuning, markVulnerable, shoveCreature, vulnerableDamage, type Hazard, type SpawnOptions } from './hazards';
 import { healthAfterHit, healthAfterRegen, healthMaxFor } from './health';
 import { canEatHazard } from './consumption';
 import { LEVEL, type LevelEntry } from './levels';
@@ -244,6 +244,13 @@ export class Run {
    * `fieldScrollSpeedMps`). It is 0 until the level starts scrolling, so the phase holds keep the field's answer honest.
    */
   paceMps = 0;
+  /**
+   * Seconds until the boss may pay 贴脸 again.
+   *
+   * The boss takes every round the gun fires, so paying the event per landing would turn the rate of fire into a
+   * stream of callouts and mutation points. One number is enough because a level has one boss.
+   */
+  bossPointBlankRest = 0;
   timelineEmitted = 0;
   spawnLog: SpawnRecord[] = [];
   spawnedBySide: Record<ResolvedSide, number> = { top: 0, left: 0, right: 0, bottom: 0 };
@@ -571,6 +578,7 @@ export class Run {
    * what they touch is `src/bullets.ts`, which is also the only place that knows what a round is.
    */
   updateBullets(dt: number, laneWidth: number, min: number, max: number): void {
+    this.bossPointBlankRest = Math.max(0, this.bossPointBlankRest - dt);
     const playerRadius = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
     /**
      * Where the rounds come from: one rim point, or one per gun row once the upgrade has been taken.
@@ -674,6 +682,30 @@ export class Run {
      * gun was busy. One floating number per creature, AT the creature -- a swarm driven off in one frame is several
      * events and reads as several numbers, which is the truth of what happened.
      */
+    const playerX = this.player.x * laneWidth;
+    const playerY = this.player.y;
+    /**
+     * Whether a hit was taken from inside the creature's reach.
+     *
+     * The collision the gun already resolved used the art box when there is one, so this asks the same question of
+     * the same box: `boxDistance` from the player to the box, inside `playerR * pointBlankRadius` (contact is
+     * `playerR`, and the multiplier is the deliberate ring outside it). The circle fallback is for kinds with no
+     * art, where the collision itself is a circle.
+     */
+    const pointBlank = (at: {
+      x: number;
+      y: number;
+      r: number;
+      halfW: number | null;
+      halfH: number | null;
+    }): boolean => {
+      const ratio = mech.mutation.pointBlankRadius;
+      if (at.halfW !== null && at.halfH !== null) {
+        const gap = boxDistance(playerX, playerY, at.x, at.y, at.halfW * laneWidth, at.halfH * laneWidth);
+        return gap <= playerRadius * ratio;
+      }
+      return Math.hypot(at.x - playerX, at.y - playerY) <= (playerRadius + at.r) * ratio;
+    };
     if (shots.drivenOff > 0) {
       const points = this.score.award('drivenOff', shots.drivenOff);
       // Divided by the count so the numbers on screen add up to what the ledger recorded, whatever the config says.
@@ -683,18 +715,16 @@ export class Run {
       /**
        * THE RISK PRICING of a gun kill, per creature at the position it fell.
        *
-       * 贴脸: inside contact × `pointBlankRadius` -- the shot was taken from where the creature could
-       * still reach you, which is the gun's answer to the graze's question (one pays the dodge, the
-       * other pays standing in). 拆弹: a bombfish finished from OUTSIDE its blast -- the whole trade
-       * of shooting one is choosing where it goes off, and doing that from beyond the bang is the
-       * clean version of it. Both pay IN ADDITION to the drivenOff they rode in on, and to any graze
-       * the creature's charge paid: dodging a lunge and finishing the lunger point blank are two acts.
+       * 贴脸: inside contact × `pointBlankRadius` -- the shot was taken from where the creature could still reach
+       * you, which is the gun's answer to the graze's question (one pays the dodge, the other pays standing in).
+       * 拆弹: a bombfish finished from OUTSIDE its blast -- the whole trade of shooting one is choosing where it goes
+       * off, and doing that from beyond the bang is the clean version of it. Both pay IN ADDITION to the drivenOff
+       * they rode in on, and to any graze the creature's charge paid: dodging a lunge and finishing the lunger point
+       * blank are two acts.
        */
-      const playerX = this.player.x * laneWidth;
-      const playerR = laneWidth * stageRadiusFraction(this.stage.stage, this.player.volume);
       for (const at of shots.driven) {
-        const dist = Math.hypot(at.x - playerX, at.y - this.player.y);
-        if (dist <= (playerR + at.r) * mech.mutation.pointBlankRadius) {
+        const dist = Math.hypot(at.x - playerX, at.y - playerY);
+        if (pointBlank(at)) {
           this.xp.gain('pointBlank');
           sayCallout(this.events, at.x, at.y, '贴脸');
         }
@@ -706,6 +736,22 @@ export class Run {
           }
         }
       }
+    }
+    /**
+     * 贴脸 against a BOSS, which never "flees" and therefore never reaches `shots.driven`.
+     *
+     * Every round that lands on a boss is priced here, not only the killing one: the callout is feedback for taking
+     * the shot from inside its reach, and the last round of a long fight is not the only one that was taken that way.
+     * The cooldown is per boss (a level has one), so a shotgun volley or a high rate tier prints one word rather than
+     * a wall of them.
+     */
+    for (const at of shots.struck) {
+      if (!isBossKind(at.kind)) continue;
+      if (this.bossPointBlankRest > 0) continue;
+      if (!pointBlank(at)) continue;
+      this.bossPointBlankRest = mech.mutation.bossPointBlankCooldownSeconds;
+      this.xp.gain('pointBlank');
+      sayCallout(this.events, at.x, at.y, '贴脸');
     }
     /**
      * And what each round TOOK OFF, at the creature it landed on.

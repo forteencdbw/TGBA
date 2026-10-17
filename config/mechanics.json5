@@ -1082,7 +1082,8 @@
       // 刻意很小：子弹比冲锋频繁得多，这是擦边经济里"最碎"的那一档——
       // 若实测贴弹道流追上冲锋擦边流（2.5-3/秒），先压这里再加护栏。
       "bulletGraze": 4,
-      // **贴脸击杀**：在接触半径的 pointBlankRadius 倍以内用枪打跑一只怪（小字「贴脸」）。
+      // **贴脸击杀**：在接触判定（贴图包围盒）的 pointBlankRadius 倍以内用枪打跑一只怪（小字「贴脸」）。
+      // BOSS 不会"逃跑"，所以它按**每次命中**结算，冷却见下面的 bossPointBlankCooldownSeconds。
       "pointBlank": 8,
       // **远距拆弹**：在爆炸半径外把炸弹鱼打死（小字「拆弹」）。一次性低频事件，给得比贴脸多。
       "defuse": 15,
@@ -1090,8 +1091,12 @@
       "boss": 100
     },
 
-    // 贴脸击杀的判定半径：接触半径（你的 + 它的）的多少倍以内算贴脸。
+    // 贴脸判定半径：接触距离的多少倍以内算贴脸。接触用与碰撞相同的贴图包围盒；没有贴图时退回圆形半径。
     "pointBlankRadius": 1.3,
+
+    // BOSS 的贴脸限流：同一只 BOSS 的小字与经验最多每这么多秒一次。BOSS 会吃下每一发子弹，
+    // 高射速/霰弹枪下逐发支付会刷屏并让经验膨胀；设 0 就恢复"每次命中都触发"。
+    "bossPointBlankCooldownSeconds": 1.0,
 
     // 三条小技巧反馈（子弹擦边「擦」/ 贴脸「贴脸」/ 拆弹「拆弹」）共用的浮字样式。
     // 比冲锋擦边的大字「擦边！！」小一档——慢动作是冲锋擦边独享的身份标识，这三条只报数。
@@ -3060,25 +3065,22 @@
     // BOSS 的老档案 —— **这是一块墓碑，删掉它是迁移的最后一步**
     // ---------------------------------------------------------------------------------------------
     //
-    // **它不属于水流**：BOSS 不随水漂走，而是**咬住画面**——它一直停在你上方 `holdMeters` 处横向游弋，
-    // 所以你不可能"跑过去"。血量、名字、出现位置是**关卡**给的（那只属于关卡强度）。
+    // **它不属于水流**：BOSS 不随水漂走，而是**咬住画面**——横向追着你游弋，纵向在可见带的上半部分
+    // 按自己的节奏巡逻，所以你不可能"跑过去"。血量、名字、出现位置是**关卡**给的（那只属于关卡强度）。
     //
     // 从前"它怎么动、怎么打、多大、什么颜色"也在这里，六只 BOSS 共用一份 —— 见上面 `hazards.bosses`。
-    // 那一块落地的同时，这一块就只剩一个用处：**旧 `boss` kind 的取值**，以及下面这些注释所记的"为什么"
-    // （比如 holdMeters 那三个数为什么必须一起用）。六个 kind 各有了自己的皮之后，
-    // 这一块、`hazardArt.boss` 和 `src/hazards.ts` 里的 `'boss'` 一起删。
+    // 那一块落地的同时，这一块就只剩一个用处：**旧 `boss` kind 的取值**，以及下面这些注释所记的"为什么"。
+    // 六个 kind 各有了自己的皮之后，这一块、`hazardArt.boss` 和 `src/hazards.ts` 里的 `'boss'` 一起删。
     "boss": {
-      // 它悬停的高度，三个数一起决定，**因为它必须以"看得见"为准**。
+      // 纵向巡逻的三个数：中心在可见高度的 70%，上下浮动 8%，周期独立于横向。
       //
-      // 这里原来只有一个绝对值 330m。手机上可见深度约 800m，330 稳稳在屏内；但**窗口越宽越扁，可见深度越小**
-      // （1280x720 只有约 289m），330 就跑到屏幕上方去了——BOSS 悬在画面外，玩家永远看不到它，
-      // 而关卡又只有打死它才结束。这就是"第一关的 BOSS 没有出现"。
-      //
-      // 现在：`holdMeters` 是**上限**，实际高度 = 可见深度 × `holdBandRatio`，再夹到 `holdMinMeters` 之上。
-      // 于是它在任何窗口里都在屏内，而且不会贴到脸上。
-      "holdMeters": 330,
-      "holdBandRatio": 0.34,
-      "holdMinMeters": 90,
+      // 高度用**可见带的比例**而不是米：窗口越宽越扁，可见深度越小，写死米数会让它在某些窗口里跑到屏幕外。
+      // 实际位置还会按 BOSS 自身的贴图半高夹紧，保证整只都在屏内，而不是只夹一个固定边距。
+      "patrolCenterRatio": 0.7,
+      "patrolVerticalAmplitudeRatio": 0.08,
+      "verticalPatrolPeriodSeconds": 6.8,
+      // 纵向收敛速度：数值越大越"跟手"，越小越像缓慢巡游。
+      "verticalSeekPerSecond": 1.4,
 
       // 横向游弋的幅度（泳道比例）与周期（秒）。这是"弹幕从一个会动的炮台来"的全部来源。
       "patrolAmplitude": 0.36,
@@ -3156,8 +3158,9 @@
     // 而调一只 BOSS 的时候不该需要同时记住另一只的数。
     //
     // 字段含义（这样六行可以并排看，不用每行都读一遍注释）：
-    //   holdMeters / holdBandRatio / holdMinMeters  悬停高度的上限、可见深度的比例、下限。三个一起才保证"它一定在屏内"
-    //                                               （窗口越宽越扁，可见深度越小，所以不能只写绝对值）。
+    //   patrolCenterRatio / patrolVerticalAmplitudeRatio / verticalPatrolPeriodSeconds
+    //                                             纵向巡逻：中心高度（可见带比例）、上下浮动幅度、独立周期。纵向不看玩家。
+    //   verticalSeekPerSecond                      纵向靠近目标高度的速度（每秒收敛比例）。
     //   patrolAmplitude / patrolPeriodSeconds       横向游弋的幅度（泳道比例）与周期（秒）——"弹幕来自一个会动的炮台"
     //   seekSpeedFactor                             横向追你的速度（泳道/秒）。比玩家慢，所以它压过来时你有地方去
     //   radiusRatio                                 体型（泳道比例）
@@ -3178,9 +3181,10 @@
     "bosses": {
       // 第 1 关 —— 烟囱蟹王。
       "boss-crab": {
-        "holdMeters": 330,
-        "holdBandRatio": 0.34,
-        "holdMinMeters": 90,
+        "patrolCenterRatio": 0.7,
+        "patrolVerticalAmplitudeRatio": 0.08,
+        "verticalPatrolPeriodSeconds": 6.8,
+        "verticalSeekPerSecond": 1.4,
         "patrolAmplitude": 0.36,
         "patrolPeriodSeconds": 4.6,
         "seekSpeedFactor": 0.16,
@@ -3203,9 +3207,10 @@
       },
       // 第 2 关 —— 寄居沉船章鱼。
       "boss-octopus": {
-        "holdMeters": 330,
-        "holdBandRatio": 0.34,
-        "holdMinMeters": 90,
+        "patrolCenterRatio": 0.7,
+        "patrolVerticalAmplitudeRatio": 0.08,
+        "verticalPatrolPeriodSeconds": 6.8,
+        "verticalSeekPerSecond": 1.4,
         "patrolAmplitude": 0.36,
         "patrolPeriodSeconds": 4.6,
         "seekSpeedFactor": 0.16,
@@ -3228,9 +3233,10 @@
       },
       // 第 3 关 —— 冠冕水母。
       "boss-jelly": {
-        "holdMeters": 330,
-        "holdBandRatio": 0.34,
-        "holdMinMeters": 90,
+        "patrolCenterRatio": 0.7,
+        "patrolVerticalAmplitudeRatio": 0.08,
+        "verticalPatrolPeriodSeconds": 6.8,
+        "verticalSeekPerSecond": 1.4,
         "patrolAmplitude": 0.36,
         "patrolPeriodSeconds": 4.6,
         "seekSpeedFactor": 0.16,
@@ -3253,9 +3259,10 @@
       },
       // 第 4 关 —— 长尾鲨。
       "boss-shark": {
-        "holdMeters": 330,
-        "holdBandRatio": 0.34,
-        "holdMinMeters": 90,
+        "patrolCenterRatio": 0.7,
+        "patrolVerticalAmplitudeRatio": 0.08,
+        "verticalPatrolPeriodSeconds": 6.8,
+        "verticalSeekPerSecond": 1.4,
         "patrolAmplitude": 0.36,
         "patrolPeriodSeconds": 4.6,
         "seekSpeedFactor": 0.16,
@@ -3278,9 +3285,10 @@
       },
       // 第 5 关 —— 废网巨鲨。
       "boss-netshark": {
-        "holdMeters": 330,
-        "holdBandRatio": 0.34,
-        "holdMinMeters": 90,
+        "patrolCenterRatio": 0.7,
+        "patrolVerticalAmplitudeRatio": 0.08,
+        "verticalPatrolPeriodSeconds": 6.8,
+        "verticalSeekPerSecond": 1.4,
         "patrolAmplitude": 0.36,
         "patrolPeriodSeconds": 4.6,
         "seekSpeedFactor": 0.16,
@@ -3303,9 +3311,10 @@
       },
       // 第 6 关 —— 风暴之眼。
       "boss-eye": {
-        "holdMeters": 330,
-        "holdBandRatio": 0.34,
-        "holdMinMeters": 90,
+        "patrolCenterRatio": 0.7,
+        "patrolVerticalAmplitudeRatio": 0.08,
+        "verticalPatrolPeriodSeconds": 6.8,
+        "verticalSeekPerSecond": 1.4,
         "patrolAmplitude": 0.36,
         "patrolPeriodSeconds": 4.6,
         "seekSpeedFactor": 0.16,

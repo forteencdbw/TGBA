@@ -1,6 +1,6 @@
 import { Graphics } from 'pixi.js';
 import { mech } from './config';
-import { boxDistance, hazardBoxFractions, hazardSizeFraction, type Hazard, type HazardField } from './hazards';
+import { boxDistance, hazardBoxFractions, hazardSizeFraction, type Hazard, type HazardField, type HazardKind } from './hazards';
 import type { ObstacleField } from './obstacles';
 
 /**
@@ -409,6 +409,23 @@ function steerHoming(b: Bullet, dt: number, ctx: BulletContext): void {
   b.x += h.vx * dt;
 }
 
+/**
+ * One landed hit, with the shape needed to price the risk it was taken at.
+ *
+ * `halfW` / `halfH` are the collision box the round itself hit -- `hazardBoxFractions`, in LANE FRACTIONS -- or null
+ * when the kind has no art and collisions fall back to the circle. `r` is that circle's nominal radius in metres.
+ * Both are carried because 贴脸 has to ask the same shape the collision asked: a centre-distance test against the
+ * nominal radius is too small for creatures whose picture is much bigger than it, and the bosses are exactly that.
+ */
+interface HitMark {
+  x: number;
+  y: number;
+  kind: HazardKind;
+  r: number;
+  halfW: number | null;
+  halfH: number | null;
+}
+
 export class BulletField {
   bullets: Bullet[] = [];
 
@@ -453,17 +470,17 @@ export class BulletField {
     hits: number;
     drivenOff: number;
     fired: number;
-    driven: readonly { x: number; y: number; kind: string; r: number }[];
-    struck: readonly { x: number; y: number; amount: number }[];
+    driven: readonly HitMark[];
+    struck: readonly (HitMark & { amount: number })[];
   } {
     const cfg = mech.bullets;
     let landed = 0;
     let drivenOff = 0;
     let fired = 0;
   /** Positions of creatures finished this frame, with what they were: the caller prices risk by proximity. */
-  const driven: { x: number; y: number; kind: string; r: number }[] = [];
+  const driven: HitMark[] = [];
     /** Every round that landed on a creature this frame, with the damage it dealt. */
-    const struck: { x: number; y: number; amount: number }[] = [];
+    const struck: (HitMark & { amount: number })[] = [];
 
     if (ctx.armed && ctx.perSecond > 0) {
       /**
@@ -578,12 +595,20 @@ export class BulletField {
           landed++;
           // Reported at the CREATURE, not at the round: the round is a few pixels wide and has already been removed by
           // the time the caller draws anything, while the creature is the thing the number is about.
-          struck.push({ x: h.x, y: h.y, amount: damage });
+          const mark: HitMark = {
+            x: h.x,
+            y: h.y,
+            kind: h.kind,
+            r: ctx.laneWidth * h.radiusFraction,
+            halfW: box ? box.halfW : null,
+            halfH: box ? box.halfH : null,
+          };
+          struck.push({ ...mark, amount: damage });
           if (outcome === 'fled') {
             drivenOff++;
-            // Kind and radius travel with the position: the caller's risk pricing (贴脸 / 拆弹) needs
-            // WHAT it was and how big it was, not just where it stood.
-            driven.push({ x: h.x, y: h.y, kind: h.kind, r: ctx.laneWidth * h.radiusFraction });
+            // Kind and shape travel with the position: the caller's risk pricing (贴脸 / 拆弹) needs WHAT it was and
+            // how big it was, not just where it stood.
+            driven.push(mark);
           }
           spent = true;
           break;

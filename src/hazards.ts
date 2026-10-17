@@ -1143,7 +1143,7 @@ type CreatureStep = (field: HazardField, h: Hazard, dt: number, ctx: HazardConte
 /**
  * What a creature is "of the world" for: the kinds that are SCENERY or weather rather than something alive, and so stay
  * where the level put them while the camera climbs past. The field rises into them, which is the whole of their motion.
- * (The boss is separate: it does not move with the water either, but it holds a position relative to the player on its own.)
+ * (The boss is separate: it does not move with the water either, but patrols the visible band on its own clock.)
  */
 const WORLD_BOUND_KINDS: readonly HazardKind[] = ['vent', 'mineral', 'foam', 'rain'];
 
@@ -1332,9 +1332,9 @@ function stepBoss(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext
    * The boss does NOT ride the current.
    *
    * Everything else in this file is carried down at the level's scroll speed, which is what makes the water feel
-   * like water. The boss holds a position RELATIVE TO THE PLAYER instead -- `holdMeters` above the bubble -- which
-   * is the whole reason it is a fight rather than an encounter the player can simply outrun. It patrols sideways
-   * and tracks the player's lane slowly: slowly enough that being cornered is always something the player did.
+   * like water. The boss holds station on its own: laterally it sweeps around the player's lane, and vertically it
+   * patrols the UPPER HALF of the visible band on its own clock. It does not follow the player up and down -- that
+   * read as the boss being tied to the bubble rather than as a creature holding a piece of water.
    */
   const cfg = bossDossier(h.kind);
   const targetX = ctx.playerX + Math.sin(ctx.elapsed * ((Math.PI * 2) / cfg.patrolPeriodSeconds)) * cfg.patrolAmplitude * ctx.laneWidth;
@@ -1342,26 +1342,29 @@ function stepBoss(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext
   const step = cfg.seekSpeedFactor * ctx.laneWidth * dt;
   h.x += Math.abs(gapX) <= step ? gapX : Math.sign(gapX) * step;
   /**
-   * Its height, derived from the VISIBLE BAND rather than fixed in metres.
+   * Its height is a patrol of the VISIBLE BAND, not a follow of the player.
    *
-   * A fixed hold height is only correct for one window shape: the band shrinks as the window gets wider and
-   * shorter (802m on a phone, 289m at 1280x720), and a boss hovering past its top edge is a boss that never
-   * appears -- which is exactly the bug this replaced.
+   * The band shrinks as the window gets wider and shorter (802m on a phone, 289m at 1280x720), so every term here is
+   * a fraction of it: the centre sits in the upper half, the amplitude is the rise and fall around it, and the period
+   * is its own so the path is a patrol rather than a diagonal line locked to the lateral sweep.
    */
   const band = Math.max(1, ctx.max - ctx.min);
-  const hold = Math.max(cfg.holdMinMeters, Math.min(cfg.holdMeters, band * cfg.holdBandRatio));
+  const center = ctx.min + band * cfg.patrolCenterRatio;
+  const targetY = center + Math.sin(ctx.elapsed * ((Math.PI * 2) / cfg.verticalPatrolPeriodSeconds)) * band * cfg.patrolVerticalAmplitudeRatio;
   /**
-   * And then it is CLAMPED INTO THE VISIBLE BAND, which is the second half of the same bug.
+   * CLAMPED BY THE BOSS'S OWN HALF-HEIGHT, not by a flat margin.
    *
-   * The hold is measured from the player, so a player who has fallen behind the camera -- stuck behind a wall in
-   * level 2's narrow passages, say -- would have their boss hovering wherever THEY are rather than where the
-   * fight is. The clamp says: whatever the offset works out to, the boss stays inside the band with a small
-   * margin. A boss that exists but is not on screen is indistinguishable from no boss, and a level only ends when
-   * one dies.
+   * A boss that exists but is not on screen is indistinguishable from no boss, and a level only ends when one dies.
+   * Its body is much taller than a fish's, so a fixed 8% edge can still leave the top of it outside the band; asking
+   * the same collision box the rest of the game uses for its half-height keeps the whole creature visible. The
+   * fallback is the nominal radius for the one case the box cannot answer: art that has not loaded yet.
    */
-  const margin = band * 0.08;
-  const targetY = Math.min(Math.max(ctx.playerY + hold, ctx.min + margin), ctx.max - margin);
-  h.y += (targetY - h.y) * Math.min(1, dt * 1.4);
+  const box = hazardBoxFractions(h.kind, h.variety, h.scale);
+  const halfH = ctx.laneWidth * (box ? box.halfH : h.radiusFraction);
+  const bottom = ctx.min + halfH;
+  const top = ctx.max - halfH;
+  const clampedY = bottom <= top ? Math.min(Math.max(targetY, bottom), top) : (ctx.min + ctx.max) / 2;
+  h.y += (clampedY - h.y) * Math.min(1, dt * cfg.verticalSeekPerSecond);
   return;
 }
 function stepVent(_field: HazardField, h: Hazard, dt: number, _ctx: HazardContext): void {
