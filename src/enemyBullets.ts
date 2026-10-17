@@ -55,6 +55,14 @@ export interface EnemyBullet {
    */
   shape: BulletShape;
   /**
+   * This round's own colours, copied from its shooter's row when the row has them.
+   *
+   * Absent for every shooter but the eel: the shared warm palette is the default, and a per-kind override exists for a
+   * round that has to read as a different element rather than as "enemy fire".
+   */
+  coreColour?: number;
+  rimColour?: number;
+  /**
    * This round's radius, as a fraction of the lane width, copied from its shooter's row at spawn.
    *
    * Per ROUND rather than per field, because one shooter's round can be bigger than another's: the pistol
@@ -165,6 +173,8 @@ export class EnemyBulletField {
         kind,
         shape: row.shape ?? 'bolt',
         radiusRatio: row.radiusRatio ?? mech.enemyBullets.radiusRatio,
+        ...(row.coreColour !== undefined ? { coreColour: row.coreColour } : {}),
+        ...(row.rimColour !== undefined ? { rimColour: row.rimColour } : {}),
         grazed: false,
       });
       this.fired++;
@@ -259,6 +269,14 @@ export class EnemyBulletField {
 export function paintEnemyBullets(g: Graphics, field: EnemyBulletField, laneWidth: number): void {
   const cfg = mech.enemyBullets;
   for (const b of field.bullets) {
+    /**
+     * The global palette, unless the round brought its own.
+     *
+     * The eel's blue is the one override: the shared warm core says "enemy fire" for every gunner, and a blue round
+     * is what makes the eel's fire read as electricity rather than as another pellet.
+     */
+    const core = b.coreColour ?? cfg.coreColour;
+    const rim = b.rimColour ?? cfg.rimColour;
     // Per round, not per field: a cavitation bubble is drawn as big as it hits.
     const r = laneWidth * b.radiusRatio;
     const speed = Math.hypot(b.vx, b.vy) || 1;
@@ -282,22 +300,22 @@ export function paintEnemyBullets(g: Graphics, field: EnemyBulletField, laneWidt
         .lineTo(b.x - ux * long * 0.6, b.y - uy * long * 0.6)
         .lineTo(b.x - px * wide, b.y - py * wide)
         .closePath()
-        .fill({ color: cfg.coreColour, alpha: 1 });
+        .fill({ color: core, alpha: 1 });
       g.moveTo(b.x + ux * long, b.y + uy * long)
         .lineTo(b.x + px * wide, b.y + py * wide)
         .lineTo(b.x - ux * long * 0.6, b.y - uy * long * 0.6)
         .lineTo(b.x - px * wide, b.y - py * wide)
         .closePath()
-        .stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha, width: Math.max(1, r * 0.3) });
+        .stroke({ color: rim, alpha: cfg.rimAlpha, width: Math.max(1, r * 0.3) });
       continue;
     }
     // A short tail along the direction of travel, so a slow round still reads as moving.
     const tail = Math.min(r * 3.2, speed * 0.02);
     g.moveTo(b.x - ux * tail, b.y - uy * tail)
       .lineTo(b.x, b.y)
-      .stroke({ color: cfg.rimColour, alpha: cfg.rimAlpha * 0.45, width: Math.max(1, r * 0.7) });
-    g.circle(b.x, b.y, r * 1.35).fill({ color: cfg.rimColour, alpha: cfg.rimAlpha * 0.35 });
-    g.circle(b.x, b.y, r).fill({ color: cfg.coreColour, alpha: 1 });
+      .stroke({ color: rim, alpha: cfg.rimAlpha * 0.45, width: Math.max(1, r * 0.7) });
+    g.circle(b.x, b.y, r * 1.35).fill({ color: rim, alpha: cfg.rimAlpha * 0.35 });
+    g.circle(b.x, b.y, r).fill({ color: core, alpha: 1 });
   }
 }
 

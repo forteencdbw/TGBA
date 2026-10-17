@@ -84,7 +84,16 @@ export function edibleAtTier(kind: HazardKind): number {
  * ladder can be climbed by appetite as well as by size. Zero for a run that has not stacked the card.
  */
 export function canEatHazard(kind: HazardKind, volume: number, tierBonus = 0): boolean {
-  return volumeTier(volume) + tierBonus >= edibleAtTier(kind);
+  const need = edibleAtTier(kind);
+  /**
+   * THE TOP TIER MEANS "NEVER".
+   *
+   * `edibleAtTier` is checked into `1..tierVolume.length` at boot, so the last tier is a legal value that no volume or
+   * 大胃口 bonus can pass: the table says "this kind is not food" without a second flag. The bosses have always listed
+   * it, and the eel -- an unshootable turret -- now does too.
+   */
+  if (need >= mech.consumption.tierVolume.length) return false;
+  return volumeTier(volume) + tierBonus >= need;
 }
 
 /** The mass gained by eating a hazard of this kind, after the digestion loss. */

@@ -720,6 +720,12 @@ export interface Mechanisms {
          * when a row leaves it out; the pistol shrimp's cavitation bubble is the one that does not.
          */
         radiusRatio?: number;
+        /**
+         * This kind's own round colours, overriding the shared palette below. Absent for all but the eel, whose blue
+         * is what separates its fire from every other gunner's warm pellet.
+         */
+        coreColour?: number;
+        rimColour?: number;
       }
     >;
     /** A creature only opens fire from inside this distance, so nothing arrives from off screen. */
@@ -2439,6 +2445,10 @@ function isShooterTable(v: unknown): boolean {
     const r = row as Record<string, unknown>;
     if (r.shape !== undefined && r.shape !== 'bolt' && r.shape !== 'spike') return false;
     if (r.radiusRatio !== undefined && (typeof r.radiusRatio !== 'number' || !Number.isFinite(r.radiusRatio))) return false;
+    for (const key of ['coreColour', 'rimColour'] as const) {
+      const value = r[key];
+      if (value !== undefined && !isColour(value)) return false;
+    }
     return fields.every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number));
   });
 }

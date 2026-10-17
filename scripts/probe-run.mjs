@@ -120,6 +120,22 @@ try {
     check('regen · it stops at the ceiling', r.health, r.healthMax);
   }
 
+  // --- the eel is a turret: shots pass through, nothing can eat it, and its rounds are its own colour
+  {
+    const { canEatHazard } = await server.ssrLoadModule('/src/consumption.ts');
+    const { EnemyBulletField } = await server.ssrLoadModule('/src/enemyBullets.ts');
+    const field = new EnemyBulletField();
+    const fired = field.fire('eel', 0, 0, 100, 0, LANE);
+    const row = mech.enemyBullets.shooters.eel;
+    check('eel · not shootable', mech.hazards.health.eel, 0);
+    check('eel · not edible even at the top tier with every bonus', canEatHazard('eel', mech.volume.max, 10), false);
+    check('eel · its rounds carry their own blue', [
+      fired,
+      field.bullets[0]?.coreColour,
+      field.bullets[0]?.rimColour,
+    ], [1, row.coreColour, row.rimColour]);
+  }
+
   // --- stepping the water moves the creatures, and a run can do it for five seconds
   {
     const r = new Run();
