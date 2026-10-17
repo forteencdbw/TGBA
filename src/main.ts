@@ -51,7 +51,7 @@ function worldYIsFlipped(node: import('pixi.js').Container): boolean {
   return scaleY < 0;
 }
 import { RunSummary } from './summary';
-import { demote, initialStageState, stageName, stageRadiusFraction } from './stages';
+import { demote, initialStageState, stageRadiusFraction } from './stages';
 import { nominalScrollSeconds } from './levels';
 import { EntityField, type Bubble } from './entities';
 import { Input } from './input';
@@ -65,9 +65,6 @@ import { bubbleRelativeFallRatio, bubbleRiseRatio, bubbleVolumeFromRadius } from
  */
 // The HUD's signposts come from the level, so a new level states its own pacing instead of
 // inheriting another level's depths. See `src/levels.ts`.
-
-/** The ways a bubble can be born, one name per talent (design round 5). Effects land in D4; here it is flavour. */
-const SEEDS = ['鱼屁泡', '深海淤泥泡'] as const;
 
 /**
  * The phases that are the main menu, or a page opened from it.
@@ -294,7 +291,6 @@ class Game {
    * two, so "was anything ever placed outside the lane" is unanswerable from a boolean read afterwards.
    */
 
-  private seedLabel: string = SEEDS[0];
   private fps = 60;
   private accumulator = 0;
   private frameCount = 0;
@@ -564,7 +560,6 @@ class Game {
     stage.on('pointerupoutside', (e) => this.handlePointerUp(e.pointerId));
     stage.on('pointercancel', (e) => this.handlePointerUp(e.pointerId));
 
-    this.rollSeed();
     this.run.player.reset();
     this.run.scrolled = 0;
     this.camera.setScroll(0);
@@ -1355,13 +1350,12 @@ class Game {
   /** This run's talent and its resolved multipliers. */
 
   /**
-   * The run's talent, for the HUD's line, and the boss fight as the HUD should show it.
+   * The boss fight as the HUD should show it.
    *
-   * Both are the HUD's INPUT rather than something pushed into it: the boss bar used to be written straight into the
-   * HUD from `updateBoss`, which meant the sim owned a display object. They are game state now, read by the frame like
-   * everything else -- see `HudState`.
+   * The HUD's INPUT rather than something pushed into it: the boss bar used to be written straight into the HUD from
+   * `updateBoss`, which meant the sim owned a display object. It is game state now, read by the frame like everything
+   * else -- see `HudState`.
    */
-  private talentLabel = '';
   private bossView: { name: string; fraction: number } | null = null;
   /** When the fish-fart talent can fire again, and how many times it has. */
   /** Which scripted depth events have fired, and the count, so a run does not repeat a beat. */
@@ -1542,7 +1536,6 @@ class Game {
     if (!talent) throw new Error(`unknown talent: ${id}`);
     this.run.talentEffects = resolveTalent(talent);
     this.run.player.volume = this.run.talentEffects.startVolume;
-    this.talentLabel = talent.name;
     return talent.id;
   }
 
@@ -1551,10 +1544,6 @@ class Game {
     this.run.fartReadyAt = 0;
     this.run.releaseFart(this.worldView());
     return this.run.farts;
-  }
-
-  private rollSeed(): void {
-    this.seedLabel = SEEDS[Math.floor(Math.random() * SEEDS.length)] ?? SEEDS[0];
   }
 
   /** Fit the world play area to the real canvas and recompute dependent geometry. */
@@ -2853,7 +2842,6 @@ class Game {
     this.run.phaseTimer = INTRO_SECONDS;
     this.run.invulnerable = 0;
     this.run.stats = { absorbed: 0, hits: 0, maxVolume: this.run.talentEffects.startVolume, ended: this.run.stats.ended, newRecord: false };
-    this.rollSeed();
     this.run.rollTalent();
     /**
      * Fold the carried mutations back in, on top of the talent this start just rolled.
@@ -2874,7 +2862,6 @@ class Game {
     this.run.resetHealth(carryScore);
     // 关开始时再定一次体积：血量是跨关继承的，所以这一关的气泡可能比上一关小。
     this.run.applyHealthBand();
-    this.talentLabel = this.run.talentEffects.talent.name;
   }
 
 /**
@@ -3684,8 +3671,6 @@ private updateBoss(): void {
         score: this.run.score.value,
         boss: this.bossView,
         health: this.run.healthView,
-        seed: this.seedLabel,
-        talent: this.talentLabel,
         player: this.run.player,
         fps: this.fps,
         nominalSeconds: this.run.nominalSeconds,
@@ -3698,18 +3683,6 @@ private updateBoss(): void {
           visibleDepthMeters: this.camera.viewport.visibleDepthMeters,
         },
         stage: {
-          stage: this.run.stage.stage,
-          name: stageName(this.run.stage.stage),
-        absorbedInStage: this.run.stage.absorbedInStage,
-        /**
-         * Whether this type grows at all, which the HUD needs to read the counter honestly.
-         *
-         * Without it the subline would show "幼泡 1阶 0/12" for a whole plain-bubble run: a countdown to something
-         * that cannot happen, since that type does not grow.
-         */
-        grows: this.run.bubbleType.growsByAbsorbing,
-        route: this.run.route,
-        neededForNext: this.run.stage.neededForNext,
           /**
          * The mutation meter, for every type -- the bar that fills toward the next freeze.
          *

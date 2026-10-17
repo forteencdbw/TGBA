@@ -528,8 +528,8 @@ import { buildLabel } from './version';
  * WHY THIS IS ONE OBJECT RATHER THAN EIGHT SETTERS
  * ---------------------------------------------------------------------------------------------
  * The HUD used to be filled in from seven places at seven different MOMENTS: the score from the draw pass, the boss
- * from the boss fight, the progress chart from the step, the talent from the birth roll, the seed from the run's
- * start, and the lane metrics from a resize. Nothing said what a complete
+ * from the boss fight, the progress chart from the step, and the lane metrics from a resize. Nothing said what a
+ * complete
  * HUD state was, and "which of these has been set by now" was a question about the ORDER of a frame.
  *
  * It is now a value: the caller assembles one and hands it over, and the HUD is a function of it. A field that is
@@ -554,10 +554,6 @@ export interface HudState {
    * alone cannot do the second, and the ceiling moves under the bar on both routes (a 「血上限」 pick, or eating).
    */
   health: { current: number; max: number };
-  /** Which birth type this run rolled. */
-  seed: string;
-  /** This run's talent, for the line under the seed. Null or empty shows nothing. */
-  talent: string | null;
   /** The frame's own numbers, for the debug readout. */
   player: Player;
   fps: number;
@@ -570,27 +566,13 @@ export interface HudState {
   /** The lane's metrics in metres, quoted by the debug readout. */
   world: { laneWidthMeters: number; visibleDepthMeters: number };
   /**
-   * The growth stage, and how far into the next one.
+   * The readouts that belong to the form rather than to the run: the second meter and the mutation gauge.
    *
-   * The progress toward the next stage is the part that matters, because it is what makes "should I eat one more" a
-   * decision.
+   * The growth-stage line used to live here too -- the tier, the count to the next one, and the route's name
+   * prefixed to it. It is gone, with the seed and talent names that shared that line: on two of the three forms it
+   * read "不成长", and the seed and the talent draw from the same two names, so it usually said one word twice.
    */
   stage: {
-    stage: number;
-    name: string;
-    absorbedInStage: number;
-    neededForNext: number | null;
-    /** False for a form that does not grow from absorbing at all, which has no next stage to count toward. */
-    grows: boolean;
-    /**
-     * The route this run committed to, or null while it is still the base bubble.
-     *
-     * The subline prefixes the stage line with it -- "吞噬 · 幼泡 1阶 0/12" -- because the route is the run's
-     * identity and the stage is its progress, and the two read best as one line. Null shows no prefix at all
-     * rather than "小气泡": every run starts there, so the prefix would be noise for the part of the run
-     * before the choice.
-     */
-    route: string | null;
     /**
      * The mutation meter, for every type: the bar that fills toward the next freeze.
      *
@@ -612,7 +594,6 @@ export interface HudState {
 export class Hud {
   readonly root = new Container();
 
-  private readonly subline: Text;
   /** The second resource's readout, for a bubble type that has one. Hidden otherwise. */
   private readonly resourceLabel: Text;
   /** The resource's gauge. Own layer, so hiding it cannot erase anything else. */
@@ -630,8 +611,8 @@ export class Hud {
   /**
    * The score, in the top-left corner.
    *
-   * Its own label rather than a line in the subline block, because the subline block is CENTRED and belongs to the
-   * depth readout: the score is a running number that changes constantly, and putting it in the middle of the screen
+   * Its own label rather than a line in the centred block, because that block is CENTRED and belongs to the depth
+   * readout: the score is a running number that changes constantly, and putting it in the middle of the screen
    * would put the one thing that moves next to the one thing the player is steering by.
    */
   private readonly scoreLabel: Text;
@@ -680,22 +661,9 @@ export class Hud {
   private debugTimer = 0;
   /** Metres to the surface as the last `update` computed it: used by the debug line, not by any gauge. */
   private levelDepthMeters = 0;
-  /** Which of the three birth types this run rolled. Set by the game after construction. */
-  private seedLabel = '';
-  /** This run's talent. An empty string means "show nothing". */
-  private talentLabel = '';
 
   constructor() {
 
-    this.subline = makeLabel('', 0x7fc4e8, 11);
-    this.subline.anchor.set(0.5, 0);
-
-    /**
-     * The second resource's line, hidden until a type has one.
-     *
-     * Its own object rather than a slot in the subline because it carries its own colour, and because hiding it must
-     * leave no gap: a type with no resource shows exactly the HUD it always did.
-     */
     this.resourceLabel = makeLabel('', 0x7fc4e8, 11);
     this.resourceLabel.anchor.set(0.5, 0);
     this.resourceLabel.visible = false;
@@ -740,7 +708,6 @@ export class Hud {
 
     this.root.addChild(
       this.resourceGauge,
-      this.subline,
       this.resourceLabel,
       this.mutationLabel,
       this.mutationGauge,
@@ -786,20 +753,16 @@ export class Hud {
     const centreX = this.laneCentreX;
 
     /**
-     * The headline slot is GONE, and the subline took its place.
+     * The resource line keeps the place the growth-stage line used to hold.
      *
-     * It used to be the metres to the surface, which was the level's progress. A level now ends when its boss does, so
-     * that number was measuring something the player could no longer do anything with -- and the space belongs to the
-     * boss bar, which measures the thing they can.
+     * The stage line is gone, but the space above it is deliberately left empty rather than collapsed: the resource
+     * readout was already the second line of that block, and moving it up would put the rage bar where a removed
+     * label used to be -- a change the player would feel as the HUD jumping, for no gain. 22 + 16 is where that line
+     * has always been drawn.
      */
-    this.subline.scale.set(s);
-    this.subline.x = centreX;
-    this.subline.y = 22 * s;
-    // The resource sits directly under the subline: same block of screen furniture, one line lower, so the two read
-    // as one readout rather than as two unrelated facts in different corners.
     this.resourceLabel.scale.set(s);
     this.resourceLabel.x = centreX;
-    this.resourceLabel.y = this.subline.y + 16 * s;
+    this.resourceLabel.y = 38 * s;
     // The mutation meter sits below the whole resource block -- the line AND the gauge's slot -- so it is
     // in the same place for every type and never jumps when the run switches between them. Its own y is
     // computed at draw time from the label heights, like the rage gauge's is.
@@ -920,9 +883,6 @@ export class Hud {
       this.shownHealthMax = health.max;
       this.redrawHealth(health);
     }
-
-    this.seedLabel = state.seed;
-    this.talentLabel = state.talent ?? '';
   }
 
   /**
@@ -976,15 +936,6 @@ export class Hud {
     return this.scoreLabel.text;
   }
 
-  /**
-   * The state line under the headline, exactly as the player reads it.
-   *
-   * Exposed for the same reason as the headline: "the plain bubble promises a next stage it can never reach" is a
-   * claim about THIS string, and a probe that re-derived it would pass while the screen said something else.
-   */
-  get sublineText(): string {
-    return this.subline.text;
-  }
 
   /**
    * The debug readout, exactly as the player reads it.
@@ -1130,43 +1081,13 @@ export class Hud {
      * the player to ignore the HUD. What replaced it is the boss bar below, which is the one progress that means
      * something.
      */
-    // The talent is the run's identity line, sharing the subline with the stage and the seed. An empty one shows
-    // nothing at all rather than leaving a dangling separator.
-    const tags = this.talentLabel;
     /**
-     * The stage readout: which tier, and how many more collectables to the next one.
+     * The second resource gets its OWN line, in its own colour.
      *
-     * At the top stage it shows the name alone rather than a fake "complete" bar -- there is nothing left to
-     * earn, and the interesting information becomes the fact that the bubble is now at its slowest.
-     *
-     * A type that does not grow gets neither count. It would sit at "0/12" for a whole run -- a countdown to
-     * something that cannot happen -- and "满" would be worse, because it would say the bubble had finished a
-     * progression it never took part in.
-     */
-    const stageText =
-      (!stage.grows
-        ? `${stage.name} 不成长`
-        : stage.neededForNext === null
-          ? `${stage.name} ${stage.stage}阶 满`
-          : `${stage.name} ${stage.stage}阶 ${stage.absorbedInStage}/${stage.neededForNext}`);
-    /**
-     * The route's name prefixes the whole line once a route is picked. Null before the choice shows nothing --
-     * "base" is where every run starts, and naming it would be noise for the minute it lasts.
-     */
-    const identity = stage.route ? `${stage.route} · ` : '';
-    this.subline.text = tags
-      ? `${identity}${stageText}   ·   ${this.seedLabel}${this.seedLabel ? '   ·   ' : ''}${tags}`
-      : this.seedLabel
-        ? `${identity}${stageText}   ·   ${this.seedLabel}`
-        : `${identity}${stageText}`;
-
-    /**
-     * The second resource gets its OWN line, in its own colour, rather than a slot in the subline.
-     *
-     * The subline was already at the width of a phone before rage existed: adding "怒气 100 失控" to it clipped the
-     * label at BOTH ends, which a screenshot showed and no assertion would have. A line of its own is also the
-     * better answer on its own terms -- it can carry the resource's colour, which is the same colour the bubble is
-     * turning, and it can be empty without leaving a gap in the middle of a sentence.
+     * It could have been a slot in the HUD's centred line, but that line is exactly the width of a phone: adding
+     * "怒气 100 失控" to it clipped the label at BOTH ends, which a screenshot showed and no assertion would have. A
+     * line of its own is also the better answer on its own terms -- it can carry the resource's colour, which is the
+     * same colour the bubble is turning, and it can be empty without leaving a gap in the middle of a sentence.
      */
     if (stage.resource) {
       this.resourceLabel.visible = true;
@@ -1179,9 +1100,6 @@ export class Hud {
       this.resourceGauge.clear();
     }
     this.drawMutationGauge(stage.mutation);
-    // The subline's own colour is put back every frame: the field is shared with the resource's line only in the
-    // sense that both are HUD text, and a stale fill from a previous type would outlive the type change.
-    this.subline.style.fill = 0x7fc4e8;
 
     // The level gauge is gone; the boss bar comes in with the rest of the state.
     //
