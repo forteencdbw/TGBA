@@ -682,15 +682,29 @@ export function paintObstacles(g: Graphics, field: ObstacleField, laneWidth: num
       g.stroke({ color: rim, alpha: 0.7, width: r * 0.12 });
     }
 
-    // Cracks, proportional to the damage taken. Drawn as radial nicks so a fresh crate has none at all.
-    if (damaged > 0.05) {
+    /**
+     * Cracks, proportional to the damage taken. Drawn as radial nicks so a fresh crate has none at all.
+     *
+     * WHERE THEY ARE DRAWN matters once a kind has a picture. A pictured obstacle's sprite is bottom-anchored at the
+     * obstacle's point, so the body sits ABOVE that point; cracks centred on the point therefore hung under the
+     * object instead of crossing it. On a net -- which is damaged every frame it is pushed -- the four nicks at its
+     * anchor read as a small dark star below the mesh. For a pictured kind the nicks are centred on the PICTURE's
+     * middle and sized from the picture, which is also the box the collision and the debug overlay use.
+     *
+     * The net is excluded outright: its damage is a TEAR, not a break, and four slashes say the wrong thing about a
+     * mesh. It still flashes nothing (see the flash pass) and still comes apart.
+     */
+    if (damaged > 0.05 && o.kind !== 'net') {
+      const crackR = variant && texture ? r * variant.scale : r;
+      const crackX = o.x;
+      const crackY = variant && texture ? o.y + crackR * (texture.height / texture.width) : o.y;
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2 + o.id;
-        const outer = r * (0.55 + 0.4 * damaged);
-        g.moveTo(o.x + Math.cos(a) * r * 0.25, o.y + Math.sin(a) * r * 0.25);
-        g.lineTo(o.x + Math.cos(a) * outer, o.y + Math.sin(a) * outer);
+        const outer = crackR * (0.55 + 0.4 * damaged);
+        g.moveTo(crackX + Math.cos(a) * crackR * 0.25, crackY + Math.sin(a) * crackR * 0.25);
+        g.lineTo(crackX + Math.cos(a) * outer, crackY + Math.sin(a) * outer);
       }
-      g.stroke({ color: 0x101820, alpha: 0.5 * damaged, width: r * mech.obstacles.crackWidthRatio });
+      g.stroke({ color: 0x101820, alpha: 0.5 * damaged, width: crackR * mech.obstacles.crackWidthRatio });
     }
   }
 
