@@ -1086,15 +1086,16 @@ export interface Mechanisms {
      */
     trash: { drainPerSecond: number; drainPerHit: number; minGripSeconds: number };
     /**
-     * The eel: how long its BOLTS cost the player their steering.
+     * The eel: how long its touch and its BOLTS leave the player PARALYSED.
      *
-     * `boltShockSeconds` is its rounds landing on the player -- a loss of control the player dodges rather than
-     * eats, now that swallowing is instant. At 0 that source alone is disabled.
+     * `paralysisSeconds` is the duration of the control inversion, and both sources use it: a round landing, and the
+     * player touching the eel's body. The mechanic is the eel's identity -- its damage is deliberately low -- so the
+     * name says what happens rather than what caused it.
      */
     eel: {
-      boltShockSeconds: number;
-      shockColor: number;
-      shockWidthRatio: number;
+      paralysisSeconds: number;
+      paralysisColour: number;
+      paralysisWidthRatio: number;
     };
     /** The rot: what it multiplies the digestion rate by while it is inside. 1 means no effect. */
     /** The oil: the chance a spit attempt gets it out. 0 is a permanent clog, 1 is an ordinary item. */
@@ -3174,7 +3175,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.trash.drainPerHit', check: anyNumber, describe: 'hit points' },
   { path: 'hazards.trash.minGripSeconds', check: anyNumber, describe: 'seconds' },
 
-{ path: 'hazards.eel.boltShockSeconds', check: anyNumber, describe: "seconds between 0 and 10; 0 disables the control loss an eel's bolt causes" },
+{ path: 'hazards.eel.paralysisSeconds', check: anyNumber, describe: "seconds between 0 and 10; 0 disables the control loss an eel's touch or bolt causes" },
   ...['archer', 'pistol', 'puffer', 'starfish'].map((kind) => ({
     path: `hazards.${kind}.driftFactor`,
     check: anyNumber,
@@ -3185,8 +3186,8 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.puffer.spikeCount', check: wholeNumber, describe: 'a whole number of spikes' },
   { path: 'hazards.starfish.volleyCount', check: wholeNumber, describe: 'a whole number of directions' },
   { path: 'hazards.starfish.volleySpinRadians', check: anyNumber, describe: 'radians; 0 means the rosette never turns' },
-  { path: 'hazards.eel.shockColor', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
-  { path: 'hazards.eel.shockWidthRatio', check: anyNumber, describe: 'a stroke width ratio' },
+  { path: 'hazards.eel.paralysisColour', check: (v) => isColour(v), describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.eel.paralysisWidthRatio', check: anyNumber, describe: 'a stroke width ratio' },
   { path: 'hazards.invulnerableSeconds', check: anyNumber, describe: 'a number of 0 or more' },
   /**
    * Consumption. The two per-kind tables are checked for PRESENCE of every hazard kind rather than for any
@@ -4360,7 +4361,7 @@ mech.angry.burst.waveColour = normaliseColour(mech.angry.burst.waveColour as str
 for (const [where, get, set] of [
   ['consumption.marker.edibleColor', () => mech.consumption.marker.edibleColor, (v: number) => (mech.consumption.marker.edibleColor = v)],
   ['suction.fieldColor', () => mech.suction.fieldColor, (v: number) => (mech.suction.fieldColor = v)],
-  ['hazards.eel.shockColor', () => mech.hazards.eel.shockColor, (v: number) => (mech.hazards.eel.shockColor = v)],
+  ['hazards.eel.paralysisColour', () => mech.hazards.eel.paralysisColour, (v: number) => (mech.hazards.eel.paralysisColour = v)],
   ['obstacles.crateColor', () => mech.obstacles.crateColor, (v: number) => (mech.obstacles.crateColor = v)],
   ['obstacles.crateRimColor', () => mech.obstacles.crateRimColor, (v: number) => (mech.obstacles.crateRimColor = v)],
   ['obstacles.coralColor', () => mech.obstacles.coralColor, (v: number) => (mech.obstacles.coralColor = v)],

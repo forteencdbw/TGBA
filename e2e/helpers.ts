@@ -128,8 +128,8 @@ export interface Diagnostics {
     hits: number;
     armed: boolean;
   };
-  /** Lost control, from an electric eel: a property of the PLAYER, whatever caused it. */
-  misfire: { remaining: number; inverted: boolean };
+  /** Paralysis, from an electric eel: a property of the PLAYER, whatever caused it. */
+  paralysis: { remaining: number; inverted: boolean };
   stats: { absorbed: number; hits: number; maxVolume: number; ended: number; newRecord: boolean };
   laneWidthMeters: number;
   lateral: { keyboardSpeed: number; laneWidth: number; crossingSeconds: number };

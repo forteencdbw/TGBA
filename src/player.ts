@@ -81,7 +81,7 @@ export class Player {
     this.slowFactor = 1;
     this.impulseVy = 0;
     this.impulseVx = 0;
-    this.misfireSeconds = 0;
+    this.paralysisSeconds = 0;
   }
 
   /**
@@ -178,7 +178,10 @@ export class Player {
   suctionMoveFactor = 1;
 
   /**
-   * Seconds of LOST CONTROL remaining, from an electric eel inside the stomach.
+   * Seconds of PARALYSIS remaining: the controls are inverted.
+   *
+   * Two things apply it -- an eel's bolt landing and touching the eel's body -- and both come from the same config
+   * duration, because they are the same mechanic.
    *
    * While this is running the LATERAL axis is inverted: push left and the bubble goes right. Nothing else in the
    * game touches the controls, and the design asks for exactly one thing that does ("让气泡短暂失控"), so it lives
@@ -186,26 +189,26 @@ export class Player {
    * code can show it without knowing anything about eels.
    *
    * Only the LATERAL axis, deliberately. The level is a vertical ascent, so inverting the vertical would read as
-   * the LEVEL being broken rather than as the bubble being shocked, and the whole point of the eel is that the
-   * failure is felt as belonging to the player's own hands. Aim is left alone too: the shock breaks steering, not
-   * the ability to fire, or being shocked with a full stomach would be a death sentence with no play in it.
+   * the LEVEL being broken rather than as the bubble being paralysed, and the whole point of the eel is that the
+   * failure is felt as belonging to the player's own hands. Aim is left alone too: the paralysis breaks steering, not
+   * the ability to fire, or being paralysed with a full stomach would be a death sentence with no play in it.
    */
-  misfireSeconds = 0;
+  paralysisSeconds = 0;
 
   /** Whether the controls are currently inverted. */
-  get misfiring(): boolean {
-    return this.misfireSeconds > 0;
+  get paralysed(): boolean {
+    return this.paralysisSeconds > 0;
   }
 
   /**
-   * Take a shock, which EXTENDS rather than replaces one already running.
+   * Apply paralysis, which EXTENDS rather than replaces one already running.
    *
-   * `max` and not an assignment: two eels shocking a quarter of a second apart must not be able to cut each other
-   * short, or eating two would be gentler than eating one.
+   * `max` and not an assignment: two eels paralysing a quarter of a second apart must not be able to cut each other
+   * short, or being touched twice would be gentler than once.
    */
-  applyMisfire(seconds: number): void {
+  applyParalysis(seconds: number): void {
     if (seconds <= 0) return;
-    this.misfireSeconds = Math.max(this.misfireSeconds, seconds);
+    this.paralysisSeconds = Math.max(this.paralysisSeconds, seconds);
   }
 
   /** Apply a slow, taking the stronger of the two if one is already running. */
@@ -245,7 +248,7 @@ export class Player {
       if (Math.abs(this.impulseVy) < 1e-4) this.impulseVy = 0;
       if (Math.abs(this.impulseVx) < 0.005) this.impulseVx = 0;
     }
-    if (this.misfireSeconds > 0) this.misfireSeconds = Math.max(0, this.misfireSeconds - dt);
+    if (this.paralysisSeconds > 0) this.paralysisSeconds = Math.max(0, this.paralysisSeconds - dt);
 
     /**
      * One multiplier for everything the KEYBOARD does, folding in the growth stage and the suction field.
@@ -267,11 +270,11 @@ export class Player {
      * instead of a lurch. Touch does NOT go through this (see the drag below): a finger asks for a distance, not a
      * speed, and there is nothing to coast.
      *
-     * `axisX` is flipped on the way IN when an eel has shocked the bubble, rather than the input itself being
+     * `axisX` is flipped on the way IN when an eel has paralysed the bubble, rather than the input itself being
      * rewritten: the raw axis is what the spit aims with, so inverting it at the source would also make the shots
      * fly backwards. What breaks is the bubble's obedience, and that is what this line is.
      */
-    const axisX = this.misfireSeconds > 0 ? -input.axisX : input.axisX;
+    const axisX = this.paralysisSeconds > 0 ? -input.axisX : input.axisX;
     if (axisX === 0) {
       this.vx -= this.vx * Math.min(lateral.damping * dt, 1);
       if (Math.abs(this.vx) < lateral.stopSpeed) this.vx = 0;
@@ -302,11 +305,11 @@ export class Player {
      *
      * `penaltiesApply` is the one exception, and it is off by default: see `config/mechanics.json5`. The eel's
      * inversion is not a penalty and applies either way -- it inverts the LATERAL axis only, which on a phone is
-     * the drag, and losing obedience is the whole point of being shocked.
+     * the drag, and losing obedience is the whole point of being paralysed.
      */
     const drag = input.consumeDrag();
     const dragScale = mech.movement.drag.sensitivity * (mech.movement.drag.penaltiesApply ? steer * this.slowMultiplier : 1);
-    const dragX = this.misfireSeconds > 0 ? -drag.x : drag.x;
+    const dragX = this.paralysisSeconds > 0 ? -drag.x : drag.x;
     this.x += dragX * dragScale;
     this.screenY += drag.y * dragScale;
 

@@ -4319,7 +4319,7 @@ private updateBoss(): void {
     }
 
     /**
-     * Shocked by an eel: a jagged ring flickering around the bubble.
+     * Paralysed by an eel: a jagged ring flickering around the bubble.
      *
      * ---------------------------------------------------------------------------------------------
      * WHY THIS ONE MATTERS MORE THAN THE OTHER CUES
@@ -4332,8 +4332,8 @@ private updateBoss(): void {
      * Drawn as a polygon rather than a circle because a smooth ring reads as a status effect and a JAGGED one reads
      * as electricity -- the same reason the urchin is drawn as needles: silhouette first, colour second.
      */
-    if (this.run.player.misfiring) {
-      const colour = mech.hazards.eel.shockColor;
+    if (this.run.player.paralysed) {
+      const colour = mech.hazards.eel.paralysisColour;
       const strobe = 0.45 + 0.55 * Math.abs(Math.sin(this.run.elapsed * 34));
       const points: number[] = [];
       const steps = 22;
@@ -4345,13 +4345,13 @@ private updateBoss(): void {
       }
       points.push(points[0]!, points[1]!);
       g.poly(points);
-      g.stroke({ color: colour, alpha: strobe * alpha, width: radius * mech.hazards.eel.shockWidthRatio });
+      g.stroke({ color: colour, alpha: strobe * alpha, width: radius * mech.hazards.eel.paralysisWidthRatio });
       // A few bolts off the rim, so it reads as discharge rather than as a decorative outline.
       for (let i = 0; i < 3; i++) {
         const a = this.run.elapsed * 5 + (i / 3) * Math.PI * 2;
         g.moveTo(worldX + Math.cos(a) * radius * 1.3, worldY + Math.sin(a) * radius * 1.3)
           .lineTo(worldX + Math.cos(a + 0.35) * radius * 1.75, worldY + Math.sin(a + 0.35) * radius * 1.75)
-          .stroke({ color: colour, alpha: 0.7 * strobe * alpha, width: radius * mech.hazards.eel.shockWidthRatio * 0.6 });
+          .stroke({ color: colour, alpha: 0.7 * strobe * alpha, width: radius * mech.hazards.eel.paralysisWidthRatio * 0.6 });
       }
     }
 

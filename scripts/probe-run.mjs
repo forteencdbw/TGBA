@@ -136,6 +136,18 @@ try {
     ], [1, row.coreColour, row.rimColour]);
   }
 
+  // --- the eel's body paralyses: the mechanic is the controls, not the damage
+  {
+    const r = new Run();
+    r.phase = 'playing';
+    r.resetHealth();
+    r.hazards.hazards.push(r.makeHazard(world(r), 'eel', r.player.x * LANE, r.player.y));
+    r.invulnerable = 0;
+    r.resolveHazards(1 / 120, 0, 800, LANE, world(r), input());
+    check('eel body · low damage', r.health, r.healthMax - mech.hazards.contactDamage.eel);
+    check('eel body · and it paralyses', r.player.paralysed, true);
+  }
+
   // --- stepping the water moves the creatures, and a run can do it for five seconds
   {
     const r = new Run();

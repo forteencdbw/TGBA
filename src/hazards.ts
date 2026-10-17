@@ -214,6 +214,13 @@ export interface HazardEffect {
   /** Seconds of movement penalty to apply. */
   slowSeconds?: number;
   slowFactor?: number;
+  /**
+   * Seconds of PARALYSIS to apply: the controls are inverted for that long.
+   *
+   * The eel's two sources -- its body and its bolts -- are the only users. It is an effect rather than a direct call
+   * into the player because the field reports what touched what and the run owns the player.
+   */
+  paralysisSeconds?: number;
   /** Downward/upward world velocity to impose, in m/s. */
   impulse?: number;
   /** Ongoing drain, applied per second while the flag stays set. */
@@ -919,7 +926,7 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
    * Electric chartreuse, and nothing else in the game is that hue.
    *
    * The eel is the only creature whose effect is about the CONTROLS rather than about the bubble, so it gets the
-   * one colour that appears nowhere else -- a player who has been shocked once will read that colour again from
+   * one colour that appears nowhere else -- a player who has been paralysed once will read that colour again from
    * across the screen, which is what makes it avoidable rather than random.
    */
   eel: { radius: 0.058, colour: 0xc8f24a, spin: 0.3 },
@@ -1700,6 +1707,23 @@ function contactPlain(_field: HazardField, h: Hazard, ctx: HazardContext, effect
   return;
 }
 
+/**
+ * The eel's body: a low-damage touch that PARALYSES.
+ *
+ * Its bulk is not what it costs you -- the controls are. The duration is the same config number a bolt uses, so
+ * touching the eel and being shot by it are one mechanic rather than two that happen to look alike.
+ */
+function contactEel(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+  if (ctx.invulnerable) return;
+  effects.push({
+    kind: h.kind,
+    damage: contactDamageOf(h.kind),
+    paralysisSeconds: mech.hazards.eel.paralysisSeconds,
+    broke: false,
+  });
+  return;
+}
+
 function contactShrimp(_field: HazardField, _h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
   if (ctx.invulnerable) return;
   effects.push({ kind: 'shrimp', damage: contactDamageOf('shrimp'), broke: false });
@@ -1812,7 +1836,7 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   crab: contactCrab,
   urchin: contactPlain,
   bombfish: contactPlain,
-  eel: contactPlain,
+  eel: contactEel,
   angler: contactPlain,
   torpedo: contactPlain,
   boss: contactBoss,

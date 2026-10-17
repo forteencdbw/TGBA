@@ -133,7 +133,7 @@ export function diagnosticsOf(g: GameSnapshot): {
      * Reported as its own top-level fact rather than under `stomach`, because what it describes is a property of
      * the PLAYER: the steering is inverted right now, whatever the reason was.
      */
-    misfire: { remaining: number; inverted: boolean };
+    paralysis: { remaining: number; inverted: boolean };
     trashDrain: number;
     maxGripSeconds: number;
     emergence: {
@@ -354,7 +354,7 @@ export function diagnosticsOf(g: GameSnapshot): {
         /** How many rows the gun fires: what the 枪管 cards move, one row at a time. */
         gunStreams: g.gunStreams,
       },
-      misfire: { remaining: +g.player.misfireSeconds.toFixed(3), inverted: g.player.misfiring },
+      paralysis: { remaining: +g.player.paralysisSeconds.toFixed(3), inverted: g.player.paralysed },
       /** The obstacles, so a probe reads the state rather than inferring it from what is on screen. */
       obstacles: {
         active: g.obstacles.count,

@@ -781,19 +781,18 @@ export class Run {
           if (this.phase !== 'playing') return;
         }
         /**
-         * AN ELECTRIC ROUND TAKES THE CONTROLS WITH IT.
+         * AN ELECTRIC ROUND PARALYSES: it takes the controls with it.
          *
-         * The eel is the creature whose cost is paid by the player's hands, and until now the only way to pay it was
-         * to swallow one -- so the mechanic was invisible to anyone who left the eels alone, and invisible in the one
-         * moment it should have been loudest, the moment the discharge leaves. Being shot by the discharge is being
-         * shocked, so it reverses the steering for `boltShockSeconds`.
+         * The eel is the creature whose cost is paid by the player's hands, and being shot by the discharge is being
+         * paralysed -- the same effect as touching the eel's body. Its damage is deliberately low; the inversion is
+         * the point.
          *
-         * The same `applyMisfire` the stomach uses, so the two combine the way two eels already do -- by EXTENDING
-         * rather than replacing (see `Player.applyMisfire`) -- and the bubble wears the same jagged ring either way.
-         * Only the eel's rounds do this, and the round's own `kind` is what says so: a second shooter that happens to
-         * fire something electric would have to ask for it here rather than inherit it.
+         * The same `applyParalysis` the body contact uses, so the two combine the way two hits already do -- by
+         * EXTENDING rather than replacing (see `Player.applyParalysis`) -- and the bubble wears the same jagged ring
+         * either way. Only the eel's rounds do this, and the round's own `kind` is what says so: a second shooter that
+         * happens to fire something electric would have to ask for it here rather than inherit it.
          */
-        if (kind === 'eel') this.player.applyMisfire(mech.hazards.eel.boltShockSeconds);
+        if (kind === 'eel') this.player.applyParalysis(mech.hazards.eel.paralysisSeconds);
       }
     }
     /**
@@ -1215,6 +1214,14 @@ export class Run {
         this.player.applySlow(e.slowSeconds, e.slowFactor);
         this.sound('player.slow');
       }
+      /**
+       * A contact that PARALYSES: the eel's body.
+       *
+       * The field reports the duration rather than calling the player itself, for the same reason it reports damage:
+       * the run owns the player. A bolt's landing takes the direct path above because it arrives from the bullet
+       * field, not from a contact effect; both read the same config number.
+       */
+      if (e.paralysisSeconds) this.player.applyParalysis(e.paralysisSeconds);
       if (e.impulse) {
         /**
          * A crab launches the bubble UP THE SCREEN, not up the level.
