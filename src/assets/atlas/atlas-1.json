@@ -338,14 +338,14 @@
     },
     "失控鱼雷.png": {
       "frame": {
-        "h": 11,
+        "h": 12,
         "w": 42,
         "x": 169,
         "y": 637
       },
       "rotated": false,
       "sourceSize": {
-        "h": 11,
+        "h": 12,
         "w": 42
       },
       "trimmed": false
@@ -1250,8 +1250,8 @@
       "frame": {
         "h": 12,
         "w": 12,
-        "x": 1293,
-        "y": 329
+        "x": 215,
+        "y": 637
       },
       "rotated": false,
       "sourceSize": {
@@ -1320,8 +1320,8 @@
       "frame": {
         "h": 12,
         "w": 12,
-        "x": 1293,
-        "y": 345
+        "x": 231,
+        "y": 637
       },
       "rotated": false,
       "sourceSize": {
@@ -1950,8 +1950,8 @@
       "frame": {
         "h": 12,
         "w": 12,
-        "x": 1266,
-        "y": 398
+        "x": 247,
+        "y": 637
       },
       "rotated": false,
       "sourceSize": {
@@ -3178,8 +3178,8 @@
         "sha256": "fd5b8fdf2814f9f6140cdfe58a0b7e5a53397ed4e13be92abce7c364812a81e1"
       },
       "失控鱼雷.png": {
-        "bytes": 672,
-        "sha256": "b9edecc81bb274d0e1a8e132294d2fccc0bfde958024eec9cb57c052708a7450"
+        "bytes": 943,
+        "sha256": "576ad5ca3a5c79cfd5afb28ee7eca8d9928676edbee23fe87b6b158872da48e9"
       },
       "寄居沉船章鱼-attack-1.png": {
         "bytes": 36702,
@@ -3958,7 +3958,7 @@
         "sha256": "356ae26b7afe3f17806ecbb04da1fe86f8cf9277039fa881ebc2f6d71739fc33"
       }
     },
-    "textureBytes": 1487888,
+    "textureBytes": 1490192,
     "version": "1.0"
   }
 }
