@@ -1600,7 +1600,7 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
  *   - the REVERSAL, first: a creature the player can eat is swallowed instead, and its contact rule never runs;
  *   - a creature that is LEAVING cannot hurt anyone, which is the whole point of driving it off.
  *
- * `contactPlain` is shared by seven kinds on purpose and not by accident: being ordinary contact damage is the rule for
+ * `contactPlain` is shared by nine kinds on purpose and not by accident: being ordinary contact damage is the rule for
  * a negative food below its tier, and the consequence that makes it interesting is INSIDE (see `stomachEffect`).
  *
  * ---------------------------------------------------------------------------------------------
@@ -1617,9 +1617,11 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
  * (both `h.flee`), the crab's `fired`, the trash bag's grip. Those are verbs; the shove was bookkeeping.
  */
 type ContactEffect = (field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]) => void;
-function contactFish(_field: HazardField, _h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
+function contactFish(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
   if (ctx.invulnerable) return;
-  effects.push({ kind: 'fish', damage: 1, broke: false });
+  // The name says `fish` because touching a tuna and touching a fish are the same EVENT -- one shared look and
+  // sound. The PRICE is the creature's own row, so a shark costs what the table says a shark costs.
+  effects.push({ kind: 'fish', damage: contactDamageOf(h.kind), broke: false });
   return;
 }
 
@@ -1667,7 +1669,7 @@ function contactCrab(_field: HazardField, h: Hazard, _ctx: HazardContext, effect
 
 function contactPlain(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
   if (ctx.invulnerable) return;
-  effects.push({ kind: h.kind, damage: 1, broke: false });
+  effects.push({ kind: h.kind, damage: contactDamageOf(h.kind), broke: false });
   return;
 }
 
@@ -1752,7 +1754,7 @@ function contactVent(_field: HazardField, h: Hazard, ctx: HazardContext, effects
 function contactMineral(_field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
   if (ctx.invulnerable) return;
   // Grit hurts, and it is SPENT by the hit rather than bouncing off: a particle is not a creature.
-  effects.push({ kind: 'mineral', damage: 1, broke: true });
+  effects.push({ kind: 'mineral', damage: contactDamageOf('mineral'), broke: true });
   h.flee = 'up';
   return;
 }
@@ -1788,8 +1790,7 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   torpedo: contactPlain,
   boss: contactBoss,
   // Touching any boss is the same event as touching the old one -- `contactBoss` is what makes the contact damage come
-  // out of the kind's own dossier (`hazards.bosses.<kind>.contactDamage`) instead of a shared constant, so six rows
-  // are still one rule.
+  // out of the kind's own row of `hazards.contactDamage` instead of a shared constant, so six rows are still one rule.
   'boss-crab': contactBoss,
   'boss-octopus': contactBoss,
   'boss-jelly': contactBoss,
@@ -1802,7 +1803,8 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   foam: contactFoam,
   rain: contactRain,
   // THE GUNNERS: touching one is the same event as touching an eel -- a bite from a thing whose real threat
-  // is already in the water. The plain rule (1 damage, and nothing else) is the whole of it.
+  // is already in the water. The plain rule (the kind's own row of the damage table, and nothing else) is the whole
+  // of it.
   archer: contactPlain,
   pistol: contactPlain,
   puffer: contactPlain,
