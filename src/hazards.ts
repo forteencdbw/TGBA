@@ -3612,8 +3612,42 @@ const ART_SEEN = new Map<number, number>();
  * exception in its own map means the generic branch keeps its one-sprite rule instead of growing a nullable second
  * member that every other creature would have to ignore.
  */
-const VENT_ART = new Map<number, { base: Sprite; flame: Sprite }>();
+const VENT_ART = new Map<number, { base: Sprite; flame: Sprite; mask: Sprite | null }>();
 const VENT_SEEN = new Map<number, number>();
+
+/**
+ * The gradient that fades the flame's tip, built once and shared by every vent.
+ *
+ * The source render reaches the top edge of its frame, so the pixelated texture ends in a flat cut; a mask with a
+ * smoothstep alpha ramp over the last `tipFadeFraction` of the height turns that cut into a flame that thins out.
+ * One pixel wide because the ramp is purely vertical: the mask is stretched to the flame's width by its sprite.
+ */
+let VENT_TIP_MASK: Texture | null = null;
+let VENT_TIP_MASK_BUILT = false;
+
+function ventTipMaskTexture(): Texture | null {
+  if (VENT_TIP_MASK_BUILT) return VENT_TIP_MASK;
+  VENT_TIP_MASK_BUILT = true;
+  // The painter runs in a browser; the guard is for probes that import this module under Node.
+  if (typeof document === 'undefined') return null;
+  const fade = Math.max(0, Math.min(1, mech.hazards.vent.tipFadeFraction));
+  const height = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  for (let y = 0; y < height; y++) {
+    // 0 at the very top of the texture, 1 below the fade band.
+    const fromTop = y / (height - 1);
+    const t = fade <= 0 ? 1 : Math.max(0, Math.min(1, fromTop / fade));
+    const alpha = t * t * (3 - 2 * t);
+    context.fillStyle = `rgba(255,255,255,${alpha})`;
+    context.fillRect(0, y, 1, 1);
+  }
+  VENT_TIP_MASK = Texture.from(canvas);
+  return VENT_TIP_MASK;
+}
 /** A monotonic clock for the sweep, set by the painter on each pass. */
 let ART_NOW = 0;
 
@@ -4073,6 +4107,8 @@ function pruneVentSprites(): void {
     if (now - (VENT_SEEN.get(id) ?? 0) > ART_SPRITE_TTL_SECONDS) {
       pair.base.destroy();
       pair.flame.destroy();
+      // The mask's texture is shared, so destroy the sprite but not the gradient.
+      pair.mask?.destroy({ texture: false, textureSource: false });
       VENT_ART.delete(id);
       VENT_SEEN.delete(id);
     }
@@ -4984,6 +5020,7 @@ function paintVentArt(g: Graphics, h: Hazard, laneWidth: number): boolean {
   const baseTexture = assetTextureNow(cfg.art.base);
   const animation = mech.animations[cfg.art.flame];
   const frames = animation ? animationTextures(cfg.art.flame) : null;
+  const maskTexture = ventTipMaskTexture();
   const existing = VENT_ART.get(h.id);
   if (!baseTexture || !animation || !frames) {
     // No picture: hide whatever this slot held last, and let the drawn vent stand in. See the `ART_SPRITES` note.
@@ -4999,6 +5036,13 @@ function paintVentArt(g: Graphics, h: Hazard, laneWidth: number): boolean {
     const flame = new Sprite();
     flame.anchor.set(0.5, 1);
     flame.eventMode = 'none';
+    const mask = maskTexture ? new Sprite(maskTexture) : null;
+    if (mask) {
+      mask.anchor.set(0.5, 1);
+      mask.eventMode = 'none';
+      // The mask is not drawn, but it lives in the same parent so its transform can be the flame's.
+      flame.mask = mask;
+    }
     const base = new Sprite();
     base.anchor.set(0.5, 0.5);
     base.eventMode = 'none';
@@ -5006,10 +5050,11 @@ function paintVentArt(g: Graphics, h: Hazard, laneWidth: number): boolean {
     if (parent) {
       const at = Math.max(0, parent.getChildIndex(g));
       parent.addChildAt(flame, at);
-      // Inserted second, so it is ABOVE the flame and still below the painter's layer.
+      if (mask) parent.addChildAt(mask, at);
+      // Inserted last, so it is ABOVE the flame and still below the painter's layer.
       parent.addChildAt(base, at);
     }
-    pair = { base, flame };
+    pair = { base, flame, mask };
     VENT_ART.set(h.id, pair);
   }
   VENT_SEEN.set(h.id, ART_NOW);
@@ -5088,6 +5133,16 @@ function paintVentArt(g: Graphics, h: Hazard, laneWidth: number): boolean {
   pair.flame.alpha = alpha * departing;
   pair.flame.tint = 0xffffff;
   pair.flame.scale.set(flameWidth / Math.max(1, frame.width), ySign * (flameHeight / Math.max(1, frame.height)));
+  /**
+   * The tip mask shares the flame's transform exactly, so the gradient's top row lands on the flame's top row.
+   * Its own width is one pixel; the scale stretches that one column across the flame.
+   */
+  if (pair.mask && maskTexture) {
+    pair.mask.x = h.x;
+    pair.mask.y = h.y;
+    pair.mask.rotation = angle;
+    pair.mask.scale.set(flameWidth / Math.max(1, maskTexture.width), ySign * (flameHeight / Math.max(1, maskTexture.height)));
+  }
   return true;
 }
 
