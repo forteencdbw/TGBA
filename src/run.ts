@@ -1153,6 +1153,29 @@ export class Run {
         continue;
       }
       /**
+       * The octopus's two summoning skills.
+       *
+       * The boss reports WHAT and WHERE (the effect carries the visible top and the lane width), and the run owns the
+       * hazard array. Both skills reuse existing kinds unchanged: the crates are the level's `fallcrate` and start in
+       * its warning phase, and the ink cloud is a hazard whose first half-second is the blob in flight.
+       */
+      if (e.summonCrates) {
+        for (let column = 0; column < 3; column++) {
+          if (column === e.summonCrates.openColumn) continue;
+          const x = (e.summonCrates.laneWidth * (column * 2 + 1)) / 6;
+          this.hazards.hazards.push(this.hazards.spawnAt('fallcrate', x, e.summonCrates.topY));
+        }
+        continue;
+      }
+      if (e.inkThrow) {
+        this.hazards.hazards.push(
+          this.hazards.spawnAt('ink', e.inkThrow.toX, e.inkThrow.toY, {
+            inkFrom: { x: e.inkThrow.fromX, y: e.inkThrow.fromY },
+          }),
+        );
+        continue;
+      }
+      /**
        * THE REVERSAL, handled before anything else.
        *
        * An `eaten` effect carries no damage, so this cannot conflict with the branches below -- but it is checked
@@ -1258,7 +1281,9 @@ export class Run {
       }
       if (e.slowSeconds && e.slowFactor) {
         this.player.applySlow(e.slowSeconds, e.slowFactor);
-        this.sound('player.slow');
+        // The ink cloud re-issues its slow every frame it overlaps, so a cue here would retrigger continuously. The
+        // cloud itself is the cue; the jelly's one-shot contact keeps its sting.
+        if (e.kind !== 'ink') this.sound('player.slow');
       }
       /**
        * A contact that PARALYSES: the eel's body.

@@ -238,19 +238,19 @@ export interface BossDossier {
    */
   /** Seconds between the end of one swing and the start of the next. */
   attackEverySeconds: number;
-  /** Which frame of `animations.boss-attack` throws the grit -- the frame where the claw has just snapped shut. */
+  /** Which frame of the attack animation releases the payload -- grit or a skill. */
   attackSprayFrame: number;
   /** How many pieces of grit leave the claw in one swing. */
-  attackSprayCount: number;
+  attackSprayCount?: number;
   /** The width the pieces are spread over, as a fraction of the lane, centred on the player's aim point. */
-  attackSpraySpread: number;
+  attackSpraySpread?: number;
   /** How far the grit takes to reach its target, in seconds. This is the dodge window. */
-  attackSpraySeconds: number;
+  attackSpraySeconds?: number;
   /** Where the claw is, relative to the boss's own radius: +x is its front, -y is below it. */
-  attackSprayFromX: number;
-  attackSprayFromY: number;
+  attackSprayFromX?: number;
+  attackSprayFromY?: number;
   /** Bow of each piece's curve, as a fraction of the distance travelled. 0 is a straight line. */
-  attackSprayBowRatio: number;
+  attackSprayBowRatio?: number;
 }
 
 export interface Mechanisms {
@@ -803,6 +803,14 @@ export interface Mechanisms {
      * 终于有地方可写——而**第一版六份值是一模一样的**，那是有意的：拆分必须先证明"行为没变"，再谈各不相同。
      */
     bosses: Record<string, BossDossier>;
+    /**
+     * Bosses that use a SKILL SET instead of the claw fan.
+     *
+     * A key here means "this boss chooses one of ink / crates / ring on each attack instead of spraying grit". The
+     * claw fan's five optional fields in `BossDossier` are what the others keep; a row in this table replaces them.
+     * The three skills themselves are fixed; only the ring's shape is per boss.
+     */
+    bossSkills: Record<string, { ringCount: number; ringRotationRadians: number }>;
     /** LEVEL 1's signature: the black smoker's lethal column. */
     vent: {
       /** The rock standing inside the lane against a wall. Always lethal, whether or not the plume is up. */
@@ -947,6 +955,23 @@ export interface Mechanisms {
       pushMeters: number;
       colour: number;
       lengthRatio: number;
+    };
+    /** LEVEL 2 BOSS: the ink cloud's throw, lifetime and slow. */
+    ink: {
+      /** Seconds of flight before the cloud lands. */
+      throwSeconds: number;
+      /** Seconds the cloud lasts after landing. */
+      lifeSeconds: number;
+      /** Seconds of fade after the life runs out. */
+      fadeSeconds: number;
+      slowFactor: number;
+      /** How often the slow is re-issued while the bubble is inside; also how long it outlives the exit. */
+      slowRefreshSeconds: number;
+      /** Radius of the blob in flight, as a fraction of the cloud's radius. */
+      throwRadiusRatio: number;
+      colour: number;
+      rimColour: number;
+      alpha: number;
     };
     /** LEVEL 2: a crate that drops from the top after a telegraphed warning. */
     fallcrate: {
@@ -2405,7 +2430,7 @@ function isNumberTable(v: unknown): v is Record<string, number> {
  * boss would otherwise need its kind name spelled in two languages -- and forgetting the second one is exactly the
  * failure this file is built to make loud rather than quiet.
  */
-function bossRules(prefix: string): { path: string; check: (v: unknown) => boolean; describe: string }[] {
+function bossRules(prefix: string, skills = false): { path: string; check: (v: unknown) => boolean; describe: string }[] {
   return [
     { path: `${prefix}.patrolCenterRatio`, check: anyNumber, describe: 'a fraction of the visible band; where the vertical patrol is centred' },
     { path: `${prefix}.patrolVerticalAmplitudeRatio`, check: anyNumber, describe: 'a fraction of the visible band; how far the vertical patrol rises and falls' },
@@ -2424,12 +2449,17 @@ function bossRules(prefix: string): { path: string; check: (v: unknown) => boole
     { path: `${prefix}.knockbackScale`, check: anyNumber, describe: 'a multiplier on hitKnockback.meters; the boss holds station, so 0.5 is a nudge rather than a shove' },
     { path: `${prefix}.attackEverySeconds`, check: anyNumber, describe: 'seconds between claw swings' },
     { path: `${prefix}.attackSprayFrame`, check: wholeNumber, describe: 'a frame number of the attack animation' },
-    { path: `${prefix}.attackSprayCount`, check: wholeNumber, describe: 'a whole number of grit pieces; 0 makes the swing a pure animation' },
-    { path: `${prefix}.attackSpraySpread`, check: anyNumber, describe: 'a lane fraction' },
-    { path: `${prefix}.attackSpraySeconds`, check: anyNumber, describe: 'seconds of travel; this is the dodge window, so short is unfair and long is harmless' },
-    { path: `${prefix}.attackSprayFromX`, check: anyNumber, describe: 'a multiple of the boss radius' },
-    { path: `${prefix}.attackSprayFromY`, check: anyNumber, describe: 'a multiple of the boss radius; negative is below the body, which is where a claw is' },
-    { path: `${prefix}.attackSprayBowRatio`, check: anyNumber, describe: 'a bow as a fraction of the distance travelled' },
+    // A boss in `hazards.bossSkills` has no claw fan, so its spray numbers are not required at all.
+    ...(skills
+      ? []
+      : [
+          { path: `${prefix}.attackSprayCount`, check: (v: unknown) => v === undefined || wholeNumber(v), describe: 'a whole number of grit pieces; 0 makes the swing a pure animation' },
+          { path: `${prefix}.attackSpraySpread`, check: (v: unknown) => v === undefined || anyNumber(v), describe: 'a lane fraction' },
+          { path: `${prefix}.attackSpraySeconds`, check: (v: unknown) => v === undefined || anyNumber(v), describe: 'seconds of travel; this is the dodge window, so short is unfair and long is harmless' },
+          { path: `${prefix}.attackSprayFromX`, check: (v: unknown) => v === undefined || anyNumber(v), describe: 'a multiple of the boss radius' },
+          { path: `${prefix}.attackSprayFromY`, check: (v: unknown) => v === undefined || anyNumber(v), describe: 'a multiple of the boss radius; negative is below the body, which is where a claw is' },
+          { path: `${prefix}.attackSprayBowRatio`, check: (v: unknown) => v === undefined || anyNumber(v), describe: 'a bow as a fraction of the distance travelled' },
+        ]),
   ];
 }
 
@@ -2445,6 +2475,12 @@ function bossDossierKinds(): string[] {
   const hazards = (parsed as { hazards?: { bosses?: Record<string, unknown> } } | null)?.hazards;
   const bosses = hazards?.bosses;
   return bosses && typeof bosses === 'object' ? Object.keys(bosses) : [];
+}
+
+/** The boss kinds that declare a skill set instead of the claw fan. Read from the file, like `bossDossierKinds`. */
+function bossSkillKinds(): string[] {
+  const skills = (parsed as { hazards?: { bossSkills?: Record<string, unknown> } } | null)?.hazards?.bossSkills;
+  return skills && typeof skills === 'object' ? Object.keys(skills) : [];
 }
 
 function popupRules(prefix: string): { path: string; check: (v: unknown) => boolean; describe: string }[] {
@@ -3114,6 +3150,15 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hazards.rain.pushMeters', check: anyNumber, describe: 'metres' },
   { path: 'hazards.rain.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   { path: 'hazards.rain.lengthRatio', check: anyNumber, describe: 'a fraction of the lane width' },
+  { path: 'hazards.ink.throwSeconds', check: anyNumber, describe: 'seconds of flight before the cloud lands' },
+  { path: 'hazards.ink.lifeSeconds', check: anyNumber, describe: 'seconds the cloud lasts after landing' },
+  { path: 'hazards.ink.fadeSeconds', check: anyNumber, describe: 'seconds of fade after the life runs out' },
+  { path: 'hazards.ink.slowFactor', check: anyNumber, describe: 'a multiplier on movement speed inside the cloud' },
+  { path: 'hazards.ink.slowRefreshSeconds', check: anyNumber, describe: 'seconds the slow outlives the bubble leaving the cloud' },
+  { path: 'hazards.ink.throwRadiusRatio', check: anyNumber, describe: 'a fraction of the cloud radius' },
+  { path: 'hazards.ink.colour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.ink.rimColour', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
+  { path: 'hazards.ink.alpha', check: anyNumber, describe: 'an opacity' },
   { path: 'hazards.fallcrate.warnSeconds', check: anyNumber, describe: 'seconds of telegraph before the crate is released' },
   { path: 'hazards.fallcrate.fallSpeedFactor', check: anyNumber, describe: 'lane widths per second' },
   { path: 'hazards.fallcrate.warnStripHeightRatio', check: anyNumber, describe: 'a fraction of the lane width' },
@@ -3365,7 +3410,23 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'angry.look.inner', check: isColour, describe: 'a colour, either 0xrrggbb or "#rrggbb"' },
   // The boss dossiers, expanded: the tombstone's row, then one per kind the file declares.
   ...bossRules('hazards.boss'),
-  ...bossDossierKinds().flatMap((kind) => bossRules(`hazards.bosses.${kind}`)),
+  ...bossDossierKinds().flatMap((kind) => bossRules(`hazards.bosses.${kind}`, bossSkillKinds().includes(kind))),
+  {
+    path: 'hazards.bossSkills',
+    check: (v) => {
+      if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+      const bosses = readRaw('hazards.bosses');
+      const kinds = bosses && typeof bosses === 'object' && !Array.isArray(bosses) ? (bosses as Record<string, unknown>) : {};
+      return Object.entries(v as Record<string, unknown>).every(([kind, row]) => {
+        // A key that is not a declared boss would be a skill table that quietly never runs.
+        if (!(kind in kinds)) return false;
+        if (row === null || typeof row !== 'object' || Array.isArray(row)) return false;
+        const r = row as Record<string, unknown>;
+        return typeof r.ringCount === 'number' && Number.isFinite(r.ringCount) && typeof r.ringRotationRadians === 'number' && Number.isFinite(r.ringRotationRadians);
+      });
+    },
+    describe: 'an object of boss kind -> { ringCount, ringRotationRadians }; only bosses that use the three-skill set appear here',
+  },
   { path: 'chargeTrail.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string to disable it' },
   { path: 'chargeTrail.columns', check: wholeNumber, describe: 'whole columns' },
   { path: 'chargeTrail.rows', check: wholeNumber, describe: 'whole rows' },

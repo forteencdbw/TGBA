@@ -974,6 +974,8 @@
       "tube": 3,
       // 下落木箱：预警 2 秒后砸下，拿走的是"这一列现在不能待"——它是一次强制改道，不是一条命。
       "fallcrate": 3,
+      // 墨雾：它不伤人，但把"怎么走"这件事的成本抬高了——和水母/雨同档。
+      "ink": 2,
 
       // ---- BOSS：关卡不在刷怪表里放它（它由关卡自己的 `boss` 字段登场），所以这几行**不会出现在曲线里**。
       // 写它们是为了让"每个种类都必须有一行"这条检查不需要第三个"哪些算 BOSS"的判断——
@@ -1352,7 +1354,11 @@
 
       // **海星**：弹幕型。这一行只定**节奏**（每 2.5 秒一轮）和弹速；一轮打几发、往哪转
       // 是 hazards.starfish 的事——齐射的方向是固定的星形，不瞄人。
-      "starfish": { "perSecond": 0.4, "speedPerSecond": 0.3, "spread": 1, "spreadRadians": 0, "damage": 20, "shape": "bolt" }
+      "starfish": { "perSecond": 0.4, "speedPerSecond": 0.3, "spread": 1, "spreadRadians": 0, "damage": 20, "shape": "bolt" },
+
+      // **章鱼 BOSS 的环弹**：`perSecond: 0` = 不参与自动瞄准射击；这一行只给环弹提供速度、伤害与外形。
+      // 一圈几发、每轮转多少，在 `hazards.bossSkills['boss-octopus']`。
+      "boss-octopus": { "perSecond": 0, "speedPerSecond": 0.3, "spread": 1, "spreadRadians": 0, "damage": 20, "shape": "bolt", "coreColour": 0xe0c6ff, "rimColour": 0x8a4fff }
     },
 
     // 开火距离的上限（米）。超出就**按住**扳机而不是攒着。
@@ -2371,6 +2377,8 @@
       "torpedo": 0.036,
       "zapper": 0.058,
       "rain": 0.014,
+      // 墨雾：Boss 技能生成的区域，半径要足够大才像一片雾。
+      "ink": 0.3,
       // 下落木箱：与场景木箱同尺寸（场景那边是 `obstacles.radius.crate`），所以看起来就是同一种箱子。
       "fallcrate": 0.075,
       "eel": 0.058,
@@ -2468,6 +2476,8 @@
       "bombfish": 50,
       // 下落木箱：50 点，和炸弹鱼同档；它是一块木头，而且下落途中一直可以打。
       "fallcrate": 50,
+      // 墨雾：不能被打，0 = 子弹直接穿过。
+      "ink": 0,
       // BOSS 的血量在**关卡**里给（见 config/levels.json5 的 boss.health）：同一只 BOSS 在第二关可以更厚，
       // 那是关卡强度，不是机制。这里留一行是为了让"每种危险物一行"这条约定继续成立。
       "boss": 0,
@@ -2537,6 +2547,8 @@
       "puffer": 20,
       // 下落木箱：和普通鱼/障碍同档。
       "fallcrate": 20,
+      // 墨雾：不造成接触伤害，只减速。
+      "ink": 0,
 
       // 电鳗：**撞上本体也会麻痹**（两轴操作反向），所以伤害只给环境档的 10——它的代价在操作，不在掉血。
       "eel": 10,
@@ -3028,6 +3040,31 @@
     },
 
     // ---------------------------------------------------------------------------------------------
+    // 第二关 BOSS：墨汁
+    // ---------------------------------------------------------------------------------------------
+    //
+    // 墨团先飞 `throwSeconds`，落地后成雾。雾本身是一个 0 血、0 伤害的 hazard：它在 `WORLD_BOUND_KINDS`
+    // 里，所以随相机卷动向下漂；玩家在雾的判定圈内时，每帧续一次减速，离开后 `slowRefreshSeconds` 秒恢复。
+    "ink": {
+      // 墨团飞行时间：这就是玩家看到它在飞、可以走开的反应时间。
+      "throwSeconds": 0.5,
+      // 雾持续多久（秒）。
+      "lifeSeconds": 4.5,
+      // 寿命结束后淡出的时间。
+      "fadeSeconds": 0.35,
+      // 雾内移动速度倍率：0.4 = 只剩四成速度。
+      "slowFactor": 0.4,
+      // 每帧续减速的时长，也是离开雾后恢复的时间。
+      "slowRefreshSeconds": 0.2,
+      // 墨团在飞行中的大小，相对雾的半径。
+      "throwRadiusRatio": 0.18,
+      // 近乎黑的墨色，加一圈很暗的紫边，免得在深色水里完全看不见。
+      "colour": 0x07070b,
+      "rimColour": 0x4a3560,
+      "alpha": 0.92
+    },
+
+    // ---------------------------------------------------------------------------------------------
     // 第三关：电击水母（发光水母林）
     // ---------------------------------------------------------------------------------------------
     //
@@ -3187,8 +3224,9 @@
     // 六场 BOSS 战里有五场其实是同一场画了六遍。拆开之后，一只 BOSS 的节奏终于有地方可写。
     //
     // 键就是 hazard kind（见 `src/hazards.ts` 的 `BOSS_KINDS`），写法和 `hazards.radius`、`hazards.health`、
-    // `hazardArt` 一致。**每行都是完整的 23 个字段，不留默认值**：留默认值就等于"这个数在别处"，
-    // 而调一只 BOSS 的时候不该需要同时记住另一只的数。
+    // `hazardArt` 一致。**除使用 `bossSkills` 的 BOSS 外，每行都是完整的 23 个字段，不留默认值**：留默认值就等于
+    // "这个数在别处"，而调一只 BOSS 的时候不该需要同时记住另一只的数。`boss-octopus` 用技能组代替钳子扇形，
+    // 所以它没有 `attackSprayCount/Spread/Seconds/FromX/FromY/BowRatio` 这六个数。
     //
     // 字段含义（这样六行可以并排看，不用每行都读一遍注释）：
     //   patrolCenterRatio / patrolVerticalAmplitudeRatio / verticalPatrolPeriodSeconds
@@ -3204,10 +3242,10 @@
     //   knockbackScale                              被击中时的后退倍率，乘在顶层 hitKnockback.meters 上（普通敌人是 1）
     //   attackEverySeconds                          两次挥螯之间的间隔（秒）
     //   attackSprayFrame                            挥到动画的第几帧甩出颗粒（钳子合上那一下）
-    //   attackSprayCount / attackSpraySpread        一次甩几颗，摊开多宽（泳道比例）
-    //   attackSpraySeconds                          颗粒飞到落点用多久（秒）——**这就是躲的时间**
-    //   attackSprayFromX / attackSprayFromY         钳子在哪（相对它自己的半径）
-    //   attackSprayBowRatio                         每颗的弧度（占飞行距离的比例）
+    //   attackSprayCount / attackSpraySpread        一次甩几颗，摊开多宽（泳道比例）。使用 `bossSkills` 的 BOSS 不写。
+    //   attackSpraySeconds                          颗粒飞到落点用多久（秒）——**这就是躲的时间**。使用 `bossSkills` 的 BOSS 不写。
+    //   attackSprayFromX / attackSprayFromY         钳子在哪（相对它自己的半径）。使用 `bossSkills` 的 BOSS 不写。
+    //   attackSprayBowRatio                         每颗的弧度（占飞行距离的比例）。使用 `bossSkills` 的 BOSS 不写。
     //
     // **六行现在的值是一模一样的**，抄自旧的 `hazards.boss`，而且这一步是**先证明"行为没变"**：
     // 六只 BOSS 必须和拆分前那只逐像素一致，之后才谈各不相同。烟囱蟹王先走通，再复制到其余五个。
@@ -3238,7 +3276,8 @@
         "attackSprayFromY": -1.25,
         "attackSprayBowRatio": 0.09
       },
-      // 第 2 关 —— 寄居沉船章鱼。
+      // 第 2 关 —— 寄居沉船章鱼。**技能组见下面的 `bossSkills`**：它不使用挥螯喷颗粒，
+      // 所以这里没有 `attackSpray*` 那六个数（类型与校验都已改为可选）。
       "boss-octopus": {
         "patrolCenterRatio": 0.7,
         "patrolVerticalAmplitudeRatio": 0.08,
@@ -3256,13 +3295,7 @@
         "hitFlashStrength": 1,
         "knockbackScale": 0.5,
         "attackEverySeconds": 4.6,
-        "attackSprayFrame": 6,
-        "attackSprayCount": 7,
-        "attackSpraySpread": 0.55,
-        "attackSpraySeconds": 0.62,
-        "attackSprayFromX": 0.55,
-        "attackSprayFromY": -1.25,
-        "attackSprayBowRatio": 0.09
+        "attackSprayFrame": 6
       },
       // 第 3 关 —— 冠冕水母。
       "boss-jelly": {
@@ -3368,6 +3401,20 @@
         "attackSprayFromY": -1.25,
         "attackSprayBowRatio": 0.09
       },
+    },
+
+    // ---------------------------------------------------------------------------------------------
+    // 第二关 BOSS 的技能组
+    // ---------------------------------------------------------------------------------------------
+    //
+    // **这里有一只 BOSS 的行，它每次攻击就从三招里随机抽一个**，而不是使用 `attackSpray*` 的钳子扇形：
+    //   1. 墨汁：朝玩家当前位置抛出墨团，落地成雾，雾内全部移动变慢（参数在 `hazards.ink`）。
+    //   2. 召唤木箱：随机留一列，另外两列从屏幕顶部同时落箱（木箱就是关卡里的 `fallcrate`，同样 2 秒预警）。
+    //   3. 环形子弹：360° 均匀一圈，弹速/伤害/外形来自 `enemyBullets.shooters['boss-octopus']`。
+    // 三招共用 BOSS 自己的 `attack` 动画与 `attackSprayFrame` 作为施法前摇。
+    "bossSkills": {
+      // 寄居沉船章鱼：一圈 12 发，每轮整体旋转 15°（0.2618 弧度）。
+      "boss-octopus": { "ringCount": 12, "ringRotationRadians": 0.2618 }
     },
 
 
@@ -3521,7 +3568,9 @@
       "puffer": 0.45,
       "starfish": 0.35,
       // 下落木箱：不可吃，质量只用于满足"两张表键必须一致"的加载期检查。
-      "fallcrate": 5
+      "fallcrate": 5,
+      // 墨雾：不可吃，质量同样只是为了表的完整性。
+      "ink": 0.05
     },
 
     // 吃下每种危险物所需的**档位**，对应上面 tierVolume 的下标 + 1。
@@ -3577,7 +3626,9 @@
       "puffer": 3,
       "starfish": 3,
       // 下落木箱：不可吃（最高档）。
-      "fallcrate": 5
+      "fallcrate": 5,
+      // 墨雾：不可吃（最高档）。
+      "ink": 5
     },
 
     // 吃下危险物得到的质量，相对它自身 mass 的比例。
@@ -4896,6 +4947,8 @@
         "starfish": "destroy",
         // 下落木箱：爆破直接清掉。它是一块会碎的木头，不是被推开的软体。
         "fallcrate": "destroy",
+        // 墨雾：冲击波把它吹散；它不是能"推开"的东西。
+        "ink": "destroy",
         // BOSS 也是 push：怒气爆发推得动它，但清不掉。**这是刻意的**——一个能被技能删掉的 BOSS
         // 会让"这一关的终点"取决于你有没有那个技能，那它就不是终点了。
         "boss": "push",

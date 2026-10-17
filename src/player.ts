@@ -279,7 +279,7 @@ export class Player {
       this.vx -= this.vx * Math.min(lateral.damping * dt, 1);
       if (Math.abs(this.vx) < lateral.stopSpeed) this.vx = 0;
     } else {
-      this.vx = axisX * lateral.keyboardSpeed * steer;
+      this.vx = axisX * lateral.keyboardSpeed * steer * this.slowMultiplier;
     }
     this.x += this.vx * dt;
 
@@ -306,9 +306,16 @@ export class Player {
      * `penaltiesApply` is the one exception, and it is off by default: see `config/mechanics.json5`. The eel's
      * inversion is not a penalty and applies either way -- on a phone the drag is the control, and losing
      * obedience is the whole point of being paralysed. Both axes mirror the finger while it lasts.
+     *
+     * The SLOW applies to the drag either way, and is not part of that option. A slow that only worked on the keyboard
+     * would be no slow at all on a phone -- the ink cloud's whole mechanic is "standing in this is slower", and the
+     * finger is the control there. `penaltiesApply` still decides whether the STAGE and SUCTION scale the drag.
      */
     const drag = input.consumeDrag();
-    const dragScale = mech.movement.drag.sensitivity * (mech.movement.drag.penaltiesApply ? steer * this.slowMultiplier : 1);
+    const dragScale =
+      mech.movement.drag.sensitivity *
+      (mech.movement.drag.penaltiesApply ? steer : 1) *
+      this.slowMultiplier;
     const dragX = inverted ? -drag.x : drag.x;
     const dragY = inverted && mech.hazards.eel.invertVertical ? -drag.y : drag.y;
     this.x += dragX * dragScale;

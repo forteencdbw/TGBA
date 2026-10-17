@@ -109,6 +109,14 @@ export type HazardKind =
    */
   | 'fallcrate'
   /**
+   * LEVEL 2 BOSS -- the ink cloud.
+   *
+   * Not a level-spawnable kind: only the octopus's ink skill creates one. It has no health, no contact damage and no
+   * art of its own; it is an AREA that slows whatever is inside it, and it drifts with the current because it is water
+   * with ink in it rather than a creature holding station.
+   */
+  | 'ink'
+  /**
    * LEVEL 3 -- 发光水母林.
    *
    * zapper discharges when it is touched OR shot, which makes it the one creature in the game that gets more
@@ -299,6 +307,20 @@ export interface HazardEffect {
    * thing happened, and the caller owns the audio and where it should be panned.
    */
   cue?: { what: 'fallcrateWarn' | 'fallcrateDrop'; x: number; y: number };
+  /**
+   * The octopus's ink throw: where the blob starts and where it will land.
+   *
+   * The cloud itself is a hazard; this effect is the instruction to create it. The run owns the hazard array, and the
+   * landing point is the player's position AT THE CAST, not a tracked one -- the same fairness rule the gun's fan obeys.
+   */
+  inkThrow?: { fromX: number; fromY: number; toX: number; toY: number };
+  /**
+   * The octopus's crate summon: leave this column open, fill the other two from the top of the screen.
+   *
+   * The boss knows the visible top and the lane width at the moment of the cast, so they travel with the effect; the
+   * run does not need to reach back into the camera to place the two warnings.
+   */
+  summonCrates?: { openColumn: number; topY: number; laneWidth: number };
   /**
    * A NEAR-MISS: a charging creature passed inside the graze circle without touching.
    *
@@ -592,8 +614,15 @@ export interface Hazard {
    * why `path` stays null here even though the block named one.
    */
   boid: BoidState | null;
-  /** LEVEL 6's foam: how long it has left before it breaks up. */
+  /** LEVEL 6's foam and the boss's ink cloud: seconds left before it breaks up. */
   foamLife: number;
+  /**
+   * Ink: the point the blob was thrown from, or null when this is not an ink cloud.
+   *
+   * The cloud's own `x`/`y` are the LANDING point; this is only what the painter needs to draw the throw, which is the
+   * first `throwSeconds` of the cloud's own clock.
+   */
+  inkFrom: { x: number; y: number } | null;
   /** Seconds left of a zapper's discharge ring, and its cooldown. Both per instance: a shoal does not fire in unison. */
   discharge: number;
   dischargeRest: number;
@@ -963,6 +992,7 @@ export const KIND_TUNING: Record<HazardKind, { radius: number; colour: number; s
   starfish: { radius: 0.052, colour: 0xffc9a3, spin: 0.35 },
   // The falling crate wears the same colours as the obstacle it is made of: it should read as "that crate" falling.
   fallcrate: { radius: 0.075, colour: 0xb98a4e, spin: 0 },
+  ink: { radius: 0.3, colour: 0x07070b, spin: 0 },
 };
 /**
  * The table above is the DEFAULT; the config's `hazards.radius` overrides it, kind by kind.
@@ -1134,6 +1164,13 @@ export interface SpawnOptions {
   aim?: VentAim;
   /** Vents only: seconds of quiet after appearing. Absent means the config's `startDelaySeconds`. */
   startDelaySeconds?: number;
+  /**
+   * Ink only: where the blob was thrown from, so the painter can draw it in flight before the cloud exists.
+   *
+   * The hazard's own x/y are the LANDING point from the moment it is spawned -- that is where the cloud will be -- and
+   * the throw is drawn along the line from this point to them.
+   */
+  inkFrom?: { x: number; y: number };
 }
 
 /**
@@ -1162,7 +1199,7 @@ type CreatureStep = (field: HazardField, h: Hazard, dt: number, ctx: HazardConte
  * where the level put them while the camera climbs past. The field rises into them, which is the whole of their motion.
  * (The boss is separate: it does not move with the water either, but patrols the visible band on its own clock.)
  */
-const WORLD_BOUND_KINDS: readonly HazardKind[] = ['vent', 'mineral', 'foam', 'rain'];
+const WORLD_BOUND_KINDS: readonly HazardKind[] = ['vent', 'mineral', 'foam', 'rain', 'ink'];
 
 /**
  * How far to move a creature, before its own step runs, so that the camera's rise does not leak into its motion.
@@ -1579,6 +1616,24 @@ function stepFallcrate(_field: HazardField, h: Hazard, dt: number, ctx: HazardCo
   h.y -= ctx.laneWidth * cfg.fallSpeedFactor * dt;
   return;
 }
+function stepInk(_field: HazardField, h: Hazard, dt: number, _ctx: HazardContext): void {
+  const cfg = mech.hazards.ink;
+  /**
+   * The throw, then the cloud, then the fade.
+   *
+   * The first `throwSeconds` are the blob in flight (drawn by `drawInk`); the haze has not landed, so it neither slows
+   * nor ages. After that the cloud's own clock runs. It does NOT move here: `ink` is in `WORLD_BOUND_KINDS`, so the
+   * camera's climb is what carries it down the screen -- ink is water with ink in it, not a creature.
+   */
+  if (h.phase < cfg.throwSeconds) return;
+  h.foamLife = Math.max(0, h.foamLife - dt);
+  if (h.foamLife <= 0 && h.deadSince === undefined) {
+    h.flee = 'dead';
+    h.deadSince = 0;
+    h.deadDeadline = cfg.fadeSeconds;
+  }
+  return;
+}
 function stepEel(_field: HazardField, h: Hazard, dt: number, ctx: HazardContext): void {
   /**
    * Swims in a wide S, and that is a fairness requirement rather than decoration.
@@ -1645,6 +1700,7 @@ const CREATURES: Record<HazardKind, CreatureStep> = {
   foam: stepFoam,
   rain: stepRain,
   fallcrate: stepFallcrate,
+  ink: stepInk,
   eel: stepEel,
   // THE GUNNERS: one shared movement (see `stepGunner`), four rhythms and four reasons to be there.
   archer: stepArcher,
@@ -1753,6 +1809,20 @@ function contactPlain(_field: HazardField, h: Hazard, ctx: HazardContext, effect
 function contactFallcrate(field: HazardField, h: Hazard, ctx: HazardContext, effects: HazardEffect[]): void {
   if (h.phase < mech.hazards.fallcrate.warnSeconds) return;
   contactPlain(field, h, ctx, effects);
+}
+
+/**
+ * The ink cloud: a continuous, non-damaging slow while the bubble is inside it.
+ *
+ * `slowSeconds` is a REFRESH, not the cloud's lifetime: it is re-issued every frame the overlap lasts, and expires
+ * shortly after the bubble leaves. That is how "in the ink" becomes "slow while inside, normal again when you get out"
+ * without a second area test -- the contact loop is already asking "is the bubble inside this shape".
+ */
+function contactInk(_field: HazardField, h: Hazard, _ctx: HazardContext, effects: HazardEffect[]): void {
+  const cfg = mech.hazards.ink;
+  if (h.phase < cfg.throwSeconds) return;
+  effects.push({ kind: h.kind, slowSeconds: cfg.slowRefreshSeconds, slowFactor: cfg.slowFactor, broke: false });
+  return;
 }
 
 /**
@@ -1904,6 +1974,7 @@ const CONTACT_EFFECTS: Record<HazardKind, ContactEffect> = {
   // The falling crate uses the plain rule: its own row of the damage table, and the standard i-frame check. A crate
   // that is still overlapping the bubble when the i-frames end hits again, which is exactly what it looks like.
   fallcrate: contactFallcrate,
+  ink: contactInk,
   // THE GUNNERS: touching one is the same event as touching an eel -- a bite from a thing whose real threat
   // is already in the water. The plain rule (the kind's own row of the damage table, and nothing else) is the whole
   // of it.
@@ -2583,8 +2654,8 @@ export class HazardField {
        * decision about the frame, it has to be suppressed by every state that means "busy", and what it produces is
        * an effect rather than a mutation of a field this module does not own.
        */
-      const spray = this.updateAttack(h, dt, ctx);
-      if (spray) effects.push({ kind: h.kind, broke: false, spray });
+      const attack = this.updateAttack(h, dt, ctx);
+      if (attack) effects.push(attack);
     }
 
     // Emergence, in order: fish eat (which may split them), then the seeking hazards pick a target.
@@ -3023,7 +3094,7 @@ export class HazardField {
        * random offset on top of it would make the promise false. A level that wants two vents out of step gives them
        * different delays, which is a decision it can see rather than a coin flip it cannot.
        */
-      phase: kind === 'vent' || kind === 'fallcrate' ? 0 : opts.deterministic ? 0 : Math.random() * Math.PI * 2,
+      phase: kind === 'vent' || kind === 'fallcrate' || kind === 'ink' ? 0 : opts.deterministic ? 0 : Math.random() * Math.PI * 2,
       seed: opts.deterministic ? 0 : Math.random() * 1000,
       heading: 0,
       variety: opts.variety ?? 0,
@@ -3046,7 +3117,8 @@ export class HazardField {
       knock: null,
       discharge: 0,
       dischargeRest: 0,
-      foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : 0,
+      foamLife: kind === 'foam' ? mech.hazards.foam.lifeSeconds : kind === 'ink' ? mech.hazards.ink.lifeSeconds : 0,
+      inkFrom: opts.inkFrom ?? null,
       vent,
       // A random head start, so a group does not lunge in unison. Zero for a probe, where "did it lunge" must not be a
       // coin flip.
@@ -3509,22 +3581,26 @@ export class HazardField {
   }
 
   /**
-   * The boss's claw swing: its clock, and the single frame of it that throws anything.
+   * The boss's attack clock, and the single frame of it that releases the payload.
+   *
+   * For most bosses that payload is the claw's fan of grit; for a boss in `hazards.bossSkills` it is one of three
+   * skills, chosen on the release frame and announced by the same attack animation. The framing is the same either
+   * way: the art is the warning, so the moment is a frame of it, not a second clock in seconds.
    *
    * ---------------------------------------------------------------------------------------------
    * WHY THE MOMENT IS A FRAME AND NOT A NUMBER OF SECONDS
    * ---------------------------------------------------------------------------------------------
    * Every other threat in this game announces itself with drawn geometry -- the charge's bow, the vent's brightening
-   * plume -- and the moment it lands is a time in the config. The boss announces this one by SWINGING ITS CLAW, so
-   * the moment the grit leaves is a frame of `boss-attack`, read from the same animation the painter is playing. Two
+   * plume -- and the moment it lands is a time in the config. The boss announces this one by SWINGING, so the moment
+   * the payload leaves is a frame of the attack animation, read from the same animation the painter is playing. Two
    * clocks would be two things to keep in agreement, and the art is the one the player is actually reading: change
-   * the frame rate or the frame count and the spray still leaves on the frame where the claw shuts.
+   * the frame rate or the frame count and the payload still leaves on the frame where the swing peaks.
    *
    * The targets are resolved here because they are the player's position AT THIS INSTANT and never corrected
    * afterwards. That is the whole fairness rule the shooters already live by, applied to a fan instead of one round:
    * it can be read during the wind-up and stepped out of.
    */
-  private updateAttack(h: Hazard, dt: number, ctx: HazardContext): HazardEffect['spray'] | null {
+  private updateAttack(h: Hazard, dt: number, ctx: HazardContext): HazardEffect | null {
     if (!isBossKind(h.kind)) return null;
     // Never while it is dying or leaving: a death animation is not a threat, and a boss on its way out firing at the
     // player would be the one hit in this game with no warning attached to it.
@@ -3552,12 +3628,66 @@ export class HazardField {
     h.attacked = true;
 
     /**
+     * THE SKILL SET, for a boss that declares one.
+     *
+     * Same release frame and same animation as the claw fan -- the art is the warning, and the player is reading it --
+     * but the payload is one of three things chosen at random. The choice is made HERE, on the frame it is released,
+     * rather than at the start of the swing, so every skill gets exactly the same wind-up to read.
+     */
+    const skills = mech.hazards.bossSkills[h.kind];
+    if (skills) {
+      const skill = Math.floor(Math.random() * 3);
+      if (skill === 0) {
+        // Ink: aimed at where the player IS, and never corrected after this frame.
+        return {
+          kind: h.kind,
+          broke: false,
+          inkThrow: {
+            fromX: h.x,
+            fromY: h.y,
+            toX: Math.max(0, Math.min(ctx.laneWidth, ctx.playerX)),
+            toY: ctx.playerY,
+          },
+        };
+      }
+      if (skill === 1) {
+        // Crates: the run fills the two other columns from the visible top. One is always left open.
+        return {
+          kind: h.kind,
+          broke: false,
+          summonCrates: { openColumn: Math.floor(Math.random() * 3), topY: ctx.max, laneWidth: ctx.laneWidth },
+        };
+      }
+      const count = Math.max(1, Math.round(skills.ringCount));
+      const dirs: { x: number; y: number }[] = [];
+      for (let i = 0; i < count; i++) {
+        const angle = h.volleySpin + (i / count) * Math.PI * 2;
+        dirs.push({ x: Math.cos(angle), y: Math.sin(angle) });
+      }
+      // The next ring starts a notch round, so no gap stays safe for ever.
+      h.volleySpin += skills.ringRotationRadians;
+      return { kind: h.kind, broke: false, volley: { x: h.x, y: h.y, dirs } };
+    }
+
+    /**
      * The claw, and the fan it throws.
      *
      * The origin is mirrored to the side the player is on rather than to `h.facing`: `facing` is the PAINTER's field
      * (it exists so the picture can turn), and a creature's attack should not depend on what the last drawn frame
      * decided. The config's x is therefore "how far in front of the body", in the direction the fight is happening.
+     *
+     * A boss with a skill table never reaches this; one without it needs every spray number. Missing one is a config
+     * that means "this boss has no attack", so the swing plays and throws nothing rather than throwing NaN.
      */
+    if (
+      cfg.attackSprayCount === undefined ||
+      cfg.attackSpraySpread === undefined ||
+      cfg.attackSprayFromX === undefined ||
+      cfg.attackSprayFromY === undefined ||
+      cfg.attackSprayBowRatio === undefined
+    ) {
+      return null;
+    }
     const radius = ctx.laneWidth * h.radiusFraction;
     const towardPlayer = ctx.playerX >= h.x ? 1 : -1;
     const fromX = h.x + cfg.attackSprayFromX * radius * towardPlayer;
@@ -3571,7 +3701,7 @@ export class HazardField {
       const offset = count <= 1 ? 0 : index / (count - 1) - 0.5;
       targets.push({ x: Math.max(0, Math.min(ctx.laneWidth, ctx.playerX + offset * spread)), y: ctx.playerY });
     }
-    return targets.length > 0 ? { fromX, fromY, targets, bow: cfg.attackSprayBowRatio } : null;
+    return targets.length > 0 ? { kind: h.kind, broke: false, spray: { fromX, fromY, targets, bow: cfg.attackSprayBowRatio } } : null;
   }
 }
 
@@ -4741,6 +4871,37 @@ function drawFallcrate(g: Graphics, h: Hazard, r: number, _laneWidth: number, _e
 }
 
 /**
+ * The octopus's ink: one blob in flight, then a dark cloud, then a fade.
+ *
+ * The cloud is drawn as a few overlapping circles rather than one, because a perfect disc reads as a shield and this is
+ * supposed to look like something that was spat into the water. Its alpha follows its remaining life, so the area
+ * visibly runs out rather than vanishing on a frame.
+ */
+function drawInk(g: Graphics, h: Hazard, r: number, _laneWidth: number, _elapsed: number): void {
+  const cfg = mech.hazards.ink;
+  if (h.phase < cfg.throwSeconds) {
+    // In flight: a small dark blob travelling from the boss's mouth to the landing point.
+    const from = h.inkFrom ?? { x: h.x, y: h.y };
+    const t = Math.max(0, Math.min(1, h.phase / Math.max(0.001, cfg.throwSeconds)));
+    const x = from.x + (h.x - from.x) * t;
+    const y = from.y + (h.y - from.y) * t;
+    const blob = Math.max(2, r * cfg.throwRadiusRatio);
+    g.circle(x, y, blob).fill({ color: cfg.colour, alpha: cfg.alpha });
+    g.circle(x, y, blob * 1.15).stroke({ color: cfg.rimColour, alpha: cfg.alpha * 0.55, width: Math.max(1, blob * 0.16) });
+    return;
+  }
+  const life = cfg.lifeSeconds > 0 ? Math.max(0, Math.min(1, h.foamLife / cfg.lifeSeconds)) : 0;
+  const fade = h.deadSince !== undefined ? Math.max(0, 1 - h.deadSince / Math.max(0.001, cfg.fadeSeconds)) : 1;
+  const alpha = cfg.alpha * Math.min(1, life * 3) * fade;
+  g.circle(h.x, h.y, r).fill({ color: cfg.colour, alpha });
+  g.circle(h.x - r * 0.45, h.y + r * 0.18, r * 0.62).fill({ color: cfg.colour, alpha: alpha * 0.86 });
+  g.circle(h.x + r * 0.5, h.y - r * 0.24, r * 0.52).fill({ color: cfg.colour, alpha: alpha * 0.8 });
+  g.circle(h.x + r * 0.12, h.y + r * 0.55, r * 0.4).fill({ color: cfg.colour, alpha: alpha * 0.75 });
+  g.circle(h.x, h.y, r * 1.02).stroke({ color: cfg.rimColour, alpha: alpha * 0.5, width: Math.max(1, r * 0.03) });
+  return;
+}
+
+/**
  * The red warning strip that stands in for the crate before it falls.
  *
  * The strip is the COLUMN (a third of the lane), not the crate, because the player's question is "which of the three
@@ -5132,6 +5293,7 @@ const CREATURE_DRAWING: Record<HazardKind, CreatureDraw> = {
   foam: drawFoam,
   rain: drawRain,
   fallcrate: drawFallcrate,
+  ink: drawInk,
   // THE GUNNERS' placeholder bodies: code-drawn until an art row replaces them, and each says its ONE thing
   // -- the archer is a fish with a muzzle, the pistol shrimp is a claw, the puffer's spikes dim while its
   // answer is cooling, and the starfish's arms ARE its next volley's directions.
