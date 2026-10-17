@@ -665,12 +665,12 @@ export interface Hazard {
   flashStarted?: number;
   flashLastStarted?: number;
   /**
-   * A heavy hit's outline ring and shake: when it started, and how strong, both undefined when there is none.
+   * A critical hit's outline ring and shake: when it started, and how strong, both undefined when there is none.
    *
    * Kept apart from the flash on purpose: they answer different questions ("that was a big one" rather than "something
-   * landed"), they have different lengths, and a light hit must not restart the outline of a heavy one.
+   * landed"), they have different lengths, and an ordinary hit must not restart the outline of a critical one.
    */
-  heavyStarted?: number;
+  critStarted?: number;
   /**
    * The armour's mark: seconds left of "everything hurts this one more", and by how much.
    *
@@ -681,7 +681,7 @@ export interface Hazard {
    */
   vulnerableLeft?: number;
   vulnerableMultiplier?: number;
-  heavyStrength?: number;
+  critStrength?: number;
   /**
    * The facing the creature has COMMITTED to, and how long before it may change: +1 is as drawn, -1 is mirrored.
    *
@@ -2026,7 +2026,7 @@ export class HazardField {
     // The queues go with the creatures they describe: a pending spark or outline belongs to a body that no longer exists,
     // and carrying it into the next level would flash something that was never hit.
     this.hitEvents.length = 0;
-    this.heavyHits.length = 0;
+    this.critHits.length = 0;
     this.spawnTimer = 0;
     this.grabs = 0;
     this.charges = 0;
@@ -2062,20 +2062,20 @@ export class HazardField {
   private readonly hitEvents: HazardHitEvent[] = [];
 
   /**
-   * Heavy hits since the last call, for the things that are the GAME's to do: the outline is drawn round the body and the
-   * screen shake moves the canvas, and neither is a property of a creature. Reported rather than acted on, so the hazard
-   * module stays a simulation.
+   * Critical hits since the last call, for the things that are the GAME's to do: the outline is drawn round the body and
+   * the screen shake moves the canvas, and neither is a property of a creature. Reported rather than acted on, so the
+   * hazard module stays a simulation.
    */
-  private readonly heavyHits: { x: number; y: number; strength: number }[] = [];
+  private readonly critHits: { x: number; y: number; strength: number }[] = [];
 
   /** Hand over what has happened since the last call, and forget it. */
   takeHitEvents(): readonly HazardHitEvent[] {
     return this.hitEvents.splice(0, this.hitEvents.length);
   }
 
-  /** Hand over the heavy hits since the last call, and forget them. Same shape as `takeHitEvents`. */
-  takeHeavyHits(): readonly { x: number; y: number; strength: number }[] {
-    return this.heavyHits.splice(0, this.heavyHits.length);
+  /** Hand over the critical hits since the last call, and forget them. Same shape as `takeHitEvents`. */
+  takeCritHits(): readonly { x: number; y: number; strength: number }[] {
+    return this.critHits.splice(0, this.critHits.length);
   }
 
   /**
@@ -2159,15 +2159,19 @@ export class HazardField {
      */
     this.applyKnock(hazard, impact);
     /**
-     * A HEAVY hit is a different message from a hit, so it gets a different mark: an outline round the whole body and a
-     * nudge of the screen. Both are the game's to draw (they are not properties of the creature), so a heavy hit is
-     * REPORTED here rather than acted on -- see `takeHeavyHits`.
+     * A CRITICAL hit is a different message from a hit, so it gets a different mark: an outline round the whole body
+     * and a nudge of the screen. Both are the game's to draw (they are not properties of the creature), so a critical
+     * hit is REPORTED here rather than acted on -- see `takeCritHits`.
+     *
+     * There is no lower tier below this one. There used to be -- a 重击 at half the threshold, drawing the same two
+     * marks at a lower strength -- and it was removed because two thresholds drawing the same picture is one mark
+     * with two names, while `strength` was already saying how hard it landed.
      */
-    if (damage >= mech.hitFeedback.heavyDamage) {
+    if (damage >= mech.hitFeedback.critDamage) {
       const strength = Math.min(1, damage / Math.max(0.01, mech.hitFeedback.critDamage));
-      hazard.heavyStarted = elapsed;
-      hazard.heavyStrength = strength;
-      this.heavyHits.push({ x: hazard.x, y: hazard.y, strength });
+      hazard.critStarted = elapsed;
+      hazard.critStrength = strength;
+      this.critHits.push({ x: hazard.x, y: hazard.y, strength });
     }
     /**
      * A ZAPPER fires when it is shot.
@@ -3526,13 +3530,13 @@ function mayFlash(h: Hazard, elapsed: number): boolean {
   return elapsed - h.flashLastStarted >= mech.hitFlash.cooldownSeconds;
 }
 
-/** How strong a heavy hit's outline is right now, 0 when there is none. Decays over its own life. */
-function heavyOutlineIntensity(h: Hazard, elapsed: number): number {
-  if (h.heavyStarted === undefined) return 0;
-  const life = Math.max(0.001, mech.hitFeedback.heavyOutlineSeconds);
-  const t = (elapsed - h.heavyStarted) / life;
+/** How strong a critical hit's outline is right now, 0 when there is none. Decays over its own life. */
+function critOutlineIntensity(h: Hazard, elapsed: number): number {
+  if (h.critStarted === undefined) return 0;
+  const life = Math.max(0.001, mech.hitFeedback.critOutlineSeconds);
+  const t = (elapsed - h.critStarted) / life;
   if (t < 0 || t >= 1) return 0;
-  return (h.heavyStrength ?? 0) * (1 - t) * (1 - t);
+  return (h.critStrength ?? 0) * (1 - t) * (1 - t);
 }
 
 /**
@@ -4126,7 +4130,7 @@ export function hazardHitFeedbackProbe(field: HazardField): {
       kind: h.kind,
       // The same two calls the painter makes, so a probe and the screen cannot disagree.
       flash: since === undefined ? 0 : flashIntensity(h.phase - since, peak),
-      outline: heavyOutlineIntensity(h, h.phase),
+      outline: critOutlineIntensity(h, h.phase),
       restartable: mayFlash(h, h.phase),
       onSprite: art ? 1 : 0,
     };
@@ -4933,7 +4937,7 @@ function startDeath(hazard: Hazard): void {
    * whole of what the owner reported: "it plays, but all white".
    *
    * Cleared by CANCELING the clocks rather than by writing a zero into a countdown, and both marks go: the flash would hide
-   * the explosion's first frame (the one frame the eye is guaranteed to catch) and the heavy ring would draw round a body
+   * the explosion's first frame (the one frame the eye is guaranteed to catch) and the critical ring would draw round a body
    * that is coming apart. What is not lost is the feedback itself: the explosion, the debris ring and the score popup are
    * all the same event, and a body that is exploding cannot also be merely hit.
    */
@@ -4949,8 +4953,8 @@ function startDeath(hazard: Hazard): void {
 function clearHitFeedback(hazard: Hazard): void {
   delete hazard.flashStarted;
   delete hazard.flashLastStarted;
-  delete hazard.heavyStarted;
-  delete hazard.heavyStrength;
+  delete hazard.critStarted;
+  delete hazard.critStrength;
 }
 
 /**
@@ -5272,18 +5276,18 @@ export function paintHazards(
         const flash = flashIntensity(elapsed - (h.flashStarted ?? elapsed), mech.hitFlash.peakIntensity * (art.spriteFlashScale ?? 1));
         sprite.filters = flash > 0 ? [whiteOutFilter(sprite, flash)] : [];
         /**
-         * A HEAVY hit's outline, drawn by the PAINTER rather than as a filter.
+         * A CRITICAL hit's outline, drawn by the PAINTER rather than as a filter.
          *
          * Same language the weak-point ring and the edibility halo already speak, so it needs no new reading: the creature
          * that just took a big one is ringed for a moment. A thicker ring for a bigger hit, from the same curve the flash
          * uses, so the two marks agree about when the hit happened.
          */
-        const outline = heavyOutlineIntensity(h, elapsed);
+        const outline = critOutlineIntensity(h, elapsed);
         if (outline > 0) {
-          g.circle(x, y, r * mech.hitFeedback.heavyOutlineRadiusScale).stroke({
-            color: mech.hitFeedback.heavyOutlineColour,
-            alpha: mech.hitFeedback.heavyOutlineAlpha * outline,
-            width: Math.max(1, r * mech.hitFeedback.heavyOutlineWidthRatio * (0.6 + outline)),
+          g.circle(x, y, r * mech.hitFeedback.critOutlineRadiusScale).stroke({
+            color: mech.hitFeedback.critOutlineColour,
+            alpha: mech.hitFeedback.critOutlineAlpha * outline,
+            width: Math.max(1, r * mech.hitFeedback.critOutlineWidthRatio * (0.6 + outline)),
           });
         }
         if (art.lure) paintLure(g, x, y, r, art.lure, elapsed);

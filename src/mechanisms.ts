@@ -1492,28 +1492,26 @@ export interface Mechanisms {
     radiusScale: number;
   };
   /**
-   * What makes a hit a HEAVY one, and what a heavy one adds.
+   * What makes a hit a CRITICAL one, and what a critical one adds.
    *
-   * Judged by damage rather than by weapon, so a future high-damage weapon is heavy without any code change, and so the
-   * rule reads as "how hard did that land" rather than as a list of kinds. A heavy hit rings the body and nudges the
-   * screen; a critical one does the same, harder.
+   * Judged by damage rather than by weapon, so a future high-damage weapon crits without any code change, and so the
+   * rule reads as "how hard did that land" rather than as a list of kinds. A critical hit rings the body and nudges
+   * the screen, and how far past the threshold it landed sets the strength of both.
    */
   hitFeedback: {
-    /** Damage at or above this is heavy. */
-    heavyDamage: number;
-    /** Damage at or above this is a critical: the same marks, scaled by `damage / critDamage`. */
+    /** Damage at or above this is a critical: the body is ringed and the screen is nudged, scaled by `damage / this`. */
     critDamage: number;
-    heavyOutlineColour: number;
-    heavyOutlineAlpha: number;
+    critOutlineColour: number;
+    critOutlineAlpha: number;
     /** Where the ring sits, as a multiple of the body radius. Just outside it, so it reads as a ring round the creature. */
-    heavyOutlineRadiusScale: number;
+    critOutlineRadiusScale: number;
     /** Ring width as a fraction of the body radius. */
-    heavyOutlineWidthRatio: number;
+    critOutlineWidthRatio: number;
     /** How long the ring stays lit. */
-    heavyOutlineSeconds: number;
+    critOutlineSeconds: number;
     /** Design pixels of screen shake at full strength, and how long it lasts. 0 turns the shake off. */
-    heavyShakePixels: number;
-    heavyShakeSeconds: number;
+    critShakePixels: number;
+    critShakeSeconds: number;
   };
   /**
    * Being SHOT knocks a creature back a little.
@@ -1964,7 +1962,6 @@ export interface Mechanisms {
     minGapFraction: number;
     ramVolumeThreshold: number;
     ramDamagePerVolume: number;
-    collideDamage: number;
     collideInvulnerableSeconds: number;
     /** Speed multiplier while inside a net, and how long the drag lingers after leaving one. */
     netDrag: number;
@@ -3404,15 +3401,14 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'hitFlash.colour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
   { path: 'hitFlash.alpha', check: anyNumber, describe: 'an opacity' },
   { path: 'hitFlash.radiusScale', check: anyNumber, describe: 'a multiplier' },
-  { path: 'hitFeedback.heavyDamage', check: anyNumber, describe: 'damage at which a hit counts as heavy' },
-  { path: 'hitFeedback.critDamage', check: anyNumber, describe: 'damage at which a hit counts as critical; should be above heavyDamage' },
-  { path: 'hitFeedback.heavyOutlineColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
-  { path: 'hitFeedback.heavyOutlineAlpha', check: anyNumber, describe: 'an opacity' },
-  { path: 'hitFeedback.heavyOutlineRadiusScale', check: anyNumber, describe: 'a multiple of the body radius' },
-  { path: 'hitFeedback.heavyOutlineWidthRatio', check: anyNumber, describe: 'a stroke width ratio' },
-  { path: 'hitFeedback.heavyOutlineSeconds', check: anyNumber, describe: 'seconds' },
-  { path: 'hitFeedback.heavyShakePixels', check: anyNumber, describe: 'design pixels; 0 disables the heavy hit shake' },
-  { path: 'hitFeedback.heavyShakeSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'hitFeedback.critDamage', check: anyNumber, describe: 'damage at which a hit counts as critical' },
+  { path: 'hitFeedback.critOutlineColour', check: isColour, describe: 'a colour, either 0xrrggbb or a "#rrggbb" string' },
+  { path: 'hitFeedback.critOutlineAlpha', check: anyNumber, describe: 'an opacity' },
+  { path: 'hitFeedback.critOutlineRadiusScale', check: anyNumber, describe: 'a multiple of the body radius' },
+  { path: 'hitFeedback.critOutlineWidthRatio', check: anyNumber, describe: 'a stroke width ratio' },
+  { path: 'hitFeedback.critOutlineSeconds', check: anyNumber, describe: 'seconds' },
+  { path: 'hitFeedback.critShakePixels', check: anyNumber, describe: 'design pixels; 0 disables the critical hit shake' },
+  { path: 'hitFeedback.critShakeSeconds', check: anyNumber, describe: 'seconds' },
   { path: 'hitKnockback.meters', check: anyNumber, describe: 'metres of recoil per landed hit; 0 turns the knockback off' },
   { path: 'hitKnockback.seconds', check: anyNumber, describe: 'seconds, over which the recoil is spent' },
   { path: 'playerBubble.image', check: (v) => typeof v === 'string', describe: 'a file name in src/assets/ without its extension, or an empty string for the drawn bubble' },
@@ -3834,7 +3830,6 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'obstacles.minGapFraction', check: anyNumber, describe: 'a fraction' },
   { path: 'obstacles.ramVolumeThreshold', check: anyNumber, describe: 'a volume of 0 or more' },
   { path: 'obstacles.ramDamagePerVolume', check: anyNumber, describe: 'a number' },
-  { path: 'obstacles.collideDamage', check: anyNumber, describe: 'a number of 0 or more' },
   { path: 'obstacles.collideInvulnerableSeconds', check: anyNumber, describe: 'a number of 0 or more' },
   { path: 'obstacles.netDrag', check: anyNumber, describe: 'a speed multiplier' },
   { path: 'obstacles.netDragSeconds', check: anyNumber, describe: 'a number of 0 or more' },

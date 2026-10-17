@@ -54,7 +54,7 @@ export const SOUND_IDS = [
   'enemy.leave.shell',
   'enemy.leave.ranged',
   'enemy.leave.boss',
-  'hit.heavy',
+  'hit.crit',
   'enemy.fire',
   'enemy.charge',
   'enemy.discharge',

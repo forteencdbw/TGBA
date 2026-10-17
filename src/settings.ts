@@ -239,7 +239,7 @@ export class SettingsUi {
    *
    * The same shape as the cheat toggle and a different KIND of thing: this one is not a cheat, it is a comfort setting, and
    * it is remembered for the session like the volume is. It turns off the full-body white flash and nothing else -- the hit
-   * sparks, the damage numbers and a heavy hit's ring all stay, because those are how the player knows they connected.
+   * sparks, the damage numbers and a critical hit's ring all stay, because those are how the player knows they connected.
    */
   onReducedFlash: (on: boolean) => void = () => {};
   /**

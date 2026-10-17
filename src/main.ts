@@ -2,7 +2,7 @@ import { Application, FillGradient, Graphics } from 'pixi.js';
 import { Camera, Hud, WorldLayer, computeViewport, createApp, designScale, makeLabel, rgba, waterColourForTest } from './background';
 import { tuning } from './config';
 import { DEBUG_LEVEL, LEVEL, LEVELS, START_LEVEL_ID, TIMELINE, installSpawnBlocks, isDebugLevel, levelIndex, selectLevel, speedAt, type Level } from './levels';
-import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, hazardHitFeedbackProbe, isBossKind, LURE_PROBE, paintHazards, setReducedFlash, ventErupting, warmAnimations, type HazardKind } from './hazards';
+import { chargeWindow, HazardField, hazardAnimationProbe, hazardArtSpriteForTest, isBossKind, LURE_PROBE, paintHazards, setReducedFlash, ventErupting, warmAnimations, type HazardKind } from './hazards';
 import { hitSoundOf, leaveSoundOf } from './soundIds';
 import { paintHitboxes, setDebugHitboxes, isDebugHitboxes } from './hitboxes';
 import { paintBullets, radiusOf } from './bullets';
@@ -1514,11 +1514,6 @@ class Game {
     return hazardAnimationProbe(this.run.hazards);
   }
 
-  /** Test hook: the hit feedback (flash intensity, heavy outline) as the painter would compute it, per creature. */
-  hitFeedbackRef(): ReturnType<typeof hazardHitFeedbackProbe> {
-    return hazardHitFeedbackProbe(this.run.hazards);
-  }
-
   /**
    * Test hook: zero the run's counters and top the player back up.
    *
@@ -2367,25 +2362,31 @@ class Game {
           });
         }
         /**
-         * A heavy hit moves the SCREEN, and that is the game's to do rather than the field's.
+         * A critical hit moves the SCREEN, and that is the game's to do rather than the field's.
          *
          * The ring round the body is the painter's (see `paintHazards`); this is the other half of "that one was big", and
-         * it is a property of the camera. A light hit deliberately does not shake: the screen is the loudest thing here, so
-         * using it for every round would make it noise -- the same reasoning the bomb fish already records for being the
-         * only blast that moves it.
+         * it is a property of the camera. An ordinary hit deliberately does not shake: the screen is the loudest thing
+         * here, so using it for every round would make it noise -- the same reasoning the bomb fish already records for
+         * being the only blast that moves it.
          */
-        for (const heavy of this.run.hazards.takeHeavyHits()) {
+        for (const crit of this.run.hazards.takeCritHits()) {
           const cfg = mech.hitFeedback;
-          if (cfg.heavyShakePixels <= 0 || cfg.heavyShakeSeconds <= 0) continue;
-          const pixels = cfg.heavyShakePixels * heavy.strength * designScale(this.app.screen.width, this.app.screen.height);
+          /**
+           * The cue belongs to the shake's branch, not to the hit, because this loop is where the game finds out that
+           * one landed hard -- `hazards` reports and does not play. `hit.crit` was `hit.heavy`, and it had no caller at
+           * all while 重击 existed, so this is the first time it has been audible.
+           */
+          this.sound('hit.crit');
+          if (cfg.critShakePixels <= 0 || cfg.critShakeSeconds <= 0) continue;
+          const pixels = cfg.critShakePixels * crit.strength * designScale(this.app.screen.width, this.app.screen.height);
           /**
            * A LONGER shake already playing is not cut short by a lighter hit.
            *
            * The same call the flash makes: a smaller event must not overwrite a bigger one's feedback, or a burst of fire
            * makes the screen flicker between the two.
            */
-          if (this.shake.seconds > cfg.heavyShakeSeconds && this.shake.pixels > pixels) continue;
-          this.shake = { seconds: cfg.heavyShakeSeconds, total: cfg.heavyShakeSeconds, pixels };
+          if (this.shake.seconds > cfg.critShakeSeconds && this.shake.pixels > pixels) continue;
+          this.shake = { seconds: cfg.critShakeSeconds, total: cfg.critShakeSeconds, pixels };
         }
         this.hitParticles.update(dt);
         /**

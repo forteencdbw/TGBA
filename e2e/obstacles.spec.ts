@@ -29,7 +29,6 @@ const cfg = (page: Page) =>
       minGapFraction: number;
       ramVolumeThreshold: number;
       ramDamagePerVolume: number;
-      collideDamage: number;
       netDrag: number;
     };
   });
