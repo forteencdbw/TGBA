@@ -2321,8 +2321,8 @@ export interface RagePoolConfig {
   plateMaxCap: number;
   /** 破甲更深: the vulnerability multiplier rises by this, per pick. */
   breakPerPick: number;
-  /** 灼烧更烈: damage per aura tick rises by this, per pick. */
-  burnPerPick: number;
+  /** 灼烧更烈: the aura tick's damage is multiplied by `1 + this`, per pick. */
+  burnRatePerPick: number;
 }
 
 /** One level's music, as the config writes it. See `src/music.ts` for what each field does to the sound. */
@@ -2735,7 +2735,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'mutation.pool.rage.plateMaxPerPick', check: anyNumber, describe: 'plates' },
   { path: 'mutation.pool.rage.plateMaxCap', check: anyNumber, describe: 'plates' },
   { path: 'mutation.pool.rage.breakPerPick', check: anyNumber, describe: 'a multiplier on the vulnerability' },
-  { path: 'mutation.pool.rage.burnPerPick', check: anyNumber, describe: 'damage per aura tick' },
+  { path: 'mutation.pool.rage.burnRatePerPick', check: anyNumber, describe: 'a multiplier on the aura tick damage' },
   ...popupRules('mutation.callouts'),
   { path: 'mutation.first', check: anyNumber, describe: 'the cost of the first level' },
   { path: 'mutation.growth', check: anyNumber, describe: 'the per-level cost multiplier' },

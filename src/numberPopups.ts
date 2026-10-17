@@ -142,7 +142,14 @@ export class NumberPopups {
     label.style.fill = cfg.colour;
     label.style.fontWeight = cfg.weight;
     label.anchor.set(cfg.anchorX, cfg.anchorY);
-    label.text = `${cfg.prefix}${value}`;
+    /**
+     * Rounded, because damage is a float and a popup is a READOUT.
+     *
+     * `damageOf` multiplies the base by the size and speed rates, so a round with either card lands on 5.75 rather
+     * than 5 -- and "-5.75" over a fish is a number the player has to parse rather than a hit they recognise. The
+     * health behind it keeps the fraction; only the label is rounded.
+     */
+    label.text = `${cfg.prefix}${Math.round(value)}`;
     label.visible = true;
     label.alpha = cfg.alpha;
     this.root.addChild(label);

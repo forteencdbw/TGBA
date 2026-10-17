@@ -31,7 +31,7 @@
   // 这一关的 BOSS 只是为了让"通关"有个终点，从 hazards.bosses 里随便挑一只。血量写小一点，打得快。
   boss: {
     at: 1000,
-    health: 40,
+    health: 200,
     name: '调试 BOSS',
     kind: 'boss-crab'
   },

@@ -31,7 +31,9 @@ try {
   const { mech } = await server.ssrLoadModule('/src/mechanisms.ts');
 
   const LANE = 100;
-  const BASE_DAMAGE = 5;
+  // Read from the config rather than typed here: this probe is ABOUT the damage chain, so a base left hard-coded
+  // would keep passing after `bullets.damage` moved -- the one thing it exists to catch.
+  const BASE_DAMAGE = mech.bullets.damage;
   /** One simulation step. `update` ages a round BEFORE it resolves the hit, so a round pushed at age `a` lands at `a + STEP`. */
   const STEP = 1 / 120;
 

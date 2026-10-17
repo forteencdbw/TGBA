@@ -34,7 +34,7 @@
 
   boss: {
     at: 2090,
-    health: 320,
+    health: 1600,
     name: '风暴之眼',
     // **这一关的 BOSS 是哪一只**：它怎么动、多大、什么颜色、怎么开火，全在
     // config/mechanics.json5 的 `hazards.bosses.boss-eye`。这一关原来还写着一个 `colour: 0x8fb8d8` ——

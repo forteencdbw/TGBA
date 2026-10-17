@@ -51,7 +51,7 @@
 |---|---|---|
 | **贴图** | `src/assets/灯笼鱼-移动.png` / `灯笼鱼-冲锋.png` | 覆盖同名文件（**不写扩展名也认**）→ 再跑一次 **`pnpm atlas`**（图集是生成物入库，见上面"图集"一节） |
 | 用哪两张图 / 大小 / 透明度 | `config/mechanics.json5` → `hazardArt.angler` | `move` `charge` `scale` `alpha` |
-| **血量** | 同上 → `hazards.health` | `angler`（现在 **10**） |
+| **血量** | 同上 → `hazards.health` | `angler`（现在 **50**） |
 | 质量（吃下去多重） | 同上 → `hazards.mass` | `angler` |
 | 可吃的档位 | 同上 → `consumption.edibleAtTier` | `angler` |
 | 被冲击波怎么处理 | 同上 → `angry.burst.hazardMode` | `angler` |
@@ -545,7 +545,7 @@ pnpm atlas                               # 重新打包图集
 | `hazards.radius.tuna` + `KIND_TUNING.tuna.radius` | **0.045**（鱼 0.035，+29%） |
 | `hazardArt.tuna` | `{ front: 'left', move: 'tuna-swim', scale: 2.5, alpha: 1 }` |
 | `animations.tuna-swim` | 4 帧、**8 帧/秒**、循环 |
-| `hazards.health.tuna` | 3（鱼 2） |
+| `hazards.health.tuna` | 15（鱼 10） |
 | `hazards.mass.tuna` | 0.4（鱼 0.28） |
 | `consumption.edibleAtTier.tuna` | 3（鱼 2——它更大，要更大的气泡才吞得下） |
 | `angry.burst.hazardMode.tuna` | `destroy`（和鱼一样是软体小敌人） |
@@ -1573,7 +1573,7 @@ BOSS 悬在画面外，玩家永远看不到它；而这一关只有打死它才
 | `shrimp` 盲眼虾 | 从侧面**直线**逼近，不追踪 | 3 秒横移 **−90m** |
 | `angler` 灯笼鱼 | 吊着发光诱饵悬停，靠近后张口冲刺 | 触发扑击 ✓ |
 | `torpedo` 失控鱼雷 | 先直飞、**再转向追踪** | 直飞 **221m**（配置 220）后转弯 |
-| `tube` 管虫群 | 障碍：会开合的管丛，血量 3.0、缝比网窄 | 画成活的管丛 ✓ |
+| `tube` 管虫群 | 障碍：会开合的管丛，血量 15.0、缝比网窄 | 画成活的管丛 ✓ |
 
 第二关的其余名目映射到现有种类：锈蚀食腐蟹 → `crab`，幽灵水母 → `jelly`，漂浮残骸 → `crate` / `coral`，船体板 → `wall`，缆绳 → `net`。
 

@@ -10,7 +10,7 @@ import { mech } from './mechanisms';
  * hit-point out of it, and the bubble's SIZE moves with it -- so "how much health do I have" is answered by "how
  * big am I", with no HUD element at all.
  *
- * That answer only holds while the size is actually moving. Measured on the shipped numbers: at the volume a run
+ * That answer only holds while the size is actually moving. Measured under that economy: at the volume a run
  * starts at the bubble takes 5 hits, at the ceiling it takes 50 -- a tenfold range -- while the drawn radius
  * travels 2.6x. The information was there and could not be read off the bubble.
  *

@@ -287,7 +287,7 @@ const POOL: readonly Mutation[] = [
   },
   {
     id: 'hotBurn',
-    name: `灼烧更烈 +${mech.mutation.pool.rage.burnPerPick}/跳`,
+    name: `灼烧更烈 +${Math.round(mech.mutation.pool.rage.burnRatePerPick * 100)}%`,
     blurb: '贴身灼烧每跳更疼，可叠加——不用等怒气也有输出',
     routes: 'boil',
     available: () => true,
@@ -551,9 +551,13 @@ export function applyMutationPassives(run: Run): void {
    * Read from the config every time rather than stored on the card, so the armour's own numbers stay in one place --
    * a card that hard-coded "4 seconds" would go stale the day `angry.armour.secondsPerPlate` was tuned.
    *
-   * The interval is the one MULTIPLIER, and it is floored for the reason `plateSecondsFloor` gives: five picks of a
-   * -20% would put a plate down to a third of the base interval, and plates arriving that fast stop being a rhythm.
-   * The other three are additions, which cap themselves.
+   * Two of the four are MULTIPLIERS and two are additions, and the split follows the gun's: the burn scales with its
+   * BASE the way `damagePerPick` scales with `bullets.damage`, so it stays the same card however the base is later
+   * tuned, while 破甲更深 and 多存一层 are amounts, which cap themselves.
+   *
+   * The interval is the one multiplier that also needs a floor, for the reason `plateSecondsFloor` gives: five picks
+   * of a -20% would put a plate down to a third of the base interval, and plates arriving that fast stop being a
+   * rhythm.
    */
   const rage = pool.rage;
   const armour = mech.angry.armour;
@@ -561,7 +565,7 @@ export function applyMutationPassives(run: Run): void {
     armour.secondsPerPlate * Math.max(rage.plateSecondsFloor, (1 - rage.plateSecondsPerPick) ** count('plateRate'));
   run.armourMax = Math.min(rage.plateMaxCap, armour.max + rage.plateMaxPerPick * count('plateMax'));
   run.armourVulnerableMultiplier = armour.vulnerableMultiplier + rage.breakPerPick * count('deeperBreak');
-  run.auraDamagePerTick = mech.angry.aura.damagePerTick + rage.burnPerPick * count('hotBurn');
+  run.auraDamagePerTick = mech.angry.aura.damagePerTick * (1 + rage.burnRatePerPick * count('hotBurn'));
   // The two state-driven cards are RATES, not multipliers, because neither collapses into one number for the run:
   // the size one is applied to each round's own growth at the moment it lands (see `damageOf`).
   run.bulletSizeDamageRate = pool.sizeDamagePerPick * count('sizeDamage');

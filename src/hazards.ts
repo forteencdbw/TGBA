@@ -147,7 +147,7 @@ export type HazardKind =
    * pressure a repositioning one would apply without a second movement rule to learn.
    *
    * `archer`   射水鱼, the basic gunner: one straight bolt, on a cadence. The eel is the UNKILLABLE version of
-   *            this shape; the archer is the everyday one -- 3 health, so the gun is an answer to it.
+   *            this shape; the archer is the everyday one -- thin enough that the gun is an answer to it.
    * `pistol`   手枪虾, the elite: one BIG fast cavitation round that costs TWO hit points. Rare, on purpose.
    * `puffer`   刺魨, the defensive one: it does not shoot on a timer at all (its shooter row's cadence is 0) --
    *            every hit it takes is answered with a ring of spikes, so shooting it is a rhythm rather than a
