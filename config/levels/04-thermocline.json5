@@ -81,7 +81,7 @@
     // 海豚是四个猎食者里最小最薄（3 点血）、食谱门槛最低的，所以它教的是"这一关的东西也可以很大、
     // 而且大的也能是食物"——**先让玩家赢一次，再给他看赢不了的**。
     { at: 200, kind: 'fish', count: 10, arrange: 'spread', span: 50, x: 0.5 },
-    { at: 300, kind: 'torpedo', x: 0.5, from: 'right', enterSpeed: 46 },
+    { at: 300, kind: 'torpedo', x: 0.5, from: 'random', enterSpeed: 46 },
     { at: 350, kind: 'dolphin', x: 0.78 },
     { at: 370, kind: 'crab', count: 2, arrange: 'line' },
 
@@ -89,27 +89,27 @@
     // --- S2  **爆发一 · 暖水层**：鱼群 + 两只海豚 + 炸弹鱼（会炸，"在哪挨"）+ 鮟鱇（会骗你）+ 章鱼。
     // 猎食者们第一次一起出现，但全是"吃得下"的那几个。
     { at: 400, kind: 'fish', count: 12, arrange: 'spread', span: 60, amplitude: 0.2, x: 0.5, from: 'bottom' },
-    { at: 450, kind: 'dolphin', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', enterSpeed: 40 },
+    { at: 450, kind: 'dolphin', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'random', enterSpeed: 40 },
     { at: 480, kind: 'bombfish', count: 2, arrange: 'spread', span: 30, x: 0.5 },
     { at: 520, kind: 'angler', count: 2, arrange: 'line' },
     // 章鱼：从侧面**横着**进来（enterSpeed 比别的慢），因为它是四个里最懒的那个——前摇 0.9 秒、冷却 2.6 秒，
     // 它是"可以忽略一会儿"的猎食者，作用是让别的三个显得更快。
-    { at: 550, kind: 'octopus', x: 0.3, from: 'left', enterSpeed: 34 },
+    { at: 550, kind: 'octopus', x: 0.3, from: 'random', enterSpeed: 34 },
 
     // --- S3  回落：鱼群 + 螃蟹 + 刺魨 + 一条鱼雷。刺魨是猎食者关里唯一"打它有代价"的东西，和冲锋的
     // 猎食者互为对照——它在这一屏出现，正好是下一次爆发前的呼吸。
     { at: 600, kind: 'fish', count: 9, arrange: 'spread', span: 50, x: 0.5 },
     { at: 660, kind: 'crab', count: 3, arrange: 'line' },
     { at: 700, kind: 'puffer', count: 2, arrange: 'spread', span: 40, x: 0.5 },
-    { at: 730, kind: 'torpedo', count: 1, arrange: 'spread', x: 0.4, from: 'left', enterSpeed: 46 },
+    { at: 730, kind: 'torpedo', count: 1, arrange: 'spread', x: 0.4, from: 'random', enterSpeed: 46 },
 
     { at: 570, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
     // --- S4  起（第二次爬升）：上下同时来的两串鱼，逼玩家**换高度**——这是温跃层这一层的题目本身。
     // 加章鱼和炸弹鱼：一个慢到可以忽略、一个近到不能打，同一屏里两种"别碰我"。
-    { at: 780, kind: 'fish', count: 6, arrange: 'spread', span: 40, from: 'left', depth: 0.62 },
-    { at: 820, kind: 'fish', count: 6, arrange: 'spread', span: 40, from: 'right', depth: 0.42 },
-    { at: 860, kind: 'octopus', x: 0.3, from: 'left', enterSpeed: 34 },
-    { at: 890, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'left', enterSpeed: 46 },
+    { at: 780, kind: 'fish', count: 6, arrange: 'spread', span: 40, from: 'random', depth: 0.62 },
+    { at: 820, kind: 'fish', count: 6, arrange: 'spread', span: 40, from: 'random', depth: 0.42 },
+    { at: 860, kind: 'octopus', x: 0.3, from: 'random', enterSpeed: 34 },
+    { at: 890, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'random', enterSpeed: 46 },
     { at: 920, kind: 'bombfish', count: 2, arrange: 'spread', span: 30, x: 0.6 },
 
     { at: 760, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
@@ -117,9 +117,9 @@
     // 加两条鱼雷。这一屏的题目不是"躲开"，是"先解决谁"。
     { at: 980, kind: 'fish', count: 14, arrange: 'spread', span: 70, amplitude: 0.22, x: 0.5 },
     { at: 1030, kind: 'puffer', count: 2, arrange: 'spread', span: 40, x: 0.5 },
-    { at: 1060, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'left', enterSpeed: 46 },
+    { at: 1060, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.4, from: 'random', enterSpeed: 46 },
     { at: 1090, kind: 'angler', count: 2, arrange: 'line' },
-    { at: 1120, kind: 'octopus', x: 0.65, from: 'right', enterSpeed: 34 },
+    { at: 1120, kind: 'octopus', x: 0.65, from: 'random', enterSpeed: 34 },
 
     // --- S6  回落：**电鳗**（射速全表最高的射手，5 发赶跑；它也可以被吞——吞噬门槛比四位枪手低）+ 鱼群 + 螃蟹。
     // 间隔已经从 3 屏缩到 2 屏：这一屏比上一次回落短，而且射手不给你喘的机会。
@@ -135,7 +135,7 @@
     // 座头鲸一次只来一只：全场最慢（前摇 1.1 秒）也最厚（8 点血），放在收尾段是因为
     // **慢的东西在一段快的东西后面才最吓人**——玩家刚躲完一串快攻，会明显感到屏幕被占住了。
     { at: 1340, kind: 'shark', x: 0.55 },
-    { at: 1380, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.5, from: 'right', enterSpeed: 46 },
+    { at: 1380, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.5, from: 'random', enterSpeed: 46 },
     { at: 1420, kind: 'eel', count: 2, arrange: 'spread', span: 40, x: 0.5 },
     { at: 1450, kind: 'angler', count: 3, arrange: 'spread', span: 40, x: 0.4 },
     { at: 1480, kind: 'fish', count: 12, arrange: 'spread', span: 50, x: 0.5 },
@@ -145,7 +145,7 @@
     // --- S8  收：把**海豚**放回来两只。它现在是"已知的、吃得下的那种大东西"——
     // 一次补给，一次能赢的架，让最后一次爆发之后不是一口气泄掉。
     { at: 1560, span: 140, count: 8, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.55, 0.35] },
-    { at: 1660, kind: 'dolphin', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', enterSpeed: 40 },
+    { at: 1660, kind: 'dolphin', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'random', enterSpeed: 40 },
 
     // --- S9  收一屏：**只有食物，没有一个危险物**。BOSS 之前把手腾出来。
     { at: 1740, span: 150, count: 8, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.4, 0.55, 0.35] },

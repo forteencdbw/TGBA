@@ -80,27 +80,27 @@
     // --- S1  起：两只一列，教导电链——打一只会牵动旁边那只。后面跟一串鱼，把"边躲边打"先轻轻演一遍。
     { at: 200, kind: 'zapper', x: 0.4 },
     { at: 300, kind: 'zapper', count: 2, arrange: 'column', x: 0.6 },
-    { at: 340, kind: 'fish', count: 8, arrange: 'spread', from: 'right' },
+    { at: 340, kind: 'fish', count: 8, arrange: 'spread', from: 'random' },
 
     { at: 190, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S2  **爆发一 · 水母树冠**：一列四只 + 减速水母 + 一串鱼。这一屏开始要求你**边躲边挑目标**。
     { at: 420, kind: 'zapper', count: 4, arrange: 'column', x: 0.5 },
     { at: 480, kind: 'jelly', count: 4, arrange: 'line' },
-    { at: 520, kind: 'fish', count: 4, arrange: 'spread', from: 'left' },
+    { at: 520, kind: 'fish', count: 4, arrange: 'spread', from: 'random' },
 
     // --- S3  回落：虾 + 海胆 + 两只电水母。刚被电过，这一屏把位置找回来——而且它比上一次回落**多了一屏**，
     // 因为电水母的教训消化得慢。
-    { at: 600, kind: 'shrimp', count: 3, arrange: 'spread', from: 'right' },
+    { at: 600, kind: 'shrimp', count: 3, arrange: 'spread', from: 'random' },
     { at: 660, kind: 'urchin', x: 0.5 },
     { at: 700, kind: 'zapper', count: 2, arrange: 'spread' },
 
     { at: 570, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S4  起（第二次爬升）：一串鱼 + 两只电水母 + 一只海胆 + 两只虾。**这是最长的两次爆发之间的空档**，
     // 所以它得自己站住：海胆先给你一个"绕开就行"的靶子，电水母再把绕开的路线收窄。
-    { at: 780, kind: 'fish', count: 8, arrange: 'spread', from: 'left' },
+    { at: 780, kind: 'fish', count: 8, arrange: 'spread', from: 'random' },
     { at: 840, kind: 'zapper', count: 2, arrange: 'column', x: 0.55 },
     { at: 880, kind: 'urchin', x: 0.4 },
-    { at: 920, kind: 'shrimp', count: 2, arrange: 'spread', from: 'right' },
+    { at: 920, kind: 'shrimp', count: 2, arrange: 'spread', from: 'random' },
 
     { at: 760, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S5  **爆发二 · 触须森林**：五只一排 + 减速 + 两只海胆。横排的电水母是"整片不能碰"。
@@ -110,7 +110,7 @@
 
     // --- S6  回落：热流矿物 + 虾 + 两只电水母。间隔已经从 3 屏缩到 2 屏，矿物颗粒是这一屏的"呼吸"。
     { at: 1180, span: 60, count: 4, kind: 'mineral', arrange: 'spread', x: 0.5, from: 'bottom' },
-    { at: 1230, kind: 'shrimp', count: 3, arrange: 'spread', from: 'left' },
+    { at: 1230, kind: 'shrimp', count: 3, arrange: 'spread', from: 'random' },
     { at: 1280, kind: 'zapper', count: 2, arrange: 'spread' },
 
     { at: 1140, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
@@ -123,7 +123,7 @@
 
     // --- S8  收一屏：**只有食物，没有一个危险物**。水母林的最上面是光，这一屏留给它。
     { at: 1560, span: 140, count: 8, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.35] },
-    { at: 1640, kind: 'fish', count: 6, arrange: 'spread', from: 'left' },
+    { at: 1640, kind: 'fish', count: 6, arrange: 'spread', from: 'random' },
   ],
 
 }

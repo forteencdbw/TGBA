@@ -30,6 +30,7 @@ try {
   const { ObstacleField } = await server.ssrLoadModule('/src/obstacles.ts');
   const { mech } = await server.ssrLoadModule('/src/mechanisms.ts');
   const { LEVEL } = await server.ssrLoadModule('/src/levels.ts');
+  const { Run } = await server.ssrLoadModule('/src/run.ts');
 
   const LANE = 100;
   const VIEW = { min: 0, max: 800 };
@@ -39,7 +40,7 @@ try {
     hazards: new HazardField(),
     playerRadiusFraction: 0.08,
   });
-  const place = (entry, y, w = world()) => ({ record: placeEntry(entry, y, VIEW, LANE, w), w });
+  const place = (entry, y, w = world(), flip = false) => ({ record: placeEntry(entry, y, VIEW, LANE, w, flip), w });
 
   const off = LANE * mech.spawning.offscreenMarginRatio;
   const bottom = LANE * mech.spawning.bottomMarginRatio;
@@ -144,18 +145,80 @@ try {
    * The loader is what makes "a vent in the middle of the lane" unrepresentable, so this drives the REAL first level
    * through `placeEntry` rather than a hand-written entry: a `side` that never reached the water would pass every
    * check above and still leave the campaign's first vent wherever the default put it.
+   *
+   * The level no longer writes its vent sides: omitted means the block's coin picks a wall. The check is that the
+   * PLACED vents are on a wall, which is the property the level format is protecting.
    */
   {
     const vents = LEVEL.entries.filter((e) => e.kind === 'vent');
-    check('第一关 · 火山都在墙上', vents.every((e) => e.side === 'left' || e.side === 'right'), true);
-    check('第一关 · 火山都没写 x 的位置依赖', vents.every((e) => e.side !== undefined), true);
+    check('第一关 · 火山没写死侧别（默认每块随机）', vents.every((e) => e.side === undefined || e.side === 'random'), true);
     const aims = vents.map((e) => e.aim);
     for (const aim of ['up', 'flat', 'down']) {
       check(`第一关 · 三种朝向都出现过：${aim}`, aims.includes(aim), true);
     }
-    const placed = vents.map((e) => place(e, 700).w.hazards.hazards[0]);
     const base = mech.hazards.vent.baseRadiusRatio * LANE;
+    const placed = vents.map((e) => place(e, 700).w.hazards.hazards[0]);
     check('第一关 · 每一个都落在墙上（没有落在泳道中间的）', placed.every((h) => Math.abs(h.x - base) < 1e-6 || Math.abs(h.x - (LANE - base)) < 1e-6), true);
+    // The coin is the whole feature: the same entry lands on opposite walls.
+    const left = place({ kind: 'vent', side: 'random', aim: 'up' }, 700, world(), false).w.hazards.hazards[0];
+    const right = place({ kind: 'vent', side: 'random', aim: 'up' }, 700, world(), true).w.hazards.hazards[0];
+    check('vent random · 不翻落在左墙', Math.abs(left.x - base) < 1e-6, true);
+    check('vent random · 翻了落在右墙', Math.abs(right.x - (LANE - base)) < 1e-6, true);
+    // A pinned side does NOT move; only its x would, and a vent ignores x.
+    const pinned = place({ kind: 'vent', side: 'right', aim: 'up' }, 700, world(), true).w.hazards.hazards[0];
+    check('vent pinned · 显式侧别不跟着硬币翻', Math.abs(pinned.x - (LANE - base)) < 1e-6, true);
+  }
+
+  /**
+   * The horizontal mirror itself: one coin flips x, the random side and the spline together.
+   *
+   * These are the three ways a block can have a horizontal direction, and they have to agree or a mirrored entry
+   * arrives on the wrong side of its own path.
+   */
+  {
+    const top = place({ kind: 'fish', x: 0.2 }, 750, world(), true);
+    check('mirror · x is read from the other edge', Number(top.record.x.toFixed(3)), 80);
+    const randomLeft = place({ kind: 'fish', x: 0.2, from: 'random' }, 750, world(), false).record;
+    const randomRight = place({ kind: 'fish', x: 0.2, from: 'random' }, 750, world(), true).record;
+    check('mirror · random side picks left when the coin is 0', randomLeft.from, 'left');
+    check('mirror · random side picks right when the coin is 1', randomRight.from, 'right');
+    const arc = LEVEL.paths.arc;
+    const mirrored = place({ kind: 'fish', path: 'arc' }, 700, world(), true).w.hazards.hazards[0];
+    check('mirror · path waypoints are flipped in x', mirrored.path.points.map((p) => Number(p.x.toFixed(3))), arc.points.map((p) => Number((1 - p.x).toFixed(3))));
+  }
+
+  /**
+   * A block expands to many entries but ONE group.
+   *
+   * That is the half of the coin that is easy to get wrong: rolling per expanded entry would mirror a barrier's
+   * pieces independently and scatter the gap. The real level is the fixture: it has 34 blocks, and its 132 entries
+   * must collapse to exactly 34 groups.
+   */
+  {
+    const groups = new Set(LEVEL.entries.map((entry) => entry.group));
+    check('level · one group per authored block', groups.size, LEVEL.blocks.length);
+  }
+
+  /**
+   * The Run's coin: memoised per group, and consumed once.
+   *
+   * `placeEntry` only knows the answer it was handed; this is the half that decides it. Two entries of one block
+   * must share a result AND must not each spend a roll, or a barrier's pieces would flip independently.
+   */
+  {
+    const run = new Run();
+    let calls = 0;
+    run.levelRandom = () => {
+      calls += 1;
+      return 1;
+    };
+    const worldView = { min: 0, max: 800 };
+    for (let i = 0; i < 2; i++) {
+      run.emitTimelineEntry({ at: 0, kind: 'fish', x: 0.2, from: 'random', group: 7 }, 750, LANE, worldView);
+    }
+    check('run · one coin per block group', calls, 1);
+    check('run · the flipped group arrives from the right', run.hazards.hazards.map((h) => h.entry?.from), ['right', 'right']);
+    check('run · and its x is read from the other edge', run.hazards.hazards.map((h) => Number(h.x.toFixed(3))), [125, 125]);
   }
 
   console.log(failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`);

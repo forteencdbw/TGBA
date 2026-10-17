@@ -6,7 +6,7 @@ import type { EnemyBulletField } from './enemyBullets';
 import type { EntityField } from './entities';
 import type { HazardField, HazardKind } from './hazards';
 import type { LateralAuthority } from './lateral';
-import type { EntrySide } from './levels';
+import type { ResolvedSide } from './levels';
 import type { NumberPopups } from './numberPopups';
 import type { ObstacleField } from './obstacles';
 import type { Player } from './player';
@@ -90,7 +90,7 @@ export interface GameSnapshot {
   /** Timeline entries emitted so far. */
   timelineEmitted: number;
   /** How many entries have arrived from each edge. */
-  spawnedBySide: Record<EntrySide, number>;
+  spawnedBySide: Record<ResolvedSide, number>;
 
   /** Seconds of invulnerability left. */
   invulnerable: number;

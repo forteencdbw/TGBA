@@ -97,7 +97,8 @@
     // 横穿型
     // ---------------------------------------------------------------------------------------------
 
-    // 从右侧进、在屏幕内上下摆两次、从左侧出去的一串鱼。教学用的那条。
+    // 从一侧进、在屏幕内上下摆两次、从另一侧出去的一串鱼。教学用的那条。
+    // 下面写的是**不镜像**时的样子；具体从哪一侧进，由这一块自己的硬币决定。
     weave: {
       points: [
         { x: 1.25, y: -0.2 },
@@ -109,31 +110,10 @@
       seconds: 7.5
     },
 
-    // 从屏幕**右侧中央**平着游进来，在中间偏左处上拐，从**屏幕顶部**游出去。
-    rightToTop: {
-      points: [
-        { x: 1.3, y: -0.5 },
-        { x: 0.82, y: -0.5 },
-        { x: 0.5, y: -0.12 },
-        { x: 0.45, y: 0.3 }
-      ],
-      seconds: 5
-    },
-
-    // 同上，镜像：从屏幕**左侧中央**进来，从**屏幕顶部**出去。
-    leftToTop: {
-      points: [
-        { x: -0.3, y: -0.5 },
-        { x: 0.18, y: -0.5 },
-        { x: 0.5, y: -0.12 },
-        { x: 0.55, y: 0.3 }
-      ],
-      seconds: 5
-    },
-
-    // 左 1/4 起、拱过**屏幕正中**、到左 3/4 收的一个半圆（最后两个点只是把它送出画）。
+    // 左 1/4 起、拱过**屏幕正中**、到右 3/4 收的一个半圆（最后两个点只是把它送出画）。
     // 弦压在屏幕偏下的位置，所以这条弧是**从下面兜上来**的，不是贴在天花板上。
-    arcLeft: {
+    // 名字不再承诺方向：每次生成时整块有 50% 概率水平镜像，右起的那一半由镜像得到。
+    arc: {
       points: [
         { x: -0.25, y: -0.95 },
         { x: 0.25, y: -0.9 },
@@ -144,36 +124,13 @@
       seconds: 5.5
     },
 
-    // 同上，镜像：右 1/4 起、过屏幕正中、到右 3/4 收。
-    arcRight: {
-      points: [
-        { x: 1.25, y: -0.95 },
-        { x: 0.75, y: -0.9 },
-        { x: 0.5, y: -0.5 },
-        { x: 0.25, y: -0.9 },
-        { x: -0.25, y: -0.95 }
-      ],
-      seconds: 5.5
-    },
-
     // ---------------------------------------------------------------------------------------------
     // 斜穿型
     // ---------------------------------------------------------------------------------------------
 
-    // 从**右下角**斜着升到**左上角**，中途穿过屏幕正中。左下角是屏幕外，所以队列在画外等。
-    riseRight: {
-      points: [
-        { x: 1.3, y: -1.35 },
-        { x: 0.95, y: -1.05 },
-        { x: 0.5, y: -0.5 },
-        { x: 0.05, y: 0.05 },
-        { x: -0.3, y: 0.4 }
-      ],
-      seconds: 5.5
-    },
-
-    // 同上，镜像：**左下角**到**右上角**。
-    riseLeft: {
+    // **左下角**到**右上角**，中途穿过屏幕正中。左下角是屏幕外，所以队列在画外等。
+    // 同样由每块自己的硬币决定是否镜像成右下角到左上角。
+    rise: {
       points: [
         { x: -0.3, y: -1.35 },
         { x: 0.05, y: -1.05 },
@@ -212,23 +169,15 @@
       seconds: 9
     },
 
-    // 左右两路**同时**从画外斜插到屏幕正中再合流向下——要的就是中间那一小段窗口。
-    // 两条要放在同一个 `at` 上才有意义（见下面的刷怪块），单放一条只是普通的斜线。
-    pincerLeft: {
+    // 从画外斜插到屏幕正中再合流向下——要的就是中间那一小段窗口。
+    // 两路**不再各写一份**：两块用同一个中性路径，各自掷自己的左/右；可能仍然一左一右，
+    // 也可能两条都从同一边来（见下面的刷怪块）。
+    pincer: {
       points: [
         { x: -0.3, y: -0.15 },
         { x: 0.2, y: -0.35 },
         { x: 0.5, y: -0.62 },
         { x: 0.52, y: -1.15 }
-      ],
-      seconds: 4
-    },
-    pincerRight: {
-      points: [
-        { x: 1.3, y: -0.15 },
-        { x: 0.8, y: -0.35 },
-        { x: 0.5, y: -0.62 },
-        { x: 0.48, y: -1.15 }
       ],
       seconds: 4
     }
@@ -313,51 +262,53 @@
     // **喷口第一次登场，而且是早的**：它的三种朝向（`up` / `down` / `flat`）是这一关的招牌课，
     // 所以第一次放在一次爆发**之前**的安静里——玩家必须先见过它，才认得出爆发里那一次。
     // 顺序按难度：`up`（往旁边挪就行）在这一屏，`down` 在回落那屏，`flat`（横贯泳道、只能等时机）留到最后一次爆发。
-    { at: 340, kind: 'vent', side: 'left', aim: 'up' },
+    // 墙的左右不再写死：不写 `side` 就是每块独立掷一次左/右；写 left/right 才会钉死。
+    { at: 340, kind: 'vent', aim: 'up' },
 
     // --- S2  起：**金枪鱼**——第一个会追你的，单独一条出场；再补一串矿物把这一屏填厚一点。
     { at: 400, span: 70, count: 4, kind: 'mineral', arrange: 'spread', x: 0.5 },
     { at: 440, kind: 'tuna', x: 0.85 },
-    { at: 470, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'left', depth: 0.6 },
+    { at: 470, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'random', depth: 0.6 },
     { at: 520, kind: 'crab', x: 0.5 },
 
     { at: 380, span: 180, count: 4, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S3  **爆发一 · 黑烟囱群**：一串鱼从画外斜插上来，紧接着热流把矿物颗粒推上来。
-    { at: 600, kind: 'fish', count: 14, path: 'riseLeft', x: 0.0, pathSpacingSeconds: 0.28 },
+    { at: 600, kind: 'fish', count: 14, path: 'rise', x: 0.0, pathSpacingSeconds: 0.28 },
     { at: 660, span: 70, count: 5, kind: 'mineral', arrange: 'spread', x: 0.45, from: 'bottom' },
 
     // --- S4  回落：一只鮟鱇 + 一只**向下喷的喷口** + 两只盲虾。刚被打过一顿，这一屏把位置找回来；
     // 喷口放在回落里（不在爆发里）是有意的：每一次见新朝向都要有一次能看懂的见面。
     { at: 800, kind: 'angler', x: 0.5 },
-    { at: 850, kind: 'vent', side: 'right', aim: 'down' },
-    { at: 890, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', depth: 0.55 },
+    { at: 850, kind: 'vent', aim: 'down' },
+    { at: 890, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'random', depth: 0.55 },
 
     { at: 770, span: 160, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S5  起（第二次爬升）：再来一串鱼，加两条金枪鱼——**第一条爆发和第二条之间是这一关最长的一段**，
     // 所以它需要一个能自己站住的节拍，而不是空着等下一次。
     { at: 980, kind: 'fish', count: 8, path: 'weave', x: 0.5, pathSpacingSeconds: 0.32 },
     { at: 1030, kind: 'tuna', count: 2, arrange: 'spread' },
-    { at: 1080, kind: 'shrimp', count: 3, arrange: 'spread', span: 30, x: 0.5, from: 'left', depth: 0.6 },
+    { at: 1080, kind: 'shrimp', count: 3, arrange: 'spread', span: 30, x: 0.5, from: 'random', depth: 0.6 },
     { at: 1110, kind: 'crab', count: 2, arrange: 'line' },
 
     { at: 950, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S6  **爆发二 · 管虫丛**：一串鱼 + 枪手 + 一排管虫墙。重点在那排墙——你必须**改道**。
-    { at: 1160, kind: 'fish', count: 12, path: 'arcLeft', x: 0.2, pathSpacingSeconds: 0.28 },
+    { at: 1160, kind: 'fish', count: 12, path: 'arc', x: 0.2, pathSpacingSeconds: 0.28 },
     { at: 1220, kind: 'archer', x: 0.5 },
     { at: 1270, kind: 'tube', count: 3, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.2 },
 
     // --- S7  回落：矿物 + 一条电鳗 + 两只虾。电鳗是这一关唯一的枪手类（第一次出现），单独给它一屏。
     { at: 1350, span: 70, count: 5, kind: 'mineral', arrange: 'spread', x: 0.5 },
     { at: 1400, kind: 'eel', x: 0.5 },
-    { at: 1450, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'right', depth: 0.55 },
+    { at: 1450, kind: 'shrimp', count: 2, arrange: 'spread', span: 30, x: 0.5, from: 'random', depth: 0.55 },
 
     { at: 1340, span: 160, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.35] },
     // --- S8  **爆发三 · 热流区（最高点）**：两路合围 + **横贯泳道的喷口** + 最后一排管虫墙。
     // 间隔已经缩到 2 屏，到这里不再留余量——这是"突然全来了"最响的一次，而且它在最快的区间里。
-    { at: 1540, kind: 'fish', count: 12, path: 'pincerLeft', x: 0.0, pathSpacingSeconds: 0.26 },
-    { at: 1540, kind: 'fish', count: 6, path: 'pincerRight', x: 1.0, pathSpacingSeconds: 0.26 },
+    // 两块**各自**掷左/右：可能仍然是一边 12 条、一边 6 条，也可能两条都从同一边来。
+    { at: 1540, kind: 'fish', count: 12, path: 'pincer', x: 0.0, pathSpacingSeconds: 0.26 },
+    { at: 1540, kind: 'fish', count: 6, path: 'pincer', x: 1.0, pathSpacingSeconds: 0.26 },
     // **横向喷流**：它从一边铺到另一边，所以"往旁边挪"这次不管用——解法换成**时机**（压住气泡等它喷完）。
-    { at: 1620, kind: 'vent', side: 'left', aim: 'flat' },
+    { at: 1620, kind: 'vent', aim: 'flat' },
     { at: 1650, kind: 'tube', count: 3, arrange: 'barrier', gapAt: 0.28, gapWidth: 0.19 },
 
     // --- S9  收一屏：**只有食物，没有一个危险物**。BOSS 之前把手腾出来——血看回来、技能留着、怒气想清楚。

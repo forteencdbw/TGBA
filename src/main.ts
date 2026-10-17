@@ -2599,6 +2599,8 @@ class Game {
   }
 
   private startRun(carryScore = false): void {
+    // A new level or attempt rolls its own left/right orientations; see `Run.flipFor`.
+    this.run.clearBlockFlips();
     this.run.player.reset();
     // The arrival begins below the screen; the intro walks it up. Set here rather than inside the intro so that where a
     // run starts lives in one place with everything else that resets.

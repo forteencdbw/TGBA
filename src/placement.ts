@@ -3,7 +3,7 @@ import { seedMember } from './boids';
 import { HazardField, KIND_TUNING, ventX, type Hazard, type HazardKind, type SpawnOptions } from './hazards';
 import { isObstacleKind, ObstacleField } from './obstacles';
 import { mech } from './mechanisms';
-import { LEVEL, type EntrySide, type LevelEntry } from './levels';
+import { LEVEL, type LevelEntry, type ResolvedSide } from './levels';
 
 /**
  * Where one timeline entry ended up.
@@ -15,7 +15,7 @@ import { LEVEL, type EntrySide, type LevelEntry } from './levels';
  */
 export interface SpawnRecord {
   kind: string;
-  from: EntrySide;
+  from: ResolvedSide;
   /** Where it actually spawned, which for a side or bottom entry is deliberately OFF the screen. */
   x: number;
   worldY: number;
@@ -65,9 +65,26 @@ export function placeEntry(
   view: { min: number; max: number },
   laneWidth: number,
   world: PlacedWorld,
+  /**
+   * Whether this BLOCK is mirrored this time.
+   *
+   * Rolled once per authored block by `Run`, and shared by every entry the block expanded to -- that is what keeps a
+   * barrier's gap and a school's path in one piece. `false` is the deterministic default, so probes that call this
+   * directly keep the authored orientation.
+   */
+  flip = false,
 ): SpawnRecord {
-  const side = entry.from ?? 'top';
-  let spawnX = entry.x * laneWidth;
+  /**
+   * THE MIRROR, in one place.
+   *
+   * `flip` is the whole of the "direction is random" feature: it swaps a random side, mirrors every x about the lane,
+   * and mirrors the spline's x. Explicit `left`/`right` sides are NOT swapped -- the file said where, so the file
+   * wins -- but their landing x still mirrors, because `x` is a coordinate rather than a side.
+   */
+  const authoredFrom = entry.from ?? 'top';
+  const side: ResolvedSide = authoredFrom === 'random' ? (flip ? 'right' : 'left') : authoredFrom;
+  const mirrored = (fraction: number): number => (flip ? 1 - fraction : fraction);
+  let spawnX = mirrored(entry.x) * laneWidth;
   let spawnY = worldY;
   if (side === 'left' || side === 'right') {
     const off = laneWidth * mech.spawning.offscreenMarginRatio;
@@ -81,10 +98,18 @@ export function placeEntry(
    *
    * This is the one place the "vents are on a wall" rule is enforced in space, and it is applied AFTER the entry
    * block above so that nothing a level writes about arrival can move it into the middle. The loader refuses a vent
-   * with no `side`, and refuses one with `from`, so by the time this runs the derivation is the only thing that
-   * could have decided the position.
+   * with `from`, so by the time this runs the derivation is the only thing that could have decided the position.
+   * An omitted or `'random'` side uses this block's coin; an explicit one keeps its wall.
    */
-  const ventSide = entry.kind === 'vent' ? (entry.side ?? 'left') : null;
+  const authoredVentSide = entry.kind === 'vent' ? entry.side : undefined;
+  const ventSide =
+    entry.kind === 'vent'
+      ? authoredVentSide === 'random' || authoredVentSide === undefined
+        ? flip
+          ? 'right'
+          : 'left'
+        : authoredVentSide
+      : null;
   if (ventSide) spawnX = ventX(ventSide, laneWidth);
   const entering = side === 'top' ? null : { from: side, speed: entry.enterSpeed ?? mech.spawning.enterSpeedMps };
 
@@ -98,7 +123,10 @@ export function placeEntry(
   };
 
   if (entry.kind === 'bubble') {
-    world.field.bubbles.push(world.field.bubbleFromEntry({ ...entry, at: spawnY }, laneWidth, world.playerRadiusFraction));
+    // The field insets a collectable by its own radius; mirroring the FRACTION keeps that inset from the far edge.
+    world.field.bubbles.push(
+      world.field.bubbleFromEntry({ ...entry, x: mirrored(entry.x), at: spawnY }, laneWidth, world.playerRadiusFraction),
+    );
     return record;
   }
   /**
@@ -116,7 +144,9 @@ export function placeEntry(
       entry.kind,
       spawnX,
       spawnY,
-      side === 'left' || side === 'right' ? { speed: entry.enterSpeed ?? mech.spawning.enterSpeedMps, targetX: entry.x * laneWidth } : undefined,
+      side === 'left' || side === 'right'
+        ? { speed: entry.enterSpeed ?? mech.spawning.enterSpeedMps, targetX: mirrored(entry.x) * laneWidth }
+        : undefined,
     );
     return record;
   }
@@ -134,13 +164,23 @@ export function placeEntry(
    */
   const pathSpec = entry.path ? LEVEL.paths?.[entry.path] : undefined;
   /**
+   * The spline is authored as an ABSOLUTE lane fraction, not relative to the spawn, so its mirror is `1 - x` on every
+   * waypoint. `y` is a screen fraction and is untouched: the mirror is horizontal.
+   */
+  const mirroredPath = pathSpec
+    ? {
+        seconds: pathSpec.seconds,
+        points: flip ? pathSpec.points.map((point) => ({ x: 1 - point.x, y: point.y })) : pathSpec.points,
+      }
+    : undefined;
+  /**
    * A BOIDS fish does not carry the spline; its school's invisible leader does.
    *
    * The first member to be placed makes the school (`joinSchool`) and the rest find it by the block's number, so the whole
    * block shares one leader that is stepped once a frame. The fish is born in a cloud round the leader, at the leader's
    * velocity, and has no `path` of its own: that is what keeps `advanceKind` from walking it along the curve as well.
    */
-  if (entry.school !== undefined && pathSpec && entry.layer === 'back') {
+  if (entry.school !== undefined && mirroredPath && entry.layer === 'back') {
     /**
      * A BACKGROUND school's fish are not hazards: they go to the back-school field, which has no hitbox and nothing that reads it.
      * Placed by the same loop and the same birth rules as a foreground school (a cloud behind an invisible leader, facing the
@@ -148,7 +188,7 @@ export function placeEntry(
      */
     const fish = world.hazards.back.place(
       entry.school,
-      pathSpec,
+      mirroredPath,
       spawnY,
       laneWidth,
       view.max - view.min,
@@ -159,8 +199,8 @@ export function placeEntry(
     );
     return { ...record, x: +fish.x.toFixed(1), worldY: +fish.y.toFixed(1) };
   }
-  if (entry.school !== undefined && pathSpec) {
-    const school = world.hazards.joinSchool(entry.school, pathSpec, spawnY, laneWidth, view.max - view.min);
+  if (entry.school !== undefined && mirroredPath) {
+    const school = world.hazards.joinSchool(entry.school, mirroredPath, spawnY, laneWidth, view.max - view.min);
     const seed = seedMember(school, laneWidth, entry.schoolSize ?? 1);
     // Facing the school's way from the first frame: a fish placed with no heading is drawn facing left (the picture as it was
     // drawn), which is the wrong way for a school going right and would turn round on its first step.
@@ -174,10 +214,10 @@ export function placeEntry(
     world.hazards.hazards.push(hazard);
     return { ...record, x: +seed.x.toFixed(1), worldY: +seed.y.toFixed(1) };
   }
-  const path: Hazard['path'] = pathSpec
+  const path: Hazard['path'] = mirroredPath
     ? {
-        points: pathSpec.points,
-        seconds: pathSpec.seconds,
+        points: mirroredPath.points,
+        seconds: mirroredPath.seconds,
         // NEGATIVE while it waits its turn at the head of the curve. `pathPoint` is clamped at 0 there, so a member
         // that has not set off yet simply sits at the start -- off-screen, which is the only place a queue can wait.
         elapsed: -(entry.pathDelaySeconds ?? 0),

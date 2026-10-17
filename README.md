@@ -183,8 +183,14 @@ levels/03-jelly-forest.json5 (level "jelly-forest"): paths.weave.points[0].y sho
 | 怎么摆 | `arrange`：`single` / `line`（横排）/ `column`（竖列）/ `spread`（沿距离摊开，横向正弦摆动）/ `barrier`（留缺口的障碍横排） |
 | 从哪边进来 | `from`：`top`（默认）/ `left` / `right` / `bottom`，见下 |
 
+**每一块自己掷一次左/右**：一个 spawn 块被放出来的那一刻掷一次硬币。翻到“镜像”时，这一块的
+`x → 1-x`、`from: 'random'` 的侧别换边、path 的每个点 x 取反；整排障碍、整条鱼队因此保持一个形状。
+一个块展开出的多条 entry 共用同一次结果。**显式写的 `left`/`right` 不翻**（文件说了在哪边，就以文件为准），
+但 `x` 是坐标而不是侧别，所以仍然镜像。
+
 **从四边进场**：`from` 决定内容从哪条边进来，`top`（默认）是视野上方生成、随水流向下漂进画面。
 
+- `random`：每块掷一次，约一半从左、一半从右。**不写 `from` 仍然是 `top`，不是随机**。
 - `left` / `right`：在**泳道外**生成，横向游进来，`depth` 决定它在屏幕哪个高度切入（0 = 下边缘，1 = 上边缘）。
   `arrange` 给出的 x 是它**进场后要去的位置**。水流仍在往下带，所以进场路线是斜的。
 - `bottom`：在视野下方生成，以比水流更快的速度**向上**追，**一路升到和玩家齐平**才交回给它自己的 AI。
@@ -199,24 +205,27 @@ levels/03-jelly-forest.json5 (level "jelly-forest"): paths.weave.points[0].y sho
 **例子**（第一关 `config/levels/01-black-smokers.json5` 里就有这几块，可以改也可以删）：
 
 ```json5
-// 一小队鱼从左边游进来，散在 24 米里
-{ at: 300, span: 24, count: 3, kind: 'fish', arrange: 'spread', from: 'left', depth: 0.68 },
+// 一小队鱼从随机一侧游进来，散在 24 米里
+{ at: 300, span: 24, count: 3, kind: 'fish', arrange: 'spread', from: 'random', depth: 0.68 },
+// 同上，但钉死从左边来（显式侧别不翻）
+{ at: 340, span: 24, count: 3, kind: 'fish', arrange: 'spread', from: 'left', depth: 0.68 },
 // 从下面追上来的两条鱼：压力来自背后
 { at: 900, span: 18, count: 2, kind: 'fish', arrange: 'spread', x: 0.5, from: 'bottom' },
-// 被水从右边冲进来的木箱，漂到泳道 0.72 处停下
-{ at: 1010, kind: 'crate', x: 0.72, from: 'right', enterSpeed: 26 },
-// 热液喷口：**没有 `x`**，位置由 `side` 推出来（贴着那面墙），朝向相对它自己那面墙
-{ at: 760, kind: 'vent', side: 'left', aim: 'flat' },
+// 被水冲进来的木箱，漂到泳道 0.72 处停下；侧别随机，x 会跟着镜像
+{ at: 1010, kind: 'crate', x: 0.72, from: 'random', enterSpeed: 26 },
+// 热液喷口：**没有 `x`**，位置由 `side` 推出来（贴着那面墙），朝向相对它自己那面墙。
+// 不写 side 就是左右随机；写 side: 'left' 才会钉死。
+{ at: 760, kind: 'vent', aim: 'flat' },
 ```
 
-**火山（`vent`）的三个专属键**：`side`（`left` / `right`，**必填**）、`aim`（`up` / `flat` / `down`，
-斜向上 / 横向 / 斜向下，默认 `up`）、`startDelaySeconds`（出现后先安静多少秒，默认取
-`hazards.vent.startDelaySeconds`）。细节见下面"加载器会拒绝的东西"和机制配置里 `hazards.vent` 那一段。
+**火山（`vent`）的三个专属键**：`side`（`left` / `right` / `random`，**可省略**；省略和 `random` 一样，
+每块掷一次左/右）、`aim`（`up` / `flat` / `down`，斜向上 / 横向 / 斜向下，默认 `up`）、
+`startDelaySeconds`（出现后先安静多少秒，默认取 `hazards.vent.startDelaySeconds`）。
+细节见下面"加载器会拒绝的东西"和机制配置里 `hazards.vent` 那一段。
 
 **加载器会拒绝的东西**（每条都会说出是哪一关、第几块、哪一项）：拼错的键名（否则那一项会被静默忽略，
 看起来像游戏坏了）、从侧面进来的收集物、从下方进来的布景、把生物排成 `barrier`、
 `at`/`kind` 缺失、**没有缺口的障碍横排**（那会让"要不要变瘦"不再是选择题）、
-**火山没写 `side`**（火山只能是挂在墙上的，格式上没有地方写"火山在泳道中间"）、
 **火山写了 `from`**（它是地形，是它就在那儿，没有东西把它冲进来）、
 以及**给非火山写了 `side`/`aim`/`startDelaySeconds`**（那是三个会静默失效的键）。
 写错 `count` 之类的数字**不会静默**——但只查它是不是个数，不查它是不是个"合理"的数：见上面机制配置一节

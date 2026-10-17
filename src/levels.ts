@@ -94,10 +94,22 @@ function parseLevelFile(path: string, text: string): unknown {
  * Which edge of the screen something arrives from.
  *
  * `top` is the classic case and the only one that needs no motion of its own: content is placed above
- * the view and the current carries it down. The other three are the ones this type exists for --
- * something swimming in from the side, or catching the player up from behind.
+ * the view and the current carries it down. `left`/`right`/`bottom` are the ones this type exists for --
+ * something swimming in from the side, or catching the player up from behind. `random` is not an edge: it asks the
+ * block's coin to pick left or right, and `ResolvedSide` is what the runtime actually sees.
  */
-export type EntrySide = 'top' | 'left' | 'right' | 'bottom';
+export type EntrySide = 'top' | 'left' | 'right' | 'bottom' | 'random';
+
+/** An edge after the coin has been rolled: `random` is an authoring request, never a runtime state. */
+export type ResolvedSide = Exclude<EntrySide, 'random'>;
+
+/**
+ * Which wall a vent may name.
+ *
+ * `random` and an omitted `side` mean the same thing: this block's coin picks a wall. Only an explicit `left` or
+ * `right` pins it, which is the "if the file says where, the file wins" half of the mirroring rule.
+ */
+export type LevelVentSide = VentSide | 'random';
 
 /**
  * One thing to place, and how far into the level it appears.
@@ -105,6 +117,14 @@ export type EntrySide = 'top' | 'left' | 'right' | 'bottom';
 export interface LevelEntry {
   /** Metres of scroll at which this enters. */
   at: number;
+  /**
+   * Which authored block this entry came from.
+   *
+   * Every entry expanded from one `spawns` block shares it, so the block's horizontal coin is rolled ONCE and the
+   * whole row/line/school mirrors together. Without it a barrier would have each piece flip on its own and the gap
+   * would scatter. Optional only because hand-written test timelines may predate it.
+   */
+  group?: number;
   /**
    * The named spline this entry follows, if any. See `PathSpec`.
    *
@@ -189,7 +209,12 @@ export interface LevelEntry {
    * meal, and the volume economy keys off this number.
    */
   size?: number;
-  /** Which edge it arrives from. Absent means `top`. */
+  /**
+   * Which edge it arrives from. Absent means `top`; `'random'` means this block's coin picks left or right.
+   *
+   * `'random'` is a request for a SIDE, not a vertical direction: it cannot be used on a collectable, which always
+   * comes down with the current.
+   */
   from?: EntrySide;
   /**
    * Metres per second it moves INTO the play area while arriving, relative to the screen.
@@ -206,13 +231,15 @@ export interface LevelEntry {
    */
   depth?: number;
   /**
-   * Vents only, and REQUIRED for one: which wall the rock is mounted on.
+   * Vents only: which wall the rock is mounted on.
    *
    * There is no `x` for a vent, and that is the point. A vent used to be placed anywhere across the lane, so the file
    * could say "vent in the middle" and the game would dutifully put one there; naming a WALL instead means the
-   * position is derived and the illegal case has nowhere to be written. The loader refuses a vent without it.
+   * position is derived and the illegal case has nowhere to be written.
+   *
+   * Omitted or `'random'` means the block's coin picks the wall; `left`/`right` pins it.
    */
-  side?: VentSide;
+  side?: LevelVentSide;
   /** Vents only: which way the plume points relative to its own wall. Absent means `up`. */
   aim?: VentAim;
   /** Vents only: seconds of quiet after it appears, overriding `hazards.vent.startDelaySeconds` for this one. */
@@ -331,13 +358,12 @@ export interface SpawnBlock {
   enterSpeed: number;
   depth: number;
   /**
-   * Vents, and only vents -- the loader refuses these on anything else and refuses a vent without `side`.
+   * Vents, and only vents -- the loader refuses these on anything else.
    *
-   * Optional here rather than required because `SpawnBlock` is also what the level AUTHORING helpers in this file
-   * produce, and those are used for every kind. The rule that matters ("a vent names a wall") is enforced in
-   * `readBlock`, where the file is read, rather than by the type of a block that may be any kind at all.
+   * Optional here because `SpawnBlock` is also what the level AUTHORING helpers in this file produce, and those are
+   * used for every kind; omitted on a vent means its coin picks the wall.
    */
-  side?: VentSide;
+  side?: LevelVentSide;
   aim?: VentAim;
   startDelaySeconds?: number;
 }
@@ -651,7 +677,7 @@ const ARRANGEMENTS: readonly string[] = ['single', 'line', 'column', 'spread', '
 /** Whether a kind is scenery. Asked of the config's own list, so a new obstacle kind is covered by construction. */
 const isScenery = (kind: string): boolean => (OBSTACLE_KINDS as readonly string[]).includes(kind);
 
-const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom'];
+const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom', 'random'];
 
 /**
  * The walls a vent may be mounted on, and the ways its plume may point.
@@ -659,7 +685,7 @@ const SIDES: readonly string[] = ['top', 'left', 'right', 'bottom'];
  * Runtime lists for the same reason `SIDES` is one: the loader only has strings to compare, and the TYPE half alone
  * would let a typo through to a fallback.
  */
-const VENT_SIDES: readonly string[] = ['left', 'right'];
+const VENT_SIDES: readonly string[] = ['left', 'right', 'random'];
 const VENT_AIMS: readonly string[] = ['up', 'flat', 'down'];
 
 /** The keys a block may use. Anything else is an error rather than a silent no-op -- see `readBlock`. */
@@ -793,9 +819,10 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
    * the game would look broken: scenery that never arrives, or a collectable that ignores its own direction.
    */
   if (from !== 'top' && kind === 'bubble') {
+    const fromWhere = from === 'random' ? 'a random side' : `the ${from}`;
     fail(
       where,
-      `is a "${kind}" arriving from the ${from}, but collectables come down with the current. Only creatures and obstacles can enter from a side.`,
+      `is a "${kind}" arriving from ${fromWhere}, but collectables come down with the current. Only creatures and obstacles can enter from a side.`,
     );
   }
   if (from === 'bottom' && isScenery(kind)) {
@@ -807,27 +834,24 @@ function readBlock(raw: unknown, levelId: string, index: number): SpawnBlock {
   /**
    * The vent rules, in both directions.
    *
-   * A vent MUST name a wall and must not name a position, and nothing else may name a wall at all. Both directions are
-   * checked because a half-applied rule is worse than none: `side` on a fish would be a key that silently does
-   * nothing, and a vent without one would fall back to a wall the author never chose -- and the first vent in the
-   * campaign is the one that has to be right.
+   * A vent may name a wall (or ask for a random one) and must not name a position, and nothing else may name a wall
+   * at all. Both directions are checked because a half-applied rule is worse than none: `side` on a fish would be a
+   * key that silently does nothing, and an accidental `side` on scenery would make the file look like it decided
+   * something it did not.
    */
   const isVent = kind === 'vent';
-  if (isVent && node['side'] === undefined) {
-    fail(
-      where,
-      'is a "vent" with no "side", but every vent is mounted on a wall. Add side: "left" or side: "right" -- a vent ' +
-        'in the middle of the lane is not a thing this level format can say.',
-    );
-  }
   if (isVent && from !== 'top') {
-    fail(where, `is a "vent" arriving from the ${from}, but a vent is terrain: it is where it is, and nothing carries it in.`);
+    const fromWhere = from === 'random' ? 'a random side' : `the ${from}`;
+    fail(where, `is a "vent" arriving from ${fromWhere}, but a vent is terrain: it is where it is, and nothing carries it in.`);
   }
   if (!isVent) {
     const stray = ['side', 'aim', 'startDelaySeconds'].filter((k) => node[k] !== undefined);
     if (stray.length) fail(where, `gives a "${kind}" the vent-only key(s) ${stray.join(', ')}, which would do nothing.`);
   }
-  const side = isVent ? (pick(node, 'side', where, 'left', VENT_SIDES) as VentSide) : undefined;
+  const side =
+    isVent && node['side'] !== undefined
+      ? (pick(node, 'side', where, 'left', VENT_SIDES) as LevelVentSide)
+      : undefined;
   const aim = node['aim'] === undefined ? undefined : (pick(node, 'aim', where, 'up', VENT_AIMS) as VentAim);
 
   /**
@@ -942,18 +966,19 @@ function expandBlock(block: SpawnBlock, variety = 0, index = 0): LevelEntry[] {
   /**
    * A VENT's own keys, carried onto every entry the block makes.
    *
-   * Spread here for the same reason `side` is: the entries below are built by the `place.*` helpers, which know about
-   * POSITIONS, so anything a block says about WHAT this is rather than WHERE it is has to be carried separately.
+   * Spread here because the entries below are built by the `place.*` helpers, which know about POSITIONS; anything a
+   * block says about WHAT this is rather than WHERE it is has to be carried separately. Without it the keys reach the
+   * block reader and stop there, and a level file that plainly says `side: 'right'` quietly produces a left-hand one.
    *
-   * This is not bookkeeping -- without it the keys reach the block reader and stop there. The vents then fall back to
-   * their defaults, and a level file that plainly says `side: 'right'` quietly produces a left-hand one, which reads
-   * as a rendering bug rather than as a dropped field.
+   * KEYED ON THE KIND, not on whether `side` was written. That distinction used to be invisible because every vent had
+   * to name a wall; now a vent may omit `side` for a random one, and keying on the side would silently drop its `aim`
+   * and start delay too -- every vent became an upward one. The placement probe caught it as "all three aims: false".
    */
   const vent: Pick<LevelEntry, 'side' | 'aim' | 'startDelaySeconds'> =
-    block.side === undefined
+    block.kind !== 'vent'
       ? {}
       : {
-          side: block.side,
+          ...(block.side === undefined ? {} : { side: block.side }),
           ...(block.aim === undefined ? {} : { aim: block.aim }),
           ...(block.startDelaySeconds === undefined ? {} : { startDelaySeconds: block.startDelaySeconds }),
         };
@@ -1063,7 +1088,16 @@ function readLevel(node: Record<string, unknown>, where: string): Level {
 
   const blocks = rawSpawns.map((raw, i) => readBlock(raw, id, i));
   const varieties = blockVarieties(blocks);
-  const entries = blocks.flatMap((block, i) => expandBlock(block, varieties.get(block), i)).sort((a, b) => a.at - b.at);
+  /**
+   * One `group` per BLOCK, shared by every entry it expands to.
+   *
+   * The mirror coin is rolled per group, not per entry: a barrier's row, a line of crates, or a school of fish must
+   * flip as one shape, or the gap scatters and the school tears in half. The block's index is enough because the
+   * timeline is rebuilt per level.
+   */
+  const entries = blocks
+    .flatMap((block, i) => expandBlock(block, varieties.get(block), i).map((entry) => ({ ...entry, group: i })))
+    .sort((a, b) => a.at - b.at);
   const landmarks = Array.isArray(node['landmarks'])
     ? (node['landmarks'] as { depth: number; label: string }[])
     : undefined;
@@ -1483,7 +1517,9 @@ export function currentSpawnBlocks(): readonly SpawnBlock[] {
 export function installSpawnBlocks(blocks: readonly unknown[]): number {
   const parsed = blocks.map((raw, i) => readBlock(raw, LEVEL.id, i));
   const varieties = blockVarieties(parsed);
-  const entries = parsed.flatMap((block, i) => expandBlock(block, varieties.get(block), i)).sort((a, b) => a.at - b.at);
+  const entries = parsed
+    .flatMap((block, i) => expandBlock(block, varieties.get(block), i).map((entry) => ({ ...entry, group: i })))
+    .sort((a, b) => a.at - b.at);
   assertLevelSane({ ...LEVEL, entries, blocks: parsed });
   TIMELINE = entries;
   installedBlocks = parsed;

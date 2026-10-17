@@ -12,7 +12,7 @@ import { initialStageState, type StageState } from './stages';
 import { defaultBubbleType, findRoute, formForRoute, hasVerb, type BubbleType, type RouteId } from './bubbleTypes';
 import { calibrateLateral, type LateralAuthority } from './lateral';
 import { initialRageState, type RageState } from './rage';
-import type { EntrySide } from './levels';
+import type { ResolvedSide } from './levels';
 import type { Input } from './input';
 import { chainTargets } from './conductive';
 import { tuning } from './config';
@@ -252,7 +252,7 @@ export class Run {
   paceMps = 0;
   timelineEmitted = 0;
   spawnLog: SpawnRecord[] = [];
-  spawnedBySide: Record<EntrySide, number> = { top: 0, left: 0, right: 0, bottom: 0 };
+  spawnedBySide: Record<ResolvedSide, number> = { top: 0, left: 0, right: 0, bottom: 0 };
   elapsed = 0;
   nominalSeconds = 0;
   lateral: LateralAuthority = calibrateLateral(1);
@@ -380,6 +380,16 @@ export class Run {
    * that comparison meaningful instead of turning it into a distribution.
    */
   bulletRandom: () => number = Math.random;
+  /**
+   * The level mirror's coin, replaceable for the same reason as `bulletRandom`.
+   *
+   * Rolled once per authored spawn block (`flipFor`), not once per expanded entry: a barrier's row, a line of crates
+   * or a school must flip as one shape. `>= 0.5` flips; probes set this to `() => 0` for the authored orientation or
+   * `() => 1` for the mirrored one.
+   */
+  levelRandom: () => number = Math.random;
+  /** The block group → flip decision for the current level; cleared whenever the run/level starts. */
+  private readonly blockFlips = new Map<number, boolean>();
   /** Burst radius multiplier from stacked 沸腾路线 · 爆破半径 picks. */
   burstRadiusMultiplier = 1;
   /** Rage decay multiplier from stacked 沸腾路线 · 余温 picks: below 1 means the heat lingers. */
@@ -1589,14 +1599,41 @@ export class Run {
    * per edge.
    */
   emitTimelineEntry(entry: LevelEntry, worldY: number, laneWidth: number, world: WorldView): void {
-    const record = placeEntry(entry, worldY, { min: world.min, max: world.max }, laneWidth, {
-      field: this.field,
-      obstacles: this.obstacles,
-      hazards: this.hazards,
-      playerRadiusFraction: stageRadiusFraction(this.stage.stage, this.player.volume),
-    });
+    const record = placeEntry(
+      entry,
+      worldY,
+      { min: world.min, max: world.max },
+      laneWidth,
+      {
+        field: this.field,
+        obstacles: this.obstacles,
+        hazards: this.hazards,
+        playerRadiusFraction: stageRadiusFraction(this.stage.stage, this.player.volume),
+      },
+      this.flipFor(entry),
+    );
     this.spawnLog.push(record);
     if (this.spawnLog.length > 12) this.spawnLog.shift();
     this.spawnedBySide[record.from]++;
+  }
+
+  /**
+   * One coin per authored block, memoised for the life of this level.
+   *
+   * The memo is why the whole block sees one answer even though its entries are emitted one after another. An entry
+   * with no group (a hand-written test timeline) still gets a coin, just one it does not share.
+   */
+  private flipFor(entry: LevelEntry): boolean {
+    if (entry.group === undefined) return this.levelRandom() >= 0.5;
+    const known = this.blockFlips.get(entry.group);
+    if (known !== undefined) return known;
+    const flip = this.levelRandom() >= 0.5;
+    this.blockFlips.set(entry.group, flip);
+    return flip;
+  }
+
+  /** A new level (or a new run) rolls a fresh set of block orientations. */
+  clearBlockFlips(): void {
+    this.blockFlips.clear();
   }
 }

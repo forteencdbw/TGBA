@@ -76,13 +76,13 @@
   spawns: [
     // --- S0  安静开场：只有食物和两只螃蟹。螃蟹是"机会不是敌人"——它把你弹上去，这一关先教这个。
     { at: 20, span: 120, count: 6, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.45] },
-    { at: 60, kind: 'crab', count: 2, arrange: 'spread', from: 'left' },
+    { at: 60, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
 
     // --- S1  起：第一排木箱（缺口是给你的）、一串渔网、第一位枪手，再补两只螃蟹把这一屏收住。
     { at: 200, kind: 'crate', count: 4, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.2 },
     { at: 260, kind: 'net', count: 3, arrange: 'line' },
     { at: 320, kind: 'archer', x: 0.5 },
-    { at: 350, kind: 'crab', count: 2, arrange: 'spread', from: 'right' },
+    { at: 350, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
 
     { at: 280, span: 95, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S2  **爆发一 · 船首残骸**：木箱之后紧接着一排**撞不开的**封路墙——同一屏里两种答案，
@@ -90,29 +90,29 @@
     { at: 400, kind: 'crate', count: 5, arrange: 'barrier', gapAt: 0.45, gapWidth: 0.2 },
     { at: 450, kind: 'wall', count: 4, arrange: 'barrier', gapAt: 0.62, gapWidth: 0.2 },
     { at: 510, kind: 'angler', x: 0.5 },
-    { at: 540, kind: 'crab', count: 3, arrange: 'spread', from: 'right' },
+    { at: 540, kind: 'crab', count: 3, arrange: 'spread', from: 'random' },
     { at: 560, kind: 'net', count: 3, arrange: 'line' },
 
     // --- S3  回落：水母（减速）和一张网，再补两只螃蟹。减速之后撞上网是这一关最有教育意义的一次挫折——
     // 而这次挫折现在**多了一屏**来读：被打完之后有三屏才到下一次爆发。
     { at: 600, kind: 'jelly', count: 3, arrange: 'line' },
     { at: 640, kind: 'net', count: 3, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.2 },
-    { at: 700, kind: 'crab', count: 2, arrange: 'spread', from: 'left' },
+    { at: 700, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
 
     { at: 700, span: 50, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S4  起（第二次爬升）：木箱 + 枪手 + 两条鱼雷。**这是全关最长的一段安静**，所以它得自己站住：
     // 一条鱼雷是诚实的，两条就开始算账了；水母放在末尾，让这一屏的账单带到来不及。
     { at: 780, kind: 'crate', count: 4, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.2 },
     { at: 840, kind: 'archer', x: 0.5 },
-    { at: 880, kind: 'torpedo', count: 2, arrange: 'spread', from: 'left' },
-    { at: 910, kind: 'crab', count: 2, arrange: 'spread', from: 'left' },
-    { at: 920, kind: 'jelly', count: 2, arrange: 'spread', from: 'right' },
+    { at: 880, kind: 'torpedo', count: 2, arrange: 'spread', from: 'random' },
+    { at: 910, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
+    { at: 920, kind: 'jelly', count: 2, arrange: 'spread', from: 'random' },
 
     { at: 900, span: 40, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.4, 0.5, 0.45] },
     // --- S5  **爆发二 · 货舱通道**：珊瑚（硬，变小有优势）+ 两条鱼雷 + 一排封路墙。
     // 珊瑚和封路墙在同一屏里是这一关最贵的一次"改道"：一个能打碎，一个打不碎，而且它们之间只有两秒。
     { at: 980, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.5, gapWidth: 0.2 },
-    { at: 1040, kind: 'torpedo', count: 2, arrange: 'spread', from: 'left' },
+    { at: 1040, kind: 'torpedo', count: 2, arrange: 'spread', from: 'random' },
     { at: 1080, kind: 'wall', count: 3, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
 
     // --- S6  回落：水母 + 网 + 一排木箱。间隔已经从 3 屏缩到 2 屏，所以这一屏比上一次回落更短也更急。
@@ -124,13 +124,13 @@
     // --- S7  **爆发三 · 锚链（最高点）**：最后一排封路墙 + 三条鱼雷 + 两只鮟鱇 + 水母。
     // 间隔已经缩到 2 屏，到这里不再留余量——而且它在最快的区间里（每屏 5.6 秒）。
     { at: 1340, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
-    { at: 1400, kind: 'torpedo', count: 3, arrange: 'spread', from: 'right' },
+    { at: 1400, kind: 'torpedo', count: 3, arrange: 'spread', from: 'random' },
     { at: 1450, kind: 'angler', count: 2, arrange: 'line' },
-    { at: 1490, kind: 'jelly', count: 2, arrange: 'spread', from: 'left' },
+    { at: 1490, kind: 'jelly', count: 2, arrange: 'spread', from: 'random' },
 
     // --- S8  收一屏：**只有食物**，外加两只螃蟹（它们是往上的推力，不是威胁）。
     { at: 1560, span: 140, count: 8, kind: 'bubble', arrange: 'spread', sizes: [0.4, 0.5, 0.45] },
-    { at: 1650, kind: 'crab', count: 2, arrange: 'spread', from: 'right' },
+    { at: 1650, kind: 'crab', count: 2, arrange: 'spread', from: 'random' },
   ],
 
 }

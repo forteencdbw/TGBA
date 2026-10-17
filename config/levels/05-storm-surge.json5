@@ -89,13 +89,13 @@
     // --- S2  **爆发一 · 浪涌**：一排**封路墙**（撞不开，只能打掉或从缺口过去）+ 两条鱼雷 + 一张网 + 三只盲虾。
     // 网在墙后面：你刚改完道，网正好在改道的方向上。
     { at: 400, kind: 'wall', count: 5, arrange: 'barrier', gapAt: 0.4, gapWidth: 0.19 },
-    { at: 460, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'left', enterSpeed: 50 },
+    { at: 460, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'random', enterSpeed: 50 },
     { at: 500, kind: 'net', count: 4, arrange: 'line' },
-    { at: 530, kind: 'shrimp', count: 3, arrange: 'spread', span: 40, x: 0.4, from: 'right', depth: 0.6 },
+    { at: 530, kind: 'shrimp', count: 3, arrange: 'spread', span: 40, x: 0.4, from: 'random', depth: 0.6 },
 
     // --- S3  回落：颗粒、盲虾、螃蟹、鱼群。刚被墙堵过一次，这一屏让你把高度和位置都找回来。
     { at: 600, kind: 'mineral', count: 12, arrange: 'spread', span: 50, amplitude: 0.3, x: 0.5, from: 'bottom' },
-    { at: 650, kind: 'shrimp', count: 3, arrange: 'spread', span: 40, x: 0.4, from: 'right', depth: 0.6 },
+    { at: 650, kind: 'shrimp', count: 3, arrange: 'spread', span: 40, x: 0.4, from: 'random', depth: 0.6 },
     { at: 700, kind: 'crab', count: 3, arrange: 'line' },
     { at: 730, kind: 'fish', count: 6, arrange: 'spread', span: 50, x: 0.5 },
 
@@ -104,7 +104,7 @@
     // **这是全关最长的一段安静**（爆发一到爆发二之间三屏），所以它必须自己站得住。
     { at: 780, kind: 'net', count: 5, arrange: 'barrier', gapAt: 0.55, gapWidth: 0.19 },
     { at: 820, kind: 'fish', count: 10, arrange: 'spread', span: 60, amplitude: 0.24, x: 0.5, from: 'bottom' },
-    { at: 870, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'right', enterSpeed: 50 },
+    { at: 870, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'random', enterSpeed: 50 },
     { at: 910, kind: 'crab', count: 3, arrange: 'line' },
     { at: 930, kind: 'mineral', count: 8, arrange: 'spread', span: 50, amplitude: 0.3, x: 0.5, from: 'bottom' },
 
@@ -112,9 +112,9 @@
     // --- S5  **爆发二 · 暴雨层**：珊瑚（硬，3.5 血，"变小有优势"这句话本身）+ 三条鱼雷 + 网 + 盲虾 + 鱼群。
     // 珊瑚和网一起出现是这一关最贵的一次改道：一个打不动，一个一推就破。
     { at: 980, kind: 'coral', count: 5, arrange: 'barrier', gapAt: 0.35, gapWidth: 0.19 },
-    { at: 1040, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.6, from: 'right', enterSpeed: 50 },
+    { at: 1040, kind: 'torpedo', count: 3, arrange: 'spread', span: 50, x: 0.6, from: 'random', enterSpeed: 50 },
     { at: 1080, kind: 'net', count: 4, arrange: 'line' },
-    { at: 1110, kind: 'shrimp', count: 4, arrange: 'spread', span: 50, x: 0.5, from: 'left', depth: 0.5 },
+    { at: 1110, kind: 'shrimp', count: 4, arrange: 'spread', span: 50, x: 0.5, from: 'random', depth: 0.5 },
     { at: 1120, kind: 'fish', count: 4, arrange: 'spread', span: 40, x: 0.5 },
 
     // --- S6  回落：颗粒 + 鱼群 + 螃蟹，然后是**手枪虾**——风暴关的精英位，
@@ -130,8 +130,8 @@
     // 两种硬度不同的障碍**在同一屏里**，这就是这一关的顶点。
     { at: 1340, kind: 'wall', count: 6, arrange: 'barrier', gapAt: 0.65, gapWidth: 0.18 },
     { at: 1400, kind: 'coral', count: 4, arrange: 'barrier', gapAt: 0.3, gapWidth: 0.19 },
-    { at: 1450, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.3, from: 'left', enterSpeed: 50 },
-    { at: 1480, kind: 'shrimp', count: 4, arrange: 'spread', span: 50, x: 0.5, from: 'left', depth: 0.5 },
+    { at: 1450, kind: 'torpedo', count: 2, arrange: 'spread', span: 30, x: 0.3, from: 'random', enterSpeed: 50 },
+    { at: 1480, kind: 'shrimp', count: 4, arrange: 'spread', span: 50, x: 0.5, from: 'random', depth: 0.5 },
 
     // --- S8  收：一次补给 + 一群鱼 + 三只螃蟹。风暴还没有停，但这一段是给你把血看回来的。
     { at: 1560, span: 110, count: 8, kind: 'bubble', arrange: 'spread', amplitude: 0.26, sizes: [0.5, 0.65, 0.45] },

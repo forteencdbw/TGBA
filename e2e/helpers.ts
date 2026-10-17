@@ -226,6 +226,13 @@ export async function boot(page: Page): Promise<void> {
   await page.goto('/');
   await page.waitForFunction(() => Boolean((window as unknown as { __GB?: unknown }).__GB), null, { timeout: 30_000 });
   await waitForPhase(page, 'menu');
+  /**
+   * The level's left/right coin is random by default. Every spec is written against the AUTHORED orientation, so
+   * pin it here; a spec that wants to prove the mirror is random sets `run.levelRandom` itself.
+   */
+  await page.evaluate(() => {
+    (window as unknown as { __GB: { game: { run: { levelRandom: () => number } } } }).__GB.game.run.levelRandom = () => 0;
+  });
 }
 
 /**

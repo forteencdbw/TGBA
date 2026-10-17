@@ -464,12 +464,12 @@ test.describe('level spawning', () => {
     /**
      * And from the sides and from behind.
      *
-     * Three of the file's blocks are side or bottom entries -- a school from the left, a pair from below, and a crate
-     * from the right -- so all three counters have to move. If a future edit deleted them, this is the case that
-     * notices.
+     * The file's side entries now name `from: 'random'`, and `boot` pins the coin to the authored (left) side, so
+     * the exact split is not fixed any more. What must hold is that the FILE still contains side arrivals at all --
+     * the left/right split is covered by the two explicit-side cases above. If a future edit deleted the side
+     * blocks, this is the case that notices.
      */
-    expect(run.arrivals['left'], 'the school from the left arrived').toBeGreaterThan(0);
+    expect(run.arrivals['left'] + run.arrivals['right'], 'something arrived from a side').toBeGreaterThan(0);
     expect(run.arrivals['bottom'], 'something came up from below').toBeGreaterThan(0);
-    expect(run.arrivals['right'], 'and a crate drifted in from the right').toBeGreaterThan(0);
   });
 });

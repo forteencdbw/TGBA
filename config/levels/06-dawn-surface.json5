@@ -88,7 +88,7 @@
     // --- S1  起：鱼群 + 两条鱼雷。仍然是清水——这一屏是以后每一屏的参照物。
     { at: 200, kind: 'fish', count: 11, arrange: 'spread', span: 50, x: 0.5 },
     { at: 250, kind: 'fish', count: 5, arrange: 'spread', span: 50, x: 0.5, from: 'bottom' },
-    { at: 320, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'right', enterSpeed: 48 },
+    { at: 320, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'random', enterSpeed: 48 },
 
     { at: 190, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.45, 0.6, 0.4] },
     // --- S2  **爆发一 · 阳光层**：第一批泡沫，和**真泡泡混在一起**。这一屏不伤你，它只是让你分不清。
@@ -97,7 +97,7 @@
     { at: 500, kind: 'fish', count: 4, arrange: 'spread', span: 40, x: 0.5 },
 
     // --- S3  回落：泡沫换了种排法（散开而不是一排），加两条鱼雷和一群鱼。回落**不减量，只换形**。
-    { at: 600, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'right', enterSpeed: 48 },
+    { at: 600, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'random', enterSpeed: 48 },
     { at: 650, kind: 'fish', count: 8, arrange: 'spread', span: 60, amplitude: 0.22, x: 0.5, from: 'bottom' },
     { at: 720, kind: 'foam', count: 4, arrange: 'spread', span: 50, x: 0.5 },
 
@@ -118,7 +118,7 @@
 
     // --- S6  回落：泡沫一排 + 两条鱼雷 + 鱼群。间隔已经从 3 屏缩到 2 屏。
     { at: 1160, kind: 'foam', count: 6, arrange: 'line' },
-    { at: 1220, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'left', enterSpeed: 48 },
+    { at: 1220, kind: 'torpedo', count: 2, arrange: 'spread', span: 40, x: 0.5, from: 'random', enterSpeed: 48 },
     { at: 1280, kind: 'fish', count: 8, arrange: 'spread', span: 60, x: 0.5, from: 'bottom' },
 
     { at: 1140, span: 180, count: 3, kind: 'bubble', arrange: 'spread', amplitude: 0.24, sizes: [0.45, 0.6, 0.4] },
