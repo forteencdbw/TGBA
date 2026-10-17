@@ -105,6 +105,21 @@ try {
     check('takeHit · enough of them and the run bursts the bubble itself', r.phase, 'burst');
   }
 
+  // --- passive recovery: whole points from a fraction, capped at the ceiling
+  {
+    const r = new Run();
+    r.phase = 'playing';
+    r.resetHealth();
+    r.health = r.healthMax - 5;
+    r.regen(0.5);
+    check('regen · half a second is not yet a point', r.health, r.healthMax - 5);
+    r.regen(0.5);
+    check('regen · a second pays one whole point', r.health, r.healthMax - 4);
+    r.health = r.healthMax;
+    r.regen(5);
+    check('regen · it stops at the ceiling', r.health, r.healthMax);
+  }
+
   // --- stepping the water moves the creatures, and a run can do it for five seconds
   {
     const r = new Run();

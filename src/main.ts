@@ -2176,6 +2176,14 @@ class Game {
       case 'playing':
         this.run.elapsedTotal += dt;
         /**
+         * Passive recovery, and the phase is what scopes it: only live water pays it out.
+         *
+         * Here rather than in the run's per-frame work because the intro, the card pick, a pause and every ending
+         * return above this switch. The post-hit invulnerability window is NOT an exception -- this is a passive,
+         * and being hit should not switch it off.
+         */
+        this.run.regen(dt);
+        /**
          * The mutation meter's clock: the slowest source, ticking only while the water is live.
          *
          * Here rather than in the run because it is a RATE about the game being played -- the intro, the

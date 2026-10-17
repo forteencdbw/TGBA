@@ -18,7 +18,7 @@ import { chainTargets } from './conductive';
 import { tuning } from './config';
 import { massFromEating } from './consumption';
 import { hazardSizeFraction, hazardTuning, markVulnerable, shoveCreature, vulnerableDamage, type Hazard, type SpawnOptions } from './hazards';
-import { healthAfterHit, healthMaxFor } from './health';
+import { healthAfterHit, healthAfterRegen, healthMaxFor } from './health';
 import { canEatHazard } from './consumption';
 import { LEVEL, type LevelEntry } from './levels';
 import { mech } from './mechanisms';
@@ -431,6 +431,13 @@ export class Run {
    * card survives the level transition. See `src/health.ts` for the formula this feeds.
    */
   defense = 0;
+  /**
+   * The fraction of a recovery point held between ticks, so a rate below 1/s still pays out.
+   *
+   * Reset whenever the pool is full or a level starts: a partial point is not worth carrying across a walk between
+   * levels, and it would make the first second of the next level pay out early.
+   */
+  private regenFraction = 0;
 
   /**
    * The health bar's numbers: hit points now, and the ceiling they are measured against.
@@ -465,6 +472,30 @@ export class Run {
      * A ceiling that GREW (a 「血上限」 pick) does not top the current pool up: the card buys room, not blood.
      */
     this.health = carry ? Math.min(this.health, this.healthMax) : this.healthMax;
+    this.regenFraction = 0;
+  }
+
+  /**
+   * Passive recovery: `health.regenPerSecond`, accumulated into whole points.
+   *
+   * Called only by the game loop, only while the phase is `playing` -- the intro, the pick overlay, a pause and every
+   * ending phase freeze it with the rest of the world. The fraction is kept rather than dropped so a sub-1/s rate
+   * pays out once every few seconds, and the pool stays an integer for the bar's label.
+   *
+   * There is no per-level budget: it stops at `healthMax` and nowhere else. It also does not re-derive a growing
+   * route's volume -- that still happens only at a level start and at the route pick (see `applyHealthBand`).
+   */
+  regen(dt: number): void {
+    const rate = Math.max(0, mech.health.regenPerSecond);
+    if (rate <= 0 || this.health >= this.healthMax) {
+      this.regenFraction = 0;
+      return;
+    }
+    this.regenFraction += rate * dt;
+    const points = Math.floor(this.regenFraction);
+    if (points <= 0) return;
+    this.regenFraction -= points;
+    this.health = healthAfterRegen(this.health, this.healthMax, points);
   }
 
   /**

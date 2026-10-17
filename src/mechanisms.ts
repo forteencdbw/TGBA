@@ -476,6 +476,14 @@ export interface Mechanisms {
   health: {
     /** Starting maximum, in hit points. */
     start: number;
+    /**
+     * Hit points restored per second, passively.
+     *
+     * One value for all three routes: the pool is shared (see `Run.health`), so a route-specific rate would be a
+     * distinction with nothing behind it yet. Paid out in whole points from a fraction, only while the water is
+     * live, and never past the maximum -- see `Run.regen`.
+     */
+    regenPerSecond: number;
     /** What one 「修复血条」 pick restores. */
     healPerPick: number;
     /** What one 「血上限」 pick adds to the maximum. */
@@ -2800,6 +2808,7 @@ const REQUIRED: { path: string; check: (v: unknown) => boolean; describe: string
   { path: 'volume.healthPerVolume', check: anyNumber, describe: 'hit points per volume point' },
   { path: 'volume.laneRatio', check: anyNumber, describe: 'a small number' },
   { path: 'health.start', check: anyNumber, describe: 'hit points' },
+  { path: 'health.regenPerSecond', check: anyNumber, describe: 'hit points per second' },
   { path: 'health.minDamageRatio', check: anyNumber, describe: 'a fraction of the damage' },
   { path: 'health.healPerPick', check: anyNumber, describe: 'points' },
   { path: 'health.maxPerPick', check: anyNumber, describe: 'points' },

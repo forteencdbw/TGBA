@@ -61,3 +61,13 @@ export function healthAfterHit(health: number, damage: number, defense: number):
 export function healthAfterHeal(health: number, max: number): number {
   return Math.min(max, health + mech.health.healPerPick);
 }
+
+/**
+ * After passive recovery: a whole number of points, never past the maximum.
+ *
+ * The caller accumulates the fraction (`Run.regen`), so a rate below one point a second still works -- it simply
+ * pays out less often. Whole points keep the bar's label subtractable, which a `57.3/100` would not be.
+ */
+export function healthAfterRegen(health: number, max: number, points: number): number {
+  return Math.min(max, health + Math.max(0, points));
+}
